@@ -6,8 +6,6 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Android Keystore keys cannot be restored on another device. -->
+    <exclude domain="file" path="datastore/secure_auth.preferences_pb" />
 </full-backup-content>
