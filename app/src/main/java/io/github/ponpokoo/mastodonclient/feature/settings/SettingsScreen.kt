@@ -60,6 +60,7 @@ fun SettingsScreen(
     store: UserPreferencesStore,
     activeSession: AccountSession?,
     onBack: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
@@ -216,6 +217,12 @@ fun SettingsScreen(
             item {
                 SwitchRow("リンクをアプリ内で開く", preferences.openLinksInApp) {
                     scope.launch { store.setOpenLinksInApp(it) }
+                }
+            }
+            item { SectionTitle("アカウント") }
+            item {
+                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                    Text("ログアウト", color = MaterialTheme.colorScheme.error)
                 }
             }
             item { Spacer(Modifier.padding(bottom = 24.dp)) }

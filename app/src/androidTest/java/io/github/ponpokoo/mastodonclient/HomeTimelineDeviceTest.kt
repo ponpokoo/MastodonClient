@@ -36,7 +36,6 @@ class HomeTimelineDeviceTest {
         }
 
         composeRule.onNodeWithContentDescription("設定").performClick()
-        composeRule.onNodeWithText("設定を開く").performClick()
         composeRule.onNodeWithTag("settings_screen").assertExists()
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()

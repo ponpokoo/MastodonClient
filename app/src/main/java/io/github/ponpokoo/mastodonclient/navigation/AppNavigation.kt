@@ -193,6 +193,13 @@ fun AppNavigation() {
                 store = preferences,
                 activeSession = activeSession,
                 onBack = { navController.popBackStack() },
+                onLogout = {
+                    scope.launch {
+                        authRepository.logout()
+                        val destination = if (authRepository.restoreSession() == null) Route.Login else Route.Timeline
+                        navController.navigate(destination) { popUpTo(Route.Timeline) { inclusive = true } }
+                    }
+                },
             )
         }
         composable<Route.WebPage> { backStackEntry ->

@@ -242,22 +242,21 @@ internal fun ProfileContent(
         }
         else -> LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("profile_screen")) {
             item {
-                AsyncImage(
-                    model = profile.headerUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(128.dp).clickable(onClick = onHeaderClick)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentScale = ContentScale.Crop,
-                )
-                Column(Modifier.padding(16.dp)) {
+                Box(Modifier.fillMaxWidth().height(174.dp)) {
                     AsyncImage(
-                        model = profile.author.avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.size(72.dp).clip(CircleShape).clickable(onClick = onAvatarClick)
+                        model = profile.headerUrl, contentDescription = "ヘッダー画像",
+                        modifier = Modifier.fillMaxWidth().height(132.dp).clickable(onClick = onHeaderClick)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentScale = ContentScale.Crop,
                     )
-                    Spacer(Modifier.height(8.dp))
+                    AsyncImage(
+                        model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
+                        modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
+                            .clip(CircleShape).clickable(onClick = onAvatarClick)
+                            .background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop,
+                    )
+                }
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(profile.author.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     if (profile.customEmojis.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         profile.customEmojis.entries.take(8).forEach { (name, url) ->
@@ -298,10 +297,6 @@ internal fun ProfileContent(
                     }
                 }
                 HorizontalDivider()
-                if (profile.pinnedStatuses.isNotEmpty()) SectionTitle("固定された投稿")
-            }
-            items(profile.pinnedStatuses, key = { "pinned-${it.timelineId}" }) { status ->
-                SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences)
             }
             item {
                 SecondaryTabRow(selectedTabIndex = selectedTab.ordinal) {
@@ -310,7 +305,7 @@ internal fun ProfileContent(
                     }
                 }
             }
-            items(profile.statuses, key = { it.timelineId }) { status ->
+            items((profile.pinnedStatuses + profile.statuses).distinctBy { it.statusId }, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
                     onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,

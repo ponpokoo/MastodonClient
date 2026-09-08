@@ -230,6 +230,19 @@ class ComposePostViewModel(
         }
     }
 
+    fun clearComposer() {
+        val state = _uiState.value
+        val session = state.selectedSession ?: return
+        state.attachments.forEach { deleteDraftFile(it.uri) }
+        viewModelScope.launch { preferencesStore.deleteDraft(draftKey(session.sessionId)) }
+        _uiState.update {
+            it.copy(
+                text = "", spoilerText = "", attachments = emptyList(), pollOptions = emptyList(),
+                sensitive = false, errorMessage = null, altReminderVisible = false,
+            )
+        }
+    }
+
     private suspend fun loadAccountData(session: AccountSession, restoreDraft: Boolean) {
         val draft = if (restoreDraft) preferencesStore.drafts.first()
             .firstOrNull { it.key == draftKey(session.sessionId) } else null

@@ -34,6 +34,12 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Drafts
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -68,6 +74,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
@@ -92,9 +99,7 @@ fun ComposePostScreen(
         state.attachments.isNotEmpty() || state.pollOptions.any(String::isNotBlank)
 
     fun requestClose() {
-        if (!hasContent || state.preferences.draftAutosave) {
-            if (hasContent) viewModel.saveDraftThen(onClose) else onClose()
-        } else exitDialogOpen = true
+        if (hasContent) viewModel.saveDraftThen(onClose) else onClose()
     }
     BackHandler(onBack = ::requestClose)
     LaunchedEffect(state.posted) { if (state.posted) onPosted() }
@@ -126,6 +131,12 @@ fun ComposePostScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = viewModel::saveDraft, enabled = hasContent) {
+                        Icon(Icons.Outlined.Drafts, contentDescription = "下書きに保存")
+                    }
+                    IconButton(onClick = { viewModel.clearComposer(); cwEnabled = false }, enabled = hasContent) {
+                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "投稿内容を削除")
+                    }
                     Button(
                         onClick = { viewModel.post() },
                         enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) && !state.isPosting,
@@ -175,12 +186,14 @@ fun ComposePostScreen(
                 AssistChip(
                     onClick = { visibilityMenuOpen = true },
                     label = { Text(state.visibility.label()) },
+                    leadingIcon = { Icon(state.visibility.icon(), contentDescription = null, Modifier.size(18.dp)) },
                     modifier = Modifier.testTag("compose_visibility"),
                 )
                 DropdownMenu(expanded = visibilityMenuOpen, onDismissRequest = { visibilityMenuOpen = false }) {
                     PostVisibility.entries.forEach { visibility ->
                         DropdownMenuItem(
                             text = { Text(visibility.label()) },
+                            leadingIcon = { Icon(visibility.icon(), contentDescription = null) },
                             onClick = { visibilityMenuOpen = false; viewModel.setVisibility(visibility) },
                         )
                     }
@@ -269,7 +282,7 @@ fun ComposePostScreen(
                     onClick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
                     enabled = state.pollOptions.isEmpty() && state.attachments.size < state.configuration.maxMediaAttachments,
                 ) { Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "画像または動画") }
-                IconButton(onClick = viewModel::enablePoll, enabled = state.attachments.isEmpty()) {
+                IconButton(onClick = { if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll() }, enabled = state.attachments.isEmpty()) {
                     Icon(Icons.Outlined.Poll, contentDescription = "投票")
                 }
                 IconButton(onClick = { emojiSheetOpen = true }) {
@@ -386,4 +399,11 @@ private fun PostVisibility.label() = when (this) {
     PostVisibility.Unlisted -> "ひかえめな公開"
     PostVisibility.FollowersOnly -> "フォロワー限定"
     PostVisibility.Direct -> "指定した相手のみ"
+}
+
+private fun PostVisibility.icon(): ImageVector = when (this) {
+    PostVisibility.Public -> Icons.Outlined.Public
+    PostVisibility.Unlisted -> Icons.Outlined.Group
+    PostVisibility.FollowersOnly -> Icons.Outlined.Lock
+    PostVisibility.Direct -> Icons.Outlined.AlternateEmail
 }

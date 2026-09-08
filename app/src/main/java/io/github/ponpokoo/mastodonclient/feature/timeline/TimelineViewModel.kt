@@ -11,6 +11,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -44,6 +45,8 @@ data class TimelineUiState(
     val profile: UserProfile? = null,
     val isLoadingProfile: Boolean = false,
     val profileError: String? = null,
+    val profileSelectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
+    val isLoadingMoreProfile: Boolean = false,
     val notifications: List<TimelineNotification> = emptyList(),
     val isLoadingNotifications: Boolean = false,
     val notificationsError: String? = null,
@@ -260,6 +263,28 @@ class TimelineViewModel(
                     }
                 }
         }
+    }
+
+    fun selectProfileTab(tab: ProfileStatusTab) {
+        val session = _uiState.value.session ?: return
+        val profile = _uiState.value.profile ?: return
+        if (_uiState.value.profileSelectedTab == tab) return
+        _uiState.update { it.copy(profileSelectedTab = tab, isLoadingProfile = true, profileError = null) }
+        viewModelScope.launch { timelineRepository.getProfileStatuses(session, profile.author.id, tab).fold(
+            onSuccess = { page -> _uiState.update { state -> state.copy(profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId, endReached = page.endReached), isLoadingProfile = false) } },
+            onFailure = { error -> _uiState.update { it.copy(isLoadingProfile = false, profileError = error.message) } },
+        ) }
+    }
+
+    fun loadMoreProfile() {
+        val session = _uiState.value.session ?: return
+        val profile = _uiState.value.profile ?: return
+        if (_uiState.value.isLoadingMoreProfile || profile.endReached || profile.nextMaxId == null) return
+        _uiState.update { it.copy(isLoadingMoreProfile = true) }
+        viewModelScope.launch { timelineRepository.getProfileStatuses(session, profile.author.id, _uiState.value.profileSelectedTab, profile.nextMaxId).fold(
+            onSuccess = { page -> _uiState.update { state -> state.copy(profile = state.profile?.copy(statuses = (state.profile.statuses + page.statuses).distinctBy(TimelineStatus::statusId), nextMaxId = page.nextMaxId, endReached = page.endReached), isLoadingMoreProfile = false) } },
+            onFailure = { error -> _uiState.update { it.copy(isLoadingMoreProfile = false, profileError = error.message) } },
+        ) }
     }
 
     fun loadNotifications(force: Boolean = false) {

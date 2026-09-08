@@ -254,7 +254,15 @@ fun HomeTimelineScreen(
                 }
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            Box(Modifier.fillMaxSize().padding(top = 64.dp), contentAlignment = Alignment.TopCenter) {
+                SnackbarHost(snackbarHostState) { data ->
+                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
+                        Text(data.visuals.message, Modifier.padding(horizontal = 14.dp, vertical = 7.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.inverseOnSurface)
+                    }
+                }
+            }
+        },
     ) { padding ->
         HorizontalPager(
             state = pagerState,
@@ -329,6 +337,10 @@ fun HomeTimelineScreen(
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = state.preferences,
+                    selectedTab = state.profileSelectedTab,
+                    isLoadingMore = state.isLoadingMoreProfile,
+                    onSelectTab = viewModel::selectProfileTab,
+                    onLoadMore = viewModel::loadMoreProfile,
                 )
             }
         }
@@ -360,7 +372,6 @@ private fun TimelineTopBar(
     onSettings: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
-    var settingsMenuOpen by remember { mutableStateOf(false) }
     var accountSheetOpen by remember { mutableStateOf(false) }
 
     TopAppBar(
@@ -417,30 +428,7 @@ private fun TimelineTopBar(
                     modifier = Modifier.testTag("server_announcements"),
                 )
             }
-            Box {
-                IconButton(onClick = { settingsMenuOpen = true }) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "設定")
-                }
-                DropdownMenu(
-                    expanded = settingsMenuOpen,
-                    onDismissRequest = { settingsMenuOpen = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("設定を開く") },
-                        onClick = {
-                            settingsMenuOpen = false
-                            onSettings()
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("ログアウト") },
-                        onClick = {
-                            settingsMenuOpen = false
-                            onLogout()
-                        },
-                    )
-                }
-            }
+            IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, contentDescription = "設定") }
         },
     )
 
@@ -1093,7 +1081,7 @@ private fun StatusActionButton(
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize))
+            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
         }
         if (preferences.showCounts && count != null && count > 0) {
             Text(
