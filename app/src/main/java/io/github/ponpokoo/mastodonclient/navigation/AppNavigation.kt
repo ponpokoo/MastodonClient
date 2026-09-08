@@ -1,8 +1,6 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
 import android.content.Intent
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -37,6 +35,8 @@ import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
+import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import kotlinx.coroutines.launch
 
 @Composable
@@ -64,7 +64,21 @@ fun AppNavigation() {
             }
         }
     }
-    NavHost(navController = navController, startDestination = Route.Login) {
+    val openMedia: (MediaAttachment) -> Unit = { media ->
+        media.url?.let { url ->
+            navController.navigate(Route.MediaViewer(url, media.type, media.description)) {
+                launchSingleTop = true
+            }
+        }
+    }
+    NavHost(
+        navController = navController,
+        startDestination = Route.Login,
+        enterTransition = { fadeIn(tween(140)) },
+        exitTransition = { fadeOut(tween(100)) },
+        popEnterTransition = { fadeIn(tween(140)) },
+        popExitTransition = { fadeOut(tween(100)) },
+    ) {
         composable<Route.Login> {
             val loginViewModel: LoginViewModel = viewModel(
                 factory = LoginViewModel.Factory(
@@ -78,9 +92,7 @@ fun AppNavigation() {
                 }
             }
         }
-        composable<Route.Timeline>(
-            popEnterTransition = { EnterTransition.None },
-        ) {
+        composable<Route.Timeline> {
             val timelineViewModel: TimelineViewModel = viewModel(
                 factory = TimelineViewModel.Factory(timelineRepository, authRepository),
             )
@@ -103,16 +115,10 @@ fun AppNavigation() {
                 onAccountClick = { accountId ->
                     navController.navigate(Route.AccountProfile(accountId)) { launchSingleTop = true }
                 },
+                onMediaClick = openMedia,
             )
         }
-        composable<Route.StatusDetail>(
-            enterTransition = {
-                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(240)) + fadeIn(tween(180))
-            },
-            popExitTransition = {
-                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220))
-            },
-        ) { backStackEntry ->
+        composable<Route.StatusDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.StatusDetail>()
             val detailViewModel: StatusDetailViewModel = viewModel(
                 factory = StatusDetailViewModel.Factory(
@@ -126,6 +132,8 @@ fun AppNavigation() {
                 onBack = { navController.popBackStack() },
                 onReply = { navController.navigate(Route.ComposePost(it)) },
                 onOpenLink = openLink,
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
+                onMediaClick = openMedia,
             )
         }
         composable<Route.ComposePost> { backStackEntry ->
@@ -144,21 +152,11 @@ fun AppNavigation() {
                 onPosted = { navController.popBackStack() },
             )
         }
-        composable<Route.WebPage>(
-            enterTransition = { fadeIn(tween(180)) },
-            popExitTransition = { fadeOut(tween(140)) },
-        ) { backStackEntry ->
+        composable<Route.WebPage> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.WebPage>()
             InAppWebScreen(route.url, onBack = { navController.popBackStack() })
         }
-        composable<Route.AccountProfile>(
-            enterTransition = {
-                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
-            },
-            popExitTransition = {
-                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(200))
-            },
-        ) { backStackEntry ->
+        composable<Route.AccountProfile> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.AccountProfile>()
             val profileViewModel: AccountProfileViewModel = viewModel(
                 factory = AccountProfileViewModel.Factory(
@@ -173,16 +171,11 @@ fun AppNavigation() {
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it.statusId)) },
                 onOpenLink = openLink,
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
+                onMediaClick = openMedia,
             )
         }
-        composable<Route.HashtagTimeline>(
-            enterTransition = {
-                slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
-            },
-            popExitTransition = {
-                slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(200))
-            },
-        ) { backStackEntry ->
+        composable<Route.HashtagTimeline> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.HashtagTimeline>()
             val hashtagViewModel: HashtagTimelineViewModel = viewModel(
                 factory = HashtagTimelineViewModel.Factory(
@@ -198,6 +191,17 @@ fun AppNavigation() {
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it)) },
                 onOpenLink = openLink,
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
+                onMediaClick = openMedia,
+            )
+        }
+        composable<Route.MediaViewer> { backStackEntry ->
+            val route = backStackEntry.toRoute<Route.MediaViewer>()
+            MediaViewerScreen(
+                url = route.url,
+                type = route.type,
+                description = route.description,
+                onBack = { navController.popBackStack() },
             )
         }
     }

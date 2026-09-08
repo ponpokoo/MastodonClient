@@ -18,6 +18,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.HowToReg
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Poll
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -36,10 +45,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -58,6 +69,7 @@ internal fun SearchContent(
     onFavourite: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
         OutlinedTextField(
@@ -101,7 +113,7 @@ internal fun SearchContent(
                         items(results.statuses, key = { it.timelineId }) { status ->
                             SocialStatus(
                                 status, onStatusClick, onOpenLink, onReply,
-                                onBoost, onFavourite, onReact,
+                                onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
                             )
                         }
                     }
@@ -127,6 +139,7 @@ internal fun NotificationsContent(
     onFavourite: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     when {
         state.isLoadingNotifications && state.notifications.isEmpty() -> LoadingContent(
@@ -152,7 +165,7 @@ internal fun NotificationsContent(
                     notification.status?.let { status ->
                         SocialStatus(
                             status, onStatusClick, onOpenLink, onReply,
-                            onBoost, onFavourite, onReact,
+                            onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
                         )
                     } ?: run {
                         AccountResult(notification.account, onAccountClick)
@@ -188,6 +201,8 @@ internal fun ProfileContent(
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     val profile = state.profile
     when {
@@ -240,7 +255,7 @@ internal fun ProfileContent(
             items(profile.statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
-                    onBoost, onFavourite, onReact,
+                    onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
                 )
             }
         }
@@ -256,10 +271,14 @@ private fun SocialStatus(
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     StatusCard(
         status = status,
         onStatusClick = onStatusClick,
+        onAuthorClick = onAccountClick,
+        onMediaClick = onMediaClick,
         onOpenLink = onOpenLink,
         onReply = { onReply(status) },
         onBoost = { onBoost(status) },
@@ -296,23 +315,39 @@ private fun NotificationHeader(
     notification: TimelineNotification,
     onAccountClick: (String) -> Unit,
 ) {
-    val action = when (notification.type) {
-        "mention" -> "メンションしました"
-        "reblog" -> "ブーストしました"
-        "favourite" -> "お気に入りしました"
-        "follow" -> "フォローしました"
-        "follow_request" -> "フォローをリクエストしました"
-        "poll" -> "アンケートが終了しました"
-        "status" -> "新しい投稿があります"
-        "update" -> "投稿を編集しました"
-        else -> "通知"
+    val (icon, action) = when (notification.type) {
+        "mention" -> Icons.Outlined.AlternateEmail to "メンションしました"
+        "reblog" -> Icons.Outlined.Repeat to "ブーストしました"
+        "favourite" -> Icons.Outlined.FavoriteBorder to "お気に入りしました"
+        "follow" -> Icons.Outlined.PersonAdd to "フォローしました"
+        "follow_request" -> Icons.Outlined.HowToReg to "フォローをリクエストしました"
+        "poll" -> Icons.Outlined.Poll to "アンケートが終了しました"
+        "status" -> Icons.Outlined.Campaign to "新しい投稿があります"
+        "update" -> Icons.Outlined.Edit to "投稿を編集しました"
+        else -> Icons.Outlined.NotificationsNone to "通知"
     }
-    Text(
-        "${notification.account.displayName}さんが$action",
+    Row(
         modifier = Modifier.fillMaxWidth().clickable { onAccountClick(notification.account.id) }
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NotificationTypeIcon(icon, action)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "${notification.account.displayName}さんが$action",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun NotificationTypeIcon(icon: ImageVector, action: String) {
+    Icon(
+        imageVector = icon,
+        contentDescription = action,
+        modifier = Modifier.size(20.dp).testTag("notification_type_icon"),
+        tint = MaterialTheme.colorScheme.primary,
     )
 }
 

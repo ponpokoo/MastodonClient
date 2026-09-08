@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
 import java.time.Instant
 import java.time.ZoneId
@@ -51,6 +53,8 @@ fun StatusDetailScreen(
     onBack: () -> Unit,
     onReply: (String) -> Unit,
     onOpenLink: (String) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val status = state.detail?.status
@@ -87,7 +91,8 @@ fun StatusDetailScreen(
                     StatusCard(
                         status = status,
                         onStatusClick = null,
-                        onReactionClick = viewModel::showReaction,
+                        onAuthorClick = onAccountClick,
+                        onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status.statusId) },
                         onBoost = viewModel::toggleReblog,
@@ -123,6 +128,8 @@ fun StatusDetailScreen(
                             StatusCard(
                                 reply,
                                 onStatusClick = null,
+                                onAuthorClick = onAccountClick,
+                                onMediaClick = onMediaClick,
                                 onOpenLink = onOpenLink,
                                 onReply = { onReply(reply.statusId) },
                                 onUnavailableAction = {},
@@ -150,7 +157,9 @@ fun StatusDetailScreen(
                 Text("表示できるアカウントはありません", Modifier.padding(20.dp))
             } else {
                 LazyColumn(Modifier.fillMaxWidth()) {
-                    items(state.accounts, key = StatusAuthor::id) { account -> AccountRow(account) }
+                    items(state.accounts, key = StatusAuthor::id) { account ->
+                        AccountRow(account) { onAccountClick(account.id) }
+                    }
                 }
             }
         }
@@ -158,9 +167,10 @@ fun StatusDetailScreen(
 }
 
 @Composable
-private fun AccountRow(account: StatusAuthor) {
+private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(

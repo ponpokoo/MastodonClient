@@ -89,7 +89,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
-import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
@@ -124,6 +123,7 @@ fun HomeTimelineScreen(
     openLinksInApp: Boolean,
     onOpenLinksInAppChange: (Boolean) -> Unit,
     onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -229,6 +229,8 @@ fun HomeTimelineScreen(
                     onRetry = viewModel::retry,
                     onLoadMore = viewModel::loadNextPage,
                     onStatusClick = onStatusClick,
+                    onAccountClick = onAccountClick,
+                    onMediaClick = onMediaClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
                     onBoost = viewModel::toggleReblog,
@@ -250,6 +252,7 @@ fun HomeTimelineScreen(
                     onFavourite = viewModel::toggleFavourite,
                     onReact = viewModel::setReaction,
                     onAccountClick = onAccountClick,
+                    onMediaClick = onMediaClick,
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = state,
@@ -263,6 +266,7 @@ fun HomeTimelineScreen(
                     onFavourite = viewModel::toggleFavourite,
                     onReact = viewModel::setReaction,
                     onAccountClick = onAccountClick,
+                    onMediaClick = onMediaClick,
                 )
                 MainDestination.Profile -> ProfileContent(
                     state = state,
@@ -274,6 +278,8 @@ fun HomeTimelineScreen(
                     onBoost = viewModel::toggleReblog,
                     onFavourite = viewModel::toggleFavourite,
                     onReact = viewModel::setReaction,
+                    onAccountClick = onAccountClick,
+                    onMediaClick = onMediaClick,
                 )
             }
         }
@@ -446,6 +452,8 @@ private fun TimelineContent(
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onStatusClick: (String) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
@@ -494,6 +502,8 @@ private fun TimelineContent(
                     StatusCard(
                         status = status,
                         onStatusClick = onStatusClick,
+                        onAuthorClick = onAccountClick,
+                        onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status) },
                         onBoost = { onBoost(status) },
@@ -532,7 +542,8 @@ private fun TimelineContent(
 internal fun StatusCard(
     status: TimelineStatus,
     onStatusClick: ((String) -> Unit)?,
-    onReactionClick: ((EmojiReaction) -> Unit)? = null,
+    onAuthorClick: ((String) -> Unit)? = null,
+    onMediaClick: ((MediaAttachment) -> Unit)? = null,
     onOpenLink: (String) -> Unit = {},
     onReply: () -> Unit = {},
     onBoost: () -> Unit = {},
@@ -566,6 +577,12 @@ internal fun StatusCard(
                 model = status.author.avatarUrl,
                 contentDescription = "${status.author.displayName}のプロフィール画像",
                 modifier = Modifier.size(40.dp).clip(CircleShape)
+                    .testTag("status_author_avatar")
+                    .then(
+                        if (onAuthorClick == null) Modifier else Modifier.clickable {
+                            onAuthorClick(status.author.id)
+                        },
+                    )
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentScale = ContentScale.Crop,
             )
@@ -618,7 +635,7 @@ internal fun StatusCard(
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
                 Spacer(Modifier.height(8.dp))
                 if (mediaRevealed) {
-                    MediaGrid(status.mediaAttachments)
+                    MediaGrid(status.mediaAttachments, onMediaClick)
                 } else {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(144.dp)
@@ -644,9 +661,15 @@ internal fun StatusCard(
                 ) {
                     status.reactions.forEach { reaction ->
                         Surface(
-                            modifier = if (onReactionClick == null) Modifier else Modifier.clickable {
-                                onReactionClick(reaction)
-                            },
+                            modifier = Modifier.testTag("displayed_reaction").then(
+                                if (onReact == null || reaction.imageUrl != null) {
+                                    Modifier
+                                } else {
+                                    Modifier.clickable {
+                                        onReact(if (reaction.reactedByMe) null else reaction.name)
+                                    }
+                                },
+                            ),
                             shape = RoundedCornerShape(16.dp),
                             color = if (reaction.reactedByMe) {
                                 MaterialTheme.colorScheme.secondaryContainer
@@ -730,7 +753,10 @@ internal fun StatusCard(
 }
 
 @Composable
-private fun MediaGrid(attachments: List<MediaAttachment>) {
+private fun MediaGrid(
+    attachments: List<MediaAttachment>,
+    onMediaClick: ((MediaAttachment) -> Unit)?,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         attachments.take(4).chunked(2).forEach { rowItems ->
             Row(
@@ -742,6 +768,12 @@ private fun MediaGrid(attachments: List<MediaAttachment>) {
                         modifier = Modifier.weight(1f)
                             .aspectRatio(if (attachments.size == 1) 1.6f else 1f)
                             .clip(RoundedCornerShape(8.dp))
+                            .testTag("media_attachment")
+                            .then(
+                                if (onMediaClick == null || media.url == null) Modifier else {
+                                    Modifier.clickable { onMediaClick(media) }
+                                },
+                            )
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center,
                     ) {

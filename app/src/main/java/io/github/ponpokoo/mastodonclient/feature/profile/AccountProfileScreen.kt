@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
 
@@ -23,6 +24,8 @@ fun AccountProfileScreen(
     onStatusClick: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     Scaffold(
@@ -51,6 +54,8 @@ fun AccountProfileScreen(
             onBoost = viewModel::toggleReblog,
             onFavourite = viewModel::toggleFavourite,
             onReact = viewModel::setReaction,
+            onAccountClick = onAccountClick,
+            onMediaClick = onMediaClick,
         )
     }
 }

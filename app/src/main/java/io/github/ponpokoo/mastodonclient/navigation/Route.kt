@@ -23,4 +23,11 @@ sealed interface Route {
 
     @Serializable
     data class HashtagTimeline(val hashtag: String) : Route
+
+    @Serializable
+    data class MediaViewer(
+        val url: String,
+        val type: String,
+        val description: String? = null,
+    ) : Route
 }

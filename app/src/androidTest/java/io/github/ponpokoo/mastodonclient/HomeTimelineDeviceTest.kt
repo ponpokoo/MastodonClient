@@ -34,6 +34,28 @@ class HomeTimelineDeviceTest {
             composeRule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().isNotEmpty()
         }
 
+        composeRule.onAllNodesWithTag("status_author_avatar")[0].performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("profile_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        if (composeRule.onAllNodesWithTag("media_attachment").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onAllNodesWithTag("media_attachment")[0].performClick()
+            composeRule.onNodeWithTag("media_viewer").assertExists()
+            composeRule.activityRule.scenario.onActivity { activity ->
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
+
         composeRule.onAllNodesWithTag("timeline_status")[0].performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithTag("status_detail").fetchSemanticsNodes().isNotEmpty()

@@ -51,7 +51,8 @@ must not cover the final status action row or system navigation inset.
 Each status is one continuous row separated by a thin divider, not an elevated card:
 
 1. Avatar and identity row: circular avatar, display name, right-aligned relative time, and full
-   account address. Do not show a permanent post overflow menu in the timeline row.
+   account address. Tapping the avatar opens that account's profile. Do not show a permanent post
+   overflow menu in the timeline row.
 2. Optional context row: boosted-by, reply-to, pinned, or notification context.
 3. Content: body text, content warning control, link preview, poll, and media/ALT presentation.
 4. Action row: reply, boost, favorite, and share by default. Keep the visual icons compact and place
@@ -68,6 +69,10 @@ Recommended baseline dimensions:
 
 Never shrink touch targets when the user chooses a compact display. Counts may appear next to action
 icons, but a zero count should not add visual noise.
+
+Tapping image or video media opens a full-screen viewer. Images support pinch zoom and panning;
+videos expose playback controls. Unicode reaction chips toggle that reaction directly. Custom emoji
+reaction chips remain display-only until compatible reaction submission is implemented per server.
 
 ## Timeline display customization
 

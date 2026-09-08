@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
 
 @Composable
@@ -39,6 +40,8 @@ fun HashtagTimelineScreen(
     onStatusClick: (String) -> Unit,
     onReply: (String) -> Unit,
     onOpenLink: (String) -> Unit,
+    onAccountClick: (String) -> Unit,
+    onMediaClick: (MediaAttachment) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     Scaffold(
@@ -75,6 +78,8 @@ fun HashtagTimelineScreen(
                         StatusCard(
                             status = status,
                             onStatusClick = onStatusClick,
+                            onAuthorClick = onAccountClick,
+                            onMediaClick = onMediaClick,
                             onOpenLink = onOpenLink,
                             onReply = { onReply(status.statusId) },
                             onBoost = { viewModel.toggleReblog(status) },
