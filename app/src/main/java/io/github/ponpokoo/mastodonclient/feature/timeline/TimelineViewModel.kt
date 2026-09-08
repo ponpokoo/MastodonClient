@@ -13,6 +13,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.StreamingPolicy
+import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,18 +56,61 @@ data class TimelineUiState(
     val notificationsEndReached: Boolean = false,
     val isLoadingMoreNotifications: Boolean = false,
     val unreadNotifications: Int = 0,
+    val sessions: List<AccountSession> = emptyList(),
+    val preferences: AppPreferences = AppPreferences(),
 )
 
 class TimelineViewModel(
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
+    private val preferencesStore: UserPreferencesStore? = null,
+    private val networkIsWifi: () -> Boolean = { true },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState: StateFlow<TimelineUiState> = _uiState.asStateFlow()
     private var streamingJob: Job? = null
+    private var isForeground = true
 
     init {
+        preferencesStore?.let { store ->
+            viewModelScope.launch {
+                store.preferences.collect { preferences ->
+                    val old = _uiState.value.preferences
+                    _uiState.update { it.copy(preferences = preferences) }
+                    val session = _uiState.value.session
+                    if (session != null && old.forAccount(session.sessionId).streaming !=
+                        preferences.forAccount(session.sessionId).streaming
+                    ) startStreaming(session)
+                }
+            }
+        }
         loadInitial()
+    }
+
+    fun switchAccount(sessionId: String) {
+        if (_uiState.value.session?.sessionId == sessionId) return
+        viewModelScope.launch {
+            val session = authRepository.switchSession(sessionId) ?: return@launch
+            streamingJob?.cancel()
+            _uiState.value = TimelineUiState(
+                session = session,
+                sessions = authRepository.getSessions(),
+                preferences = _uiState.value.preferences,
+            )
+            loadForSession(session)
+        }
+    }
+
+    fun setForeground(foreground: Boolean) {
+        if (isForeground == foreground) return
+        isForeground = foreground
+        val session = _uiState.value.session ?: return
+        if (!foreground && _uiState.value.preferences.pauseStreamingInBackground) {
+            streamingJob?.cancel()
+            streamingJob = null
+        } else if (foreground) {
+            startStreaming(session)
+        }
     }
 
     fun refresh() {
@@ -153,6 +199,10 @@ class TimelineViewModel(
 
     fun toggleReblog(status: TimelineStatus) = mutateStatus {
         timelineRepository.setReblogged(it, status.statusId, !status.reblogged)
+    }
+
+    fun toggleBookmark(status: TimelineStatus) = mutateStatus {
+        timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked)
     }
 
     fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus {
@@ -294,7 +344,17 @@ class TimelineViewModel(
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()
-            _uiState.value = TimelineUiState(isInitialLoading = false, requiresLogin = true)
+            val next = authRepository.restoreSession()
+            if (next == null) {
+                _uiState.value = TimelineUiState(isInitialLoading = false, requiresLogin = true)
+            } else {
+                _uiState.value = TimelineUiState(
+                    session = next,
+                    sessions = authRepository.getSessions(),
+                    preferences = _uiState.value.preferences,
+                )
+                loadForSession(next)
+            }
         }
     }
 
@@ -315,6 +375,7 @@ class TimelineViewModel(
                                     favouritesCount = updated.favouritesCount,
                                     favourited = updated.favourited,
                                     reblogged = updated.reblogged,
+                                    bookmarked = updated.bookmarked,
                                     reactions = updated.reactions,
                                 )
                             },
@@ -336,14 +397,20 @@ class TimelineViewModel(
             _uiState.update {
                 it.copy(isInitialLoading = true, errorMessage = null, requiresLogin = false)
             }
+            val sessions = authRepository.getSessions()
             val session = authRepository.restoreSession()
             if (session == null) {
                 _uiState.value = TimelineUiState(isInitialLoading = false, requiresLogin = true)
                 return@launch
             }
-            _uiState.update { it.copy(session = session) }
-            startStreaming(session)
-            timelineRepository.getTimeline(session, TimelineFeed.Home)
+            _uiState.update { it.copy(session = session, sessions = sessions) }
+            loadForSession(session)
+        }
+    }
+
+    private suspend fun loadForSession(session: AccountSession) {
+        startStreaming(session)
+        timelineRepository.getTimeline(session, TimelineFeed.Home)
                 .onSuccess { page ->
                     _uiState.update {
                         it.copy(
@@ -355,11 +422,16 @@ class TimelineViewModel(
                     }
                 }
                 .onFailure { error -> showError(error, initial = true) }
-        }
     }
 
     private fun startStreaming(session: AccountSession) {
         streamingJob?.cancel()
+        if (!isForeground && _uiState.value.preferences.pauseStreamingInBackground) return
+        when (_uiState.value.preferences.forAccount(session.sessionId).streaming) {
+            StreamingPolicy.Off -> return
+            StreamingPolicy.WifiOnly -> if (!networkIsWifi()) return
+            StreamingPolicy.On -> Unit
+        }
         streamingJob = viewModelScope.launch {
             timelineRepository.observeUserStream(session)
                 .retryWhen { _, attempt ->
@@ -414,9 +486,11 @@ class TimelineViewModel(
     class Factory(
         private val timelineRepository: TimelineRepository,
         private val authRepository: AuthRepository,
+        private val preferencesStore: UserPreferencesStore? = null,
+        private val networkIsWifi: () -> Boolean = { true },
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            TimelineViewModel(timelineRepository, authRepository) as T
+            TimelineViewModel(timelineRepository, authRepository, preferencesStore, networkIsWifi) as T
     }
 }

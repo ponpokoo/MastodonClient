@@ -10,6 +10,10 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.AnnouncementDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.SearchResultDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.MarkerResponseDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.CustomEmojiDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.MediaAttachmentDto
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -18,6 +22,12 @@ import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
+import retrofit2.http.Multipart
+import retrofit2.http.Part
+import retrofit2.http.PATCH
+import retrofit2.http.PartMap
+import io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.ReportDto
 
 interface MastodonApi {
     @GET("api/v2/instance")
@@ -46,6 +56,19 @@ interface MastodonApi {
     @GET("api/v1/accounts/verify_credentials")
     suspend fun verifyCredentials(): AccountDto
 
+    @GET("api/v1/custom_emojis")
+    suspend fun getCustomEmojis(): List<CustomEmojiDto>
+
+    @Multipart
+    @POST("api/v2/media")
+    suspend fun uploadMedia(
+        @Part file: MultipartBody.Part,
+        @Part("description") description: RequestBody? = null,
+    ): MediaAttachmentDto
+
+    @GET("api/v1/media/{id}")
+    suspend fun getMedia(@Path("id") id: String): MediaAttachmentDto
+
     @GET("api/v1/accounts/{id}")
     suspend fun getAccount(@Path("id") id: String): AccountDto
 
@@ -54,7 +77,39 @@ interface MastodonApi {
         @Path("id") id: String,
         @Query("limit") limit: Int = 20,
         @Query("exclude_reblogs") excludeReblogs: Boolean = false,
+        @Query("exclude_replies") excludeReplies: Boolean = false,
+        @Query("only_media") onlyMedia: Boolean = false,
+        @Query("pinned") pinned: Boolean = false,
+        @Query("max_id") maxId: String? = null,
     ): List<StatusDto>
+
+    @GET("api/v1/accounts/{id}/followers")
+    suspend fun getFollowers(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): List<AccountDto>
+
+    @GET("api/v1/accounts/{id}/following")
+    suspend fun getFollowing(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): List<AccountDto>
+
+    @GET("api/v1/accounts/relationships")
+    suspend fun getRelationships(@Query("id[]") ids: List<String>): List<RelationshipDto>
+
+    @POST("api/v1/accounts/{id}/follow") suspend fun follow(@Path("id") id: String): RelationshipDto
+    @POST("api/v1/accounts/{id}/unfollow") suspend fun unfollow(@Path("id") id: String): RelationshipDto
+    @FormUrlEncoded @POST("api/v1/accounts/{id}/mute") suspend fun mute(@Path("id") id: String, @Field("notifications") notifications: Boolean = true): RelationshipDto
+    @POST("api/v1/accounts/{id}/unmute") suspend fun unmute(@Path("id") id: String): RelationshipDto
+    @POST("api/v1/accounts/{id}/block") suspend fun block(@Path("id") id: String): RelationshipDto
+    @POST("api/v1/accounts/{id}/unblock") suspend fun unblock(@Path("id") id: String): RelationshipDto
+
+    @FormUrlEncoded
+    @POST("api/v1/reports")
+    suspend fun report(@Field("account_id") accountId: String, @Field("comment") comment: String, @Field("forward") forward: Boolean = false, @Field("category") category: String = "other"): ReportDto
+
+    @Multipart
+    @PATCH("api/v1/accounts/update_credentials")
+    suspend fun updateCredentials(
+        @PartMap fields: Map<String, @JvmSuppressWildcards RequestBody>,
+        @Part avatar: MultipartBody.Part? = null,
+        @Part header: MultipartBody.Part? = null,
+    ): AccountDto
 
     @GET("api/v1/timelines/home")
     suspend fun getHomeTimeline(
@@ -127,12 +182,26 @@ interface MastodonApi {
     @POST("api/v1/statuses/{id}/unreblog")
     suspend fun unreblog(@Path("id") id: String): StatusDto
 
+    @POST("api/v1/statuses/{id}/bookmark")
+    suspend fun bookmark(@Path("id") id: String): StatusDto
+
+    @POST("api/v1/statuses/{id}/unbookmark")
+    suspend fun unbookmark(@Path("id") id: String): StatusDto
+
     @FormUrlEncoded
     @POST("api/v1/statuses")
     suspend fun createStatus(
         @Header("Idempotency-Key") idempotencyKey: String,
         @Field("status") status: String,
         @Field("in_reply_to_id") inReplyToId: String? = null,
+        @Field("media_ids[]") mediaIds: List<String>? = null,
+        @Field("spoiler_text") spoilerText: String? = null,
+        @Field("sensitive") sensitive: Boolean = false,
+        @Field("visibility") visibility: String = "public",
+        @Field("language") language: String? = null,
+        @Field("poll[options][]") pollOptions: List<String>? = null,
+        @Field("poll[expires_in]") pollExpiresInSeconds: Long? = null,
+        @Field("poll[multiple]") pollMultiple: Boolean? = null,
     ): StatusDto
 
     @PUT("api/v1/statuses/{id}/emoji_reactions/{emoji}")

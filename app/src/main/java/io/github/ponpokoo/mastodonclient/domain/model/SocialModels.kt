@@ -14,6 +14,38 @@ data class UserProfile(
     val followingCount: Long,
     val statusesCount: Long,
     val statuses: List<TimelineStatus>,
+    val url: String = "",
+    val locked: Boolean = false,
+    val createdAt: String? = null,
+    val fields: List<ProfileField> = emptyList(),
+    val customEmojis: Map<String, String> = emptyMap(),
+    val pinnedStatuses: List<TimelineStatus> = emptyList(),
+    val nextMaxId: String? = null,
+    val endReached: Boolean = false,
+    val isOwnProfile: Boolean = false,
+)
+
+data class ProfileField(val name: String, val valueHtml: String, val verifiedAt: String?)
+
+data class AccountRelationship(
+    val following: Boolean = false,
+    val followedBy: Boolean = false,
+    val blocking: Boolean = false,
+    val blockedBy: Boolean = false,
+    val muting: Boolean = false,
+    val requested: Boolean = false,
+)
+
+enum class ProfileStatusTab { Posts, Replies, Media }
+
+data class ProfileEditRequest(
+    val displayName: String,
+    val note: String,
+    val locked: Boolean,
+    val discoverable: Boolean,
+    val fields: List<Pair<String, String>> = emptyList(),
+    val avatarFilePath: String? = null,
+    val headerFilePath: String? = null,
 )
 
 data class TimelineNotification(

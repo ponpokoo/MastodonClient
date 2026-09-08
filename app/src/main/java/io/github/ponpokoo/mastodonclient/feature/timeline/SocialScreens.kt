@@ -55,6 +55,12 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
+import androidx.compose.material3.Button
+import androidx.compose.material3.SecondaryTabRow
+import androidx.compose.material3.Tab
 
 @Composable
 internal fun SearchContent(
@@ -67,9 +73,11 @@ internal fun SearchContent(
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    preferences: AppPreferences = AppPreferences(),
 ) {
     Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
         OutlinedTextField(
@@ -113,7 +121,7 @@ internal fun SearchContent(
                         items(results.statuses, key = { it.timelineId }) { status ->
                             SocialStatus(
                                 status, onStatusClick, onOpenLink, onReply,
-                                onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
+                                onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
                             )
                         }
                     }
@@ -137,9 +145,11 @@ internal fun NotificationsContent(
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    preferences: AppPreferences,
 ) {
     when {
         state.isLoadingNotifications && state.notifications.isEmpty() -> LoadingContent(
@@ -165,7 +175,7 @@ internal fun NotificationsContent(
                     notification.status?.let { status ->
                         SocialStatus(
                             status, onStatusClick, onOpenLink, onReply,
-                            onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
+                            onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
                         )
                     } ?: run {
                         AccountResult(notification.account, onAccountClick)
@@ -200,9 +210,22 @@ internal fun ProfileContent(
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    preferences: AppPreferences = AppPreferences(),
+    relationship: AccountRelationship? = null,
+    selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
+    isLoadingMore: Boolean = false,
+    onSelectTab: (ProfileStatusTab) -> Unit = {},
+    onLoadMore: () -> Unit = {},
+    onFollowers: () -> Unit = {},
+    onFollowing: () -> Unit = {},
+    onHeaderClick: () -> Unit = {},
+    onAvatarClick: () -> Unit = {},
+    onEditProfile: () -> Unit = {},
+    onToggleFollow: () -> Unit = {},
 ) {
     val profile = state.profile
     when {
@@ -222,7 +245,7 @@ internal fun ProfileContent(
                 AsyncImage(
                     model = profile.headerUrl,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(128.dp)
+                    modifier = Modifier.fillMaxWidth().height(128.dp).clickable(onClick = onHeaderClick)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentScale = ContentScale.Crop,
                 )
@@ -230,34 +253,71 @@ internal fun ProfileContent(
                     AsyncImage(
                         model = profile.author.avatarUrl,
                         contentDescription = null,
-                        modifier = Modifier.size(72.dp).clip(CircleShape)
+                        modifier = Modifier.size(72.dp).clip(CircleShape).clickable(onClick = onAvatarClick)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentScale = ContentScale.Crop,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(profile.author.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    if (profile.customEmojis.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        profile.customEmojis.entries.take(8).forEach { (name, url) ->
+                            AsyncImage(url, name, Modifier.size(24.dp), contentScale = ContentScale.Fit)
+                        }
+                    }
                     Text("@${profile.author.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(
+                        onClick = if (profile.isOwnProfile) onEditProfile else onToggleFollow,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text(if (profile.isOwnProfile) "プロフィールを編集" else when {
+                            relationship?.requested == true -> "申請中"
+                            relationship?.following == true -> "フォロー中"
+                            profile.locked -> "フォロー申請"
+                            else -> "フォロー"
+                        })
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
                         ProfileCount("投稿", profile.statusesCount)
-                        ProfileCount("フォロー", profile.followingCount)
-                        ProfileCount("フォロワー", profile.followersCount)
+                        Box(Modifier.clickable(onClick = onFollowing)) { ProfileCount("フォロー", profile.followingCount) }
+                        Box(Modifier.clickable(onClick = onFollowers)) { ProfileCount("フォロワー", profile.followersCount) }
                     }
                     if (profile.noteHtml.isNotBlank()) {
                         StatusContentText(contentHtml = profile.noteHtml, onLinkClick = onOpenLink)
                     }
+                    profile.fields.forEach { field ->
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Text(field.name, Modifier.weight(0.35f), fontWeight = FontWeight.SemiBold)
+                            Column(Modifier.weight(0.65f)) {
+                                StatusContentText(field.valueHtml, onLinkClick = onOpenLink)
+                                if (field.verifiedAt != null) Text("✓ 認証済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
                 }
                 HorizontalDivider()
-                SectionTitle("投稿")
+                if (profile.pinnedStatuses.isNotEmpty()) SectionTitle("固定された投稿")
+            }
+            items(profile.pinnedStatuses, key = { "pinned-${it.timelineId}" }) { status ->
+                SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences)
+            }
+            item {
+                SecondaryTabRow(selectedTabIndex = selectedTab.ordinal) {
+                    listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
+                        Tab(selected = selectedTab.ordinal == index, onClick = { onSelectTab(ProfileStatusTab.entries[index]) }, text = { Text(label) })
+                    }
+                }
             }
             items(profile.statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
-                    onBoost, onFavourite, onReact, onAccountClick, onMediaClick,
+                    onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
                 )
             }
+            if (isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            else if (!profile.endReached) item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
         }
     }
 }
@@ -270,9 +330,11 @@ private fun SocialStatus(
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    preferences: AppPreferences,
 ) {
     StatusCard(
         status = status,
@@ -283,8 +345,12 @@ private fun SocialStatus(
         onReply = { onReply(status) },
         onBoost = { onBoost(status) },
         onFavourite = { onFavourite(status) },
+        onBookmark = { onBookmark(status) },
         onReact = { onReact(status, it) },
         onUnavailableAction = {},
+        displayPreferences = preferences.timelineDisplay,
+        gifAutoplay = preferences.gifAutoplay,
+        videoAutoplay = preferences.videoAutoplay,
     )
     HorizontalDivider()
 }

@@ -18,7 +18,8 @@ class DefaultInstanceRepository(
             title = dto.title,
             version = dto.version,
             maxCharacters = dto.configuration?.statuses?.maxCharacters ?: 500,
-            maxMediaAttachments = dto.configuration?.mediaAttachments?.maxAttachments ?: 4,
+            maxMediaAttachments = dto.configuration?.statuses?.maxMediaAttachments
+                ?: dto.configuration?.mediaAttachments?.maxAttachments ?: 4,
         )
     }
 }

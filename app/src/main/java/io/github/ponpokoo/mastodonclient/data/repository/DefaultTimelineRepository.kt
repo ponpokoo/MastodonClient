@@ -21,6 +21,15 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
+import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
+import io.github.ponpokoo.mastodonclient.domain.model.MediaUpload
+import io.github.ponpokoo.mastodonclient.domain.model.UploadedMedia
+import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileField
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.async
@@ -30,6 +39,12 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.delay
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
 
 class DefaultTimelineRepository(
     private val apiClientFactory: ApiClientFactory,
@@ -57,9 +72,10 @@ class DefaultTimelineRepository(
     override suspend fun getProfile(session: AccountSession, accountId: String): Result<UserProfile> = runCatching { coroutineScope {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val accountRequest = async { api.getAccount(accountId) }
-        val statusesRequest = async { api.getAccountStatuses(accountId) }
+        val statusesRequest = async { api.getAccountStatuses(accountId, excludeReplies = true) }
         val account = accountRequest.await()
         val statuses = statusesRequest.await().map(StatusDto::toDomain)
+        val pinned = runCatching { api.getAccountStatuses(accountId, pinned = true).map(StatusDto::toDomain) }.getOrDefault(emptyList())
         statuses.forEach { statusCache[it.statusId] = it }
         UserProfile(
             author = account.toDomain(),
@@ -69,8 +85,83 @@ class DefaultTimelineRepository(
             followingCount = account.followingCount,
             statusesCount = account.statusesCount,
             statuses = statuses,
+            url = account.url,
+            locked = account.locked,
+            createdAt = account.createdAt,
+            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
+            customEmojis = account.emojis.associate { it.shortcode to it.url },
+            pinnedStatuses = pinned,
+            nextMaxId = statuses.lastOrNull()?.statusId,
+            endReached = statuses.size < 20,
+            isOwnProfile = account.id == session.accountId,
         )
     } }
+
+    override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> = runCatching {
+        val response = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccountStatuses(
+            id = accountId,
+            excludeReplies = tab == ProfileStatusTab.Posts,
+            onlyMedia = tab == ProfileStatusTab.Media,
+            maxId = maxId,
+        )
+        val statuses = response.map(StatusDto::toDomain)
+        statuses.forEach { statusCache[it.statusId] = it }
+        TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
+    }
+
+    override suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String?) = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        (if (followers) api.getFollowers(accountId, maxId) else api.getFollowing(accountId, maxId)).map(AccountDto::toDomain)
+    }
+
+    override suspend fun getRelationship(session: AccountSession, accountId: String) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).getRelationships(listOf(accountId)).first().toDomain()
+    }
+
+    override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (following) it.follow(accountId) else it.unfollow(accountId) }.toDomain()
+    }
+
+    override suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (muted) it.mute(accountId) else it.unmute(accountId) }.toDomain()
+    }
+
+    override suspend fun setBlocked(session: AccountSession, accountId: String, blocked: Boolean) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (blocked) it.block(accountId) else it.unblock(accountId) }.toDomain()
+    }
+
+    override suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).report(accountId, comment, forward)
+        Unit
+    }
+
+    override suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> = runCatching {
+        val parts = linkedMapOf<String, okhttp3.RequestBody>()
+        fun add(key: String, value: String) { parts[key] = value.toRequestBody("text/plain".toMediaType()) }
+        add("display_name", request.displayName)
+        add("note", request.note)
+        add("locked", request.locked.toString())
+        add("discoverable", request.discoverable.toString())
+        request.fields.take(4).forEachIndexed { index, field ->
+            add("fields_attributes[$index][name]", field.first)
+            add("fields_attributes[$index][value]", field.second)
+        }
+        fun imagePart(name: String, path: String?): MultipartBody.Part? = path?.let { filePath ->
+            val file = File(filePath)
+            MultipartBody.Part.createFormData(name, file.name, file.asRequestBody("image/*".toMediaType()))
+        }
+        val account = apiClientFactory.create(session.instanceUrl, session.accessToken).updateCredentials(
+            parts, imagePart("avatar", request.avatarFilePath), imagePart("header", request.headerFilePath),
+        )
+        UserProfile(
+            author = account.toDomain(), headerUrl = account.header, noteHtml = account.note,
+            followersCount = account.followersCount, followingCount = account.followingCount,
+            statusesCount = account.statusesCount, statuses = emptyList(), url = account.url,
+            locked = account.locked, createdAt = account.createdAt,
+            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
+            customEmojis = account.emojis.associate { it.shortcode to it.url }, isOwnProfile = true,
+        )
+    }
 
     override suspend fun getNotifications(
         session: AccountSession,
@@ -229,12 +320,67 @@ class DefaultTimelineRepository(
     override suspend fun setReblogged(session: AccountSession, statusId: String, reblogged: Boolean) =
         updateStatus(session) { if (reblogged) reblog(statusId) else unreblog(statusId) }
 
+    override suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean) =
+        updateStatus(session) { if (bookmarked) bookmark(statusId) else unbookmark(statusId) }
+
     override suspend fun createStatus(
         session: AccountSession,
         text: String,
         replyToId: String?,
         idempotencyKey: String,
     ) = updateStatus(session) { createStatus(idempotencyKey, text, replyToId) }
+
+    override suspend fun createStatus(
+        session: AccountSession,
+        request: CreateStatusRequest,
+        idempotencyKey: String,
+    ) = updateStatus(session) {
+        createStatus(
+            idempotencyKey = idempotencyKey,
+            status = request.text,
+            inReplyToId = request.replyToId,
+            mediaIds = request.mediaIds.ifEmpty { null },
+            spoilerText = request.spoilerText.ifBlank { null },
+            sensitive = request.sensitive,
+            visibility = request.visibility,
+            language = request.language?.ifBlank { null },
+            pollOptions = request.pollOptions.ifEmpty { null },
+            pollExpiresInSeconds = request.pollExpiresInSeconds,
+            pollMultiple = request.pollMultiple.takeIf { request.pollOptions.isNotEmpty() },
+        )
+    }
+
+    override suspend fun getComposerConfiguration(session: AccountSession): Result<ComposerConfiguration> = runCatching {
+        val configuration = apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getInstance().configuration
+        ComposerConfiguration(
+            maxCharacters = configuration?.statuses?.maxCharacters ?: 500,
+            maxMediaAttachments = configuration?.statuses?.maxMediaAttachments ?: 4,
+            mediaDescriptionLimit = configuration?.mediaAttachments?.descriptionLimit ?: 1_500,
+            supportedMimeTypes = configuration?.mediaAttachments?.supportedMimeTypes.orEmpty().toSet(),
+        )
+    }
+
+    override suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).getCustomEmojis().map {
+            CustomEmoji(it.shortcode, it.url, it.staticUrl, it.category)
+        }
+    }
+
+    override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val body = File(upload.filePath).asRequestBody(upload.mimeType.toMediaType())
+        val file = MultipartBody.Part.createFormData("file", upload.fileName, body)
+        val description = upload.description?.takeIf(String::isNotBlank)
+            ?.toRequestBody("text/plain".toMediaType())
+        var media = api.uploadMedia(file, description)
+        for (attempt in 0 until 12) {
+            if (media.url != null) break
+            delay(500)
+            media = api.getMedia(media.id)
+        }
+        UploadedMedia(media.id, media.type, media.previewUrl ?: media.url, media.description)
+    }
 
     override suspend fun setFedibirdReaction(
         session: AccountSession,
@@ -281,6 +427,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
         favouritesCount = displayed.favouritesCount,
         favourited = displayed.favourited,
         reblogged = displayed.reblogged,
+        bookmarked = displayed.bookmarked,
         applicationName = displayed.application?.name,
         reactions = displayed.emojiReactions.orEmpty().map {
             EmojiReaction(
@@ -322,6 +469,11 @@ private fun AccountDto.toDomain() = StatusAuthor(
     displayName = displayName.ifBlank { username },
     accountName = acct,
     avatarUrl = avatar,
+)
+
+private fun io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto.toDomain() = AccountRelationship(
+    following = following, followedBy = followedBy, blocking = blocking, blockedBy = blockedBy,
+    muting = muting, requested = requested,
 )
 
 private fun NotificationDto.toDomain() = TimelineNotification(

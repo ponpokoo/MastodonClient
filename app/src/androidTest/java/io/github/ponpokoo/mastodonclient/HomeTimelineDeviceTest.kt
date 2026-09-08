@@ -29,6 +29,19 @@ class HomeTimelineDeviceTest {
             .isNotEmpty()
         assumeTrue("Device has no authenticated Mastodon session", isAuthenticated)
 
+        composeRule.onNodeWithContentDescription("アカウントを切り替える").performClick()
+        composeRule.onNodeWithText("アカウントを切り替える").assertExists()
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        composeRule.onNodeWithContentDescription("設定").performClick()
+        composeRule.onNodeWithText("設定を開く").performClick()
+        composeRule.onNodeWithTag("settings_screen").assertExists()
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+
         composeRule.onNodeWithTag("timeline_list").performTouchInput { swipeDown() }
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().isNotEmpty()
@@ -91,6 +104,8 @@ class HomeTimelineDeviceTest {
 
         composeRule.onNodeWithContentDescription("新規投稿").performClick()
         composeRule.onNodeWithTag("compose_post").assertExists()
+        composeRule.onNodeWithTag("compose_account_switcher").assertExists()
+        composeRule.onNodeWithTag("compose_visibility").assertExists()
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }

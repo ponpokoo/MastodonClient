@@ -27,9 +27,12 @@ data class InstanceConfigurationDto(
 @Serializable
 data class StatusConfigurationDto(
     @SerialName("max_characters") val maxCharacters: Int? = null,
+    @SerialName("max_media_attachments") val maxMediaAttachments: Int? = null,
 )
 
 @Serializable
 data class MediaConfigurationDto(
     @SerialName("max_attachments") val maxAttachments: Int? = null,
+    @SerialName("description_limit") val descriptionLimit: Int? = null,
+    @SerialName("supported_mime_types") val supportedMimeTypes: List<String> = emptyList(),
 )

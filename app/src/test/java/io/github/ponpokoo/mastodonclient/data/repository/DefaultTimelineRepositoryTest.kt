@@ -3,6 +3,7 @@ package io.github.ponpokoo.mastodonclient.data.repository
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -64,8 +65,10 @@ class DefaultTimelineRepositoryTest {
                     "/api/v1/accounts/me" -> MockResponse().setBody(
                         """{"id":"me","username":"alice","acct":"alice","display_name":"Alice","note":"<p>Bio</p>","followers_count":12,"following_count":8,"statuses_count":34}""",
                     )
-                    "/api/v1/accounts/me/statuses?limit=20&exclude_reblogs=false" ->
+                    "/api/v1/accounts/me/statuses?limit=20&exclude_reblogs=false&exclude_replies=true&only_media=false&pinned=false" ->
                         MockResponse().setBody("[${basicStatusJson("profile-status")}]" )
+                    "/api/v1/accounts/me/statuses?limit=20&exclude_reblogs=false&exclude_replies=false&only_media=false&pinned=true" ->
+                        MockResponse().setBody("[]")
                     else -> MockResponse().setResponseCode(404)
                 }
             }
@@ -262,6 +265,57 @@ class DefaultTimelineRepositoryTest {
             val body = request.body.readUtf8()
             assertEquals(true, body.contains("status=%E8%BF%94%E4%BF%A1%E3%81%A7%E3%81%99"))
             assertEquals(true, body.contains("in_reply_to_id=42"))
+        }
+    }
+
+    @Test
+    fun postsCompleteComposerRequest() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(basicStatusJson("100")))
+            val session = testSession(server)
+
+            DefaultTimelineRepository(ApiClientFactory()).createStatus(
+                session = session,
+                request = CreateStatusRequest(
+                    text = "本文",
+                    mediaIds = listOf("media-1"),
+                    spoilerText = "注意",
+                    sensitive = true,
+                    visibility = "private",
+                    language = "ja",
+                ),
+                idempotencyKey = "complete-key",
+            ).getOrThrow()
+
+            val request = server.takeRequest()
+            val body = request.body.readUtf8()
+            assertEquals("complete-key", request.getHeader("Idempotency-Key"))
+            assertEquals(true, body.contains("media_ids%5B%5D=media-1"))
+            assertEquals(true, body.contains("visibility=private"))
+            assertEquals(true, body.contains("sensitive=true"))
+            assertEquals(true, body.contains("language=ja"))
+        }
+    }
+
+    @Test
+    fun readsComposerLimitsAndCustomEmoji() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """{"configuration":{"statuses":{"max_characters":800,"max_media_attachments":6},"media_attachments":{"description_limit":1200,"supported_mime_types":["image/png"]}}}""",
+            ))
+            server.enqueue(MockResponse().setBody(
+                """[{"shortcode":"party","url":"https://cdn.example/party.gif","static_url":"https://cdn.example/party.png","category":"People"}]""",
+            ))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            val limits = repository.getComposerConfiguration(session).getOrThrow()
+            val emoji = repository.getCustomEmojis(session).getOrThrow().single()
+
+            assertEquals(800, limits.maxCharacters)
+            assertEquals(6, limits.maxMediaAttachments)
+            assertEquals(1200, limits.mediaDescriptionLimit)
+            assertEquals("party", emoji.shortcode)
         }
     }
 

@@ -6,5 +6,8 @@ interface AuthRepository {
     suspend fun createAuthorizationUrl(instanceUrl: String): Result<String>
     suspend fun completeAuthorization(callbackUrl: String): Result<AccountSession>
     suspend fun restoreSession(): AccountSession?
+    suspend fun getSessions(): List<AccountSession> = listOfNotNull(restoreSession())
+    suspend fun switchSession(sessionId: String): AccountSession? =
+        getSessions().firstOrNull { it.sessionId == sessionId }
     suspend fun logout()
 }

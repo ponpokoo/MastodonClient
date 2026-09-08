@@ -16,6 +16,7 @@ data class TimelineStatus(
     val favouritesCount: Long,
     val favourited: Boolean = false,
     val reblogged: Boolean = false,
+    val bookmarked: Boolean = false,
     val applicationName: String? = null,
     val reactions: List<EmojiReaction> = emptyList(),
     val supportsEmojiReactions: Boolean = false,

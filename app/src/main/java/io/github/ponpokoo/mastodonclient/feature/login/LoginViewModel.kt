@@ -25,14 +25,17 @@ data class LoginUiState(
 class LoginViewModel(
     private val instanceRepository: InstanceRepository,
     private val authRepository: AuthRepository,
+    private val restoreExistingSession: Boolean = true,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            authRepository.restoreSession()?.let { session ->
-                _uiState.update { it.copy(session = session) }
+        if (restoreExistingSession) {
+            viewModelScope.launch {
+                authRepository.restoreSession()?.let { session ->
+                    _uiState.update { it.copy(session = session) }
+                }
             }
         }
     }
@@ -108,9 +111,10 @@ class LoginViewModel(
     class Factory(
         private val instanceRepository: InstanceRepository,
         private val authRepository: AuthRepository,
+        private val restoreExistingSession: Boolean = true,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LoginViewModel(instanceRepository, authRepository) as T
+            LoginViewModel(instanceRepository, authRepository, restoreExistingSession) as T
     }
 }

@@ -14,6 +14,14 @@ import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
+import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
+import io.github.ponpokoo.mastodonclient.domain.model.MediaUpload
+import io.github.ponpokoo.mastodonclient.domain.model.UploadedMedia
+import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 
 interface TimelineRepository {
     fun getCachedStatus(statusId: String): TimelineStatus? = null
@@ -48,6 +56,23 @@ interface TimelineRepository {
     suspend fun getProfile(session: AccountSession, accountId: String = session.accountId): Result<UserProfile> =
         Result.failure(UnsupportedOperationException("プロフィールは未対応です"))
 
+    suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String? = null): Result<TimelinePage> =
+        Result.failure(UnsupportedOperationException("プロフィール投稿は未対応です"))
+    suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String? = null): Result<List<StatusAuthor>> =
+        Result.failure(UnsupportedOperationException("アカウント一覧は未対応です"))
+    suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> =
+        Result.failure(UnsupportedOperationException("フォロー関係は未対応です"))
+    suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> =
+        Result.failure(UnsupportedOperationException("フォロー操作は未対応です"))
+    suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean): Result<AccountRelationship> =
+        Result.failure(UnsupportedOperationException("ミュート操作は未対応です"))
+    suspend fun setBlocked(session: AccountSession, accountId: String, blocked: Boolean): Result<AccountRelationship> =
+        Result.failure(UnsupportedOperationException("ブロック操作は未対応です"))
+    suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean): Result<Unit> =
+        Result.failure(UnsupportedOperationException("通報は未対応です"))
+    suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> =
+        Result.failure(UnsupportedOperationException("プロフィール編集は未対応です"))
+
     suspend fun getNotifications(
         session: AccountSession,
         maxId: String? = null,
@@ -81,12 +106,30 @@ interface TimelineRepository {
     suspend fun setReblogged(session: AccountSession, statusId: String, reblogged: Boolean): Result<TimelineStatus> =
         Result.failure(UnsupportedOperationException("ブースト操作は未対応です"))
 
+    suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean): Result<TimelineStatus> =
+        Result.failure(UnsupportedOperationException("ブックマーク操作は未対応です"))
+
     suspend fun createStatus(
         session: AccountSession,
         text: String,
         replyToId: String? = null,
         idempotencyKey: String,
     ): Result<TimelineStatus> = Result.failure(UnsupportedOperationException("投稿は未対応です"))
+
+    suspend fun createStatus(
+        session: AccountSession,
+        request: CreateStatusRequest,
+        idempotencyKey: String,
+    ): Result<TimelineStatus> = createStatus(session, request.text, request.replyToId, idempotencyKey)
+
+    suspend fun getComposerConfiguration(session: AccountSession): Result<ComposerConfiguration> =
+        Result.success(ComposerConfiguration())
+
+    suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> =
+        Result.success(emptyList())
+
+    suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> =
+        Result.failure(UnsupportedOperationException("メディアアップロードは未対応です"))
 
     suspend fun setFedibirdReaction(
         session: AccountSession,

@@ -21,13 +21,15 @@ Use the four destinations shown in the official app:
 4. Profile
 
 The selected bottom-navigation item uses a rounded tonal indicator behind the icon. Keep labels
-visible. The profile item uses the current account avatar and exposes account switching without
-adding another permanent destination.
+visible. The profile item uses the current account avatar without adding another permanent
+destination.
 
-Home has a title/dropdown at the top left and server announcements plus settings at the top right. The dropdown contains Home,
-Local/real-time feeds, Lists, followed hashtags, and later any server-supported feeds. Local and
-federated timelines therefore remain MVP features without occupying separate bottom-navigation
-slots.
+Home has a title/dropdown at the top left, an explicit account switcher in the top bar, and server
+announcements plus settings at the top right. The account switcher shows the active account avatar
+and full account address before selection. Switching it changes the browsing session used by Home,
+Explore, Notifications, and Profile. The timeline dropdown contains Home, Local/real-time feeds,
+Lists, followed hashtags, and later any server-supported feeds. Local and federated timelines
+therefore remain MVP features without occupying separate bottom-navigation slots.
 
 A rounded compose floating action button sits above the bottom navigation at the lower right. It
 must not cover the final status action row or system navigation inset.
@@ -38,8 +40,7 @@ must not cover the final status action row or system navigation inset.
   composition rather than card-heavy default styling.
 - Use neutral page surfaces, thin separators, rounded pills/sheets, and purple as the primary accent.
   Use Mastodon purple `#6364FF` as the non-dynamic fallback.
-- Support System, Light, and Dark themes. Dynamic color is an optional user setting; it is never the
-  only way to distinguish state.
+- Support System, Light, and Dark themes. Dynamic Color is not exposed as a setting.
 - Dark mode uses a near-black page surface, a slightly lifted bottom bar/menu surface, subdued
   dividers, and pale purple selected states.
 - Use edge-to-edge drawing with correct status/navigation bar insets.

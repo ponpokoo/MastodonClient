@@ -7,6 +7,9 @@ sealed interface Route {
     data object Login : Route
 
     @Serializable
+    data object AddAccount : Route
+
+    @Serializable
     data object Timeline : Route
 
     @Serializable
@@ -14,6 +17,9 @@ sealed interface Route {
 
     @Serializable
     data class ComposePost(val replyToId: String? = null) : Route
+
+    @Serializable
+    data object Settings : Route
 
     @Serializable
     data class WebPage(val url: String) : Route

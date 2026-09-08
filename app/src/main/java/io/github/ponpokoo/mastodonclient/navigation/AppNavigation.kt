@@ -1,6 +1,8 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -8,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,6 +39,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
+import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import kotlinx.coroutines.launch
 
@@ -92,9 +96,32 @@ fun AppNavigation() {
                 }
             }
         }
+        composable<Route.AddAccount> {
+            val loginViewModel: LoginViewModel = viewModel(
+                factory = LoginViewModel.Factory(
+                    DefaultInstanceRepository(apiClientFactory),
+                    authRepository,
+                    restoreExistingSession = false,
+                ),
+            )
+            InstanceLoginScreen(loginViewModel) {
+                navController.navigate(Route.Timeline) {
+                    popUpTo(Route.Timeline) { inclusive = true }
+                }
+            }
+        }
         composable<Route.Timeline> {
             val timelineViewModel: TimelineViewModel = viewModel(
-                factory = TimelineViewModel.Factory(timelineRepository, authRepository),
+                factory = TimelineViewModel.Factory(
+                    timelineRepository,
+                    authRepository,
+                    preferences,
+                    networkIsWifi = {
+                        val manager = context.getSystemService(ConnectivityManager::class.java)
+                        manager.getNetworkCapabilities(manager.activeNetwork)
+                            ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                    },
+                ),
             )
             HomeTimelineScreen(
                 viewModel = timelineViewModel,
@@ -116,6 +143,8 @@ fun AppNavigation() {
                     navController.navigate(Route.AccountProfile(accountId)) { launchSingleTop = true }
                 },
                 onMediaClick = openMedia,
+                onSettings = { navController.navigate(Route.Settings) },
+                onAddAccount = { navController.navigate(Route.AddAccount) },
             )
         }
         composable<Route.StatusDetail> { backStackEntry ->
@@ -143,6 +172,10 @@ fun AppNavigation() {
                     route.replyToId,
                     timelineRepository,
                     authRepository,
+                    preferences,
+                    deleteDraftFile = { uri ->
+                        uri.toUri().path?.let { java.io.File(it).delete() }
+                    },
                 ),
             )
             ComposePostScreen(
@@ -150,6 +183,16 @@ fun AppNavigation() {
                 isReply = route.replyToId != null,
                 onClose = { navController.popBackStack() },
                 onPosted = { navController.popBackStack() },
+            )
+        }
+        composable<Route.Settings> {
+            val activeSession by produceState<io.github.ponpokoo.mastodonclient.domain.model.AccountSession?>(null) {
+                value = authRepository.restoreSession()
+            }
+            SettingsScreen(
+                store = preferences,
+                activeSession = activeSession,
+                onBack = { navController.popBackStack() },
             )
         }
         composable<Route.WebPage> { backStackEntry ->

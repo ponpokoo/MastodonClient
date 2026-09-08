@@ -1,6 +1,11 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
 import android.content.Intent
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Uri
+import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -30,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
@@ -37,6 +43,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -44,6 +51,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -68,6 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,14 +95,28 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
+import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
+import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
+import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
+import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
+import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
+import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -124,6 +147,8 @@ fun HomeTimelineScreen(
     onOpenLinksInAppChange: (Boolean) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    onSettings: () -> Unit,
+    onAddAccount: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -132,6 +157,19 @@ fun HomeTimelineScreen(
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
     val destination = destinations[pagerState.currentPage]
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.setForeground(true)
+                Lifecycle.Event.ON_STOP -> viewModel.setForeground(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LaunchedEffect(state.requiresLogin) {
         if (state.requiresLogin) onLoggedOut()
@@ -165,8 +203,11 @@ fun HomeTimelineScreen(
                     onFeedSelected = viewModel::selectFeed,
                     onAnnouncements = viewModel::showAnnouncements,
                     onLogout = viewModel::logout,
-                    openLinksInApp = openLinksInApp,
-                    onOpenLinksInAppChange = onOpenLinksInAppChange,
+                    activeSession = state.session,
+                    sessions = state.sessions,
+                    onAccountSelected = viewModel::switchAccount,
+                    onAddAccount = onAddAccount,
+                    onSettings = onSettings,
                 )
             } else {
                 TopAppBar(title = { Text(destination.label) })
@@ -235,10 +276,12 @@ fun HomeTimelineScreen(
                     onReply = { onCompose(it.statusId) },
                     onBoost = viewModel::toggleReblog,
                     onFavourite = viewModel::toggleFavourite,
+                    onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
                     onUnavailableAction = { label ->
                         scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
                     },
+                    preferences = state.preferences,
                 )
                 MainDestination.Explore -> SearchContent(
                     state = state,
@@ -250,9 +293,11 @@ fun HomeTimelineScreen(
                     onReply = { onCompose(it.statusId) },
                     onBoost = viewModel::toggleReblog,
                     onFavourite = viewModel::toggleFavourite,
+                    onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
+                    preferences = state.preferences,
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = state,
@@ -264,9 +309,11 @@ fun HomeTimelineScreen(
                     onReply = { onCompose(it.statusId) },
                     onBoost = viewModel::toggleReblog,
                     onFavourite = viewModel::toggleFavourite,
+                    onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
+                    preferences = state.preferences,
                 )
                 MainDestination.Profile -> ProfileContent(
                     state = state,
@@ -277,9 +324,11 @@ fun HomeTimelineScreen(
                     onReply = { onCompose(it.statusId) },
                     onBoost = viewModel::toggleReblog,
                     onFavourite = viewModel::toggleFavourite,
+                    onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
+                    preferences = state.preferences,
                 )
             }
         }
@@ -304,11 +353,15 @@ private fun TimelineTopBar(
     onFeedSelected: (TimelineFeed) -> Unit,
     onAnnouncements: () -> Unit,
     onLogout: () -> Unit,
-    openLinksInApp: Boolean,
-    onOpenLinksInAppChange: (Boolean) -> Unit,
+    activeSession: AccountSession?,
+    sessions: List<AccountSession>,
+    onAccountSelected: (String) -> Unit,
+    onAddAccount: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var settingsMenuOpen by remember { mutableStateOf(false) }
+    var accountSheetOpen by remember { mutableStateOf(false) }
 
     TopAppBar(
         title = {
@@ -348,6 +401,15 @@ private fun TimelineTopBar(
             }
         },
         actions = {
+            IconButton(onClick = { accountSheetOpen = true }) {
+                AsyncImage(
+                    model = activeSession?.avatarUrl,
+                    contentDescription = "アカウントを切り替える",
+                    modifier = Modifier.size(30.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentScale = ContentScale.Crop,
+                )
+            }
             IconButton(onClick = onAnnouncements) {
                 Icon(
                     Icons.Outlined.Campaign,
@@ -364,12 +426,10 @@ private fun TimelineTopBar(
                     onDismissRequest = { settingsMenuOpen = false },
                 ) {
                     DropdownMenuItem(
-                        text = {
-                            Text(if (openLinksInApp) "リンク: アプリ内で開く" else "リンク: 外部ブラウザで開く")
-                        },
+                        text = { Text("設定を開く") },
                         onClick = {
                             settingsMenuOpen = false
-                            onOpenLinksInAppChange(!openLinksInApp)
+                            onSettings()
                         },
                     )
                     DropdownMenuItem(
@@ -383,6 +443,57 @@ private fun TimelineTopBar(
             }
         },
     )
+
+    if (accountSheetOpen) {
+        ModalBottomSheet(onDismissRequest = { accountSheetOpen = false }) {
+            Text(
+                "アカウントを切り替える",
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            sessions.forEach { session ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        accountSheetOpen = false
+                        onAccountSelected(session.sessionId)
+                    }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(
+                        model = session.avatarUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(42.dp).clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(session.displayName.ifBlank { session.username }, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (session.sessionId == activeSession?.sessionId) {
+                        Text("選択中", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    accountSheetOpen = false
+                    onAddAccount()
+                }.padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                Spacer(Modifier.width(12.dp))
+                Text("アカウントを追加")
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
 }
 
 @Composable
@@ -458,8 +569,10 @@ private fun TimelineContent(
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onUnavailableAction: (String) -> Unit,
+    preferences: AppPreferences,
 ) {
     LaunchedEffect(listState, state.statuses.size, state.nextMaxId) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
@@ -508,8 +621,12 @@ private fun TimelineContent(
                         onReply = { onReply(status) },
                         onBoost = { onBoost(status) },
                         onFavourite = { onFavourite(status) },
+                        onBookmark = { onBookmark(status) },
                         onReact = { emoji -> onReact(status, emoji) },
                         onUnavailableAction = onUnavailableAction,
+                        displayPreferences = preferences.timelineDisplay,
+                        gifAutoplay = preferences.gifAutoplay,
+                        videoAutoplay = preferences.videoAutoplay,
                     )
                     HorizontalDivider()
                 }
@@ -548,8 +665,12 @@ internal fun StatusCard(
     onReply: () -> Unit = {},
     onBoost: () -> Unit = {},
     onFavourite: () -> Unit = {},
+    onBookmark: () -> Unit = {},
     onReact: ((String?) -> Unit)? = null,
     onUnavailableAction: (String) -> Unit,
+    displayPreferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
+    gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
+    videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
 ) {
     var contentExpanded by rememberSaveable(status.statusId) {
         mutableStateOf(status.spoilerText.isBlank())
@@ -627,7 +748,10 @@ internal fun StatusCard(
                 StatusContentText(
                     contentHtml = status.contentHtml,
                     modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 8.dp else 0.dp),
-                    style = MaterialTheme.typography.bodyLarge.copy(lineHeight = MaterialTheme.typography.bodyLarge.lineHeight),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = displayPreferences.fontSize.spValue(),
+                        lineHeight = displayPreferences.lineHeightSp().sp,
+                    ),
                     onLinkClick = onOpenLink,
                     onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
                 )
@@ -635,7 +759,13 @@ internal fun StatusCard(
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
                 Spacer(Modifier.height(8.dp))
                 if (mediaRevealed) {
-                    MediaGrid(status.mediaAttachments, onMediaClick)
+                    MediaGrid(
+                        status.mediaAttachments,
+                        onMediaClick,
+                        displayPreferences.thumbnailSize,
+                        gifAutoplay,
+                        videoAutoplay,
+                    )
                 } else {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(144.dp)
@@ -651,7 +781,11 @@ internal fun StatusCard(
             }
             status.previewCard?.let { card ->
                 Spacer(Modifier.height(8.dp))
-                PreviewCardView(card = card, onClick = { onOpenLink(card.url) })
+                PreviewCardView(
+                    card = card,
+                    thumbnailSize = displayPreferences.thumbnailSize,
+                    onClick = { onOpenLink(card.url) },
+                )
             }
             if (status.reactions.isNotEmpty()) {
                 Row(
@@ -719,6 +853,8 @@ internal fun StatusCard(
                         )
                     }
                 },
+                onBookmark = onBookmark,
+                preferences = displayPreferences,
             )
         }
     }
@@ -756,7 +892,11 @@ internal fun StatusCard(
 private fun MediaGrid(
     attachments: List<MediaAttachment>,
     onMediaClick: ((MediaAttachment) -> Unit)?,
+    thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
+    gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
+    videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
 ) {
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         attachments.take(4).chunked(2).forEach { rowItems ->
             Row(
@@ -766,7 +906,13 @@ private fun MediaGrid(
                 rowItems.forEach { media ->
                     Box(
                         modifier = Modifier.weight(1f)
-                            .aspectRatio(if (attachments.size == 1) 1.6f else 1f)
+                            .aspectRatio(
+                                if (attachments.size == 1) when (thumbnailSize) {
+                                    ThumbnailSize.Compact -> 2.1f
+                                    ThumbnailSize.Standard -> 1.6f
+                                    ThumbnailSize.Large -> 1.2f
+                                } else 1f,
+                            )
                             .clip(RoundedCornerShape(8.dp))
                             .testTag("media_attachment")
                             .then(
@@ -777,13 +923,22 @@ private fun MediaGrid(
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center,
                     ) {
-                        AsyncImage(
-                            model = media.previewUrl ?: media.url,
-                            contentDescription = media.description ?: "添付メディア",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                        if (media.type == "video" || media.type == "gifv") {
+                        val autoplay = when (media.type) {
+                            "gifv" -> shouldAutoplay(context, gifAutoplay)
+                            "video" -> shouldAutoplay(context, videoAutoplay)
+                            else -> false
+                        }
+                        if (autoplay && media.url != null) {
+                            InlineVideo(media.url, loop = media.type == "gifv")
+                        } else {
+                            AsyncImage(
+                                model = media.previewUrl ?: media.url,
+                                contentDescription = media.description ?: "添付メディア",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                        if (!autoplay && (media.type == "video" || media.type == "gifv")) {
                             Icon(
                                 Icons.Outlined.PlayCircle,
                                 contentDescription = "動画",
@@ -800,7 +955,11 @@ private fun MediaGrid(
 }
 
 @Composable
-private fun PreviewCardView(card: PreviewCard, onClick: () -> Unit) {
+private fun PreviewCardView(
+    card: PreviewCard,
+    thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
+    onClick: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -811,7 +970,19 @@ private fun PreviewCardView(card: PreviewCard, onClick: () -> Unit) {
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = null,
-                    modifier = Modifier.width(96.dp).height(88.dp),
+                    modifier = Modifier.width(
+                        when (thumbnailSize) {
+                            ThumbnailSize.Compact -> 72.dp
+                            ThumbnailSize.Standard -> 96.dp
+                            ThumbnailSize.Large -> 128.dp
+                        },
+                    ).height(
+                        when (thumbnailSize) {
+                            ThumbnailSize.Compact -> 68.dp
+                            ThumbnailSize.Standard -> 88.dp
+                            ThumbnailSize.Large -> 108.dp
+                        },
+                    ),
                     contentScale = ContentScale.Crop,
                 )
             }
@@ -840,6 +1011,38 @@ private fun PreviewCardView(card: PreviewCard, onClick: () -> Unit) {
 }
 
 @Composable
+private fun InlineVideo(url: String, loop: Boolean) {
+    var videoView by remember { mutableStateOf<VideoView?>(null) }
+    DisposableEffect(url) {
+        onDispose { videoView?.stopPlayback() }
+    }
+    AndroidView(
+        factory = { context ->
+            VideoView(context).also { view ->
+                view.setVideoURI(Uri.parse(url))
+                view.setOnPreparedListener { player ->
+                    player.isLooping = loop
+                    player.setVolume(0f, 0f)
+                    view.start()
+                }
+                videoView = view
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+private fun shouldAutoplay(context: Context, policy: AutoplayPolicy): Boolean = when (policy) {
+    AutoplayPolicy.Always -> true
+    AutoplayPolicy.Never -> false
+    AutoplayPolicy.WifiOnly -> {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork)
+        capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
+}
+
+@Composable
 private fun StatusActionRow(
     status: TimelineStatus,
     onReply: () -> Unit,
@@ -847,44 +1050,79 @@ private fun StatusActionRow(
     onFavourite: () -> Unit,
     onReaction: (() -> Unit)?,
     onShare: () -> Unit,
+    onBookmark: () -> Unit = {},
+    preferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        StatusAction(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, onReply)
-        StatusAction(Icons.Outlined.Repeat, "ブースト", status.boostsCount, onBoost)
-        StatusAction(
-            if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-            "お気に入り",
-            status.favouritesCount,
-            onFavourite,
-        )
-        if (onReaction != null && status.supportsEmojiReactions) {
-            StatusAction(Icons.Outlined.SentimentSatisfiedAlt, "リアクション", null, onReaction)
+        preferences.actionOrder.filterNot { it in preferences.hiddenActions }.forEach { action ->
+            when (action) {
+                StatusAction.Reply -> StatusActionButton(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, preferences, onReply)
+                StatusAction.Boost -> StatusActionButton(Icons.Outlined.Repeat, "ブースト", status.boostsCount, preferences, onBoost)
+                StatusAction.Favourite -> StatusActionButton(
+                    if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    "お気に入り", status.favouritesCount, preferences, onFavourite,
+                )
+                StatusAction.Reaction -> if (onReaction != null && status.supportsEmojiReactions) {
+                    StatusActionButton(Icons.Outlined.SentimentSatisfiedAlt, "リアクション", null, preferences, onReaction)
+                }
+                StatusAction.Share -> StatusActionButton(Icons.Outlined.Share, "共有", null, preferences, onShare)
+                StatusAction.Bookmark -> StatusActionButton(
+                    if (status.bookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                    "ブックマーク", null, preferences, onBookmark,
+                )
+            }
         }
-        StatusAction(Icons.Outlined.Share, "共有", null, onShare)
     }
 }
 
 @Composable
-private fun StatusAction(
+private fun StatusActionButton(
     icon: ImageVector,
     label: String,
     count: Long?,
+    preferences: TimelineDisplayPreferences,
     onClick: () -> Unit,
 ) {
+    val iconSize = when (preferences.actionIconSize) {
+        ActionIconSize.Small -> 18.dp
+        ActionIconSize.Standard -> 21.dp
+        ActionIconSize.Large -> 24.dp
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp))
+        IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize))
         }
-        if (count != null && count > 0) {
+        if (preferences.showCounts && count != null && count > 0) {
             Text(
                 compactCount(count),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+private fun FontSizePreset.spValue() = when (this) {
+    FontSizePreset.Small -> 14.sp
+    FontSizePreset.Standard -> 16.sp
+    FontSizePreset.Large -> 18.sp
+    FontSizePreset.ExtraLarge -> 20.sp
+}
+
+private fun TimelineDisplayPreferences.lineHeightSp(): Int {
+    val base = when (fontSize) {
+        FontSizePreset.Small -> 18
+        FontSizePreset.Standard -> 22
+        FontSizePreset.Large -> 26
+        FontSizePreset.ExtraLarge -> 30
+    }
+    return when (lineSpacing) {
+        LineSpacingPreset.Compact -> base - 2
+        LineSpacingPreset.Standard -> base
+        LineSpacingPreset.Relaxed -> base + 4
     }
 }
 
