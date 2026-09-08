@@ -9,12 +9,19 @@ data class InstanceDto(
     val title: String? = null,
     val version: String? = null,
     val configuration: InstanceConfigurationDto? = null,
+    val urls: InstanceUrlsDto? = null,
+)
+
+@Serializable
+data class InstanceUrlsDto(
+    val streaming: String? = null,
 )
 
 @Serializable
 data class InstanceConfigurationDto(
     val statuses: StatusConfigurationDto? = null,
     @SerialName("media_attachments") val mediaAttachments: MediaConfigurationDto? = null,
+    val urls: InstanceUrlsDto? = null,
 )
 
 @Serializable

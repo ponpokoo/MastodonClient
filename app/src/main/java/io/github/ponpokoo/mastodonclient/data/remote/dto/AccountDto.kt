@@ -11,4 +11,9 @@ data class AccountDto(
     @SerialName("display_name") val displayName: String = "",
     val avatar: String = "",
     val url: String = "",
+    val header: String = "",
+    val note: String = "",
+    @SerialName("followers_count") val followersCount: Long = 0,
+    @SerialName("following_count") val followingCount: Long = 0,
+    @SerialName("statuses_count") val statusesCount: Long = 0,
 )

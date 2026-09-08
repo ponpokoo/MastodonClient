@@ -16,13 +16,14 @@ class DefaultAuthRepository(
 ) : AuthRepository {
     override suspend fun createAuthorizationUrl(instanceUrl: String): Result<String> = runCatching {
         val api = apiClientFactory.create(instanceUrl)
-        val application = authStore.findApplication(instanceUrl) ?: api.createApplication(
+        val storedApplication = authStore.findApplication(instanceUrl)
+        val application = storedApplication?.takeIf { it.scopes == SCOPES } ?: api.createApplication(
             clientName = CLIENT_NAME,
             redirectUris = REDIRECT_URI,
             scopes = SCOPES,
             website = WEBSITE,
         ).let {
-            RegisteredApplication(instanceUrl, it.clientId, it.clientSecret)
+            RegisteredApplication(instanceUrl, it.clientId, it.clientSecret, SCOPES)
         }.also { authStore.saveApplication(it) }
 
         val pkce = PkceGenerator.generate()
@@ -94,7 +95,7 @@ class DefaultAuthRepository(
     companion object {
         const val REDIRECT_SCHEME = "io.github.ponpokoo.mastodonclient"
         const val REDIRECT_URI = "$REDIRECT_SCHEME://oauth/callback"
-        const val SCOPES = "read:accounts read:statuses"
+        const val SCOPES = "read write:statuses write:favourites"
         private const val CLIENT_NAME = "Mastodon Client for Android"
         private const val WEBSITE = "https://github.com/ponpokoo/MastodonClient"
     }

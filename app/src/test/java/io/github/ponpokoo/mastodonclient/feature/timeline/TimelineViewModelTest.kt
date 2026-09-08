@@ -52,6 +52,19 @@ class TimelineViewModelTest {
         )
     }
 
+    @Test
+    fun refreshReportsHowManyNewStatusesWereFetched() = runTest(dispatcher) {
+        val repository = FakeTimelineRepository()
+        val viewModel = TimelineViewModel(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertEquals(1, viewModel.uiState.value.refreshNewStatusCount)
+        assertEquals(listOf("new"), viewModel.uiState.value.statuses.map { it.timelineId })
+    }
+
     private class FakeTimelineRepository : TimelineRepository {
         val requestedMaxIds = mutableListOf<String?>()
 
@@ -62,7 +75,8 @@ class TimelineViewModelTest {
         ): Result<TimelinePage> {
             requestedMaxIds += maxId
             return if (maxId == null) {
-                Result.success(TimelinePage(listOf(status("first")), "first", endReached = false))
+                val id = if (requestedMaxIds.count { it == null } == 1) "first" else "new"
+                Result.success(TimelinePage(listOf(status(id)), id, endReached = false))
             } else {
                 Result.success(TimelinePage(listOf(status("second")), "second", endReached = true))
             }

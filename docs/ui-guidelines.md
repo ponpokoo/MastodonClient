@@ -24,7 +24,7 @@ The selected bottom-navigation item uses a rounded tonal indicator behind the ic
 visible. The profile item uses the current account avatar and exposes account switching without
 adding another permanent destination.
 
-Home has a title/dropdown at the top left and settings at the top right. The dropdown contains Home,
+Home has a title/dropdown at the top left and server announcements plus settings at the top right. The dropdown contains Home,
 Local/real-time feeds, Lists, followed hashtags, and later any server-supported feeds. Local and
 federated timelines therefore remain MVP features without occupying separate bottom-navigation
 slots.
@@ -50,12 +50,12 @@ must not cover the final status action row or system navigation inset.
 
 Each status is one continuous row separated by a thin divider, not an elevated card:
 
-1. Avatar and identity row: circular avatar, display name, relative time, full account address, and
-   overflow menu.
+1. Avatar and identity row: circular avatar, display name, right-aligned relative time, and full
+   account address. Do not show a permanent post overflow menu in the timeline row.
 2. Optional context row: boosted-by, reply-to, pinned, or notification context.
 3. Content: body text, content warning control, link preview, poll, and media/ALT presentation.
-4. Action row: reply, boost, favorite, and share by default. Bookmark and other actions remain in
-   overflow unless enabled for the row.
+4. Action row: reply, boost, favorite, and share by default. Keep the visual icons compact and place
+   the row close to the lower divider while retaining accessible touch targets.
 
 Recommended baseline dimensions:
 

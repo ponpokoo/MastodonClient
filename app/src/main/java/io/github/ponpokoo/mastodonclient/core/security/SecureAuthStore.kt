@@ -19,6 +19,7 @@ data class RegisteredApplication(
     val instanceUrl: String,
     val clientId: String,
     val clientSecret: String,
+    val scopes: String = "read",
 )
 
 @Serializable

@@ -14,7 +14,31 @@ data class TimelineStatus(
     val repliesCount: Long,
     val boostsCount: Long,
     val favouritesCount: Long,
+    val favourited: Boolean = false,
+    val reblogged: Boolean = false,
+    val applicationName: String? = null,
+    val reactions: List<EmojiReaction> = emptyList(),
+    val supportsEmojiReactions: Boolean = false,
+    val previewCard: PreviewCard? = null,
     val mediaAttachments: List<MediaAttachment>,
+)
+
+data class PreviewCard(
+    val url: String,
+    val title: String,
+    val description: String,
+    val type: String,
+    val byline: String,
+    val imageUrl: String?,
+    val aspectRatio: Float?,
+)
+
+data class EmojiReaction(
+    val name: String,
+    val count: Long,
+    val reactedByMe: Boolean,
+    val imageUrl: String?,
+    val accountIds: Set<String>,
 )
 
 data class StatusAuthor(
@@ -36,4 +60,18 @@ data class TimelinePage(
     val statuses: List<TimelineStatus>,
     val nextMaxId: String?,
     val endReached: Boolean,
+)
+
+data class StatusDetail(
+    val status: TimelineStatus,
+    val ancestors: List<TimelineStatus>,
+    val descendants: List<TimelineStatus>,
+)
+
+data class ServerAnnouncement(
+    val id: String,
+    val contentHtml: String,
+    val publishedAt: String?,
+    val updatedAt: String?,
+    val read: Boolean,
 )
