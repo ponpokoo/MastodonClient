@@ -73,9 +73,18 @@ class DefaultTimelineRepository(
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val accountRequest = async { api.getAccount(accountId) }
         val statusesRequest = async { api.getAccountStatuses(accountId, excludeReplies = true) }
+        val pinnedRequest = async {
+            try {
+                api.getAccountStatuses(accountId, pinned = true).map(StatusDto::toDomain)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
         val account = accountRequest.await()
         val statuses = statusesRequest.await().map(StatusDto::toDomain)
-        val pinned = runCatching { api.getAccountStatuses(accountId, pinned = true).map(StatusDto::toDomain) }.getOrDefault(emptyList())
+        val pinned = pinnedRequest.await()
         statuses.forEach { statusCache[it.statusId] = it }
         UserProfile(
             author = account.toDomain(),

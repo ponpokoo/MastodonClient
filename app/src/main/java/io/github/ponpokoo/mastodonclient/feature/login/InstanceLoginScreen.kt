@@ -2,6 +2,10 @@ package io.github.ponpokoo.mastodonclient.feature.login
 
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.net.toUri
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -62,7 +66,8 @@ fun InstanceLoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(24.dp),
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.Center,
         ) {
             state.session?.let { session ->
@@ -88,6 +93,7 @@ fun InstanceLoginScreen(
                 onValueChange = viewModel::onInstanceChanged,
                 modifier = Modifier.fillMaxWidth().testTag("instance_input"),
                 label = { Text("インスタンスのドメイン") },
+                shape = RoundedCornerShape(16.dp),
                 singleLine = true,
                 enabled = !state.isLoading,
                 isError = state.errorMessage != null,
@@ -96,7 +102,7 @@ fun InstanceLoginScreen(
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = viewModel::discover,
-                modifier = Modifier.fillMaxWidth().testTag("discover_button"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("discover_button"),
                 enabled = state.instanceInput.isNotBlank() && !state.isLoading,
             ) {
                 if (state.isLoading) {

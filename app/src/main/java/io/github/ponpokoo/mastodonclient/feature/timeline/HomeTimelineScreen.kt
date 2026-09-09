@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -113,6 +114,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPrefere
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
+import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
@@ -148,7 +150,9 @@ fun HomeTimelineScreen(
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     onSettings: () -> Unit,
-    onAddAccount: () -> Unit,
+    onEditProfile: (String) -> Unit,
+    onFollowers: (String) -> Unit,
+    onFollowing: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -156,6 +160,9 @@ fun HomeTimelineScreen(
     val destinations = MainDestination.entries
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
+    val notificationListState = rememberLazyListState()
+    val profileListState = rememberLazyListState()
+    var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -206,7 +213,6 @@ fun HomeTimelineScreen(
                     activeSession = state.session,
                     sessions = state.sessions,
                     onAccountSelected = viewModel::switchAccount,
-                    onAddAccount = onAddAccount,
                     onSettings = onSettings,
                 )
             } else {
@@ -214,7 +220,7 @@ fun HomeTimelineScreen(
             }
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
                 MainDestination.entries.forEach { item ->
                     val page = destinations.indexOf(item)
                     NavigationBarItem(
@@ -222,8 +228,13 @@ fun HomeTimelineScreen(
                         selected = destination == item,
                         onClick = {
                             scope.launch {
-                                if (pagerState.currentPage == page && item == MainDestination.Home) {
-                                    timelineListState.animateScrollToItem(0)
+                                if (pagerState.currentPage == page) {
+                                    when (item) {
+                                        MainDestination.Home -> timelineListState.animateScrollToItem(0)
+                                        MainDestination.Notifications -> notificationListState.animateScrollToItem(0)
+                                        MainDestination.Profile -> profileListState.animateScrollToItem(0)
+                                        MainDestination.Explore -> Unit
+                                    }
                                 } else {
                                     pagerState.animateScrollToPage(page)
                                 }
@@ -249,6 +260,8 @@ fun HomeTimelineScreen(
             if (destination == MainDestination.Home) {
                 FloatingActionButton(
                     onClick = { onCompose(null) },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(20.dp),
                 ) {
                     Icon(Icons.Outlined.Edit, contentDescription = "新規投稿")
                 }
@@ -322,6 +335,9 @@ fun HomeTimelineScreen(
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = state.preferences,
+                    listState = notificationListState,
+                    selectedFilter = notificationFilter,
+                    onSelectFilter = { notificationFilter = it },
                 )
                 MainDestination.Profile -> ProfileContent(
                     state = state,
@@ -341,6 +357,20 @@ fun HomeTimelineScreen(
                     isLoadingMore = state.isLoadingMoreProfile,
                     onSelectTab = viewModel::selectProfileTab,
                     onLoadMore = viewModel::loadMoreProfile,
+                    onFollowers = { state.profile?.author?.id?.let(onFollowers) },
+                    onFollowing = { state.profile?.author?.id?.let(onFollowing) },
+                    onHeaderClick = {
+                        state.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
+                            onMediaClick(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像"))
+                        }
+                    },
+                    onAvatarClick = {
+                        state.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
+                            onMediaClick(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像"))
+                        }
+                    },
+                    onEditProfile = { state.profile?.author?.id?.let(onEditProfile) },
+                    listState = profileListState,
                 )
             }
         }
@@ -368,7 +398,6 @@ private fun TimelineTopBar(
     activeSession: AccountSession?,
     sessions: List<AccountSession>,
     onAccountSelected: (String) -> Unit,
-    onAddAccount: () -> Unit,
     onSettings: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
@@ -434,17 +463,23 @@ private fun TimelineTopBar(
 
     if (accountSheetOpen) {
         ModalBottomSheet(onDismissRequest = { accountSheetOpen = false }) {
-            Text(
-                "アカウントを切り替える",
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleLarge,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("アカウントを切り替える", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                IconButton(onClick = { accountSheetOpen = false }) {
+                    Icon(Icons.Outlined.Close, contentDescription = "アカウント切替を閉じる")
+                }
+            }
             sessions.forEach { session ->
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable {
                         accountSheetOpen = false
                         onAccountSelected(session.sessionId)
-                    }.padding(horizontal = 20.dp, vertical = 12.dp),
+                    }.then(
+                        if (session.sessionId == activeSession?.sessionId) Modifier.testTag("active_account_switch") else Modifier,
+                    ).padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     AsyncImage(
@@ -467,17 +502,6 @@ private fun TimelineTopBar(
                         Text("選択中", color = MaterialTheme.colorScheme.primary)
                     }
                 }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable {
-                    accountSheetOpen = false
-                    onAddAccount()
-                }.padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Outlined.PersonAdd, contentDescription = null)
-                Spacer(Modifier.width(12.dp))
-                Text("アカウントを追加")
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -666,6 +690,12 @@ internal fun StatusCard(
     var mediaRevealed by rememberSaveable(status.statusId) { mutableStateOf(!status.sensitive) }
     var reactionPickerOpen by rememberSaveable(status.statusId) { mutableStateOf(false) }
     val context = LocalContext.current
+    val avatarSize = when (displayPreferences.avatarIconSize) {
+        AvatarIconSize.Small -> 34.dp
+        AvatarIconSize.Standard -> 40.dp
+        AvatarIconSize.Large -> 48.dp
+    }
+    val contentStart = avatarSize + 8.dp
 
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -674,18 +704,29 @@ internal fun StatusCard(
             .testTag("timeline_status"),
     ) {
         status.boostedBy?.let {
-            Text(
-                "${it.displayName}さんがブースト",
-                modifier = Modifier.padding(start = 48.dp, bottom = 6.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(
+                modifier = Modifier.padding(start = contentStart, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.Repeat,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    "${it.displayName}さんがブーストしました",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Row(verticalAlignment = Alignment.Top) {
             AsyncImage(
                 model = status.author.avatarUrl,
                 contentDescription = "${status.author.displayName}のプロフィール画像",
-                modifier = Modifier.size(40.dp).clip(CircleShape)
+                modifier = Modifier.size(avatarSize).clip(CircleShape)
                     .testTag("status_author_avatar")
                     .then(
                         if (onAuthorClick == null) Modifier else Modifier.clickable {
@@ -702,6 +743,7 @@ internal fun StatusCard(
                         status.author.displayName,
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -722,7 +764,7 @@ internal fun StatusCard(
             }
         }
 
-        Column(modifier = Modifier.padding(start = 48.dp)) {
+        Column(modifier = Modifier.padding(start = contentStart)) {
             if (status.spoilerText.isNotBlank()) {
                 Text(status.spoilerText, modifier = Modifier.padding(top = 8.dp))
                 TextButton(
@@ -895,11 +937,19 @@ private fun MediaGrid(
                     Box(
                         modifier = Modifier.weight(1f)
                             .aspectRatio(
-                                if (attachments.size == 1) when (thumbnailSize) {
-                                    ThumbnailSize.Compact -> 2.1f
-                                    ThumbnailSize.Standard -> 1.6f
-                                    ThumbnailSize.Large -> 1.2f
-                                } else 1f,
+                                if (attachments.size == 1) {
+                                    when (thumbnailSize) {
+                                        ThumbnailSize.Compact -> 2.1f
+                                        ThumbnailSize.Standard -> 1.6f
+                                        ThumbnailSize.Large -> 1.2f
+                                    }
+                                } else {
+                                    when (thumbnailSize) {
+                                        ThumbnailSize.Compact -> 1.45f
+                                        ThumbnailSize.Standard -> 1f
+                                        ThumbnailSize.Large -> 0.8f
+                                    }
+                                },
                             )
                             .clip(RoundedCornerShape(8.dp))
                             .testTag("media_attachment")
@@ -1093,14 +1143,14 @@ private fun StatusActionButton(
     }
 }
 
-private fun FontSizePreset.spValue() = when (this) {
+internal fun FontSizePreset.spValue() = when (this) {
     FontSizePreset.Small -> 14.sp
     FontSizePreset.Standard -> 16.sp
     FontSizePreset.Large -> 18.sp
     FontSizePreset.ExtraLarge -> 20.sp
 }
 
-private fun TimelineDisplayPreferences.lineHeightSp(): Int {
+internal fun TimelineDisplayPreferences.lineHeightSp(): Int {
     val base = when (fontSize) {
         FontSizePreset.Small -> 18
         FontSizePreset.Standard -> 22

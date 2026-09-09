@@ -2,6 +2,7 @@ package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -31,12 +32,20 @@ class HomeTimelineDeviceTest {
 
         composeRule.onNodeWithContentDescription("アカウントを切り替える").performClick()
         composeRule.onNodeWithText("アカウントを切り替える").assertExists()
-        composeRule.activityRule.scenario.onActivity { activity ->
-            activity.onBackPressedDispatcher.onBackPressed()
-        }
+        composeRule.onNodeWithText("アカウントを追加").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("アカウント切替を閉じる").performClick()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithContentDescription("設定").performClick()
         composeRule.onNodeWithTag("settings_screen").assertExists()
+        repeat(8) {
+            if (composeRule.onAllNodesWithText("アカウント管理").fetchSemanticsNodes().isEmpty()) {
+                composeRule.onNodeWithTag("settings_screen").performTouchInput { swipeUp() }
+                composeRule.waitForIdle()
+            }
+        }
+        composeRule.onNodeWithText("アカウント管理").assertExists()
+        composeRule.onNodeWithText("アカウントを追加").assertExists()
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
@@ -77,6 +86,24 @@ class HomeTimelineDeviceTest {
         composeRule.activityRule.scenario.onActivity { activity ->
             activity.onBackPressedDispatcher.onBackPressed()
         }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        composeRule.onNodeWithTag("main_tab_notifications").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("notifications_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        if (composeRule.onAllNodesWithTag("notification_status_quote").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onAllNodesWithTag("notification_status_quote")[0].performClick()
+            composeRule.waitUntil(timeoutMillis = 20_000) {
+                composeRule.onAllNodesWithTag("status_detail").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.activityRule.scenario.onActivity { activity ->
+                activity.onBackPressedDispatcher.onBackPressed()
+            }
+        }
+        composeRule.onNodeWithTag("main_tab_home").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
         }

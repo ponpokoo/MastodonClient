@@ -3,21 +3,16 @@ package io.github.ponpokoo.mastodonclient.feature.profile
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
@@ -29,21 +24,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun AccountProfileScreen(
     viewModel: AccountProfileViewModel,
+    openEditor: Boolean,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    onFollowers: (String) -> Unit,
+    onFollowing: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -51,8 +50,16 @@ fun AccountProfileScreen(
     var confirmAction by remember { mutableStateOf<String?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
+    var initialEditorHandled by rememberSaveable { mutableStateOf(false) }
     var qrOpen by remember { mutableStateOf(false) }
     val profile = state.profile
+
+    LaunchedEffect(openEditor, profile?.author?.id) {
+        if (openEditor && profile != null && !initialEditorHandled) {
+            editOpen = true
+            initialEditorHandled = true
+        }
+    }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -86,25 +93,16 @@ fun AccountProfileScreen(
             onReply = onReply, onBoost = viewModel::toggleReblog, onFavourite = viewModel::toggleFavourite,
             onBookmark = viewModel::toggleBookmark, onReact = viewModel::setReaction, onAccountClick = onAccountClick,
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
+            preferences = preferences,
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
-            onFollowers = { viewModel.loadAccountList(true) }, onFollowing = { viewModel.loadAccountList(false) },
+            onFollowers = { profile?.author?.id?.let(onFollowers) },
+            onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("header", "image", it, it, "ヘッダー画像")) } },
             onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("avatar", "image", it, it, "プロフィール画像")) } },
             onEditProfile = { editOpen = true }, onToggleFollow = viewModel::toggleFollow,
         )
     }
 
-    state.accountListTitle?.let { title ->
-        ModalBottomSheet(onDismissRequest = viewModel::closeAccountList) {
-            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
-            LazyColumn(Modifier.fillMaxHeight(0.75f)) { items(state.accountList, key = { it.id }) { account ->
-                Row(Modifier.fillMaxWidth().clickable { viewModel.closeAccountList(); onAccountClick(account.id) }.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(account.avatarUrl, null, Modifier.size(48.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                    Spacer(Modifier.width(12.dp)); Column { Text(account.displayName); Text("@${account.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            } }
-        }
-    }
     confirmAction?.let { action -> AlertDialog(
         onDismissRequest = { confirmAction = null }, title = { Text(if (action == "mute") "ミュートを変更" else "ブロックを変更") },
         text = { Text("この操作を実行しますか？") }, confirmButton = { TextButton(onClick = { if (action == "mute") viewModel.toggleMute() else viewModel.toggleBlock(); confirmAction = null }) { Text("実行") } },

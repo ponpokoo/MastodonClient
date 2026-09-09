@@ -13,8 +13,6 @@ data class AccountProfileUiState(
     val isLoading: Boolean = true,
     val isLoadingMore: Boolean = false,
     val isMutating: Boolean = false,
-    val accountListTitle: String? = null,
-    val accountList: List<StatusAuthor> = emptyList(),
     val message: String? = null,
     val errorMessage: String? = null,
 )
@@ -53,14 +51,6 @@ class AccountProfileViewModel(
         ) }
     }
 
-    fun loadAccountList(followers: Boolean) {
-        val current = session ?: return
-        _uiState.update { it.copy(accountListTitle = if (followers) "フォロワー" else "フォロー中", accountList = emptyList()) }
-        viewModelScope.launch { timelineRepository.getAccountList(current, accountId, followers).fold(
-            { list -> _uiState.update { it.copy(accountList = list) } }, ::showError,
-        ) }
-    }
-    fun closeAccountList() = _uiState.update { it.copy(accountListTitle = null, accountList = emptyList()) }
     fun toggleFollow() = relationshipMutation { current, rel -> timelineRepository.setFollowing(current, accountId, !(rel.following || rel.requested)) }
     fun toggleMute() = relationshipMutation { current, rel -> timelineRepository.setMuted(current, accountId, !rel.muting) }
     fun toggleBlock() = relationshipMutation { current, rel -> timelineRepository.setBlocked(current, accountId, !rel.blocking) }

@@ -60,8 +60,14 @@ class DefaultTimelineRepositoryTest {
     @Test
     fun loadsOwnProfileAndStatuses() = runTest {
         MockWebServer().use { server ->
+            val requestsStarted = java.util.concurrent.CountDownLatch(3)
             server.dispatcher = object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    requestsStarted.countDown()
+                    if (!requestsStarted.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                        return MockResponse().setResponseCode(504)
+                    }
+                    return when (request.path) {
                     "/api/v1/accounts/me" -> MockResponse().setBody(
                         """{"id":"me","username":"alice","acct":"alice","display_name":"Alice","note":"<p>Bio</p>","followers_count":12,"following_count":8,"statuses_count":34}""",
                     )
@@ -70,6 +76,7 @@ class DefaultTimelineRepositoryTest {
                     "/api/v1/accounts/me/statuses?limit=20&exclude_reblogs=false&exclude_replies=false&only_media=false&pinned=true" ->
                         MockResponse().setBody("[]")
                     else -> MockResponse().setResponseCode(404)
+                    }
                 }
             }
             val session = testSession(server).copy(accountId = "me")

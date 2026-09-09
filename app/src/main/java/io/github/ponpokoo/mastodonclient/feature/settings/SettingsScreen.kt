@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.settings
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -7,12 +8,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -34,11 +38,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
+import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
@@ -52,6 +59,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,8 +67,10 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     store: UserPreferencesStore,
     activeSession: AccountSession?,
+    sessions: List<AccountSession>,
     onBack: () -> Unit,
     onLogout: () -> Unit,
+    onAddAccount: () -> Unit,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
@@ -97,7 +107,12 @@ fun SettingsScreen(
                 }
             }
             item {
-                ChoiceRow("アイコンサイズ", preferences.timelineDisplay.actionIconSize, ActionIconSize.entries) {
+                ChoiceRow("ユーザーアイコンサイズ", preferences.timelineDisplay.avatarIconSize, AvatarIconSize.entries) {
+                    updateDisplay(preferences.timelineDisplay.copy(avatarIconSize = it))
+                }
+            }
+            item {
+                ChoiceRow("アクションボタンサイズ", preferences.timelineDisplay.actionIconSize, ActionIconSize.entries) {
                     updateDisplay(preferences.timelineDisplay.copy(actionIconSize = it))
                 }
             }
@@ -219,10 +234,42 @@ fun SettingsScreen(
                     scope.launch { store.setOpenLinksInApp(it) }
                 }
             }
-            item { SectionTitle("アカウント") }
+            item { SectionTitle("アカウント管理") }
+            items(sessions, key = AccountSession::sessionId) { session ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(
+                        model = session.avatarUrl,
+                        contentDescription = "${session.displayName.ifBlank { session.username }}のアイコン",
+                        modifier = Modifier.size(46.dp).clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Spacer(Modifier.padding(horizontal = 6.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(session.displayName.ifBlank { session.username }, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (session.sessionId == activeSession?.sessionId) {
+                            Text("現在のアカウント", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+            item {
+                TextButton(onClick = onAddAccount, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                    Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                    Spacer(Modifier.padding(horizontal = 4.dp))
+                    Text("アカウントを追加")
+                }
+            }
             item {
                 TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                    Text("ログアウト", color = MaterialTheme.colorScheme.error)
+                    Text("現在のアカウントからログアウト", color = MaterialTheme.colorScheme.error)
                 }
             }
             item { Spacer(Modifier.padding(bottom = 24.dp)) }
@@ -232,11 +279,11 @@ fun SettingsScreen(
 
 @Composable
 private fun SectionTitle(text: String) {
-    Column {
-        HorizontalDivider()
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
             color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.titleSmall,
         )
@@ -306,6 +353,9 @@ private fun Any?.displayLabel(): String = when (this) {
     LineSpacingPreset.Compact -> "狭い"
     LineSpacingPreset.Standard -> "標準"
     LineSpacingPreset.Relaxed -> "広い"
+    AvatarIconSize.Small -> "小"
+    AvatarIconSize.Standard -> "標準"
+    AvatarIconSize.Large -> "大"
     ActionIconSize.Small -> "小"
     ActionIconSize.Standard -> "標準"
     ActionIconSize.Large -> "大"

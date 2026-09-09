@@ -15,6 +15,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 
 @Serializable enum class FontSizePreset { Small, Standard, Large, ExtraLarge }
 @Serializable enum class LineSpacingPreset { Compact, Standard, Relaxed }
+@Serializable enum class AvatarIconSize { Small, Standard, Large }
 @Serializable enum class ActionIconSize { Small, Standard, Large }
 @Serializable enum class ThumbnailSize { Compact, Standard, Large }
 @Serializable enum class AutoplayPolicy { Always, WifiOnly, Never }
@@ -37,6 +38,7 @@ enum class PostVisibility(val apiValue: String) {
 data class TimelineDisplayPreferences(
     val fontSize: FontSizePreset = FontSizePreset.Standard,
     val lineSpacing: LineSpacingPreset = LineSpacingPreset.Standard,
+    val avatarIconSize: AvatarIconSize = AvatarIconSize.Standard,
     val actionIconSize: ActionIconSize = ActionIconSize.Small,
     val actionOrder: List<StatusAction> = listOf(
         StatusAction.Reply,

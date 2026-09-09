@@ -44,6 +44,7 @@ import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -53,6 +54,7 @@ import java.util.Locale
 @Composable
 fun StatusDetailScreen(
     viewModel: StatusDetailViewModel,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onReply: (String) -> Unit,
     onOpenLink: (String) -> Unit,
@@ -102,6 +104,9 @@ fun StatusDetailScreen(
                         onFavourite = viewModel::toggleFavourite,
                         onReact = viewModel::setReaction,
                         onUnavailableAction = {},
+                        displayPreferences = preferences.timelineDisplay,
+                        gifAutoplay = preferences.gifAutoplay,
+                        videoAutoplay = preferences.videoAutoplay,
                     )
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -134,6 +139,9 @@ fun StatusDetailScreen(
                                 onOpenLink = onOpenLink,
                                 onReply = { onReply(reply.statusId) },
                                 onUnavailableAction = {},
+                                displayPreferences = preferences.timelineDisplay,
+                                gifAutoplay = preferences.gifAutoplay,
+                                videoAutoplay = preferences.videoAutoplay,
                             )
                             HorizontalDivider()
                         }

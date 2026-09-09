@@ -34,8 +34,11 @@ import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostScreen
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
 import io.github.ponpokoo.mastodonclient.feature.web.InAppWebScreen
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.AccountListScreen
+import io.github.ponpokoo.mastodonclient.feature.profile.AccountListViewModel
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
@@ -54,6 +57,7 @@ fun AppNavigation() {
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory) }
     val preferences = remember { UserPreferencesStore(context) }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
+    val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val openLink: (String) -> Unit = { url ->
         val uri = url.toUri()
         if (uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
@@ -144,7 +148,11 @@ fun AppNavigation() {
                 },
                 onMediaClick = openMedia,
                 onSettings = { navController.navigate(Route.Settings) },
-                onAddAccount = { navController.navigate(Route.AddAccount) },
+                onEditProfile = { accountId ->
+                    navController.navigate(Route.AccountProfile(accountId, openEditor = true)) { launchSingleTop = true }
+                },
+                onFollowers = { accountId -> navController.navigate(Route.AccountList(accountId, followers = true)) },
+                onFollowing = { accountId -> navController.navigate(Route.AccountList(accountId, followers = false)) },
             )
         }
         composable<Route.StatusDetail> { backStackEntry ->
@@ -158,6 +166,7 @@ fun AppNavigation() {
             )
             StatusDetailScreen(
                 detailViewModel,
+                preferences = appPreferences,
                 onBack = { navController.popBackStack() },
                 onReply = { navController.navigate(Route.ComposePost(it)) },
                 onOpenLink = openLink,
@@ -189,10 +198,15 @@ fun AppNavigation() {
             val activeSession by produceState<io.github.ponpokoo.mastodonclient.domain.model.AccountSession?>(null) {
                 value = authRepository.restoreSession()
             }
+            val sessions by produceState<List<io.github.ponpokoo.mastodonclient.domain.model.AccountSession>>(emptyList()) {
+                value = authRepository.getSessions()
+            }
             SettingsScreen(
                 store = preferences,
                 activeSession = activeSession,
+                sessions = sessions,
                 onBack = { navController.popBackStack() },
+                onAddAccount = { navController.navigate(Route.AddAccount) },
                 onLogout = {
                     scope.launch {
                         authRepository.logout()
@@ -217,12 +231,33 @@ fun AppNavigation() {
             )
             AccountProfileScreen(
                 viewModel = profileViewModel,
+                openEditor = route.openEditor,
+                preferences = appPreferences,
                 onBack = { navController.popBackStack() },
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it.statusId)) },
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
+                onFollowers = { navController.navigate(Route.AccountList(it, followers = true)) },
+                onFollowing = { navController.navigate(Route.AccountList(it, followers = false)) },
+            )
+        }
+        composable<Route.AccountList> { backStackEntry ->
+            val route = backStackEntry.toRoute<Route.AccountList>()
+            val accountListViewModel: AccountListViewModel = viewModel(
+                factory = AccountListViewModel.Factory(
+                    route.accountId,
+                    route.followers,
+                    timelineRepository,
+                    authRepository,
+                ),
+            )
+            AccountListScreen(
+                title = if (route.followers) "フォロワー" else "フォロー中",
+                viewModel = accountListViewModel,
+                onBack = { navController.popBackStack() },
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
             )
         }
         composable<Route.HashtagTimeline> { backStackEntry ->
@@ -237,6 +272,7 @@ fun AppNavigation() {
             HashtagTimelineScreen(
                 hashtag = route.hashtag,
                 viewModel = hashtagViewModel,
+                preferences = appPreferences,
                 onBack = { navController.popBackStack() },
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it)) },

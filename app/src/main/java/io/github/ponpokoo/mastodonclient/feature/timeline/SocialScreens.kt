@@ -15,8 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Campaign
@@ -26,18 +29,22 @@ import androidx.compose.material.icons.outlined.HowToReg
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Poll
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -61,6 +69,16 @@ import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import androidx.compose.material3.Button
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
+import java.net.URI
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+internal enum class NotificationFilter(val label: String) {
+    All("すべて"),
+    Mentions("メンション"),
+    Reactions("リアクション"),
+}
 
 @Composable
 internal fun SearchContent(
@@ -150,7 +168,19 @@ internal fun NotificationsContent(
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     preferences: AppPreferences,
+    listState: LazyListState,
+    selectedFilter: NotificationFilter,
+    onSelectFilter: (NotificationFilter) -> Unit,
 ) {
+    val filteredNotifications = remember(state.notifications, selectedFilter) {
+        state.notifications.filter { notification ->
+            when (selectedFilter) {
+                NotificationFilter.All -> true
+                NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true)
+                NotificationFilter.Reactions -> notification.type.contains("reaction", ignoreCase = true)
+            }
+        }
+    }
     when {
         state.isLoadingNotifications && state.notifications.isEmpty() -> LoadingContent(
             "通知を読み込んでいます", Modifier.padding(padding),
@@ -168,30 +198,40 @@ internal fun NotificationsContent(
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
-            LazyColumn(Modifier.fillMaxSize()) {
-                if (state.notifications.isEmpty()) item { MessageContent("通知はありません") }
-                items(state.notifications, key = TimelineNotification::id) { notification ->
-                    NotificationHeader(notification, onAccountClick)
-                    notification.status?.let { status ->
-                        SocialStatus(
-                            status, onStatusClick, onOpenLink, onReply,
-                            onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+            Column(Modifier.fillMaxSize()) {
+                SecondaryTabRow(selectedTabIndex = selectedFilter.ordinal) {
+                    NotificationFilter.entries.forEach { filter ->
+                        Tab(
+                            selected = selectedFilter == filter,
+                            onClick = { onSelectFilter(filter) },
+                            text = { Text(filter.label) },
                         )
-                    } ?: run {
-                        AccountResult(notification.account, onAccountClick)
-                        HorizontalDivider()
                     }
                 }
-                if (state.isLoadingMoreNotifications) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                LazyColumn(Modifier.fillMaxWidth().weight(1f), state = listState) {
+                    if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
+                    items(filteredNotifications, key = TimelineNotification::id) { notification ->
+                        NotificationHeader(notification, onAccountClick)
+                        notification.status?.let { status ->
+                        NotificationStatusQuote(
+                            status = status,
+                            onStatusClick = onStatusClick,
+                            preferences = preferences.timelineDisplay,
+                            )
                         }
+                        HorizontalDivider()
                     }
-                } else if (!state.notificationsEndReached && state.notificationsNextMaxId != null) {
-                    item {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
+                    if (state.isLoadingMoreNotifications) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            }
+                        }
+                    } else if (!state.notificationsEndReached && state.notificationsNextMaxId != null) {
+                        item {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
+                            }
                         }
                     }
                 }
@@ -226,8 +266,10 @@ internal fun ProfileContent(
     onAvatarClick: () -> Unit = {},
     onEditProfile: () -> Unit = {},
     onToggleFollow: () -> Unit = {},
+    listState: LazyListState? = null,
 ) {
     val profile = state.profile
+    val resolvedListState = listState ?: rememberLazyListState()
     when {
         state.isLoadingProfile && profile == null -> LoadingContent(
             "プロフィールを読み込んでいます", Modifier.padding(padding),
@@ -240,7 +282,10 @@ internal fun ProfileContent(
             Text(state.profileError ?: "プロフィールを表示できませんでした")
             TextButton(onClick = onRetry) { Text("再試行") }
         }
-        else -> LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("profile_screen")) {
+        else -> LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),
+            state = resolvedListState,
+        ) {
             item {
                 Box(Modifier.fillMaxWidth().height(174.dp)) {
                     AsyncImage(
@@ -263,35 +308,50 @@ internal fun ProfileContent(
                             AsyncImage(url, name, Modifier.size(24.dp), contentScale = ContentScale.Fit)
                         }
                     }
-                    Text("@${profile.author.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(
-                        onClick = if (profile.isOwnProfile) onEditProfile else onToggleFollow,
-                        modifier = Modifier.align(Alignment.End),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(if (profile.isOwnProfile) "プロフィールを編集" else when {
-                            relationship?.requested == true -> "申請中"
-                            relationship?.following == true -> "フォロー中"
-                            profile.locked -> "フォロー申請"
-                            else -> "フォロー"
-                        })
+                        Text(
+                            profileAccountHandle(profile.author.accountName, profile.url),
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(onClick = if (profile.isOwnProfile) onEditProfile else onToggleFollow) {
+                            Text(if (profile.isOwnProfile) "プロフィールを編集" else when {
+                                relationship?.requested == true -> "申請中"
+                                relationship?.following == true -> "フォロー解除"
+                                profile.locked -> "フォロー申請"
+                                else -> "フォロー"
+                            })
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top,
                     ) {
                         ProfileCount("投稿", profile.statusesCount)
                         Box(Modifier.clickable(onClick = onFollowing)) { ProfileCount("フォロー", profile.followingCount) }
                         Box(Modifier.clickable(onClick = onFollowers)) { ProfileCount("フォロワー", profile.followersCount) }
+                        ProfileRegistrationDate(profile.createdAt)
                     }
                     if (profile.noteHtml.isNotBlank()) {
                         StatusContentText(contentHtml = profile.noteHtml, onLinkClick = onOpenLink)
                     }
                     profile.fields.forEach { field ->
-                        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            Text(field.name, Modifier.weight(0.35f), fontWeight = FontWeight.SemiBold)
-                            Column(Modifier.weight(0.65f)) {
+                        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                            Text(
+                                field.name,
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
                                 StatusContentText(field.valueHtml, onLinkClick = onOpenLink)
-                                if (field.verifiedAt != null) Text("✓ 認証済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                            if (field.verifiedAt != null) {
+                                Text("✓ 認証済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -305,10 +365,17 @@ internal fun ProfileContent(
                     }
                 }
             }
-            items((profile.pinnedStatuses + profile.statuses).distinctBy { it.statusId }, key = { it.timelineId }) { status ->
+            val statuses = if (selectedTab == ProfileStatusTab.Posts) {
+                (profile.pinnedStatuses + profile.statuses).distinctBy { it.statusId }
+            } else {
+                profile.statuses
+            }
+            val pinnedStatusIds = profile.pinnedStatuses.mapTo(mutableSetOf()) { it.statusId }
+            items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
                     onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                    isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
             }
             if (isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
@@ -330,7 +397,23 @@ private fun SocialStatus(
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     preferences: AppPreferences,
+    isPinned: Boolean = false,
 ) {
+    if (isPinned) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 64.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.PushPin,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(5.dp))
+            Text("固定された投稿", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
     StatusCard(
         status = status,
         onStatusClick = onStatusClick,
@@ -385,6 +468,7 @@ private fun NotificationHeader(
         "poll" -> Icons.Outlined.Poll to "アンケートが終了しました"
         "status" -> Icons.Outlined.Campaign to "新しい投稿があります"
         "update" -> Icons.Outlined.Edit to "投稿を編集しました"
+        "emoji_reaction", "reaction" -> Icons.Outlined.SentimentSatisfiedAlt to "リアクションしました"
         else -> Icons.Outlined.NotificationsNone to "通知"
     }
     Row(
@@ -394,11 +478,55 @@ private fun NotificationHeader(
     ) {
         NotificationTypeIcon(icon, action)
         Spacer(Modifier.width(8.dp))
-        Text(
-            "${notification.account.displayName}さんが$action",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
+        AsyncImage(
+            model = notification.account.avatarUrl,
+            contentDescription = null,
+            modifier = Modifier.size(34.dp).clip(CircleShape),
+            contentScale = ContentScale.Crop,
         )
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(notification.account.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Text("@${notification.account.accountName} · $action", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun NotificationStatusQuote(
+    status: TimelineStatus,
+    onStatusClick: (String) -> Unit,
+    preferences: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences,
+) {
+    val plainContent = remember(status.contentHtml) {
+        androidx.core.text.HtmlCompat.fromHtml(
+            status.contentHtml,
+            androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY,
+        ).toString().trim()
+    }
+    Surface(
+        onClick = { onStatusClick(status.statusId) },
+        modifier = Modifier.fillMaxWidth().padding(start = 58.dp, end = 16.dp, bottom = 10.dp)
+            .testTag("notification_status_quote"),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                status.author.displayName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = plainContent,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = preferences.fontSize.spValue(),
+                    lineHeight = preferences.lineHeightSp().sp,
+                ),
+            )
+        }
     }
 }
 
@@ -418,6 +546,27 @@ private fun ProfileCount(label: String, count: Long) {
         Text(count.toString(), fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun ProfileRegistrationDate(createdAt: String?) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(formatProfileDate(createdAt), fontWeight = FontWeight.Bold)
+        Text("登録日", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun profileAccountHandle(accountName: String, profileUrl: String): String {
+    if ('@' in accountName) return "@$accountName"
+    val host = runCatching { URI(profileUrl).host }.getOrNull().orEmpty()
+    return if (host.isBlank()) "@$accountName" else "@$accountName@$host"
+}
+
+private fun formatProfileDate(createdAt: String?): String {
+    if (createdAt.isNullOrBlank()) return "—"
+    return runCatching {
+        LocalDate.parse(createdAt.take(10)).format(DateTimeFormatter.ofPattern("yyyy/M/d", Locale.JAPAN))
+    }.getOrDefault(createdAt.take(10))
 }
 
 @Composable

@@ -30,12 +30,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun HashtagTimelineScreen(
     hashtag: String,
     viewModel: HashtagTimelineViewModel,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
     onReply: (String) -> Unit,
@@ -86,6 +88,9 @@ fun HashtagTimelineScreen(
                             onFavourite = { viewModel.toggleFavourite(status) },
                             onReact = { viewModel.setReaction(status, it) },
                             onUnavailableAction = {},
+                            displayPreferences = preferences.timelineDisplay,
+                            gifAutoplay = preferences.gifAutoplay,
+                            videoAutoplay = preferences.videoAutoplay,
                         )
                         HorizontalDivider()
                     }

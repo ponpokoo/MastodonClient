@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
 import androidx.compose.foundation.text.ClickableText
@@ -36,7 +37,15 @@ fun StatusContentText(
     )
 }
 
+private data class TextCacheKey(val html: String, val color: Color)
+private val parsedTextCache = object : LruCache<TextCacheKey, AnnotatedString>(512 * 1024) {
+    override fun sizeOf(key: TextCacheKey, value: AnnotatedString): Int =
+        (key.html.length + value.length) * 2 + 128
+}
+
 internal fun htmlToAnnotatedString(html: String, linkColor: Color): AnnotatedString {
+    val key = TextCacheKey(html, linkColor)
+    parsedTextCache.get(key)?.let { return it }
     val spanned = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY) as Spanned
     return AnnotatedString.Builder(spanned.toString().trim()).apply {
         spanned.getSpans(0, spanned.length, URLSpan::class.java).forEach { span ->
@@ -51,7 +60,7 @@ internal fun htmlToAnnotatedString(html: String, linkColor: Color): AnnotatedStr
                 )
             }
         }
-    }.toAnnotatedString()
+    }.toAnnotatedString().also { parsedTextCache.put(key, it) }
 }
 
 private const val URL_TAG = "url"

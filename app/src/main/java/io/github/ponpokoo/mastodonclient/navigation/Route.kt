@@ -25,7 +25,13 @@ sealed interface Route {
     data class WebPage(val url: String) : Route
 
     @Serializable
-    data class AccountProfile(val accountId: String) : Route
+    data class AccountProfile(val accountId: String, val openEditor: Boolean = false) : Route
+
+    @Serializable
+    data class AccountList(
+        val accountId: String,
+        val followers: Boolean,
+    ) : Route
 
     @Serializable
     data class HashtagTimeline(val hashtag: String) : Route
