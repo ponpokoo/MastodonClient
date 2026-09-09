@@ -36,3 +36,9 @@ data class MarkerDto(
     val version: Long = 0,
     @SerialName("updated_at") val updatedAt: String = "",
 )
+
+@Serializable
+data class ListDto(
+    val id: String,
+    val title: String,
+)

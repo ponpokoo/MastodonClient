@@ -33,10 +33,14 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -45,6 +49,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -165,6 +172,7 @@ internal fun NotificationsContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     preferences: AppPreferences,
@@ -216,6 +224,7 @@ internal fun NotificationsContent(
                         NotificationStatusQuote(
                             status = status,
                             onStatusClick = onStatusClick,
+                            onMoreClick = onMoreClick,
                             preferences = preferences.timelineDisplay,
                             )
                         }
@@ -252,6 +261,7 @@ internal fun ProfileContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
+    onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     preferences: AppPreferences = AppPreferences(),
@@ -265,11 +275,15 @@ internal fun ProfileContent(
     onHeaderClick: () -> Unit = {},
     onAvatarClick: () -> Unit = {},
     onEditProfile: () -> Unit = {},
+    onOpenLists: () -> Unit = {},
+    onOpenBookmarks: () -> Unit = {},
+    onOpenFavourites: () -> Unit = {},
     onToggleFollow: () -> Unit = {},
     listState: LazyListState? = null,
 ) {
     val profile = state.profile
     val resolvedListState = listState ?: rememberLazyListState()
+    var profileMenuExpanded by remember { mutableStateOf(false) }
     when {
         state.isLoadingProfile && profile == null -> LoadingContent(
             "プロフィールを読み込んでいます", Modifier.padding(padding),
@@ -287,7 +301,7 @@ internal fun ProfileContent(
             state = resolvedListState,
         ) {
             item {
-                Box(Modifier.fillMaxWidth().height(174.dp)) {
+                Box(Modifier.fillMaxWidth().height(184.dp)) {
                     AsyncImage(
                         model = profile.headerUrl, contentDescription = "ヘッダー画像",
                         modifier = Modifier.fillMaxWidth().height(132.dp).clickable(onClick = onHeaderClick)
@@ -298,8 +312,28 @@ internal fun ProfileContent(
                         model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
                             .clip(CircleShape).clickable(onClick = onAvatarClick)
-                            .background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop,
+                        .background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop,
                     )
+                    if (profile.isOwnProfile) {
+                        Box(
+                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp),
+                        ) {
+                            OutlinedIconButton(
+                                onClick = { profileMenuExpanded = true },
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Icon(Icons.Outlined.MoreVert, contentDescription = "プロフィールのその他メニュー")
+                            }
+                            DropdownMenu(
+                                expanded = profileMenuExpanded,
+                                onDismissRequest = { profileMenuExpanded = false },
+                            ) {
+                                DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
+                                DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })
+                                DropdownMenuItem(text = { Text("お気に入り") }, onClick = { profileMenuExpanded = false; onOpenFavourites() })
+                            }
+                        }
+                    }
                 }
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(profile.author.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -375,6 +409,7 @@ internal fun ProfileContent(
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
                     onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                    onMoreClick = onMoreClick,
                     isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
             }
@@ -397,6 +432,7 @@ private fun SocialStatus(
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
     preferences: AppPreferences,
+    onMoreClick: (TimelineStatus) -> Unit = {},
     isPinned: Boolean = false,
 ) {
     if (isPinned) {
@@ -425,6 +461,7 @@ private fun SocialStatus(
         onFavourite = { onFavourite(status) },
         onBookmark = { onBookmark(status) },
         onReact = { onReact(status, it) },
+        onMoreClick = onMoreClick,
         onUnavailableAction = {},
         displayPreferences = preferences.timelineDisplay,
         gifAutoplay = preferences.gifAutoplay,
@@ -496,6 +533,7 @@ private fun NotificationHeader(
 private fun NotificationStatusQuote(
     status: TimelineStatus,
     onStatusClick: (String) -> Unit,
+    onMoreClick: (TimelineStatus) -> Unit,
     preferences: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences,
 ) {
     val plainContent = remember(status.contentHtml) {
@@ -512,12 +550,25 @@ private fun NotificationStatusQuote(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(
-                status.author.displayName,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    status.author.displayName,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                IconButton(
+                    onClick = { onMoreClick(status) },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.MoreVert,
+                        contentDescription = "投稿メニュー",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
             Spacer(Modifier.height(3.dp))
             Text(
                 text = plainContent,

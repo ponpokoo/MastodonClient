@@ -30,6 +30,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileField
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
+import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
+import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
+import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.async
@@ -123,6 +126,35 @@ class DefaultTimelineRepository(
         (if (followers) api.getFollowers(accountId, maxId) else api.getFollowing(accountId, maxId)).map(AccountDto::toDomain)
     }
 
+    override suspend fun getLists(session: AccountSession) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getLists()
+            .map { MastodonList(it.id, it.title) }
+    }
+
+    override suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .addAccountsToList(listId, listOf(accountId))
+        Unit
+    }
+
+    override suspend fun getSavedTimeline(
+        session: AccountSession,
+        kind: SavedTimelineKind,
+        listId: String?,
+        maxId: String?,
+    ) = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val response = when (kind) {
+            SavedTimelineKind.List -> api.getListTimeline(requireNotNull(listId), maxId)
+            SavedTimelineKind.Bookmarks -> api.getBookmarks(maxId)
+            SavedTimelineKind.Favourites -> api.getFavourites(maxId)
+        }
+        val statuses = response.map(StatusDto::toDomain)
+        statuses.forEach { statusCache[it.statusId] = it }
+        TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
+    }
+
     override suspend fun getRelationship(session: AccountSession, accountId: String) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).getRelationships(listOf(accountId)).first().toDomain()
     }
@@ -141,6 +173,12 @@ class DefaultTimelineRepository(
 
     override suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).report(accountId, comment, forward)
+        Unit
+    }
+
+    override suspend fun reportStatus(session: AccountSession, accountId: String, statusId: String, comment: String) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .report(accountId, comment, statusIds = listOf(statusId))
         Unit
     }
 
@@ -332,6 +370,38 @@ class DefaultTimelineRepository(
     override suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean) =
         updateStatus(session) { if (bookmarked) bookmark(statusId) else unbookmark(statusId) }
 
+    override suspend fun setPinned(session: AccountSession, statusId: String, pinned: Boolean) =
+        updateStatus(session) { if (pinned) pin(statusId) else unpin(statusId) }
+
+    override suspend fun deleteStatus(session: AccountSession, statusId: String) = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).deleteStatus(statusId)
+        statusCache.remove(statusId)
+        Unit
+    }
+
+    override suspend fun getEditableStatus(session: AccountSession, statusId: String) = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val source = api.getStatusSource(statusId)
+        val status = api.getStatus(statusId)
+        EditableStatus(
+            id = source.id,
+            text = source.text,
+            spoilerText = source.spoilerText,
+            sensitive = status.sensitive,
+        )
+    }
+
+    override suspend fun updateStatus(session: AccountSession, status: EditableStatus) =
+        updateStatus(session) {
+            updateStatus(
+                id = status.id,
+                status = status.text,
+                spoilerText = status.spoilerText.ifBlank { null },
+                sensitive = status.sensitive,
+                language = status.language.ifBlank { null },
+            )
+        }
+
     override suspend fun createStatus(
         session: AccountSession,
         text: String,
@@ -437,6 +507,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
         favourited = displayed.favourited,
         reblogged = displayed.reblogged,
         bookmarked = displayed.bookmarked,
+        pinned = displayed.pinned == true,
         applicationName = displayed.application?.name,
         reactions = displayed.emojiReactions.orEmpty().map {
             EmojiReaction(

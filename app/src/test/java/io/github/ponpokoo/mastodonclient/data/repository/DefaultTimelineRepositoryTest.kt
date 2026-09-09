@@ -4,6 +4,7 @@ import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
+import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -364,6 +365,41 @@ class DefaultTimelineRepositoryTest {
             val reactionRequest = server.takeRequest()
             assertEquals("PUT", reactionRequest.method)
             assertEquals("/api/v1/statuses/1/emoji_reactions/%F0%9F%91%8D", reactionRequest.path)
+        }
+    }
+
+    @Test
+    fun loadsListsAndSelectedListTimeline() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""[{"id":"friends","title":"友だち"}]"""))
+            server.enqueue(MockResponse().setBody("[${basicStatusJson("list-status")}]") )
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            val list = repository.getLists(session).getOrThrow().single()
+            val page = repository.getSavedTimeline(session, SavedTimelineKind.List, list.id).getOrThrow()
+
+            assertEquals("友だち", list.title)
+            assertEquals("list-status", page.statuses.single().statusId)
+            assertEquals("/api/v1/lists", server.takeRequest().path)
+            assertEquals("/api/v1/timelines/list/friends?limit=20", server.takeRequest().path)
+        }
+    }
+
+    @Test
+    fun pinsAndUnpinsUsingExpectedEndpoints() = runTest {
+        MockWebServer().use { server ->
+            val pinned = basicStatusJson("1").dropLast(1) + ",\"pinned\":true}"
+            server.enqueue(MockResponse().setBody(pinned))
+            server.enqueue(MockResponse().setBody(basicStatusJson("1")))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            assertEquals(true, repository.setPinned(session, "1", true).getOrThrow().pinned)
+            repository.setPinned(session, "1", false).getOrThrow()
+
+            assertEquals("/api/v1/statuses/1/pin", server.takeRequest().path)
+            assertEquals("/api/v1/statuses/1/unpin", server.takeRequest().path)
         }
     }
 

@@ -20,6 +20,7 @@ data class StatusDto(
     val favourited: Boolean = false,
     val reblogged: Boolean = false,
     val bookmarked: Boolean = false,
+    val pinned: Boolean? = null,
     @SerialName("emoji_reactions") val emojiReactions: List<EmojiReactionDto>? = null,
     val card: PreviewCardDto? = null,
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
@@ -76,4 +77,11 @@ data class CustomEmojiDto(
     val url: String,
     @SerialName("static_url") val staticUrl: String,
     val category: String? = null,
+)
+
+@Serializable
+data class StatusSourceDto(
+    val id: String,
+    val text: String = "",
+    @SerialName("spoiler_text") val spoilerText: String = "",
 )

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,6 +76,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -153,16 +156,25 @@ fun HomeTimelineScreen(
     onEditProfile: (String) -> Unit,
     onFollowers: (String) -> Unit,
     onFollowing: (String) -> Unit,
+    onEditStatus: (String) -> Unit,
+    onOpenLists: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenFavourites: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val destinations = MainDestination.entries
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
     val notificationListState = rememberLazyListState()
     val profileListState = rememberLazyListState()
     var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
+    var menuStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var confirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -194,6 +206,12 @@ fun HomeTimelineScreen(
             viewModel.consumeRefreshResult()
         }
     }
+    LaunchedEffect(state.actionMessage) {
+        state.actionMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeActionMessage()
+        }
+    }
     LaunchedEffect(destination) {
         when (destination) {
             MainDestination.Notifications -> viewModel.loadNotifications()
@@ -202,6 +220,7 @@ fun HomeTimelineScreen(
         }
     }
 
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             if (destination == MainDestination.Home) {
@@ -236,7 +255,7 @@ fun HomeTimelineScreen(
                                         MainDestination.Explore -> Unit
                                     }
                                 } else {
-                                    pagerState.animateScrollToPage(page)
+                                    pagerState.scrollToPage(page)
                                 }
                             }
                         },
@@ -267,15 +286,7 @@ fun HomeTimelineScreen(
                 }
             }
         },
-        snackbarHost = {
-            Box(Modifier.fillMaxSize().padding(top = 64.dp), contentAlignment = Alignment.TopCenter) {
-                SnackbarHost(snackbarHostState) { data ->
-                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
-                        Text(data.visuals.message, Modifier.padding(horizontal = 14.dp, vertical = 7.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.inverseOnSurface)
-                    }
-                }
-            }
-        },
+        snackbarHost = {},
     ) { padding ->
         HorizontalPager(
             state = pagerState,
@@ -299,6 +310,7 @@ fun HomeTimelineScreen(
                     onFavourite = viewModel::toggleFavourite,
                     onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
+                    onMoreClick = { menuStatus = it },
                     onUnavailableAction = { label ->
                         scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
                     },
@@ -332,6 +344,7 @@ fun HomeTimelineScreen(
                     onFavourite = viewModel::toggleFavourite,
                     onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
+                    onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = state.preferences,
@@ -350,6 +363,7 @@ fun HomeTimelineScreen(
                     onFavourite = viewModel::toggleFavourite,
                     onBookmark = viewModel::toggleBookmark,
                     onReact = viewModel::setReaction,
+                    onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = state.preferences,
@@ -370,10 +384,81 @@ fun HomeTimelineScreen(
                         }
                     },
                     onEditProfile = { state.profile?.author?.id?.let(onEditProfile) },
+                    onOpenLists = onOpenLists,
+                    onOpenBookmarks = onOpenBookmarks,
+                    onOpenFavourites = onOpenFavourites,
                     listState = profileListState,
                 )
             }
         }
+    }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 64.dp),
+        ) { data ->
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
+                Text(
+                    data.visuals.message,
+                    Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                )
+            }
+        }
+    }
+
+    menuStatus?.let { status ->
+        StatusMenuSheet(
+            status = status,
+            isOwnStatus = status.author.id == state.session?.accountId,
+            onDismiss = { menuStatus = null },
+            onOpenBrowser = {
+                menuStatus = null
+                status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+            },
+            onPin = { menuStatus = null; viewModel.setPinned(status) },
+            onEdit = { menuStatus = null; onEditStatus(status.statusId) },
+            onDelete = { menuStatus = null; confirmation = "delete" to status },
+            onAddToList = { menuStatus = null; listStatus = status; viewModel.loadLists() },
+            onUnfollow = { menuStatus = null; confirmation = "unfollow" to status },
+            onMute = { menuStatus = null; confirmation = "mute" to status },
+            onBlock = { menuStatus = null; confirmation = "block" to status },
+            onReport = { menuStatus = null; reportStatus = status },
+        )
+    }
+    confirmation?.let { (action, status) ->
+        ConfirmStatusActionDialog(
+            action = action,
+            status = status,
+            onDismiss = { confirmation = null },
+            onConfirm = {
+                when (action) {
+                    "delete" -> viewModel.deleteStatus(status)
+                    "unfollow" -> viewModel.unfollow(status)
+                    "mute" -> viewModel.mute(status)
+                    "block" -> viewModel.block(status)
+                }
+                confirmation = null
+            },
+        )
+    }
+    reportStatus?.let { status ->
+        StatusReportDialog(
+            status = status,
+            onDismiss = { reportStatus = null },
+            onSubmit = { comment -> viewModel.report(status, comment); reportStatus = null },
+        )
+    }
+    listStatus?.let { status ->
+        ListPickerSheet(
+            lists = state.lists,
+            loading = state.isLoadingLists,
+            onDismiss = { listStatus = null },
+            onSelected = { listId -> viewModel.addToList(status, listId); listStatus = null },
+        )
     }
 
     if (state.announcementsVisible) {
@@ -385,6 +470,99 @@ fun HomeTimelineScreen(
             onDismiss = viewModel::dismissAnnouncements,
             onOpenLink = onOpenLink,
         )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun StatusMenuSheet(
+    status: TimelineStatus,
+    isOwnStatus: Boolean,
+    onDismiss: () -> Unit,
+    onOpenBrowser: () -> Unit,
+    onPin: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onAddToList: () -> Unit,
+    onUnfollow: () -> Unit,
+    onMute: () -> Unit,
+    onBlock: () -> Unit,
+    onReport: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(status.author.displayName, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+        @Composable fun Action(label: String, action: () -> Unit) {
+            TextButton(onClick = action, modifier = Modifier.fillMaxWidth()) {
+                Text(label, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+            }
+        }
+        if (isOwnStatus) {
+            Action(if (status.pinned) "プロフィールへの固定解除" else "プロフィールに固定", onPin)
+            Action("ブラウザで開く", onOpenBrowser)
+            Action("編集", onEdit)
+            Action("削除", onDelete)
+        } else {
+            Action("ブラウザで開く", onOpenBrowser)
+            Action("リストに追加", onAddToList)
+            Action("フォロー解除　${status.author.displayName}さん", onUnfollow)
+            Action("ミュート　${status.author.displayName}さん", onMute)
+            Action("ブロック　${status.author.displayName}さん", onBlock)
+            Action("報告　${status.author.displayName}さん", onReport)
+        }
+        Action("閉じる", onDismiss)
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+internal fun ConfirmStatusActionDialog(action: String, status: TimelineStatus, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val (title, message) = when (action) {
+        "delete" -> "投稿を削除" to "この投稿を削除します。この操作は元に戻せません。"
+        "unfollow" -> "フォロー解除" to "${status.author.displayName}さんのフォローを解除しますか？"
+        "mute" -> "ミュート" to "${status.author.displayName}さんをミュートしますか？"
+        else -> "ブロック" to "${status.author.displayName}さんをブロックしますか？"
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("実行") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+internal fun StatusReportDialog(status: TimelineStatus, onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+    var comment by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${status.author.displayName}さんを報告") },
+        text = { OutlinedTextField(comment, { comment = it.take(1000) }, label = { Text("理由・補足") }, minLines = 3) },
+        confirmButton = { TextButton(enabled = comment.isNotBlank(), onClick = { onSubmit(comment) }) { Text("送信") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun ListPickerSheet(
+    lists: List<io.github.ponpokoo.mastodonclient.domain.model.MastodonList>,
+    loading: Boolean,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text("追加するリストを選択", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
+        when {
+            loading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            lists.isEmpty() -> Text("利用できるリストがありません", Modifier.padding(20.dp))
+            else -> lists.forEach { list ->
+                TextButton(onClick = { onSelected(list.id) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(list.title, Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -583,6 +761,7 @@ private fun TimelineContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onMoreClick: (TimelineStatus) -> Unit,
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
 ) {
@@ -635,6 +814,7 @@ private fun TimelineContent(
                         onFavourite = { onFavourite(status) },
                         onBookmark = { onBookmark(status) },
                         onReact = { emoji -> onReact(status, emoji) },
+                        onMoreClick = onMoreClick,
                         onUnavailableAction = onUnavailableAction,
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,
@@ -679,6 +859,7 @@ internal fun StatusCard(
     onFavourite: () -> Unit = {},
     onBookmark: () -> Unit = {},
     onReact: ((String?) -> Unit)? = null,
+    onMoreClick: ((TimelineStatus) -> Unit)? = null,
     onUnavailableAction: (String) -> Unit,
     displayPreferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
@@ -753,6 +934,18 @@ internal fun StatusCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (onMoreClick != null) {
+                        IconButton(
+                            onClick = { onMoreClick(status) },
+                            modifier = Modifier.size(34.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.MoreVert,
+                                contentDescription = "投稿メニュー",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                 }
                 Text(
                     "@${status.author.accountName}",

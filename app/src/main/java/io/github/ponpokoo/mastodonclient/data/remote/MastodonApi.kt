@@ -15,6 +15,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.MediaAttachmentDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Field
+import retrofit2.http.DELETE
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -28,6 +29,8 @@ import retrofit2.http.PATCH
 import retrofit2.http.PartMap
 import io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.ReportDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.ListDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusSourceDto
 
 interface MastodonApi {
     @GET("api/v2/instance")
@@ -101,7 +104,13 @@ interface MastodonApi {
 
     @FormUrlEncoded
     @POST("api/v1/reports")
-    suspend fun report(@Field("account_id") accountId: String, @Field("comment") comment: String, @Field("forward") forward: Boolean = false, @Field("category") category: String = "other"): ReportDto
+    suspend fun report(
+        @Field("account_id") accountId: String,
+        @Field("comment") comment: String,
+        @Field("forward") forward: Boolean = false,
+        @Field("category") category: String = "other",
+        @Field("status_ids[]") statusIds: List<String>? = null,
+    ): ReportDto
 
     @Multipart
     @PATCH("api/v1/accounts/update_credentials")
@@ -132,6 +141,26 @@ interface MastodonApi {
         @Query("limit") limit: Int = 20,
     ): List<StatusDto>
 
+    @GET("api/v1/lists")
+    suspend fun getLists(): List<ListDto>
+
+    @GET("api/v1/timelines/list/{id}")
+    suspend fun getListTimeline(
+        @Path("id") id: String,
+        @Query("max_id") maxId: String? = null,
+        @Query("limit") limit: Int = 20,
+    ): List<StatusDto>
+
+    @GET("api/v1/bookmarks")
+    suspend fun getBookmarks(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): List<StatusDto>
+
+    @GET("api/v1/favourites")
+    suspend fun getFavourites(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): List<StatusDto>
+
+    @FormUrlEncoded
+    @POST("api/v1/lists/{id}/accounts")
+    suspend fun addAccountsToList(@Path("id") id: String, @Field("account_ids[]") accountIds: List<String>)
+
     @GET("api/v1/announcements")
     suspend fun getAnnouncements(): List<AnnouncementDto>
 
@@ -156,6 +185,9 @@ interface MastodonApi {
 
     @GET("api/v1/statuses/{id}")
     suspend fun getStatus(@Path("id") id: String): StatusDto
+
+    @GET("api/v1/statuses/{id}/source")
+    suspend fun getStatusSource(@Path("id") id: String): StatusSourceDto
 
     @GET("api/v1/statuses/{id}/context")
     suspend fun getStatusContext(@Path("id") id: String): StatusContextDto
@@ -188,6 +220,15 @@ interface MastodonApi {
     @POST("api/v1/statuses/{id}/unbookmark")
     suspend fun unbookmark(@Path("id") id: String): StatusDto
 
+    @POST("api/v1/statuses/{id}/pin")
+    suspend fun pin(@Path("id") id: String): StatusDto
+
+    @POST("api/v1/statuses/{id}/unpin")
+    suspend fun unpin(@Path("id") id: String): StatusDto
+
+    @DELETE("api/v1/statuses/{id}")
+    suspend fun deleteStatus(@Path("id") id: String): StatusDto
+
     @FormUrlEncoded
     @POST("api/v1/statuses")
     suspend fun createStatus(
@@ -202,6 +243,16 @@ interface MastodonApi {
         @Field("poll[options][]") pollOptions: List<String>? = null,
         @Field("poll[expires_in]") pollExpiresInSeconds: Long? = null,
         @Field("poll[multiple]") pollMultiple: Boolean? = null,
+    ): StatusDto
+
+    @FormUrlEncoded
+    @PUT("api/v1/statuses/{id}")
+    suspend fun updateStatus(
+        @Path("id") id: String,
+        @Field("status") status: String,
+        @Field("spoiler_text") spoilerText: String? = null,
+        @Field("sensitive") sensitive: Boolean = false,
+        @Field("language") language: String? = null,
     ): StatusDto
 
     @PUT("api/v1/statuses/{id}/emoji_reactions/{emoji}")

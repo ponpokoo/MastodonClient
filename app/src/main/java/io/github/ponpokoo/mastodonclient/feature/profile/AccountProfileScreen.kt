@@ -27,6 +27,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
+import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuSheet
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 
 @Composable
@@ -43,6 +47,10 @@ fun AccountProfileScreen(
     onMediaClick: (MediaAttachment) -> Unit,
     onFollowers: (String) -> Unit,
     onFollowing: (String) -> Unit,
+    onOpenLists: () -> Unit,
+    onOpenBookmarks: () -> Unit,
+    onOpenFavourites: () -> Unit,
+    onEditStatus: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -52,12 +60,23 @@ fun AccountProfileScreen(
     var editOpen by remember { mutableStateOf(false) }
     var initialEditorHandled by rememberSaveable { mutableStateOf(false) }
     var qrOpen by remember { mutableStateOf(false) }
+    var statusMenu by remember { mutableStateOf<TimelineStatus?>(null) }
+    var statusConfirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var statusReport by remember { mutableStateOf<TimelineStatus?>(null) }
+    var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val profile = state.profile
 
     LaunchedEffect(openEditor, profile?.author?.id) {
         if (openEditor && profile != null && !initialEditorHandled) {
             editOpen = true
             initialEditorHandled = true
+        }
+    }
+    LaunchedEffect(state.message, state.errorMessage) {
+        (state.message ?: state.errorMessage)?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearMessage()
         }
     }
 
@@ -74,8 +93,9 @@ fun AccountProfileScreen(
                     DropdownMenuItem(text = { Text("QRコードを表示") }, onClick = { close { qrOpen = true } })
                     DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { close { profile?.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) } } })
                     if (profile?.isOwnProfile == true) {
-                        DropdownMenuItem(text = { Text("お気に入り") }, onClick = { close { onOpenLink("${profile.url}/favourites") } })
-                        DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { close { onOpenLink("${profile.url}/bookmarks") } })
+                        DropdownMenuItem(text = { Text("リスト") }, onClick = { close(onOpenLists) })
+                        DropdownMenuItem(text = { Text("お気に入り") }, onClick = { close(onOpenFavourites) })
+                        DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { close(onOpenBookmarks) })
                         DropdownMenuItem(text = { Text("フォロー中のハッシュタグ") }, onClick = { close { onOpenLink("${profile.url}/followed_tags") } })
                         DropdownMenuItem(text = { Text("アカウント設定") }, onClick = { close { onOpenLink("${profile.url}/settings/profile") } })
                     } else if (profile != null) {
@@ -86,7 +106,7 @@ fun AccountProfileScreen(
                 }
             },
         )
-    }, snackbarHost = { state.message?.let { LaunchedEffect(it) { viewModel.clearMessage() } } }) { padding ->
+    }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileContent(
             state = TimelineUiState(profile = profile, isLoadingProfile = state.isLoading, profileError = state.errorMessage),
             padding = padding, onRetry = viewModel::retry, onStatusClick = onStatusClick, onOpenLink = onOpenLink,
@@ -100,7 +120,54 @@ fun AccountProfileScreen(
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("header", "image", it, it, "ヘッダー画像")) } },
             onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("avatar", "image", it, it, "プロフィール画像")) } },
             onEditProfile = { editOpen = true }, onToggleFollow = viewModel::toggleFollow,
+            onOpenLists = onOpenLists,
+            onOpenBookmarks = onOpenBookmarks,
+            onOpenFavourites = onOpenFavourites,
+            onMoreClick = { statusMenu = it },
         )
+    }
+
+    statusMenu?.let { status ->
+        StatusMenuSheet(
+            status = status,
+            isOwnStatus = profile?.isOwnProfile == true && status.author.id == profile.author.id,
+            onDismiss = { statusMenu = null },
+            onOpenBrowser = {
+                statusMenu = null
+                status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) }
+            },
+            onPin = { statusMenu = null; viewModel.setPinned(status) },
+            onEdit = { statusMenu = null; onEditStatus(status.statusId) },
+            onDelete = { statusMenu = null; statusConfirmation = "delete" to status },
+            onAddToList = { statusMenu = null; listStatus = status; viewModel.loadLists() },
+            onUnfollow = { statusMenu = null; statusConfirmation = "unfollow" to status },
+            onMute = { statusMenu = null; statusConfirmation = "mute" to status },
+            onBlock = { statusMenu = null; statusConfirmation = "block" to status },
+            onReport = { statusMenu = null; statusReport = status },
+        )
+    }
+    statusConfirmation?.let { (action, status) ->
+        ConfirmStatusActionDialog(action, status, { statusConfirmation = null }) {
+            when (action) {
+                "delete" -> viewModel.deleteStatus(status)
+                "unfollow" -> viewModel.unfollowStatus(status)
+                "mute" -> viewModel.muteStatus(status)
+                "block" -> viewModel.blockStatus(status)
+            }
+            statusConfirmation = null
+        }
+    }
+    statusReport?.let { status ->
+        StatusReportDialog(status, { statusReport = null }) { comment ->
+            viewModel.reportStatus(status, comment)
+            statusReport = null
+        }
+    }
+    listStatus?.let { status ->
+        ListPickerSheet(state.lists, state.isLoadingLists, { listStatus = null }) { listId ->
+            viewModel.addToList(status, listId)
+            listStatus = null
+        }
     }
 
     confirmAction?.let { action -> AlertDialog(

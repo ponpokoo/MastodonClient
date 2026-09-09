@@ -12,6 +12,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.domain.model.MediaUpload
+import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import java.util.UUID
@@ -56,6 +57,7 @@ data class ComposePostUiState(
 
 class ComposePostViewModel(
     private val replyToId: String?,
+    private val editStatusId: String?,
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
     private val preferencesStore: UserPreferencesStore,
@@ -80,7 +82,24 @@ class ComposePostViewModel(
                     isLoading = false,
                 )
             }
-            selected?.let { loadAccountData(it, restoreDraft = true) }
+            selected?.let { session ->
+                loadAccountData(session, restoreDraft = editStatusId == null)
+                editStatusId?.let { statusId ->
+                    timelineRepository.getEditableStatus(session, statusId).fold(
+                        onSuccess = { source -> _uiState.update { state -> state.copy(
+                            text = source.text,
+                            spoilerText = source.spoilerText,
+                            sensitive = source.sensitive,
+                            language = source.language,
+                            isLoading = false,
+                        ) } },
+                        onFailure = { error -> _uiState.update { it.copy(
+                            isLoading = false,
+                            errorMessage = error.message ?: "編集する投稿を取得できませんでした",
+                        ) } },
+                    )
+                }
+            }
         }
     }
 
@@ -127,6 +146,7 @@ class ComposePostViewModel(
     fun insertEmoji(shortcode: String) = onTextChanged(_uiState.value.text + ":$shortcode:")
 
     fun switchPostingAccount(sessionId: String) {
+        if (editStatusId != null) return
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         viewModelScope.launch {
@@ -194,7 +214,21 @@ class ComposePostViewModel(
                 pollExpiresInSeconds = state.pollExpiresInSeconds.takeIf { state.pollOptions.isNotEmpty() },
                 pollMultiple = state.pollMultiple,
             )
-            timelineRepository.createStatus(session, request, idempotencyKey)
+            val result = if (editStatusId == null) {
+                timelineRepository.createStatus(session, request, idempotencyKey)
+            } else {
+                timelineRepository.updateStatus(
+                    session,
+                    EditableStatus(
+                        id = editStatusId,
+                        text = request.text,
+                        spoilerText = request.spoilerText,
+                        sensitive = request.sensitive,
+                        language = request.language.orEmpty().ifBlank { "ja" },
+                    ),
+                )
+            }
+            result
                 .onSuccess {
                     idempotencyKey = UUID.randomUUID().toString()
                     preferencesStore.deleteDraft(draftKey(session.sessionId))
@@ -316,7 +350,7 @@ class ComposePostViewModel(
         )
     }
 
-    private fun draftKey(sessionId: String) = "$sessionId:${replyToId ?: "new"}"
+    private fun draftKey(sessionId: String) = "$sessionId:${replyToId ?: "new"}:${editStatusId.orEmpty()}"
 
     private fun showPostError(error: Throwable, fallback: String) {
         val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
@@ -332,6 +366,7 @@ class ComposePostViewModel(
 
     class Factory(
         private val replyToId: String?,
+        private val editStatusId: String?,
         private val timelineRepository: TimelineRepository,
         private val authRepository: AuthRepository,
         private val preferencesStore: UserPreferencesStore,
@@ -339,6 +374,6 @@ class ComposePostViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ComposePostViewModel(replyToId, timelineRepository, authRepository, preferencesStore, deleteDraftFile) as T
+            ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore, deleteDraftFile) as T
     }
 }

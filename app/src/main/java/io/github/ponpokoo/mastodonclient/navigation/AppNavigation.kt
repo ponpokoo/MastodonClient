@@ -39,15 +39,18 @@ import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountListScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountListViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.SavedTimelinesScreen
+import io.github.ponpokoo.mastodonclient.feature.profile.SavedTimelinesViewModel
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.launch
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(preferences: UserPreferencesStore) {
     val navController = rememberNavController()
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
@@ -55,7 +58,6 @@ fun AppNavigation() {
     val authStore = remember { SecureAuthStore(context) }
     val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore) }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory) }
-    val preferences = remember { UserPreferencesStore(context) }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val openLink: (String) -> Unit = { url ->
@@ -153,6 +155,10 @@ fun AppNavigation() {
                 },
                 onFollowers = { accountId -> navController.navigate(Route.AccountList(accountId, followers = true)) },
                 onFollowing = { accountId -> navController.navigate(Route.AccountList(accountId, followers = false)) },
+                onEditStatus = { statusId -> navController.navigate(Route.ComposePost(editStatusId = statusId)) },
+                onOpenLists = { navController.navigate(Route.Lists) },
+                onOpenBookmarks = { navController.navigate(Route.SavedTimeline("bookmarks", title = "ブックマーク")) },
+                onOpenFavourites = { navController.navigate(Route.SavedTimeline("favourites", title = "お気に入り")) },
             )
         }
         composable<Route.StatusDetail> { backStackEntry ->
@@ -172,6 +178,7 @@ fun AppNavigation() {
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
+                onStatusClick = { navController.navigate(Route.StatusDetail(it)) { launchSingleTop = true } },
             )
         }
         composable<Route.ComposePost> { backStackEntry ->
@@ -179,6 +186,7 @@ fun AppNavigation() {
             val composeViewModel: ComposePostViewModel = viewModel(
                 factory = ComposePostViewModel.Factory(
                     route.replyToId,
+                    route.editStatusId,
                     timelineRepository,
                     authRepository,
                     preferences,
@@ -190,6 +198,7 @@ fun AppNavigation() {
             ComposePostScreen(
                 viewModel = composeViewModel,
                 isReply = route.replyToId != null,
+                isEditing = route.editStatusId != null,
                 onClose = { navController.popBackStack() },
                 onPosted = { navController.popBackStack() },
             )
@@ -241,6 +250,10 @@ fun AppNavigation() {
                 onMediaClick = openMedia,
                 onFollowers = { navController.navigate(Route.AccountList(it, followers = true)) },
                 onFollowing = { navController.navigate(Route.AccountList(it, followers = false)) },
+                onOpenLists = { navController.navigate(Route.Lists) },
+                onOpenBookmarks = { navController.navigate(Route.SavedTimeline("bookmarks", title = "ブックマーク")) },
+                onOpenFavourites = { navController.navigate(Route.SavedTimeline("favourites", title = "お気に入り")) },
+                onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
         composable<Route.AccountList> { backStackEntry ->
@@ -279,6 +292,46 @@ fun AppNavigation() {
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
+            )
+        }
+        composable<Route.Lists> {
+            val savedViewModel: SavedTimelinesViewModel = viewModel(
+                factory = SavedTimelinesViewModel.Factory(null, null, timelineRepository, authRepository),
+            )
+            SavedTimelinesScreen(
+                title = "リスト",
+                viewModel = savedViewModel,
+                preferences = appPreferences,
+                showLists = true,
+                onBack = { navController.popBackStack() },
+                onListClick = { list -> navController.navigate(Route.SavedTimeline("list", list.id, list.title)) },
+                onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
+                onMediaClick = openMedia,
+                onOpenLink = openLink,
+            )
+        }
+        composable<Route.SavedTimeline> { backStackEntry ->
+            val route = backStackEntry.toRoute<Route.SavedTimeline>()
+            val kind = when (route.kind) {
+                "list" -> SavedTimelineKind.List
+                "bookmarks" -> SavedTimelineKind.Bookmarks
+                else -> SavedTimelineKind.Favourites
+            }
+            val savedViewModel: SavedTimelinesViewModel = viewModel(
+                factory = SavedTimelinesViewModel.Factory(kind, route.listId, timelineRepository, authRepository),
+            )
+            SavedTimelinesScreen(
+                title = route.title,
+                viewModel = savedViewModel,
+                preferences = appPreferences,
+                showLists = false,
+                onBack = { navController.popBackStack() },
+                onListClick = {},
+                onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
+                onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
+                onMediaClick = openMedia,
+                onOpenLink = openLink,
             )
         }
         composable<Route.MediaViewer> { backStackEntry ->

@@ -16,7 +16,10 @@ sealed interface Route {
     data class StatusDetail(val statusId: String) : Route
 
     @Serializable
-    data class ComposePost(val replyToId: String? = null) : Route
+    data class ComposePost(
+        val replyToId: String? = null,
+        val editStatusId: String? = null,
+    ) : Route
 
     @Serializable
     data object Settings : Route
@@ -35,6 +38,16 @@ sealed interface Route {
 
     @Serializable
     data class HashtagTimeline(val hashtag: String) : Route
+
+    @Serializable
+    data object Lists : Route
+
+    @Serializable
+    data class SavedTimeline(
+        val kind: String,
+        val listId: String? = null,
+        val title: String,
+    ) : Route
 
     @Serializable
     data class MediaViewer(

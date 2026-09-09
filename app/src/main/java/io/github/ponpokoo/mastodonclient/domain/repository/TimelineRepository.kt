@@ -22,6 +22,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
+import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
+import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
+import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository {
     fun getCachedStatus(statusId: String): TimelineStatus? = null
@@ -136,4 +139,25 @@ interface TimelineRepository {
         statusId: String,
         emoji: String?,
     ): Result<TimelineStatus> = Result.failure(UnsupportedOperationException("リアクション操作は未対応です"))
+
+    suspend fun setPinned(session: AccountSession, statusId: String, pinned: Boolean): Result<TimelineStatus> =
+        Result.failure(UnsupportedOperationException("固定操作は未対応です"))
+    suspend fun deleteStatus(session: AccountSession, statusId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("削除操作は未対応です"))
+    suspend fun getEditableStatus(session: AccountSession, statusId: String): Result<EditableStatus> =
+        Result.failure(UnsupportedOperationException("編集元の取得は未対応です"))
+    suspend fun updateStatus(session: AccountSession, status: EditableStatus): Result<TimelineStatus> =
+        Result.failure(UnsupportedOperationException("投稿編集は未対応です"))
+    suspend fun getLists(session: AccountSession): Result<List<MastodonList>> =
+        Result.failure(UnsupportedOperationException("リストは未対応です"))
+    suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("リスト追加は未対応です"))
+    suspend fun getSavedTimeline(
+        session: AccountSession,
+        kind: SavedTimelineKind,
+        listId: String? = null,
+        maxId: String? = null,
+    ): Result<TimelinePage> = Result.failure(UnsupportedOperationException("保存済みタイムラインは未対応です"))
+    suspend fun reportStatus(session: AccountSession, accountId: String, statusId: String, comment: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("投稿の通報は未対応です"))
 }

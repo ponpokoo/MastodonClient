@@ -84,6 +84,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 fun ComposePostScreen(
     viewModel: ComposePostViewModel,
     isReply: Boolean,
+    isEditing: Boolean = false,
     onClose: () -> Unit,
     onPosted: () -> Unit,
 ) {
@@ -124,7 +125,7 @@ fun ComposePostScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isReply) "返信" else "新規投稿") },
+                title = { Text(if (isEditing) "投稿を編集" else if (isReply) "返信" else "新規投稿") },
                 navigationIcon = {
                     IconButton(onClick = ::requestClose) {
                         Icon(Icons.Outlined.Close, contentDescription = "閉じる")
@@ -145,7 +146,7 @@ fun ComposePostScreen(
                         else {
                             Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isReply) "返信" else "投稿")
+                            Text(if (isEditing) "更新" else if (isReply) "返信" else "投稿")
                         }
                     }
                 },

@@ -13,6 +13,8 @@ data class AccountProfileUiState(
     val isLoading: Boolean = true,
     val isLoadingMore: Boolean = false,
     val isMutating: Boolean = false,
+    val lists: List<MastodonList> = emptyList(),
+    val isLoadingLists: Boolean = false,
     val message: String? = null,
     val errorMessage: String? = null,
 )
@@ -74,6 +76,71 @@ class AccountProfileViewModel(
     fun toggleReblog(status: TimelineStatus) = mutateStatus(status) { timelineRepository.setReblogged(it, status.statusId, !status.reblogged) }
     fun toggleBookmark(status: TimelineStatus) = mutateStatus(status) { timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked) }
     fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus(status) { timelineRepository.setFedibirdReaction(it, status.statusId, emoji) }
+    fun setPinned(status: TimelineStatus) = mutateStatus(status) {
+        timelineRepository.setPinned(it, status.statusId, !status.pinned)
+    }
+
+    fun deleteStatus(status: TimelineStatus) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.deleteStatus(current, status.statusId).fold(
+                onSuccess = {
+                    _uiState.update { state ->
+                        state.copy(
+                            profile = state.profile?.copy(
+                                statuses = state.profile.statuses.filterNot { it.statusId == status.statusId },
+                                pinnedStatuses = state.profile.pinnedStatuses.filterNot { it.statusId == status.statusId },
+                            ),
+                            message = "投稿を削除しました",
+                        )
+                    }
+                },
+                onFailure = ::showError,
+            )
+        }
+    }
+
+    fun unfollowStatus(status: TimelineStatus) = accountMutation {
+        timelineRepository.setFollowing(it, status.author.id, false)
+    }
+    fun muteStatus(status: TimelineStatus) = accountMutation {
+        timelineRepository.setMuted(it, status.author.id, true)
+    }
+    fun blockStatus(status: TimelineStatus) = accountMutation {
+        timelineRepository.setBlocked(it, status.author.id, true)
+    }
+    fun reportStatus(status: TimelineStatus, comment: String) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.reportStatus(current, status.author.id, status.statusId, comment).fold(
+                onSuccess = { _uiState.update { it.copy(message = "通報を送信しました") } },
+                onFailure = ::showError,
+            )
+        }
+    }
+    fun loadLists() {
+        val current = session ?: return
+        if (_uiState.value.isLoadingLists) return
+        _uiState.update { it.copy(isLoadingLists = true) }
+        viewModelScope.launch {
+            timelineRepository.getLists(current).fold(
+                onSuccess = { lists -> _uiState.update { it.copy(lists = lists, isLoadingLists = false) } },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isLoadingLists = false) }
+                    showError(error)
+                },
+            )
+        }
+    }
+    fun addToList(status: TimelineStatus, listId: String) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.addAccountToList(current, listId, status.author.id).fold(
+                onSuccess = { _uiState.update { it.copy(message = "リストに追加しました") } },
+                onFailure = ::showError,
+            )
+        }
+    }
 
     private fun load() = viewModelScope.launch {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -89,10 +156,28 @@ class AccountProfileViewModel(
         _uiState.update { it.copy(isMutating = true) }
         viewModelScope.launch { request(current, relationship).fold({ rel -> _uiState.update { it.copy(relationship = rel, isMutating = false) } }, ::showError) }
     }
+    private fun accountMutation(request: suspend (AccountSession) -> Result<AccountRelationship>) {
+        val current = session ?: return
+        viewModelScope.launch {
+            request(current).fold(
+                onSuccess = { relationship -> _uiState.update { it.copy(relationship = relationship) } },
+                onFailure = ::showError,
+            )
+        }
+    }
     private fun showError(error: Throwable) = _uiState.update { it.copy(isLoading = false, isLoadingMore = false, isMutating = false, errorMessage = error.message ?: "操作に失敗しました") }
     private fun mutateStatus(original: TimelineStatus, request: suspend (AccountSession) -> Result<TimelineStatus>) {
         val current = session ?: return
-        viewModelScope.launch { request(current).onSuccess { updated -> _uiState.update { state -> state.copy(profile = state.profile?.copy(statuses = state.profile.statuses.map { if (it.statusId == original.statusId) updated else it })) } }.onFailure(::showError) }
+        viewModelScope.launch { request(current).onSuccess { updated -> _uiState.update { state ->
+            val profile = state.profile
+            state.copy(profile = profile?.copy(
+                statuses = profile.statuses.map { if (it.statusId == original.statusId) updated else it },
+                pinnedStatuses = when {
+                    updated.pinned -> (listOf(updated) + profile.pinnedStatuses).distinctBy { it.statusId }
+                    else -> profile.pinnedStatuses.filterNot { it.statusId == original.statusId }
+                },
+            ))
+        } }.onFailure(::showError) }
     }
     class Factory(private val accountId: String, private val timelineRepository: TimelineRepository, private val authRepository: AuthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountProfileViewModel(accountId, timelineRepository, authRepository) as T

@@ -53,6 +53,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.StreamingPolicy
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
@@ -95,6 +96,12 @@ fun SettingsScreen(
         },
     ) { padding ->
         LazyColumn(contentPadding = padding, modifier = Modifier.testTag("settings_screen")) {
+            item { SectionTitle("外観") }
+            item {
+                ChoiceRow("テーマ", preferences.themeMode, ThemeMode.entries) {
+                    scope.launch { store.setThemeMode(it) }
+                }
+            }
             item { SectionTitle("タイムライン表示") }
             item {
                 ChoiceRow("フォントサイズ", preferences.timelineDisplay.fontSize, FontSizePreset.entries) {
@@ -368,6 +375,9 @@ private fun Any?.displayLabel(): String = when (this) {
     StreamingPolicy.On -> "オン"
     StreamingPolicy.WifiOnly -> "Wi-Fiのみ"
     StreamingPolicy.Off -> "オフ"
+    ThemeMode.Light -> "ホワイト"
+    ThemeMode.Dark -> "ダーク"
+    ThemeMode.System -> "端末の設定に合わせる"
     PostVisibility.Public -> "公開"
     PostVisibility.Unlisted -> "ひかえめな公開"
     PostVisibility.FollowersOnly -> "フォロワー限定"

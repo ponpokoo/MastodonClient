@@ -17,6 +17,7 @@ data class TimelineStatus(
     val favourited: Boolean = false,
     val reblogged: Boolean = false,
     val bookmarked: Boolean = false,
+    val pinned: Boolean = false,
     val applicationName: String? = null,
     val reactions: List<EmojiReaction> = emptyList(),
     val supportsEmojiReactions: Boolean = false,
@@ -67,6 +68,14 @@ data class StatusDetail(
     val status: TimelineStatus,
     val ancestors: List<TimelineStatus>,
     val descendants: List<TimelineStatus>,
+)
+
+data class EditableStatus(
+    val id: String,
+    val text: String,
+    val spoilerText: String,
+    val sensitive: Boolean,
+    val language: String = "ja",
 )
 
 data class ServerAnnouncement(

@@ -20,6 +20,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 @Serializable enum class ThumbnailSize { Compact, Standard, Large }
 @Serializable enum class AutoplayPolicy { Always, WifiOnly, Never }
 @Serializable enum class StreamingPolicy { On, WifiOnly, Off }
+@Serializable enum class ThemeMode { Light, Dark, System }
 @Serializable enum class StatusAction { Reply, Boost, Favourite, Reaction, Bookmark, Share }
 
 @Serializable
@@ -61,6 +62,7 @@ data class AccountPreferences(
 
 @Serializable
 data class AppPreferences(
+    val themeMode: ThemeMode = ThemeMode.System,
     val openLinksInApp: Boolean = true,
     val timelineDisplay: TimelineDisplayPreferences = TimelineDisplayPreferences(),
     val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
@@ -106,6 +108,7 @@ class UserPreferencesStore(
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
 
+    suspend fun setThemeMode(value: ThemeMode) = update { it.copy(themeMode = value) }
     suspend fun setOpenLinksInApp(enabled: Boolean) = update { it.copy(openLinksInApp = enabled) }
     suspend fun setTimelineDisplay(value: TimelineDisplayPreferences) = update { it.copy(timelineDisplay = value) }
     suspend fun setGifAutoplay(value: AutoplayPolicy) = update { it.copy(gifAutoplay = value) }

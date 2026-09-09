@@ -12,6 +12,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
+import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -61,6 +62,9 @@ data class TimelineUiState(
     val unreadNotifications: Int = 0,
     val sessions: List<AccountSession> = emptyList(),
     val preferences: AppPreferences = AppPreferences(),
+    val lists: List<MastodonList> = emptyList(),
+    val isLoadingLists: Boolean = false,
+    val actionMessage: String? = null,
 )
 
 class TimelineViewModel(
@@ -211,6 +215,71 @@ class TimelineViewModel(
     fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus {
         timelineRepository.setFedibirdReaction(it, status.statusId, emoji)
     }
+
+    fun setPinned(status: TimelineStatus) = mutateStatus(
+        successMessage = if (status.pinned) "プロフィールの固定を解除しました" else "プロフィールに固定しました",
+    ) { timelineRepository.setPinned(it, status.statusId, !status.pinned) }
+
+    fun deleteStatus(status: TimelineStatus) {
+        val session = _uiState.value.session ?: return
+        viewModelScope.launch {
+            timelineRepository.deleteStatus(session, status.statusId).fold(
+                onSuccess = {
+                    _uiState.update { current -> current.copy(
+                        statuses = current.statuses.filterNot { it.statusId == status.statusId },
+                        actionMessage = "投稿を削除しました",
+                    ) }
+                },
+                onFailure = { showActionError(it, "投稿を削除できませんでした") },
+            )
+        }
+    }
+
+    fun unfollow(status: TimelineStatus) = accountAction("${status.author.displayName}さんのフォローを解除しました") {
+        timelineRepository.setFollowing(it, status.author.id, false)
+    }
+
+    fun mute(status: TimelineStatus) = accountAction("${status.author.displayName}さんをミュートしました") {
+        timelineRepository.setMuted(it, status.author.id, true)
+    }
+
+    fun block(status: TimelineStatus) = accountAction("${status.author.displayName}さんをブロックしました") {
+        timelineRepository.setBlocked(it, status.author.id, true)
+    }
+
+    fun report(status: TimelineStatus, comment: String) {
+        val session = _uiState.value.session ?: return
+        viewModelScope.launch {
+            timelineRepository.reportStatus(session, status.author.id, status.statusId, comment).fold(
+                onSuccess = { _uiState.update { it.copy(actionMessage = "通報を送信しました") } },
+                onFailure = { showActionError(it, "通報を送信できませんでした") },
+            )
+        }
+    }
+
+    fun loadLists() {
+        val session = _uiState.value.session ?: return
+        if (_uiState.value.isLoadingLists) return
+        _uiState.update { it.copy(isLoadingLists = true) }
+        viewModelScope.launch {
+            timelineRepository.getLists(session).fold(
+                onSuccess = { lists -> _uiState.update { it.copy(lists = lists, isLoadingLists = false) } },
+                onFailure = { _uiState.update { it.copy(isLoadingLists = false) }; showActionError(it, "リストを取得できませんでした") },
+            )
+        }
+    }
+
+    fun addToList(status: TimelineStatus, listId: String) {
+        val session = _uiState.value.session ?: return
+        viewModelScope.launch {
+            timelineRepository.addAccountToList(session, listId, status.author.id).fold(
+                onSuccess = { _uiState.update { it.copy(actionMessage = "リストに追加しました") } },
+                onFailure = { showActionError(it, "リストに追加できませんでした") },
+            )
+        }
+    }
+
+    fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
 
     fun showAnnouncements() {
         val session = _uiState.value.session ?: return
@@ -384,6 +453,7 @@ class TimelineViewModel(
     }
 
     private fun mutateStatus(
+        successMessage: String? = null,
         request: suspend (AccountSession) -> Result<TimelineStatus>,
     ) {
         val session = _uiState.value.session ?: return
@@ -401,9 +471,11 @@ class TimelineViewModel(
                                     favourited = updated.favourited,
                                     reblogged = updated.reblogged,
                                     bookmarked = updated.bookmarked,
+                                    pinned = updated.pinned,
                                     reactions = updated.reactions,
                                 )
                             },
+                            actionMessage = successMessage,
                         )
                     }
                 }
@@ -414,6 +486,23 @@ class TimelineViewModel(
                     _uiState.update { it.copy(errorMessage = message) }
                 }
         }
+    }
+
+    private fun accountAction(
+        successMessage: String,
+        request: suspend (AccountSession) -> Result<*>,
+    ) {
+        val session = _uiState.value.session ?: return
+        viewModelScope.launch {
+            request(session).fold(
+                onSuccess = { _uiState.update { it.copy(actionMessage = successMessage) } },
+                onFailure = { showActionError(it, "アカウント操作に失敗しました") },
+            )
+        }
+    }
+
+    private fun showActionError(error: Throwable, fallback: String) {
+        _uiState.update { it.copy(actionMessage = error.message ?: fallback) }
     }
 
     private fun loadInitial() {

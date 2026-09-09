@@ -60,6 +60,7 @@ fun StatusDetailScreen(
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (MediaAttachment) -> Unit,
+    onStatusClick: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val status = state.detail?.status
@@ -92,6 +93,26 @@ fun StatusDetailScreen(
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding).testTag("status_detail"),
             ) {
+                state.detail?.ancestors?.let { ancestors ->
+                    if (ancestors.isNotEmpty()) {
+                        item { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
+                        items(ancestors, key = { "ancestor-${it.timelineId}" }) { ancestor ->
+                            StatusCard(
+                                status = ancestor,
+                                onStatusClick = onStatusClick,
+                                onAuthorClick = onAccountClick,
+                                onMediaClick = onMediaClick,
+                                onOpenLink = onOpenLink,
+                                onReply = { onReply(ancestor.statusId) },
+                                onUnavailableAction = {},
+                                displayPreferences = preferences.timelineDisplay,
+                                gifAutoplay = preferences.gifAutoplay,
+                                videoAutoplay = preferences.videoAutoplay,
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                }
                 item {
                     StatusCard(
                         status = status,
@@ -127,13 +148,13 @@ fun StatusDetailScreen(
                         HorizontalDivider()
                     }
                 }
-                state.detail?.descendants?.take(40)?.let { replies ->
+                state.detail?.descendants?.let { replies ->
                     if (replies.isNotEmpty()) {
                         item { Text("返信", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
                         items(replies, key = { it.timelineId }) { reply ->
                             StatusCard(
                                 reply,
-                                onStatusClick = null,
+                                onStatusClick = onStatusClick,
                                 onAuthorClick = onAccountClick,
                                 onMediaClick = onMediaClick,
                                 onOpenLink = onOpenLink,

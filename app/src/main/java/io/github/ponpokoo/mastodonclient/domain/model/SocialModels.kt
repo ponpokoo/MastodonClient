@@ -6,6 +6,10 @@ enum class TimelineFeed {
     Federated,
 }
 
+data class MastodonList(val id: String, val title: String)
+
+enum class SavedTimelineKind { List, Bookmarks, Favourites }
+
 data class UserProfile(
     val author: StatusAuthor,
     val headerUrl: String,

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
@@ -38,6 +39,7 @@ class HomeTimelineDeviceTest {
 
         composeRule.onNodeWithContentDescription("設定").performClick()
         composeRule.onNodeWithTag("settings_screen").assertExists()
+        composeRule.onNodeWithText("テーマ").assertExists()
         repeat(8) {
             if (composeRule.onAllNodesWithText("アカウント管理").fetchSemanticsNodes().isEmpty()) {
                 composeRule.onNodeWithTag("settings_screen").performTouchInput { swipeUp() }
@@ -54,6 +56,11 @@ class HomeTimelineDeviceTest {
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().isNotEmpty()
         }
+
+        composeRule.onAllNodesWithContentDescription("投稿メニュー")[0].performClick()
+        composeRule.onNodeWithText("ブラウザで開く").assertExists()
+        composeRule.onNodeWithText("閉じる").performClick()
+        composeRule.waitForIdle()
 
         composeRule.onAllNodesWithTag("status_author_avatar")[0].performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) {
@@ -127,6 +134,23 @@ class HomeTimelineDeviceTest {
 
         composeRule.onNodeWithTag("main_tab_home").performClick()
         composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("main_tab_profile").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("profile_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
+        composeRule.onNodeWithText("ブックマーク").assertExists()
+        composeRule.onNodeWithText("お気に入り").assertExists()
+        composeRule.onNodeWithText("リスト").performClick()
+        composeRule.onNodeWithTag("saved_timelines_screen").assertExists()
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.onNodeWithTag("main_tab_home").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+        }
 
         composeRule.onNodeWithContentDescription("新規投稿").performClick()
         composeRule.onNodeWithTag("compose_post").assertExists()
