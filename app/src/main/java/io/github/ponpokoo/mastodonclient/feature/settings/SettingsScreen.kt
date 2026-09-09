@@ -47,6 +47,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
@@ -227,13 +228,34 @@ fun SettingsScreen(
                 }
             }
             item {
-                SwitchRow("下書きを自動保存", preferences.draftAutosave) {
-                    scope.launch { store.setDraftAutosave(it) }
-                }
-            }
-            item {
                 SwitchRow("代替テキスト未入力時に確認", preferences.altTextReminder) {
                     scope.launch { store.setAltTextReminder(it) }
+                }
+            }
+            item { Text("投稿画面のボタン順", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
+            items(preferences.composerActionOrder, key = { it }) { action ->
+                val index = preferences.composerActionOrder.indexOf(action)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(action.label(), Modifier.weight(1f))
+                    IconButton(
+                        enabled = index > 0,
+                        onClick = {
+                            scope.launch {
+                                store.setComposerActionOrder(preferences.composerActionOrder.move(index, index - 1))
+                            }
+                        },
+                    ) { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "上へ") }
+                    IconButton(
+                        enabled = index < preferences.composerActionOrder.lastIndex,
+                        onClick = {
+                            scope.launch {
+                                store.setComposerActionOrder(preferences.composerActionOrder.move(index, index + 1))
+                            }
+                        },
+                    ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "下へ") }
                 }
             }
             item {
@@ -350,6 +372,16 @@ private fun StatusAction.label() = when (this) {
     StatusAction.Reaction -> "リアクション"
     StatusAction.Bookmark -> "ブックマーク"
     StatusAction.Share -> "共有"
+}
+
+private fun ComposerAction.label() = when (this) {
+    ComposerAction.Media -> "画像・動画"
+    ComposerAction.Poll -> "アンケート"
+    ComposerAction.Emoji -> "絵文字"
+    ComposerAction.ContentWarning -> "内容警告（CW）"
+    ComposerAction.Mention -> "メンション（@）"
+    ComposerAction.SaveDraft -> "下書きに保存"
+    ComposerAction.DeleteDraft -> "下書きを削除"
 }
 
 private fun Any?.displayLabel(): String = when (this) {

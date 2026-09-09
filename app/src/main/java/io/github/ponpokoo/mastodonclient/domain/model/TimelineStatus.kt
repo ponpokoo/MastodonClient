@@ -75,7 +75,7 @@ data class EditableStatus(
     val text: String,
     val spoilerText: String,
     val sensitive: Boolean,
-    val language: String = "ja",
+    val language: String? = null,
 )
 
 data class ServerAnnouncement(

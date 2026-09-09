@@ -9,20 +9,30 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,7 +40,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -54,6 +63,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -65,21 +76,38 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
+import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
+import androidx.core.text.HtmlCompat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComposePostScreen(
     viewModel: ComposePostViewModel,
@@ -93,17 +121,68 @@ fun ComposePostScreen(
     var accountSheetOpen by remember { mutableStateOf(false) }
     var visibilityMenuOpen by remember { mutableStateOf(false) }
     var emojiSheetOpen by remember { mutableStateOf(false) }
-    var languageMenuOpen by remember { mutableStateOf(false) }
+    var draftSheetOpen by remember { mutableStateOf(false) }
+    var mentionSheetOpen by remember { mutableStateOf(false) }
+    var deleteDraftDialogOpen by remember { mutableStateOf(false) }
+    var draftToDelete by remember { mutableStateOf<io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft?>(null) }
     var cwEnabled by remember(state.spoilerText) { mutableStateOf(state.spoilerText.isNotBlank()) }
-    var exitDialogOpen by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val contentScrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val dismissOffset = remember { Animatable(0f) }
+    var screenHeightPx by remember { mutableStateOf(0) }
+    val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue()) }
     val hasContent = state.text.isNotBlank() || state.spoilerText.isNotBlank() ||
         state.attachments.isNotEmpty() || state.pollOptions.any(String::isNotBlank)
 
     fun requestClose() {
-        if (hasContent) viewModel.saveDraftThen(onClose) else onClose()
+        keyboardController?.hide()
+        viewModel.retainInputThen(onClose)
+    }
+    fun settleDismissGesture() {
+        scope.launch {
+            if (dismissOffset.value >= dismissThresholdPx) {
+                keyboardController?.hide()
+                dismissOffset.animateTo(
+                    screenHeightPx.toFloat().coerceAtLeast(dismissOffset.value),
+                    animationSpec = tween(180),
+                )
+                viewModel.retainInputThen(onClose)
+            } else {
+                dismissOffset.animateTo(0f, animationSpec = tween(140))
+            }
+        }
+    }
+    val dismissDragState = rememberDraggableState { delta ->
+        if (delta > 0f || dismissOffset.value > 0f) {
+            scope.launch { dismissOffset.snapTo((dismissOffset.value + delta).coerceAtLeast(0f)) }
+        }
     }
     BackHandler(onBack = ::requestClose)
     LaunchedEffect(state.posted) { if (state.posted) onPosted() }
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+    LaunchedEffect(state.actionMessage) {
+        state.actionMessage?.let {
+            val showJob = launch { snackbarHostState.showSnackbar(it) }
+            delay(1_500)
+            snackbarHostState.currentSnackbarData?.dismiss()
+            showJob.join()
+            viewModel.consumeActionMessage()
+        }
+    }
+    LaunchedEffect(state.text) {
+        if (textFieldValue.text != state.text) {
+            textFieldValue = TextFieldValue(state.text, selection = TextRange(state.text.length))
+        }
+    }
 
     val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         val items = uris.mapNotNull { uri ->
@@ -123,8 +202,15 @@ fun ComposePostScreen(
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize().onSizeChanged { screenHeightPx = it.height }
+            .graphicsLayer { translationY = dismissOffset.value },
         topBar = {
             TopAppBar(
+                modifier = Modifier.draggable(
+                    state = dismissDragState,
+                    orientation = Orientation.Vertical,
+                    onDragStopped = { settleDismissGesture() },
+                ),
                 title = { Text(if (isEditing) "投稿を編集" else if (isReply) "返信" else "新規投稿") },
                 navigationIcon = {
                     IconButton(onClick = ::requestClose) {
@@ -132,15 +218,88 @@ fun ComposePostScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::saveDraft, enabled = hasContent) {
-                        Icon(Icons.Outlined.Drafts, contentDescription = "下書きに保存")
+                    if (!isEditing) {
+                        TextButton(
+                            onClick = {
+                                keyboardController?.hide()
+                                draftSheetOpen = true
+                            },
+                            modifier = Modifier.testTag("compose_drafts"),
+                        ) { Text("下書き") }
                     }
-                    IconButton(onClick = { viewModel.clearComposer(); cwEnabled = false }, enabled = hasContent) {
-                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "投稿内容を削除")
+                },
+            )
+        },
+        bottomBar = {
+            Surface(
+                modifier = Modifier.imePadding().draggable(
+                    state = dismissDragState,
+                    orientation = Orientation.Vertical,
+                    onDragStopped = { settleDismissGesture() },
+                ),
+                tonalElevation = 3.dp,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                            .testTag("compose_action_bar"),
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        state.preferences.composerActionOrder.forEach { action ->
+                            when (action) {
+                                ComposerAction.Media -> ComposerToolbarButton(
+                                    icon = Icons.Outlined.AddPhotoAlternate,
+                                    contentDescription = "画像または動画",
+                                    enabled = state.pollOptions.isEmpty() &&
+                                        state.attachments.size < state.configuration.maxMediaAttachments,
+                                ) { mediaPicker.launch(arrayOf("image/*", "video/*")) }
+                                ComposerAction.Poll -> ComposerToolbarButton(
+                                    icon = Icons.Outlined.Poll,
+                                    contentDescription = if (state.pollOptions.isEmpty()) "投票を追加" else "投票を解除",
+                                    enabled = state.attachments.isEmpty(),
+                                ) {
+                                    if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll()
+                                }
+                                ComposerAction.Emoji -> ComposerToolbarButton(
+                                    Icons.Outlined.SentimentSatisfiedAlt,
+                                    "絵文字",
+                                ) { emojiSheetOpen = true }
+                                ComposerAction.ContentWarning -> ComposerToolbarButton(
+                                    Icons.Outlined.WarningAmber,
+                                    if (cwEnabled) "内容警告を解除" else "内容警告を追加",
+                                ) {
+                                    cwEnabled = !cwEnabled
+                                    if (!cwEnabled) viewModel.onSpoilerChanged("")
+                                }
+                                ComposerAction.Mention -> ComposerToolbarButton(
+                                    Icons.Outlined.AlternateEmail,
+                                    "メンション",
+                                ) {
+                                    viewModel.loadMentionCandidates()
+                                    keyboardController?.hide()
+                                    mentionSheetOpen = true
+                                }
+                                ComposerAction.SaveDraft -> ComposerToolbarButton(
+                                    Icons.Outlined.Drafts,
+                                    "下書きに保存",
+                                    enabled = hasContent && !isEditing,
+                                ) { viewModel.saveDraft() }
+                                ComposerAction.DeleteDraft -> ComposerToolbarButton(
+                                    Icons.Outlined.DeleteOutline,
+                                    "下書きを削除",
+                                    enabled = hasContent && !isEditing,
+                                ) { deleteDraftDialogOpen = true }
+                            }
+                        }
                     }
                     Button(
-                        onClick = { viewModel.post() },
+                        onClick = viewModel::post,
                         enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) && !state.isPosting,
+                        modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
                     ) {
                         if (state.isPosting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else {
@@ -149,14 +308,47 @@ fun ComposePostScreen(
                             Text(if (isEditing) "更新" else if (isReply) "返信" else "投稿")
                         }
                     }
-                },
-            )
+                }
+            }
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            Modifier.fillMaxSize().padding(padding).verticalScroll(contentScrollState)
                 .padding(horizontal = 16.dp).testTag("compose_post"),
         ) {
+            state.replyToStatus?.let { reply ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        AsyncImage(
+                            model = reply.author.avatarUrl,
+                            contentDescription = "${reply.author.displayName}のアイコン",
+                            modifier = Modifier.size(38.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${reply.author.displayName}  @${reply.author.accountName} への返信",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                HtmlCompat.fromHtml(reply.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
+                                    .toString().trim(),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { accountSheetOpen = true }
                     .padding(vertical = 10.dp).testTag("compose_account_switcher"),
@@ -166,7 +358,7 @@ fun ComposePostScreen(
                     model = state.selectedSession?.avatarUrl,
                     contentDescription = null,
                     modifier = Modifier.size(42.dp).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surface),
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(Modifier.width(10.dp))
@@ -209,15 +401,36 @@ fun ComposePostScreen(
                     singleLine = true,
                 )
             }
-            OutlinedTextField(
-                value = state.text,
-                onValueChange = viewModel::onTextChanged,
-                modifier = Modifier.fillMaxWidth().height(220.dp).padding(top = 8.dp),
-                placeholder = { Text(if (isReply) "返信を入力" else "いまどうしてる？") },
-                supportingText = {
-                    Text("${state.configuration.maxCharacters - state.text.length}")
-                },
-            )
+            Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 160.dp)) {
+                    if (textFieldValue.text.isEmpty()) {
+                        Text(
+                            if (isReply) "返信を入力" else "いまどうしてる？",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    BasicTextField(
+                        value = textFieldValue,
+                        onValueChange = { value ->
+                            if (value.text.length <= state.configuration.maxCharacters) {
+                                textFieldValue = value
+                                viewModel.onTextChanged(value.text)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
+                            .focusRequester(focusRequester).testTag("compose_text"),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    )
+                }
+                Text(
+                    text = "${state.configuration.maxCharacters - state.text.length}文字",
+                    modifier = Modifier.align(Alignment.End).padding(top = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             state.attachments.forEach { attachment ->
                 Surface(
@@ -273,45 +486,6 @@ fun ComposePostScreen(
                 }
             }
 
-            HorizontalDivider(Modifier.padding(top = 12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
-                    enabled = state.pollOptions.isEmpty() && state.attachments.size < state.configuration.maxMediaAttachments,
-                ) { Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "画像または動画") }
-                IconButton(onClick = { if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll() }, enabled = state.attachments.isEmpty()) {
-                    Icon(Icons.Outlined.Poll, contentDescription = "投票")
-                }
-                IconButton(onClick = { emojiSheetOpen = true }) {
-                    Icon(Icons.Outlined.SentimentSatisfiedAlt, contentDescription = "絵文字")
-                }
-                IconButton(onClick = {
-                    cwEnabled = !cwEnabled
-                    if (!cwEnabled) viewModel.onSpoilerChanged("")
-                }) { Icon(Icons.Outlined.WarningAmber, contentDescription = "内容警告") }
-                Box {
-                    IconButton(onClick = { languageMenuOpen = true }) {
-                        Icon(Icons.Outlined.Language, contentDescription = "投稿言語")
-                    }
-                    DropdownMenu(expanded = languageMenuOpen, onDismissRequest = { languageMenuOpen = false }) {
-                        listOf("ja" to "日本語", "en" to "English", "de" to "Deutsch", "fr" to "Français").forEach { (code, label) ->
-                            DropdownMenuItem(text = { Text(label) }, onClick = {
-                                languageMenuOpen = false
-                                viewModel.setLanguage(code)
-                            })
-                        }
-                    }
-                }
-            }
-            Text(
-                "投稿言語: ${state.language}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             state.errorMessage?.let {
                 Text(it, modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.error)
             }
@@ -343,6 +517,125 @@ fun ComposePostScreen(
         }
     }
 
+    if (draftSheetOpen) {
+        Dialog(onDismissRequest = { draftSheetOpen = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                shape = RoundedCornerShape(20.dp),
+                tonalElevation = 6.dp,
+            ) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("下書き", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        IconButton(onClick = { draftSheetOpen = false }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "閉じる")
+                        }
+                    }
+                    Text(
+                        "タップで呼び出し、長押しで削除",
+                        Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.drafts.isEmpty()) {
+                        Text("保存された下書きはありません", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                        items(state.drafts, key = { it.key }) { draft ->
+                        Column(
+                            Modifier.fillMaxWidth().combinedClickable(
+                                onClick = {
+                                    draftSheetOpen = false
+                                    cwEnabled = draft.spoilerText.isNotBlank()
+                                    viewModel.restoreDraft(draft)
+                                    focusRequester.requestFocus()
+                                    keyboardController?.show()
+                                },
+                                onLongClick = { draftToDelete = draft },
+                            ).padding(horizontal = 20.dp, vertical = 12.dp),
+                        ) {
+                            Text(
+                                draft.text.ifBlank { draft.spoilerText.ifBlank { "メディアまたはアンケートの下書き" } },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                buildString {
+                                    append(draft.visibility.label())
+                                    if (draft.replyToId != null) append(" · 返信")
+                                    if (draft.attachmentUris.isNotEmpty()) append(" · メディア${draft.attachmentUris.size}件")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+    }
+    }
+
+    if (mentionSheetOpen) {
+        Dialog(onDismissRequest = { mentionSheetOpen = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 620.dp),
+                shape = RoundedCornerShape(20.dp),
+                tonalElevation = 6.dp,
+            ) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("メンションするアカウント", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        IconButton(onClick = { mentionSheetOpen = false }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "閉じる")
+                        }
+                    }
+                    when {
+                        state.isLoadingMentions -> Box(Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                        state.mentionCandidates.isEmpty() -> Text(
+                            "フォロー中のアカウントはありません",
+                            Modifier.padding(20.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
+                            items(state.mentionCandidates, key = { it.id }) { account ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                viewModel.insertMention(account)
+                                mentionSheetOpen = false
+                                focusRequester.requestFocus()
+                                keyboardController?.show()
+                            }.padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncImage(
+                                account.avatarUrl,
+                                null,
+                                Modifier.size(40.dp).clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(account.displayName, fontWeight = FontWeight.SemiBold)
+                                Text("@${account.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+    }
+
     if (emojiSheetOpen) {
         ModalBottomSheet(onDismissRequest = { emojiSheetOpen = false }) {
             Text("絵文字", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
@@ -371,27 +664,47 @@ fun ComposePostScreen(
         )
     }
 
-    if (exitDialogOpen) {
+    draftToDelete?.let { draft ->
         AlertDialog(
-            onDismissRequest = { exitDialogOpen = false },
-            title = { Text("投稿を閉じますか？") },
-            text = { Text("下書きの自動保存はオフです。") },
+            onDismissRequest = { draftToDelete = null },
+            title = { Text("下書きを削除") },
+            text = { Text("この下書きを削除しますか？") },
             confirmButton = {
                 TextButton(onClick = {
-                    exitDialogOpen = false
-                    viewModel.saveDraftThen(onClose)
-                }) { Text("下書きを保存") }
+                    viewModel.deleteDraft(draft)
+                    draftToDelete = null
+                }) { Text("削除", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        exitDialogOpen = false
-                        viewModel.discardDraftThen(onClose)
-                    }) { Text("破棄") }
-                    TextButton(onClick = { exitDialogOpen = false }) { Text("編集を続ける") }
-                }
-            },
+            dismissButton = { TextButton(onClick = { draftToDelete = null }) { Text("キャンセル") } },
         )
+    }
+
+    if (deleteDraftDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { deleteDraftDialogOpen = false },
+            title = { Text("下書きを削除") },
+            text = { Text("現在の入力内容と保存済みの下書きを削除しますか？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteDraftDialogOpen = false
+                    cwEnabled = false
+                    viewModel.clearComposer()
+                }) { Text("削除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteDraftDialogOpen = false }) { Text("キャンセル") } },
+        )
+    }
+}
+
+@Composable
+private fun ComposerToolbarButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(42.dp)) {
+        Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(22.dp))
     }
 }
 

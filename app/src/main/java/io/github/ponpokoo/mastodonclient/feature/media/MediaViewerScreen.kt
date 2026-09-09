@@ -39,6 +39,7 @@ fun MediaViewerScreen(
     type: String,
     description: String?,
     onBack: () -> Unit,
+    previewUrl: String? = null,
 ) {
     BackHandler(onBack = onBack)
     Box(
@@ -48,7 +49,7 @@ fun MediaViewerScreen(
         if (type == "video" || type == "gifv") {
             VideoViewer(url, loop = type == "gifv")
         } else {
-            ZoomableImage(url, description)
+            ZoomableImage(url, previewUrl, description)
         }
         IconButton(
             onClick = onBack,
@@ -64,9 +65,10 @@ fun MediaViewerScreen(
 }
 
 @Composable
-private fun ZoomableImage(url: String, description: String?) {
+private fun ZoomableImage(url: String, previewUrl: String?, description: String?) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var originalLoaded by remember(url) { mutableStateOf(false) }
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 5f)
         offset = if (scale == 1f) {
@@ -75,19 +77,30 @@ private fun ZoomableImage(url: String, description: String?) {
             offset + panChange * PAN_SPEED_MULTIPLIER
         }
     }
-    AsyncImage(
-        model = url,
-        contentDescription = description ?: "添付画像",
-        modifier = Modifier.fillMaxSize()
-            .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offset.x,
-                translationY = offset.y,
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        if (!originalLoaded && previewUrl != null && previewUrl != url) {
+            AsyncImage(
+                model = previewUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
             )
-            .transformable(transformState),
-        contentScale = ContentScale.Fit,
-    )
+        }
+        AsyncImage(
+            model = url,
+            contentDescription = description ?: "添付画像",
+            onSuccess = { originalLoaded = true },
+            modifier = Modifier.fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                )
+                .transformable(transformState),
+            contentScale = ContentScale.Fit,
+        )
+    }
 }
 
 private const val PAN_SPEED_MULTIPLIER = 2.25f

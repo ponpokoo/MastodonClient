@@ -54,5 +54,6 @@ sealed interface Route {
         val url: String,
         val type: String,
         val description: String? = null,
+        val previewUrl: String? = null,
     ) : Route
 }

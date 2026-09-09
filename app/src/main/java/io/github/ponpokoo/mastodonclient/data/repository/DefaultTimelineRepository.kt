@@ -398,7 +398,7 @@ class DefaultTimelineRepository(
                 status = status.text,
                 spoilerText = status.spoilerText.ifBlank { null },
                 sensitive = status.sensitive,
-                language = status.language.ifBlank { null },
+                language = status.language?.ifBlank { null },
             )
         }
 

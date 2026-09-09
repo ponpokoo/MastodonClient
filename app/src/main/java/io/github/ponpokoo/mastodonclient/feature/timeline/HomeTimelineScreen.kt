@@ -128,6 +128,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 private enum class MainDestination(
@@ -200,9 +201,14 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(state.refreshNewStatusCount) {
         state.refreshNewStatusCount?.let { count ->
-            snackbarHostState.showSnackbar(
-                if (count == 0) "新しい投稿はありません" else "新しい投稿 ${count}件を取得しました",
-            )
+            val showJob = launch {
+                snackbarHostState.showSnackbar(
+                    if (count == 0) "新しい投稿はありません" else "新しい投稿 ${count}件を取得しました",
+                )
+            }
+            delay(1_800)
+            snackbarHostState.currentSnackbarData?.dismiss()
+            showJob.join()
             viewModel.consumeRefreshResult()
         }
     }
@@ -624,7 +630,7 @@ private fun TimelineTopBar(
                     model = activeSession?.avatarUrl,
                     contentDescription = "アカウントを切り替える",
                     modifier = Modifier.size(30.dp).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surface),
                     contentScale = ContentScale.Crop,
                 )
             }
@@ -664,7 +670,7 @@ private fun TimelineTopBar(
                         model = session.avatarUrl,
                         contentDescription = null,
                         modifier = Modifier.size(42.dp).clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .background(MaterialTheme.colorScheme.surface),
                         contentScale = ContentScale.Crop,
                     )
                     Spacer(Modifier.width(12.dp))
@@ -914,7 +920,7 @@ internal fun StatusCard(
                             onAuthorClick(status.author.id)
                         },
                     )
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surface),
                 contentScale = ContentScale.Crop,
             )
             Spacer(Modifier.width(8.dp))
@@ -1163,7 +1169,11 @@ private fun MediaGrid(
                             InlineVideo(media.url, loop = media.type == "gifv")
                         } else {
                             AsyncImage(
-                                model = media.previewUrl ?: media.url,
+                                model = if (media.type == "image") {
+                                    media.url ?: media.previewUrl
+                                } else {
+                                    media.previewUrl ?: media.url
+                                },
                                 contentDescription = media.description ?: "添付メディア",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,

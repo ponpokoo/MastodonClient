@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HowToReg
@@ -184,7 +185,8 @@ internal fun NotificationsContent(
         state.notifications.filter { notification ->
             when (selectedFilter) {
                 NotificationFilter.All -> true
-                NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true)
+                NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true) ||
+                    notification.type.equals("reply", ignoreCase = true)
                 NotificationFilter.Reactions -> notification.type.contains("reaction", ignoreCase = true)
             }
         }
@@ -225,6 +227,9 @@ internal fun NotificationsContent(
                             status = status,
                             onStatusClick = onStatusClick,
                             onMoreClick = onMoreClick,
+                            onReply = { onReply(status) },
+                            showReply = notification.type.equals("mention", ignoreCase = true) ||
+                                notification.type.equals("reply", ignoreCase = true),
                             preferences = preferences.timelineDisplay,
                             )
                         }
@@ -312,7 +317,7 @@ internal fun ProfileContent(
                         model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
                             .clip(CircleShape).clickable(onClick = onAvatarClick)
-                        .background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop,
+                        .background(MaterialTheme.colorScheme.surface), contentScale = ContentScale.Crop,
                     )
                     if (profile.isOwnProfile) {
                         Box(
@@ -498,6 +503,7 @@ private fun NotificationHeader(
 ) {
     val (icon, action) = when (notification.type) {
         "mention" -> Icons.Outlined.AlternateEmail to "メンションしました"
+        "reply" -> Icons.Outlined.AlternateEmail to "返信しました"
         "reblog" -> Icons.Outlined.Repeat to "ブーストしました"
         "favourite" -> Icons.Outlined.FavoriteBorder to "お気に入りしました"
         "follow" -> Icons.Outlined.PersonAdd to "フォローしました"
@@ -534,6 +540,8 @@ private fun NotificationStatusQuote(
     status: TimelineStatus,
     onStatusClick: (String) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit,
+    onReply: () -> Unit,
+    showReply: Boolean,
     preferences: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences,
 ) {
     val plainContent = remember(status.contentHtml) {
@@ -577,6 +585,20 @@ private fun NotificationStatusQuote(
                     lineHeight = preferences.lineHeightSp().sp,
                 ),
             )
+            if (showReply) {
+                TextButton(
+                    onClick = onReply,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Icon(
+                        Icons.Outlined.ChatBubbleOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("返信")
+                }
+            }
         }
     }
 }

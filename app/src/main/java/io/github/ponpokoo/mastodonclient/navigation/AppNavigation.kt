@@ -1,22 +1,28 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
@@ -76,7 +82,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     }
     val openMedia: (MediaAttachment) -> Unit = { media ->
         media.url?.let { url ->
-            navController.navigate(Route.MediaViewer(url, media.type, media.description)) {
+            navController.navigate(Route.MediaViewer(url, media.type, media.description, media.previewUrl)) {
                 launchSingleTop = true
             }
         }
@@ -164,6 +170,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
         composable<Route.StatusDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.StatusDetail>()
             val detailViewModel: StatusDetailViewModel = viewModel(
+                key = "status-detail-${route.statusId}",
                 factory = StatusDetailViewModel.Factory(
                     route.statusId,
                     timelineRepository,
@@ -178,10 +185,22 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
-                onStatusClick = { navController.navigate(Route.StatusDetail(it)) { launchSingleTop = true } },
+                onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
             )
         }
-        composable<Route.ComposePost> { backStackEntry ->
+        dialog<Route.ComposePost>(
+            dialogProperties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) { backStackEntry ->
+            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect {
+                dialogWindow?.setDimAmount(0f)
+                dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            }
             val route = backStackEntry.toRoute<Route.ComposePost>()
             val composeViewModel: ComposePostViewModel = viewModel(
                 factory = ComposePostViewModel.Factory(
@@ -340,6 +359,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 url = route.url,
                 type = route.type,
                 description = route.description,
+                previewUrl = route.previewUrl,
                 onBack = { navController.popBackStack() },
             )
         }

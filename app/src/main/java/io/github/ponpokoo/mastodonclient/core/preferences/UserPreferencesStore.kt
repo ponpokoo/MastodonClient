@@ -6,7 +6,9 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -22,6 +24,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 @Serializable enum class StreamingPolicy { On, WifiOnly, Off }
 @Serializable enum class ThemeMode { Light, Dark, System }
 @Serializable enum class StatusAction { Reply, Boost, Favourite, Reaction, Bookmark, Share }
+@Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, SaveDraft, DeleteDraft }
 
 @Serializable
 enum class PostVisibility(val apiValue: String) {
@@ -68,8 +71,8 @@ data class AppPreferences(
     val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val pauseStreamingInBackground: Boolean = true,
-    val draftAutosave: Boolean = true,
     val altTextReminder: Boolean = true,
+    val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
@@ -83,7 +86,6 @@ data class ComposeDraft(
     val text: String = "",
     val spoilerText: String = "",
     val visibility: PostVisibility = PostVisibility.Public,
-    val language: String = "ja",
     val sensitive: Boolean = false,
     val attachmentUris: List<String> = emptyList(),
     val attachmentFileNames: Map<String, String> = emptyMap(),
@@ -92,6 +94,7 @@ data class ComposeDraft(
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
     val pollMultiple: Boolean = false,
+    val updatedAtEpochMillis: Long = System.currentTimeMillis(),
 )
 
 class UserPreferencesStore(
@@ -99,6 +102,7 @@ class UserPreferencesStore(
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
 ) {
     private val dataStore = context.applicationContext.userPreferencesDataStore
+    private val composeBuffers = MutableStateFlow<Map<String, ComposeDraft>>(emptyMap())
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { stored ->
         stored[APP_PREFERENCES]?.let { encoded ->
@@ -115,8 +119,10 @@ class UserPreferencesStore(
     suspend fun setVideoAutoplay(value: AutoplayPolicy) = update { it.copy(videoAutoplay = value) }
     suspend fun setPauseStreamingInBackground(enabled: Boolean) =
         update { it.copy(pauseStreamingInBackground = enabled) }
-    suspend fun setDraftAutosave(enabled: Boolean) = update { it.copy(draftAutosave = enabled) }
     suspend fun setAltTextReminder(enabled: Boolean) = update { it.copy(altTextReminder = enabled) }
+    suspend fun setComposerActionOrder(value: List<ComposerAction>) = update {
+        it.copy(composerActionOrder = value.distinct() + ComposerAction.entries.filterNot(value::contains))
+    }
     suspend fun setAccountPreferences(sessionId: String, value: AccountPreferences) = update {
         it.copy(accountPreferences = it.accountPreferences + (sessionId to value))
     }
@@ -143,6 +149,16 @@ class UserPreferencesStore(
             }.orEmpty().filterNot { it.key == key }
             if (drafts.isEmpty()) stored.remove(DRAFTS) else stored[DRAFTS] = json.encodeToString(drafts)
         }
+    }
+
+    fun getComposeBuffer(key: String): ComposeDraft? = composeBuffers.value[key]
+
+    fun retainComposeBuffer(draft: ComposeDraft) {
+        composeBuffers.update { it + (draft.key to draft) }
+    }
+
+    fun removeComposeBuffer(key: String) {
+        composeBuffers.update { it - key }
     }
 
     private suspend fun update(transform: (AppPreferences) -> AppPreferences) {
