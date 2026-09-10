@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.domain.model
 
+import kotlinx.serialization.Serializable
+
 data class TimelineStatus(
     val timelineId: String,
     val statusId: String,
@@ -50,6 +52,7 @@ data class StatusAuthor(
     val avatarUrl: String,
 )
 
+@Serializable
 data class MediaAttachment(
     val id: String,
     val type: String,

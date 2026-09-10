@@ -102,7 +102,7 @@ internal fun SearchContent(
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences = AppPreferences(),
 ) {
     Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
@@ -175,7 +175,7 @@ internal fun NotificationsContent(
     onReact: (TimelineStatus, String?) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences,
     listState: LazyListState,
     selectedFilter: NotificationFilter,
@@ -259,6 +259,7 @@ internal fun ProfileContent(
     state: TimelineUiState,
     padding: PaddingValues,
     onRetry: () -> Unit,
+    onRefresh: () -> Unit,
     onStatusClick: (String) -> Unit,
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
@@ -268,7 +269,7 @@ internal fun ProfileContent(
     onReact: (TimelineStatus, String?) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences = AppPreferences(),
     relationship: AccountRelationship? = null,
     selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
@@ -301,10 +302,15 @@ internal fun ProfileContent(
             Text(state.profileError ?: "プロフィールを表示できませんでした")
             TextButton(onClick = onRetry) { Text("再試行") }
         }
-        else -> LazyColumn(
+        else -> PullToRefreshBox(
+            isRefreshing = state.isRefreshingProfile,
+            onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),
-            state = resolvedListState,
         ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = resolvedListState,
+            ) {
             item {
                 Box(Modifier.fillMaxWidth().height(184.dp)) {
                     AsyncImage(
@@ -418,8 +424,9 @@ internal fun ProfileContent(
                     isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
             }
-            if (isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            else if (!profile.endReached) item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
+                if (isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+                else if (!profile.endReached) item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
+            }
         }
     }
 }
@@ -435,7 +442,7 @@ private fun SocialStatus(
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences,
     onMoreClick: (TimelineStatus) -> Unit = {},
     isPinned: Boolean = false,

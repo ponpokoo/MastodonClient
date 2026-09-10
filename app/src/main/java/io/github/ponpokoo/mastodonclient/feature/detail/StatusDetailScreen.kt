@@ -59,7 +59,7 @@ fun StatusDetailScreen(
     onReply: (String) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onStatusClick: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

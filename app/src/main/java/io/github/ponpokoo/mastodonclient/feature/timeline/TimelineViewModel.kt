@@ -45,6 +45,7 @@ data class TimelineUiState(
     val refreshNewStatusCount: Int? = null,
     val profile: UserProfile? = null,
     val isLoadingProfile: Boolean = false,
+    val isRefreshingProfile: Boolean = false,
     val profileError: String? = null,
     val profileSelectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     val isLoadingMoreProfile: Boolean = false,
@@ -331,6 +332,51 @@ class TimelineViewModel(
                         it.copy(isLoadingProfile = false, profileError = error.message ?: "プロフィールを取得できませんでした")
                     }
                 }
+        }
+    }
+
+    fun refreshProfile() {
+        val current = _uiState.value
+        val session = current.session ?: return
+        val existingProfile = current.profile ?: return loadProfile()
+        if (current.isLoadingProfile || current.isRefreshingProfile) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshingProfile = true, profileError = null) }
+            val refreshedProfile = timelineRepository.getProfile(session, existingProfile.author.id)
+                .getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            isRefreshingProfile = false,
+                            profileError = error.message ?: "プロフィールを更新できませんでした",
+                        )
+                    }
+                    return@launch
+                }
+            val selectedTab = _uiState.value.profileSelectedTab
+            val finalProfile = if (selectedTab == ProfileStatusTab.Posts) {
+                refreshedProfile
+            } else {
+                timelineRepository.getProfileStatuses(session, refreshedProfile.author.id, selectedTab)
+                    .fold(
+                        onSuccess = { page ->
+                            refreshedProfile.copy(
+                                statuses = page.statuses,
+                                nextMaxId = page.nextMaxId,
+                                endReached = page.endReached,
+                            )
+                        },
+                        onFailure = { error ->
+                            _uiState.update {
+                                it.copy(
+                                    isRefreshingProfile = false,
+                                    profileError = error.message ?: "プロフィールを更新できませんでした",
+                                )
+                            }
+                            return@launch
+                        },
+                    )
+            }
+            _uiState.update { it.copy(profile = finalProfile, isRefreshingProfile = false) }
         }
     }
 

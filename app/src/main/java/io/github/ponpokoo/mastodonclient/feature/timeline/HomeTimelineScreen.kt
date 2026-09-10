@@ -43,13 +43,18 @@ import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SyncDisabled
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.MoreVert
@@ -152,7 +157,7 @@ fun HomeTimelineScreen(
     openLinksInApp: Boolean,
     onOpenLinksInAppChange: (Boolean) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onSettings: () -> Unit,
     onEditProfile: (String) -> Unit,
     onFollowers: (String) -> Unit,
@@ -176,6 +181,12 @@ fun HomeTimelineScreen(
     var confirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
     var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
+    var homeRefreshStarted by remember { mutableStateOf(false) }
+    var scrollNotificationsAfterRefresh by remember { mutableStateOf(false) }
+    var notificationsRefreshStarted by remember { mutableStateOf(false) }
+    var scrollProfileAfterRefresh by remember { mutableStateOf(false) }
+    var profileRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -216,6 +227,33 @@ fun HomeTimelineScreen(
         state.actionMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.consumeActionMessage()
+        }
+    }
+    LaunchedEffect(state.isRefreshing) {
+        if (state.isRefreshing) {
+            homeRefreshStarted = true
+        } else if (homeRefreshStarted) {
+            if (scrollHomeAfterRefresh) timelineListState.animateScrollToItem(0)
+            homeRefreshStarted = false
+            scrollHomeAfterRefresh = false
+        }
+    }
+    LaunchedEffect(state.isLoadingNotifications) {
+        if (state.isLoadingNotifications && scrollNotificationsAfterRefresh) {
+            notificationsRefreshStarted = true
+        } else if (!state.isLoadingNotifications && notificationsRefreshStarted) {
+            notificationListState.animateScrollToItem(0)
+            notificationsRefreshStarted = false
+            scrollNotificationsAfterRefresh = false
+        }
+    }
+    LaunchedEffect(state.isRefreshingProfile) {
+        if (state.isRefreshingProfile) {
+            profileRefreshStarted = true
+        } else if (profileRefreshStarted) {
+            if (scrollProfileAfterRefresh) profileListState.animateScrollToItem(0)
+            profileRefreshStarted = false
+            scrollProfileAfterRefresh = false
         }
     }
     LaunchedEffect(destination) {
@@ -304,7 +342,11 @@ fun HomeTimelineScreen(
                     state = state,
                     padding = padding,
                     listState = timelineListState,
-                    onRefresh = viewModel::refresh,
+                    onRefresh = {
+                        scrollHomeAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        homeRefreshStarted = false
+                        viewModel.refresh()
+                    },
                     onRetry = viewModel::retry,
                     onLoadMore = viewModel::loadNextPage,
                     onStatusClick = onStatusClick,
@@ -341,7 +383,11 @@ fun HomeTimelineScreen(
                 MainDestination.Notifications -> NotificationsContent(
                     state = state,
                     padding = padding,
-                    onRefresh = { viewModel.loadNotifications(force = true) },
+                    onRefresh = {
+                        scrollNotificationsAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        notificationsRefreshStarted = false
+                        viewModel.loadNotifications(force = true)
+                    },
                     onLoadMore = viewModel::loadNextNotifications,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
@@ -362,6 +408,11 @@ fun HomeTimelineScreen(
                     state = state,
                     padding = padding,
                     onRetry = viewModel::loadProfile,
+                    onRefresh = {
+                        scrollProfileAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        profileRefreshStarted = false
+                        viewModel.refreshProfile()
+                    },
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
@@ -381,12 +432,12 @@ fun HomeTimelineScreen(
                     onFollowing = { state.profile?.author?.id?.let(onFollowing) },
                     onHeaderClick = {
                         state.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像"))
+                            onMediaClick(listOf(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像")), 0)
                         }
                     },
                     onAvatarClick = {
                         state.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像"))
+                            onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像")), 0)
                         }
                     },
                     onEditProfile = { state.profile?.author?.id?.let(onEditProfile) },
@@ -760,7 +811,7 @@ private fun TimelineContent(
     onLoadMore: () -> Unit,
     onStatusClick: (String) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
@@ -858,7 +909,7 @@ internal fun StatusCard(
     status: TimelineStatus,
     onStatusClick: ((String) -> Unit)?,
     onAuthorClick: ((String) -> Unit)? = null,
-    onMediaClick: ((MediaAttachment) -> Unit)? = null,
+    onMediaClick: ((List<MediaAttachment>, Int) -> Unit)? = null,
     onOpenLink: (String) -> Unit = {},
     onReply: () -> Unit = {},
     onBoost: () -> Unit = {},
@@ -935,6 +986,14 @@ internal fun StatusCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.width(6.dp))
+                    val (visibilityIcon, visibilityLabel) = statusVisibility(status.visibility)
+                    Icon(
+                        visibilityIcon,
+                        contentDescription = visibilityLabel,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(3.dp))
                     Text(
                         relativeTime(status.createdAt),
                         style = MaterialTheme.typography.bodySmall,
@@ -1120,7 +1179,7 @@ internal fun StatusCard(
 @Composable
 private fun MediaGrid(
     attachments: List<MediaAttachment>,
-    onMediaClick: ((MediaAttachment) -> Unit)?,
+    onMediaClick: ((List<MediaAttachment>, Int) -> Unit)?,
     thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
@@ -1154,7 +1213,7 @@ private fun MediaGrid(
                             .testTag("media_attachment")
                             .then(
                                 if (onMediaClick == null || media.url == null) Modifier else {
-                                    Modifier.clickable { onMediaClick(media) }
+                                    Modifier.clickable { onMediaClick(attachments, attachments.indexOf(media)) }
                                 },
                             )
                             .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -1301,7 +1360,17 @@ private fun StatusActionRow(
         preferences.actionOrder.filterNot { it in preferences.hiddenActions }.forEach { action ->
             when (action) {
                 StatusAction.Reply -> StatusActionButton(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, preferences, onReply)
-                StatusAction.Boost -> StatusActionButton(Icons.Outlined.Repeat, "ブースト", status.boostsCount, preferences, onBoost)
+                StatusAction.Boost -> {
+                    val canBoost = status.visibility !in setOf("private", "direct")
+                    StatusActionButton(
+                        icon = if (canBoost) Icons.Outlined.Repeat else Icons.Outlined.SyncDisabled,
+                        label = if (canBoost) "ブースト" else "この公開範囲ではブーストできません",
+                        count = status.boostsCount,
+                        preferences = preferences,
+                        onClick = onBoost,
+                        enabled = canBoost,
+                    )
+                }
                 StatusAction.Favourite -> StatusActionButton(
                     if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     "お気に入り", status.favouritesCount, preferences, onFavourite,
@@ -1326,6 +1395,7 @@ private fun StatusActionButton(
     count: Long?,
     preferences: TimelineDisplayPreferences,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
     val iconSize = when (preferences.actionIconSize) {
         ActionIconSize.Small -> 18.dp
@@ -1333,8 +1403,13 @@ private fun StatusActionButton(
         ActionIconSize.Large -> 24.dp
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(iconSize), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.68f))
+        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.size(iconSize),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f),
+            )
         }
         if (preferences.showCounts && count != null && count > 0) {
             Text(
@@ -1385,14 +1460,21 @@ private fun relativeTime(value: String): String = runCatching {
     val duration = Duration.between(instant, Instant.now()).coerceAtLeast(Duration.ZERO)
     when {
         duration.seconds < 60 -> "今"
-        duration.toMinutes() < 60 -> "${duration.toMinutes()}分"
-        duration.toHours() < 24 -> "${duration.toHours()}時間"
-        duration.toDays() < 7 -> "${duration.toDays()}日"
+        duration.toMinutes() < 60 -> "${duration.toMinutes()}分前"
+        duration.toHours() < 24 -> "${duration.toHours()}時間前"
+        duration.toDays() < 7 -> "${duration.toDays()}日前"
         else -> DateTimeFormatter.ofPattern("M月d日")
             .withZone(ZoneId.systemDefault())
             .format(instant)
     }
 }.getOrDefault("")
+
+private fun statusVisibility(visibility: String): Pair<ImageVector, String> = when (visibility) {
+    "unlisted" -> Icons.Outlined.LockOpen to "ひかえめな公開"
+    "private" -> Icons.Outlined.Lock to "フォロワー限定"
+    "direct" -> Icons.Outlined.AlternateEmail to "指定した相手のみ"
+    else -> Icons.Outlined.Public to "公開"
+}
 
 private fun compactCount(count: Long): String = when {
     count < 1_000 -> count.toString()

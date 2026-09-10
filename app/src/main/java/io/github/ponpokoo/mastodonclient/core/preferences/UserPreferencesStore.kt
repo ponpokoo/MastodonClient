@@ -71,6 +71,9 @@ data class AppPreferences(
     val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val pauseStreamingInBackground: Boolean = true,
+    val keepPositionOnPullRefresh: Boolean = false,
+    val simpleNotificationsEnabled: Boolean = true,
+    val simpleNotificationSetupFailed: Boolean = false,
     val altTextReminder: Boolean = true,
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
@@ -119,6 +122,12 @@ class UserPreferencesStore(
     suspend fun setVideoAutoplay(value: AutoplayPolicy) = update { it.copy(videoAutoplay = value) }
     suspend fun setPauseStreamingInBackground(enabled: Boolean) =
         update { it.copy(pauseStreamingInBackground = enabled) }
+    suspend fun setKeepPositionOnPullRefresh(enabled: Boolean) =
+        update { it.copy(keepPositionOnPullRefresh = enabled) }
+    suspend fun setSimpleNotificationsEnabled(enabled: Boolean) =
+        update { it.copy(simpleNotificationsEnabled = enabled, simpleNotificationSetupFailed = false) }
+    suspend fun setSimpleNotificationSetupFailed(failed: Boolean) =
+        update { it.copy(simpleNotificationSetupFailed = failed) }
     suspend fun setAltTextReminder(enabled: Boolean) = update { it.copy(altTextReminder = enabled) }
     suspend fun setComposerActionOrder(value: List<ComposerAction>) = update {
         it.copy(composerActionOrder = value.distinct() + ComposerAction.entries.filterNot(value::contains))

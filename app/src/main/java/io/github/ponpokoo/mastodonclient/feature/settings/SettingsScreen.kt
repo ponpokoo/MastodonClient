@@ -210,6 +210,36 @@ fun SettingsScreen(
                     scope.launch { store.setPauseStreamingInBackground(it) }
                 }
             }
+            item {
+                SwitchRow("引っ張って更新時に元の場所にとどまる", preferences.keepPositionOnPullRefresh) {
+                    scope.launch { store.setKeepPositionOnPullRefresh(it) }
+                }
+            }
+
+            item { SectionTitle("通知") }
+            item {
+                SwitchRow("簡易通知（約15分ごとに確認）", preferences.simpleNotificationsEnabled) {
+                    scope.launch { store.setSimpleNotificationsEnabled(it) }
+                }
+            }
+            item {
+                Text(
+                    "端末がアプリのバックグラウンド実行を制限している場合、通知が遅れたり届かなかったりすることがあります。",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (preferences.simpleNotificationSetupFailed) {
+                item {
+                    Text(
+                        "定期確認を登録できませんでした。簡易通知を一度オフにしてから、もう一度オンにしてください。",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
 
             item { SectionTitle("投稿") }
             activeSession?.let { session ->

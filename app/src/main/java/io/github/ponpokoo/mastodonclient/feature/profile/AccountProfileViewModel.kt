@@ -11,6 +11,7 @@ data class AccountProfileUiState(
     val relationship: AccountRelationship? = null,
     val selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isMutating: Boolean = false,
     val lists: List<MastodonList> = emptyList(),
@@ -30,6 +31,46 @@ class AccountProfileViewModel(
 
     init { load() }
     fun retry() = load()
+
+    fun refresh() {
+        val current = session ?: return
+        val existingProfile = _uiState.value.profile ?: return
+        if (_uiState.value.isLoading || _uiState.value.isRefreshing) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+            val refreshedProfile = timelineRepository.getProfile(current, accountId).getOrElse { error ->
+                _uiState.update {
+                    it.copy(
+                        isRefreshing = false,
+                        errorMessage = error.message ?: "プロフィールを更新できませんでした",
+                    )
+                }
+                return@launch
+            }
+            val selectedTab = _uiState.value.selectedTab
+            val finalProfile = if (selectedTab == ProfileStatusTab.Posts) {
+                refreshedProfile
+            } else {
+                timelineRepository.getProfileStatuses(current, accountId, selectedTab).fold(
+                    onSuccess = { page -> refreshedProfile.copy(
+                        statuses = page.statuses,
+                        nextMaxId = page.nextMaxId,
+                        endReached = page.endReached,
+                    ) },
+                    onFailure = { error ->
+                        _uiState.update {
+                            it.copy(
+                                isRefreshing = false,
+                                errorMessage = error.message ?: "プロフィールを更新できませんでした",
+                            )
+                        }
+                        return@launch
+                    },
+                )
+            }
+            _uiState.update { it.copy(profile = finalProfile, isRefreshing = false) }
+        }
+    }
 
     fun selectTab(tab: ProfileStatusTab) {
         if (tab == _uiState.value.selectedTab) return
@@ -165,7 +206,7 @@ class AccountProfileViewModel(
             )
         }
     }
-    private fun showError(error: Throwable) = _uiState.update { it.copy(isLoading = false, isLoadingMore = false, isMutating = false, errorMessage = error.message ?: "操作に失敗しました") }
+    private fun showError(error: Throwable) = _uiState.update { it.copy(isLoading = false, isRefreshing = false, isLoadingMore = false, isMutating = false, errorMessage = error.message ?: "操作に失敗しました") }
     private fun mutateStatus(original: TimelineStatus, request: suspend (AccountSession) -> Result<TimelineStatus>) {
         val current = session ?: return
         viewModelScope.launch { request(current).onSuccess { updated -> _uiState.update { state ->

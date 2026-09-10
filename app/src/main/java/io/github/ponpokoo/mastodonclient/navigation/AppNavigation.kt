@@ -54,6 +54,9 @@ import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Composable
 fun AppNavigation(preferences: UserPreferencesStore) {
@@ -64,6 +67,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     val authStore = remember { SecureAuthStore(context) }
     val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore) }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory) }
+    val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val openLink: (String) -> Unit = { url ->
@@ -80,9 +84,12 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             }
         }
     }
-    val openMedia: (MediaAttachment) -> Unit = { media ->
-        media.url?.let { url ->
-            navController.navigate(Route.MediaViewer(url, media.type, media.description, media.previewUrl)) {
+    val openMedia: (List<MediaAttachment>, Int) -> Unit = { media, initialIndex ->
+        val selectedId = media.getOrNull(initialIndex)?.id
+        val availableMedia = media.filter { it.url != null || it.previewUrl != null }
+        if (availableMedia.isNotEmpty()) {
+            val resolvedIndex = availableMedia.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+            navController.navigate(Route.MediaViewer(navigationJson.encodeToString(availableMedia), resolvedIndex)) {
                 launchSingleTop = true
             }
         }
@@ -353,13 +360,27 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onOpenLink = openLink,
             )
         }
-        composable<Route.MediaViewer> { backStackEntry ->
+        dialog<Route.MediaViewer>(
+            dialogProperties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false,
+            ),
+        ) { backStackEntry ->
+            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect {
+                dialogWindow?.setDimAmount(0f)
+                dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+            }
             val route = backStackEntry.toRoute<Route.MediaViewer>()
+            val media = remember(route.mediaJson) {
+                runCatching { navigationJson.decodeFromString<List<MediaAttachment>>(route.mediaJson) }
+                    .getOrDefault(emptyList())
+            }
             MediaViewerScreen(
-                url = route.url,
-                type = route.type,
-                description = route.description,
-                previewUrl = route.previewUrl,
+                media = media,
+                initialIndex = route.initialIndex,
                 onBack = { navController.popBackStack() },
             )
         }

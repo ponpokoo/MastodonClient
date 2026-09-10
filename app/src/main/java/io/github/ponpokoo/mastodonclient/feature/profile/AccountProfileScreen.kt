@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.MoreVert
@@ -44,7 +45,7 @@ fun AccountProfileScreen(
     onReply: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onFollowers: (String) -> Unit,
     onFollowing: (String) -> Unit,
     onOpenLists: () -> Unit,
@@ -66,6 +67,9 @@ fun AccountProfileScreen(
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val profile = state.profile
+    val profileListState = rememberLazyListState()
+    var scrollAfterRefresh by remember { mutableStateOf(false) }
+    var refreshStarted by remember { mutableStateOf(false) }
 
     LaunchedEffect(openEditor, profile?.author?.id) {
         if (openEditor && profile != null && !initialEditorHandled) {
@@ -77,6 +81,15 @@ fun AccountProfileScreen(
         (state.message ?: state.errorMessage)?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessage()
+        }
+    }
+    LaunchedEffect(state.isRefreshing) {
+        if (state.isRefreshing) {
+            refreshStarted = true
+        } else if (refreshStarted) {
+            if (scrollAfterRefresh) profileListState.animateScrollToItem(0)
+            refreshStarted = false
+            scrollAfterRefresh = false
         }
     }
 
@@ -108,8 +121,20 @@ fun AccountProfileScreen(
         )
     }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileContent(
-            state = TimelineUiState(profile = profile, isLoadingProfile = state.isLoading, profileError = state.errorMessage),
-            padding = padding, onRetry = viewModel::retry, onStatusClick = onStatusClick, onOpenLink = onOpenLink,
+            state = TimelineUiState(
+                profile = profile,
+                isLoadingProfile = state.isLoading,
+                isRefreshingProfile = state.isRefreshing,
+                profileError = state.errorMessage,
+            ),
+            padding = padding,
+            onRetry = viewModel::retry,
+            onRefresh = {
+                scrollAfterRefresh = !preferences.keepPositionOnPullRefresh
+                refreshStarted = false
+                viewModel.refresh()
+            },
+            onStatusClick = onStatusClick, onOpenLink = onOpenLink,
             onReply = onReply, onBoost = viewModel::toggleReblog, onFavourite = viewModel::toggleFavourite,
             onBookmark = viewModel::toggleBookmark, onReact = viewModel::setReaction, onAccountClick = onAccountClick,
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
@@ -117,13 +142,14 @@ fun AccountProfileScreen(
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
-            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("header", "image", it, it, "ヘッダー画像")) } },
-            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(MediaAttachment("avatar", "image", it, it, "プロフィール画像")) } },
+            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像")), 0) } },
+            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("avatar", "image", it, it, "プロフィール画像")), 0) } },
             onEditProfile = { editOpen = true }, onToggleFollow = viewModel::toggleFollow,
             onOpenLists = onOpenLists,
             onOpenBookmarks = onOpenBookmarks,
             onOpenFavourites = onOpenFavourites,
             onMoreClick = { statusMenu = it },
+            listState = profileListState,
         )
     }
 

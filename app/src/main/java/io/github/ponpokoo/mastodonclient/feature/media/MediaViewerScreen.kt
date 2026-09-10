@@ -4,79 +4,168 @@ import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import kotlinx.coroutines.launch
 
 @Composable
 fun MediaViewerScreen(
-    url: String,
-    type: String,
-    description: String?,
+    media: List<MediaAttachment>,
+    initialIndex: Int,
     onBack: () -> Unit,
-    previewUrl: String? = null,
 ) {
+    if (media.isEmpty()) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+
     BackHandler(onBack = onBack)
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(media.indices),
+        pageCount = media::size,
+    )
+    val pageScales = remember { mutableStateMapOf<Int, Float>() }
+    val currentScale = pageScales[pagerState.currentPage] ?: 1f
+    val scope = rememberCoroutineScope()
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var viewportHeight by remember { mutableFloatStateOf(1f) }
+    val dismissProgress = (dragOffsetY / viewportHeight).coerceIn(0f, 1f)
+
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black).testTag("media_viewer"),
-        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize()
+            .background(Color.Black.copy(alpha = 1f - dismissProgress * 0.75f)),
     ) {
-        if (type == "video" || type == "gifv") {
-            VideoViewer(url, loop = type == "gifv")
-        } else {
-            ZoomableImage(url, previewUrl, description)
-        }
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationY = dragOffsetY }
+                .background(Color.Black)
+                .onSizeChanged { viewportHeight = it.height.toFloat().coerceAtLeast(1f) }
+                .pointerInput(currentScale, viewportHeight) {
+                    if (currentScale <= MIN_DISMISS_SCALE) {
+                        detectVerticalDragGestures(
+                            onVerticalDrag = { change, dragAmount ->
+                                if (dragOffsetY > 0f || dragAmount > 0f) {
+                                    change.consume()
+                                    dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                                }
+                            },
+                            onDragEnd = {
+                                if (dragOffsetY >= viewportHeight * DISMISS_THRESHOLD) {
+                                    onBack()
+                                } else {
+                                    val start = dragOffsetY
+                                    scope.launch {
+                                        animate(start, 0f) { value, _ -> dragOffsetY = value }
+                                    }
+                                }
+                            },
+                            onDragCancel = {
+                                val start = dragOffsetY
+                                scope.launch {
+                                    animate(start, 0f) { value, _ -> dragOffsetY = value }
+                                }
+                            },
+                        )
+                    }
+                }
+                .testTag("media_viewer"),
         ) {
-            Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = "閉じる",
-                tint = Color.White,
-            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = currentScale <= MIN_DISMISS_SCALE,
+                beyondViewportPageCount = 1,
+            ) { page ->
+                val item = media[page]
+                if (item.type == "video" || item.type == "gifv") {
+                    LaunchedEffect(page) { pageScales[page] = 1f }
+                    VideoViewer(item.url ?: item.previewUrl.orEmpty(), loop = item.type == "gifv")
+                } else {
+                    ZoomableImage(
+                        url = item.url ?: item.previewUrl.orEmpty(),
+                        previewUrl = item.previewUrl,
+                        description = item.description,
+                        onScaleChanged = { pageScales[page] = it },
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = "閉じる",
+                    tint = Color.White,
+                )
+            }
+
+            if (media.size > 1) {
+                Text(
+                    text = "${pagerState.currentPage + 1} / ${media.size}",
+                    color = Color.White,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 28.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ZoomableImage(url: String, previewUrl: String?, description: String?) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+private fun ZoomableImage(
+    url: String,
+    previewUrl: String?,
+    description: String?,
+    onScaleChanged: (Float) -> Unit,
+) {
+    var scale by remember(url) { mutableFloatStateOf(1f) }
+    var offset by remember(url) { mutableStateOf(Offset.Zero) }
+    var imageSize by remember(url) { mutableStateOf(IntSize.Zero) }
     var originalLoaded by remember(url) { mutableStateOf(false) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 5f)
-        offset = if (scale == 1f) {
-            Offset.Zero
-        } else {
-            offset + panChange * PAN_SPEED_MULTIPLIER
-        }
-    }
+    LaunchedEffect(scale) { onScaleChanged(scale) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (!originalLoaded && previewUrl != null && previewUrl != url) {
             AsyncImage(
@@ -90,25 +179,64 @@ private fun ZoomableImage(url: String, previewUrl: String?, description: String?
             model = url,
             contentDescription = description ?: "添付画像",
             onSuccess = { originalLoaded = true },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { imageSize = it }
                 .graphicsLayer(
                     scaleX = scale,
                     scaleY = scale,
                     translationX = offset.x,
                     translationY = offset.y,
                 )
-                .transformable(transformState),
+                .pointerInput(url, scale, imageSize) {
+                    detectTapGestures(
+                        onDoubleTap = { tapPosition ->
+                            if (scale > 1f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                scale = DOUBLE_TAP_SCALE
+                                offset = Offset(
+                                    x = (imageSize.width / 2f - tapPosition.x) * (DOUBLE_TAP_SCALE - 1f),
+                                    y = (imageSize.height / 2f - tapPosition.y) * (DOUBLE_TAP_SCALE - 1f),
+                                )
+                            }
+                        },
+                    )
+                }
+                .pointerInput(url) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pressedPointers = event.changes.count { it.pressed }
+                            val isPinching = pressedPointers >= 2
+                            val isPanningZoomedImage = scale > 1f && pressedPointers > 0
+                            if (isPinching || isPanningZoomedImage) {
+                                val zoomChange = if (isPinching) event.calculateZoom() else 1f
+                                val nextScale = (scale * zoomChange).coerceIn(1f, MAX_SCALE)
+                                val panChange = event.calculatePan()
+                                scale = nextScale
+                                offset = if (nextScale == 1f) {
+                                    Offset.Zero
+                                } else {
+                                    offset + panChange * PAN_SPEED_MULTIPLIER
+                                }
+                                event.changes.forEach { change -> change.consume() }
+                            }
+                            if (event.changes.none { it.pressed }) break
+                        }
+                    }
+                },
             contentScale = ContentScale.Fit,
         )
     }
 }
 
-private const val PAN_SPEED_MULTIPLIER = 2.25f
-
 @Composable
 private fun VideoViewer(url: String, loop: Boolean) {
-    var videoView by remember { mutableStateOf<VideoView?>(null) }
-    DisposableEffect(Unit) {
+    var videoView by remember(url) { mutableStateOf<VideoView?>(null) }
+    DisposableEffect(url) {
         onDispose { videoView?.stopPlayback() }
     }
     AndroidView(
@@ -129,3 +257,9 @@ private fun VideoViewer(url: String, loop: Boolean) {
         modifier = Modifier.fillMaxSize(),
     )
 }
+
+private const val PAN_SPEED_MULTIPLIER = 2.25f
+private const val MAX_SCALE = 5f
+private const val DOUBLE_TAP_SCALE = 2.5f
+private const val MIN_DISMISS_SCALE = 1.01f
+private const val DISMISS_THRESHOLD = 0.2f

@@ -129,7 +129,7 @@ fun SavedTimelinesScreen(
     onListClick: (MastodonList) -> Unit,
     onStatusClick: (String) -> Unit,
     onAccountClick: (String) -> Unit,
-    onMediaClick: (MediaAttachment) -> Unit,
+    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onOpenLink: (String) -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value

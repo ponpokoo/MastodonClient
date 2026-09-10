@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.web
 
+import android.annotation.SuppressLint
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InAppWebScreen(url: String, onBack: () -> Unit) {
     val safeUrl = url.takeIf {
@@ -43,9 +47,16 @@ fun InAppWebScreen(url: String, onBack: () -> Unit) {
             AndroidView(
                 factory = { context ->
                     WebView(context).apply {
-                        settings.javaScriptEnabled = false
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            allowFileAccess = false
+                            allowContentAccess = false
+                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            setSupportMultipleWindows(false)
+                            javaScriptCanOpenWindowsAutomatically = false
+                        }
+                        webChromeClient = WebChromeClient()
                         webViewClient = WebViewClient()
                         loadUrl(safeUrl)
                     }

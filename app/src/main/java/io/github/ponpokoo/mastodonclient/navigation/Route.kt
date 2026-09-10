@@ -51,9 +51,7 @@ sealed interface Route {
 
     @Serializable
     data class MediaViewer(
-        val url: String,
-        val type: String,
-        val description: String? = null,
-        val previewUrl: String? = null,
+        val mediaJson: String,
+        val initialIndex: Int = 0,
     ) : Route
 }
