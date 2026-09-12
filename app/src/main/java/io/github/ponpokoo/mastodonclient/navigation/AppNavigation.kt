@@ -33,6 +33,12 @@ import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 import io.github.ponpokoo.mastodonclient.feature.login.InstanceLoginScreen
 import io.github.ponpokoo.mastodonclient.feature.login.LoginViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
+import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelFactory
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
@@ -130,20 +136,36 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             }
         }
         composable<Route.Timeline> {
-            val timelineViewModel: TimelineViewModel = viewModel(
-                factory = TimelineViewModel.Factory(
-                    timelineRepository,
-                    authRepository,
-                    preferences,
-                    networkIsWifi = {
-                        val manager = context.getSystemService(ConnectivityManager::class.java)
-                        manager.getNetworkCapabilities(manager.activeNetwork)
-                            ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                    },
-                ),
-            )
+            val mainViewModel: MainSessionViewModel = viewModel(factory = ScreenViewModelFactory {
+                MainSessionViewModel(authRepository, timelineRepository, preferences, networkIsWifi = {
+                    val manager = context.getSystemService(ConnectivityManager::class.java)
+                    manager.getNetworkCapabilities(manager.activeNetwork)
+                        ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                })
+            })
+            val browsing = mainViewModel.browsing
+            val timelineViewModel: TimelineViewModel = viewModel(factory = ScreenViewModelFactory {
+                TimelineViewModel(timelineRepository, browsing)
+            })
+            val searchViewModel: SearchViewModel = viewModel(factory = ScreenViewModelFactory {
+                SearchViewModel(timelineRepository, browsing)
+            })
+            val notificationsViewModel: NotificationsViewModel = viewModel(factory = ScreenViewModelFactory {
+                NotificationsViewModel(timelineRepository, browsing)
+            })
+            val profileViewModel: OwnProfileViewModel = viewModel(factory = ScreenViewModelFactory {
+                OwnProfileViewModel(timelineRepository, browsing)
+            })
+            val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, browsing)
+            })
             HomeTimelineScreen(
                 viewModel = timelineViewModel,
+                mainViewModel = mainViewModel,
+                searchViewModel = searchViewModel,
+                notificationsViewModel = notificationsViewModel,
+                profileViewModel = profileViewModel,
+                actionsViewModel = actionsViewModel,
                 onLoggedOut = {
                     navController.navigate(Route.Login) {
                         popUpTo(Route.Timeline) { inclusive = true }
@@ -216,6 +238,9 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     timelineRepository,
                     authRepository,
                     preferences,
+                    draftMediaRepository = io.github.ponpokoo.mastodonclient.data.repository.DefaultDraftMediaRepository(
+                        io.github.ponpokoo.mastodonclient.data.local.DraftMediaDataSource(context),
+                    ),
                     deleteDraftFile = { uri ->
                         uri.toUri().path?.let { java.io.File(it).delete() }
                     },

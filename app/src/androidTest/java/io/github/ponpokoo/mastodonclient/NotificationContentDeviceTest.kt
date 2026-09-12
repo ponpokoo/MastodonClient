@@ -11,7 +11,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationFilter
 import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationsContent
-import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,7 +46,7 @@ class NotificationContentDeviceTest {
         composeRule.setContent {
             MaterialTheme {
                 NotificationsContent(
-                    state = TimelineUiState(notifications = listOf(notification), notificationsEndReached = true),
+                    state = NotificationsUiState(notifications = listOf(notification), notificationsEndReached = true),
                     padding = androidx.compose.foundation.layout.PaddingValues(),
                     onRefresh = {},
                     onLoadMore = {},
@@ -58,7 +58,7 @@ class NotificationContentDeviceTest {
                     onBookmark = {},
                     onReact = { _, _ -> },
                     onAccountClick = {},
-                    onMediaClick = {},
+                    onMediaClick = { _, _ -> },
                     preferences = AppPreferences(),
                     listState = rememberLazyListState(),
                     selectedFilter = NotificationFilter.All,

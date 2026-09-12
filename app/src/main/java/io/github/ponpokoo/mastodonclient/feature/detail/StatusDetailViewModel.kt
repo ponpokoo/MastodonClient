@@ -29,14 +29,7 @@ class StatusDetailViewModel(
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(
-        timelineRepository.getCachedStatus(statusId)?.let {
-            StatusDetailUiState(
-                detail = StatusDetail(it, emptyList(), emptyList()),
-                isLoading = true,
-            )
-        } ?: StatusDetailUiState(),
-    )
+    private val _uiState = MutableStateFlow(StatusDetailUiState())
     val uiState: StateFlow<StatusDetailUiState> = _uiState.asStateFlow()
     private var session: AccountSession? = null
 
@@ -85,6 +78,9 @@ class StatusDetailViewModel(
                 return@launch
             }
             session = current
+            timelineRepository.getCachedStatus(current, statusId)?.let { cached ->
+                _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) }
+            }
             timelineRepository.getStatusDetail(current, statusId)
                 .onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
                 .onFailure { error ->

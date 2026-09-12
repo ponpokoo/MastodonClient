@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.data.repository
 
+import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.data.remote.dto.AccountDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
@@ -34,7 +35,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -54,9 +55,17 @@ class DefaultTimelineRepository(
     private val streamingDataSource: MastodonStreamingDataSource = MastodonStreamingDataSource(),
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
 ) : TimelineRepository {
-    private val statusCache = ConcurrentHashMap<String, TimelineStatus>()
+    private data class StatusCacheKey(val instanceUrl: String, val sessionId: String, val statusId: String)
+    private fun cacheKey(session: AccountSession, statusId: String) =
+        StatusCacheKey(session.instanceUrl.trimEnd('/'), session.sessionId, statusId)
 
-    override fun getCachedStatus(statusId: String): TimelineStatus? = statusCache[statusId]
+    private val statusCache = Collections.synchronizedMap(
+        object : LinkedHashMap<StatusCacheKey, TimelineStatus>(128, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, TimelineStatus>?) = size > 500
+        },
+    )
+
+    override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = statusCache[cacheKey(session, statusId)]
 
     override suspend fun getAnnouncements(session: AccountSession): Result<List<ServerAnnouncement>> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
@@ -88,7 +97,7 @@ class DefaultTimelineRepository(
         val account = accountRequest.await()
         val statuses = statusesRequest.await().map(StatusDto::toDomain)
         val pinned = pinnedRequest.await()
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         UserProfile(
             author = account.toDomain(),
             headerUrl = account.header,
@@ -117,7 +126,7 @@ class DefaultTimelineRepository(
             maxId = maxId,
         )
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
     }
 
@@ -151,7 +160,7 @@ class DefaultTimelineRepository(
             SavedTimelineKind.Favourites -> api.getFavourites(maxId)
         }
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
     }
 
@@ -282,7 +291,7 @@ class DefaultTimelineRepository(
             .create(session.instanceUrl, session.accessToken)
             .getHomeTimeline(maxId = maxId, limit = limit)
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
@@ -307,7 +316,7 @@ class DefaultTimelineRepository(
                 limit = limit,
             )
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
@@ -326,7 +335,7 @@ class DefaultTimelineRepository(
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getHashtagTimeline(hashtag = hashtag, maxId = maxId, limit = limit)
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[it.statusId] = it }
+        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
@@ -344,7 +353,7 @@ class DefaultTimelineRepository(
         val status = statusRequest.await()
         val context = contextRequest.await()
         val mappedStatus = status.toDomain()
-        statusCache[mappedStatus.statusId] = mappedStatus
+        statusCache[cacheKey(session, mappedStatus.statusId)] = mappedStatus
         StatusDetail(
             status = mappedStatus,
             ancestors = context.ancestors.map(StatusDto::toDomain),
@@ -375,7 +384,7 @@ class DefaultTimelineRepository(
 
     override suspend fun deleteStatus(session: AccountSession, statusId: String) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).deleteStatus(statusId)
-        statusCache.remove(statusId)
+        statusCache.remove(cacheKey(session, statusId))
         Unit
     }
 
@@ -475,7 +484,7 @@ class DefaultTimelineRepository(
         request: suspend io.github.ponpokoo.mastodonclient.data.remote.MastodonApi.() -> StatusDto,
     ) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).request().toDomain()
-            .also { statusCache[it.statusId] = it }
+            .also { statusCache[cacheKey(session, it.statusId)] = it }
     }
 
     private suspend fun loadAccounts(

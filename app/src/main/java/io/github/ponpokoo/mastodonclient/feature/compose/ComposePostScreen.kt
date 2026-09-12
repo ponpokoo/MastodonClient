@@ -1,9 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.compose
 
-import android.provider.OpenableColumns
 import android.net.Uri
-import java.io.File
-import java.util.UUID
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -185,20 +182,7 @@ fun ComposePostScreen(
     }
 
     val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val items = uris.mapNotNull { uri ->
-            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            val fileName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-                ?: uri.lastPathSegment ?: "attachment"
-            val directory = File(context.filesDir, "draft_media").apply { mkdirs() }
-            val extension = fileName.substringAfterLast('.', missingDelimiterValue = "")
-            val target = File(directory, UUID.randomUUID().toString() + extension.takeIf(String::isNotBlank)?.let { ".$it" }.orEmpty())
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                target.outputStream().use(input::copyTo)
-            } ?: return@mapNotNull null
-            DraftAttachment(Uri.fromFile(target).toString(), fileName, mimeType)
-        }
-        viewModel.addAttachments(items)
+        viewModel.importMedia(uris.map(Uri::toString))
     }
 
     Scaffold(
@@ -254,13 +238,13 @@ fun ComposePostScreen(
                                 ComposerAction.Media -> ComposerToolbarButton(
                                     icon = Icons.Outlined.AddPhotoAlternate,
                                     contentDescription = "画像または動画",
-                                    enabled = state.pollOptions.isEmpty() &&
+                                    enabled = !state.isImportingMedia && !state.isPosting && !state.isLoading && state.pollOptions.isEmpty() &&
                                         state.attachments.size < state.configuration.maxMediaAttachments,
                                 ) { mediaPicker.launch(arrayOf("image/*", "video/*")) }
                                 ComposerAction.Poll -> ComposerToolbarButton(
                                     icon = Icons.Outlined.Poll,
                                     contentDescription = if (state.pollOptions.isEmpty()) "投票を追加" else "投票を解除",
-                                    enabled = state.attachments.isEmpty(),
+                                    enabled = state.attachments.isEmpty() && !state.isImportingMedia,
                                 ) {
                                     if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll()
                                 }
@@ -286,22 +270,22 @@ fun ComposePostScreen(
                                 ComposerAction.SaveDraft -> ComposerToolbarButton(
                                     Icons.Outlined.Drafts,
                                     "下書きに保存",
-                                    enabled = hasContent && !isEditing,
+                                    enabled = hasContent && !isEditing && !state.isImportingMedia,
                                 ) { viewModel.saveDraft() }
                                 ComposerAction.DeleteDraft -> ComposerToolbarButton(
                                     Icons.Outlined.DeleteOutline,
                                     "下書きを削除",
-                                    enabled = hasContent && !isEditing,
+                                    enabled = hasContent && !isEditing && !state.isImportingMedia,
                                 ) { deleteDraftDialogOpen = true }
                             }
                         }
                     }
                     Button(
                         onClick = viewModel::post,
-                        enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) && !state.isPosting,
+                        enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) && !state.isPosting && !state.isImportingMedia,
                         modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
                     ) {
-                        if (state.isPosting) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        if (state.isPosting || state.isImportingMedia) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else {
                             Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))

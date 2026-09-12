@@ -117,6 +117,11 @@ import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
@@ -150,6 +155,11 @@ private enum class MainDestination(
 @OptIn(ExperimentalMaterial3Api::class)
 fun HomeTimelineScreen(
     viewModel: TimelineViewModel,
+    mainViewModel: MainSessionViewModel,
+    searchViewModel: SearchViewModel,
+    notificationsViewModel: NotificationsViewModel,
+    profileViewModel: OwnProfileViewModel,
+    actionsViewModel: StatusActionsViewModel,
     onLoggedOut: () -> Unit,
     onStatusClick: (String) -> Unit,
     onCompose: (String?) -> Unit,
@@ -168,6 +178,11 @@ fun HomeTimelineScreen(
     onOpenFavourites: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
+    val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
+    val notificationsState by notificationsViewModel.uiState.collectAsStateWithLifecycle()
+    val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
+    val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -177,10 +192,10 @@ fun HomeTimelineScreen(
     val notificationListState = rememberLazyListState()
     val profileListState = rememberLazyListState()
     var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
-    var menuStatus by remember { mutableStateOf<TimelineStatus?>(null) }
-    var confirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
-    var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
-    var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var menuStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
+    var confirmation by remember(mainState.session?.sessionId) { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var reportStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
+    var listStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
     var scrollNotificationsAfterRefresh by remember { mutableStateOf(false) }
@@ -193,8 +208,8 @@ fun HomeTimelineScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> viewModel.setForeground(true)
-                Lifecycle.Event.ON_STOP -> viewModel.setForeground(false)
+                Lifecycle.Event.ON_START -> mainViewModel.setForeground(true)
+                Lifecycle.Event.ON_STOP -> mainViewModel.setForeground(false)
                 else -> Unit
             }
         }
@@ -202,8 +217,11 @@ fun HomeTimelineScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(state.requiresLogin) {
-        if (state.requiresLogin) onLoggedOut()
+    LaunchedEffect(mainState.requiresLogin) {
+        if (mainState.requiresLogin) onLoggedOut()
+    }
+    LaunchedEffect(mainState.errorMessage) {
+        mainState.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
     LaunchedEffect(state.errorMessage, state.statuses.isNotEmpty()) {
         if (state.statuses.isNotEmpty()) {
@@ -223,10 +241,10 @@ fun HomeTimelineScreen(
             viewModel.consumeRefreshResult()
         }
     }
-    LaunchedEffect(state.actionMessage) {
-        state.actionMessage?.let {
+    LaunchedEffect(actionsState.actionMessage) {
+        actionsState.actionMessage?.let {
             snackbarHostState.showSnackbar(it)
-            viewModel.consumeActionMessage()
+            actionsViewModel.consumeActionMessage()
         }
     }
     LaunchedEffect(state.isRefreshing) {
@@ -238,17 +256,17 @@ fun HomeTimelineScreen(
             scrollHomeAfterRefresh = false
         }
     }
-    LaunchedEffect(state.isLoadingNotifications) {
-        if (state.isLoadingNotifications && scrollNotificationsAfterRefresh) {
+    LaunchedEffect(notificationsState.isLoadingNotifications) {
+        if (notificationsState.isLoadingNotifications && scrollNotificationsAfterRefresh) {
             notificationsRefreshStarted = true
-        } else if (!state.isLoadingNotifications && notificationsRefreshStarted) {
+        } else if (!notificationsState.isLoadingNotifications && notificationsRefreshStarted) {
             notificationListState.animateScrollToItem(0)
             notificationsRefreshStarted = false
             scrollNotificationsAfterRefresh = false
         }
     }
-    LaunchedEffect(state.isRefreshingProfile) {
-        if (state.isRefreshingProfile) {
+    LaunchedEffect(profileState.isRefreshingProfile) {
+        if (profileState.isRefreshingProfile) {
             profileRefreshStarted = true
         } else if (profileRefreshStarted) {
             if (scrollProfileAfterRefresh) profileListState.animateScrollToItem(0)
@@ -258,8 +276,8 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(destination) {
         when (destination) {
-            MainDestination.Notifications -> viewModel.loadNotifications()
-            MainDestination.Profile -> viewModel.loadProfile()
+            MainDestination.Notifications -> notificationsViewModel.loadNotifications()
+            MainDestination.Profile -> profileViewModel.loadProfile()
             else -> Unit
         }
     }
@@ -272,10 +290,10 @@ fun HomeTimelineScreen(
                     selectedFeed = state.selectedFeed,
                     onFeedSelected = viewModel::selectFeed,
                     onAnnouncements = viewModel::showAnnouncements,
-                    onLogout = viewModel::logout,
-                    activeSession = state.session,
-                    sessions = state.sessions,
-                    onAccountSelected = viewModel::switchAccount,
+                    onLogout = mainViewModel::logout,
+                    activeSession = mainState.session,
+                    sessions = mainState.sessions,
+                    onAccountSelected = mainViewModel::switchAccount,
                     onSettings = onSettings,
                 )
             } else {
@@ -304,10 +322,10 @@ fun HomeTimelineScreen(
                             }
                         },
                         icon = {
-                            if (item == MainDestination.Notifications && state.unreadNotifications > 0) {
+                            if (item == MainDestination.Notifications && notificationsState.unreadNotifications > 0) {
                                 BadgedBox(
                                     badge = {
-                                        Badge { Text(state.unreadNotifications.coerceAtMost(99).toString()) }
+                                        Badge { Text(notificationsState.unreadNotifications.coerceAtMost(99).toString()) }
                                     },
                                 ) { Icon(item.icon, contentDescription = null) }
                             } else {
@@ -343,7 +361,7 @@ fun HomeTimelineScreen(
                     padding = padding,
                     listState = timelineListState,
                     onRefresh = {
-                        scrollHomeAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        scrollHomeAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         homeRefreshStarted = false
                         viewModel.refresh()
                     },
@@ -354,93 +372,93 @@ fun HomeTimelineScreen(
                     onMediaClick = onMediaClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
-                    onBoost = viewModel::toggleReblog,
-                    onFavourite = viewModel::toggleFavourite,
-                    onBookmark = viewModel::toggleBookmark,
-                    onReact = viewModel::setReaction,
+                    onBoost = actionsViewModel::toggleReblog,
+                    onFavourite = actionsViewModel::toggleFavourite,
+                    onBookmark = actionsViewModel::toggleBookmark,
+                    onReact = actionsViewModel::setReaction,
                     onMoreClick = { menuStatus = it },
                     onUnavailableAction = { label ->
                         scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
                     },
-                    preferences = state.preferences,
+                    preferences = mainState.preferences,
                 )
                 MainDestination.Explore -> SearchContent(
-                    state = state,
+                    state = searchState,
                     padding = padding,
-                    onQueryChanged = viewModel::onSearchQueryChanged,
-                    onSearch = viewModel::search,
+                    onQueryChanged = searchViewModel::onQueryChanged,
+                    onSearch = searchViewModel::search,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
-                    onBoost = viewModel::toggleReblog,
-                    onFavourite = viewModel::toggleFavourite,
-                    onBookmark = viewModel::toggleBookmark,
-                    onReact = viewModel::setReaction,
+                    onBoost = actionsViewModel::toggleReblog,
+                    onFavourite = actionsViewModel::toggleFavourite,
+                    onBookmark = actionsViewModel::toggleBookmark,
+                    onReact = actionsViewModel::setReaction,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
-                    preferences = state.preferences,
+                    preferences = mainState.preferences,
                 )
                 MainDestination.Notifications -> NotificationsContent(
-                    state = state,
+                    state = notificationsState,
                     padding = padding,
                     onRefresh = {
-                        scrollNotificationsAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        scrollNotificationsAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         notificationsRefreshStarted = false
-                        viewModel.loadNotifications(force = true)
+                        notificationsViewModel.loadNotifications(force = true)
                     },
-                    onLoadMore = viewModel::loadNextNotifications,
+                    onLoadMore = notificationsViewModel::loadNextNotifications,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
-                    onBoost = viewModel::toggleReblog,
-                    onFavourite = viewModel::toggleFavourite,
-                    onBookmark = viewModel::toggleBookmark,
-                    onReact = viewModel::setReaction,
+                    onBoost = actionsViewModel::toggleReblog,
+                    onFavourite = actionsViewModel::toggleFavourite,
+                    onBookmark = actionsViewModel::toggleBookmark,
+                    onReact = actionsViewModel::setReaction,
                     onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
-                    preferences = state.preferences,
+                    preferences = mainState.preferences,
                     listState = notificationListState,
                     selectedFilter = notificationFilter,
                     onSelectFilter = { notificationFilter = it },
                 )
                 MainDestination.Profile -> ProfileContent(
-                    state = state,
+                    state = profileState,
                     padding = padding,
-                    onRetry = viewModel::loadProfile,
+                    onRetry = profileViewModel::loadProfile,
                     onRefresh = {
-                        scrollProfileAfterRefresh = !state.preferences.keepPositionOnPullRefresh
+                        scrollProfileAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         profileRefreshStarted = false
-                        viewModel.refreshProfile()
+                        profileViewModel.refreshProfile()
                     },
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
-                    onBoost = viewModel::toggleReblog,
-                    onFavourite = viewModel::toggleFavourite,
-                    onBookmark = viewModel::toggleBookmark,
-                    onReact = viewModel::setReaction,
+                    onBoost = actionsViewModel::toggleReblog,
+                    onFavourite = actionsViewModel::toggleFavourite,
+                    onBookmark = actionsViewModel::toggleBookmark,
+                    onReact = actionsViewModel::setReaction,
                     onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
-                    preferences = state.preferences,
-                    selectedTab = state.profileSelectedTab,
-                    isLoadingMore = state.isLoadingMoreProfile,
-                    onSelectTab = viewModel::selectProfileTab,
-                    onLoadMore = viewModel::loadMoreProfile,
-                    onFollowers = { state.profile?.author?.id?.let(onFollowers) },
-                    onFollowing = { state.profile?.author?.id?.let(onFollowing) },
+                    preferences = mainState.preferences,
+                    selectedTab = profileState.profileSelectedTab,
+                    isLoadingMore = profileState.isLoadingMoreProfile,
+                    onSelectTab = profileViewModel::selectProfileTab,
+                    onLoadMore = profileViewModel::loadMoreProfile,
+                    onFollowers = { profileState.profile?.author?.id?.let(onFollowers) },
+                    onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
                     onHeaderClick = {
-                        state.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
+                        profileState.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
                             onMediaClick(listOf(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像")), 0)
                         }
                     },
                     onAvatarClick = {
-                        state.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
+                        profileState.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
                             onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像")), 0)
                         }
                     },
-                    onEditProfile = { state.profile?.author?.id?.let(onEditProfile) },
+                    onEditProfile = { profileState.profile?.author?.id?.let(onEditProfile) },
                     onOpenLists = onOpenLists,
                     onOpenBookmarks = onOpenBookmarks,
                     onOpenFavourites = onOpenFavourites,
@@ -470,16 +488,16 @@ fun HomeTimelineScreen(
     menuStatus?.let { status ->
         StatusMenuSheet(
             status = status,
-            isOwnStatus = status.author.id == state.session?.accountId,
+            isOwnStatus = status.author.id == mainState.session?.accountId,
             onDismiss = { menuStatus = null },
             onOpenBrowser = {
                 menuStatus = null
                 status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
             },
-            onPin = { menuStatus = null; viewModel.setPinned(status) },
+            onPin = { menuStatus = null; actionsViewModel.setPinned(status) },
             onEdit = { menuStatus = null; onEditStatus(status.statusId) },
             onDelete = { menuStatus = null; confirmation = "delete" to status },
-            onAddToList = { menuStatus = null; listStatus = status; viewModel.loadLists() },
+            onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
             onUnfollow = { menuStatus = null; confirmation = "unfollow" to status },
             onMute = { menuStatus = null; confirmation = "mute" to status },
             onBlock = { menuStatus = null; confirmation = "block" to status },
@@ -493,10 +511,10 @@ fun HomeTimelineScreen(
             onDismiss = { confirmation = null },
             onConfirm = {
                 when (action) {
-                    "delete" -> viewModel.deleteStatus(status)
-                    "unfollow" -> viewModel.unfollow(status)
-                    "mute" -> viewModel.mute(status)
-                    "block" -> viewModel.block(status)
+                    "delete" -> actionsViewModel.deleteStatus(status)
+                    "unfollow" -> actionsViewModel.unfollow(status)
+                    "mute" -> actionsViewModel.mute(status)
+                    "block" -> actionsViewModel.block(status)
                 }
                 confirmation = null
             },
@@ -506,15 +524,15 @@ fun HomeTimelineScreen(
         StatusReportDialog(
             status = status,
             onDismiss = { reportStatus = null },
-            onSubmit = { comment -> viewModel.report(status, comment); reportStatus = null },
+            onSubmit = { comment -> actionsViewModel.report(status, comment); reportStatus = null },
         )
     }
     listStatus?.let { status ->
         ListPickerSheet(
-            lists = state.lists,
-            loading = state.isLoadingLists,
+            lists = actionsState.lists,
+            loading = actionsState.isLoadingLists,
             onDismiss = { listStatus = null },
-            onSelected = { listId -> viewModel.addToList(status, listId); listStatus = null },
+            onSelected = { listId -> actionsViewModel.addToList(status, listId); listStatus = null },
         )
     }
 

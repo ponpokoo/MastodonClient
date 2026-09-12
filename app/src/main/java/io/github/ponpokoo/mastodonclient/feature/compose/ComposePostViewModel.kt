@@ -17,6 +17,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
+import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
+import io.github.ponpokoo.mastodonclient.domain.repository.DraftMediaRepository
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,13 +27,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
-
-data class DraftAttachment(
-    val uri: String,
-    val fileName: String,
-    val mimeType: String,
-    val description: String = "",
-)
 
 data class ComposePostUiState(
     val sessions: List<AccountSession> = emptyList(),
@@ -53,6 +48,7 @@ data class ComposePostUiState(
     val preferences: AppPreferences = AppPreferences(),
     val isLoading: Boolean = true,
     val isPosting: Boolean = false,
+    val isImportingMedia: Boolean = false,
     val posted: Boolean = false,
     val errorMessage: String? = null,
     val altReminderVisible: Boolean = false,
@@ -66,6 +62,7 @@ class ComposePostViewModel(
     private val authRepository: AuthRepository,
     private val preferencesStore: UserPreferencesStore,
     private val deleteDraftFile: (String) -> Unit,
+    private val draftMediaRepository: DraftMediaRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ComposePostUiState())
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
@@ -85,7 +82,7 @@ class ComposePostViewModel(
                     visibility = preferences.forAccount(selected?.sessionId).defaultVisibility,
                     drafts = preferencesStore.drafts.first().filter { draft -> draft.sessionId == selected?.sessionId }
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
-                    isLoading = false,
+                    isLoading = selected != null,
                 )
             }
             selected?.let { session ->
@@ -117,7 +114,35 @@ class ComposePostViewModel(
     fun setVisibility(value: PostVisibility) = change { it.copy(visibility = value) }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
 
-    fun addAttachments(items: List<DraftAttachment>) {
+    fun importMedia(uris: List<String>) {
+        val state = _uiState.value
+        if (state.isImportingMedia || state.isPosting || state.isLoading || state.selectedSession == null) return
+        val remaining = (state.configuration.maxMediaAttachments - state.attachments.size).coerceAtLeast(0)
+        if (remaining == 0 || uris.isEmpty()) return
+        if (state.pollOptions.isNotEmpty()) {
+            _uiState.update { it.copy(errorMessage = "メディアと投票は同時に追加できません") }
+            return
+        }
+        _uiState.update { it.copy(isImportingMedia = true, errorMessage = null) }
+        viewModelScope.launch {
+            try {
+                draftMediaRepository.importMedia(uris.take(remaining)).fold(
+                    onSuccess = { addAttachments(it) },
+                    onFailure = { _uiState.update { it.copy(errorMessage = "添付ファイルを読み込めませんでした") } },
+                )
+            } finally {
+                _uiState.update { it.copy(isImportingMedia = false) }
+            }
+        }
+    }
+
+    private fun waitForMediaImport(): Boolean {
+        if (!_uiState.value.isImportingMedia) return false
+        _uiState.update { it.copy(actionMessage = "添付ファイルの読み込み完了をお待ちください") }
+        return true
+    }
+
+    private fun addAttachments(items: List<DraftAttachment>) {
         val state = _uiState.value
         val remaining = (state.configuration.maxMediaAttachments - state.attachments.size).coerceAtLeast(0)
         change { it.copy(attachments = (it.attachments + items.take(remaining)).distinctBy(DraftAttachment::uri)) }
@@ -137,7 +162,8 @@ class ComposePostViewModel(
     }
 
     fun enablePoll() = change { state ->
-        if (state.attachments.isNotEmpty()) state.copy(errorMessage = "メディアと投票は同時に追加できません")
+        if (state.isImportingMedia) state.copy(actionMessage = "添付ファイルの読み込み完了をお待ちください")
+        else if (state.attachments.isNotEmpty()) state.copy(errorMessage = "メディアと投票は同時に追加できません")
         else state.copy(pollOptions = listOf("", ""))
     }
 
@@ -170,6 +196,7 @@ class ComposePostViewModel(
     }
 
     fun restoreDraft(draft: ComposeDraft) {
+        if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null) return
         activeReplyToId = draft.replyToId
@@ -179,6 +206,7 @@ class ComposePostViewModel(
     }
 
     fun deleteDraft(draft: ComposeDraft) {
+        if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId) return
         viewModelScope.launch {
@@ -198,9 +226,11 @@ class ComposePostViewModel(
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
 
     fun switchPostingAccount(sessionId: String) {
-        if (editStatusId != null) return
+        if (editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting) return
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
+        if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
             retainInput()
             val selected = _uiState.value.sessions.firstOrNull { it.sessionId == sessionId } ?: return@launch
@@ -226,7 +256,7 @@ class ComposePostViewModel(
 
     fun post(skipAltReminder: Boolean = false) {
         val state = _uiState.value
-        if (state.isPosting || state.selectedSession == null) return
+        if (state.isPosting || state.isImportingMedia || state.selectedSession == null) return
         if (state.text.isBlank() && state.attachments.isEmpty()) return
         if (state.pollOptions.isNotEmpty() && state.pollOptions.any(String::isBlank)) {
             _uiState.update { it.copy(errorMessage = "投票の選択肢を入力してください") }
@@ -296,6 +326,7 @@ class ComposePostViewModel(
     }
 
     fun saveDraft() {
+        if (waitForMediaImport()) return
         viewModelScope.launch {
             saveDraftNow()
             _uiState.update { it.copy(actionMessage = "下書きに保存しました") }
@@ -307,6 +338,7 @@ class ComposePostViewModel(
         onRetained()
     }
     fun discardDraft() {
+        if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
@@ -317,6 +349,7 @@ class ComposePostViewModel(
         }
     }
     fun discardDraftThen(onDiscarded: () -> Unit) {
+        if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return onDiscarded()
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
@@ -329,6 +362,7 @@ class ComposePostViewModel(
     }
 
     fun clearComposer() {
+        if (waitForMediaImport()) return
         val state = _uiState.value
         val session = state.selectedSession ?: return
         val key = draftKey(session.sessionId)
@@ -485,9 +519,10 @@ class ComposePostViewModel(
         private val authRepository: AuthRepository,
         private val preferencesStore: UserPreferencesStore,
         private val deleteDraftFile: (String) -> Unit,
+        private val draftMediaRepository: DraftMediaRepository,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore, deleteDraftFile) as T
+            ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore, deleteDraftFile, draftMediaRepository) as T
     }
 }

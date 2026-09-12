@@ -27,7 +27,6 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
-import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
 import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuSheet
@@ -121,7 +120,7 @@ fun AccountProfileScreen(
         )
     }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileContent(
-            state = TimelineUiState(
+            state = ProfileUiState(
                 profile = profile,
                 isLoadingProfile = state.isLoading,
                 isRefreshingProfile = state.isRefreshing,

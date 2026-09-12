@@ -27,7 +27,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository {
-    fun getCachedStatus(statusId: String): TimelineStatus? = null
+    fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = null
 
     suspend fun getHomeTimeline(
         session: AccountSession,

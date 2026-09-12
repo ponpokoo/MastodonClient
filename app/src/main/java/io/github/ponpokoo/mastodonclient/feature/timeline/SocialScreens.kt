@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -90,7 +93,7 @@ internal enum class NotificationFilter(val label: String) {
 
 @Composable
 internal fun SearchContent(
-    state: TimelineUiState,
+    state: SearchUiState,
     padding: PaddingValues,
     onQueryChanged: (String) -> Unit,
     onSearch: () -> Unit,
@@ -162,7 +165,7 @@ internal fun SearchContent(
 
 @Composable
 internal fun NotificationsContent(
-    state: TimelineUiState,
+    state: NotificationsUiState,
     padding: PaddingValues,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
@@ -256,7 +259,7 @@ internal fun NotificationsContent(
 
 @Composable
 internal fun ProfileContent(
-    state: TimelineUiState,
+    state: ProfileUiState,
     padding: PaddingValues,
     onRetry: () -> Unit,
     onRefresh: () -> Unit,

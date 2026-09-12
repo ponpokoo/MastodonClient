@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertTrue
@@ -19,9 +20,14 @@ class MediaViewerDeviceTest {
         val closed = AtomicBoolean(false)
         composeRule.setContent {
             MediaViewerScreen(
-                url = "https://example.com/image.jpg",
-                type = "image",
-                description = "テスト画像",
+                media = listOf(MediaAttachment(
+                    id = "test-image",
+                    type = "image",
+                    url = "https://example.com/image.jpg",
+                    previewUrl = null,
+                    description = "テスト画像",
+                )),
+                initialIndex = 0,
                 onBack = { closed.set(true) },
             )
         }

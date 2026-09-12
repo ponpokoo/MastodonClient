@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.data.repository
 
+import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.core.network.InstanceUrlNormalizer
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonInstance

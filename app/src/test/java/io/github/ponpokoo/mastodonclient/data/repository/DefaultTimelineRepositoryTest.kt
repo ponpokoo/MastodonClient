@@ -16,6 +16,37 @@ import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
     @Test
+    fun cachedStatusesAreIsolatedByAccountAndInstance() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("[${basicStatusJson("shared")} ]"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            repository.getHomeTimeline(session).getOrThrow()
+            assertEquals("shared", repository.getCachedStatus(session, "shared")?.statusId)
+            val other = session.copy(sessionId = "second")
+            server.enqueue(MockResponse().setBody("[${basicStatusJson("shared").replace("hello", "other account")}]"))
+            repository.getHomeTimeline(other).getOrThrow()
+            assertEquals("hello", repository.getCachedStatus(session, "shared")?.contentHtml)
+            assertEquals("other account", repository.getCachedStatus(other, "shared")?.contentHtml)
+            assertEquals(null, repository.getCachedStatus(session.copy(sessionId = "other"), "shared"))
+            assertEquals(null, repository.getCachedStatus(session.copy(instanceUrl = "https://other.social"), "shared"))
+        }
+    }
+
+    @Test
+    fun statusCacheEvictsOldEntries() = runTest {
+        MockWebServer().use { server ->
+            val statuses = (0..500).joinToString(",") { basicStatusJson(it.toString()) }
+            server.enqueue(MockResponse().setBody("[$statuses]"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            repository.getHomeTimeline(session).getOrThrow()
+            assertEquals(null, repository.getCachedStatus(session, "0"))
+            assertEquals("500", repository.getCachedStatus(session, "500")?.statusId)
+        }
+    }
+
+    @Test
     fun loadsHashtagTimelineWithTagEndpoint() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("[${basicStatusJson("tagged")}]"))
