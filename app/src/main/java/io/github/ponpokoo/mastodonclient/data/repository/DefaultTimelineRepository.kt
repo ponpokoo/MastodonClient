@@ -506,6 +506,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
         author = displayed.account.toDomain(),
         boostedBy = account.takeIf { reblog != null }?.toDomain(),
         contentHtml = displayed.content,
+        customEmojis = displayed.emojis.associate { it.shortcode to it.url },
         spoilerText = displayed.spoilerText,
         sensitive = displayed.sensitive,
         visibility = displayed.visibility,
@@ -558,6 +559,7 @@ private fun AccountDto.toDomain() = StatusAuthor(
     displayName = displayName.ifBlank { username },
     accountName = acct,
     avatarUrl = avatar,
+    customEmojis = emojis.associate { it.shortcode to it.url },
 )
 
 private fun io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto.toDomain() = AccountRelationship(

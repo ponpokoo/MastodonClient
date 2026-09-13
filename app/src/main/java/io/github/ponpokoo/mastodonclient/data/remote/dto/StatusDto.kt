@@ -22,6 +22,7 @@ data class StatusDto(
     val bookmarked: Boolean = false,
     val pinned: Boolean? = null,
     @SerialName("emoji_reactions") val emojiReactions: List<EmojiReactionDto>? = null,
+    val emojis: List<AccountEmojiDto> = emptyList(),
     val card: PreviewCardDto? = null,
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
     val reblog: StatusDto? = null,

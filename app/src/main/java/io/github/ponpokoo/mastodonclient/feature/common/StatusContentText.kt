@@ -3,15 +3,18 @@ package io.github.ponpokoo.mastodonclient.feature.common
 import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.text.HtmlCompat
 
@@ -19,21 +22,28 @@ import androidx.core.text.HtmlCompat
 @Composable
 fun StatusContentText(
     contentHtml: String,
+    customEmojis: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.bodyLarge,
     onLinkClick: (String) -> Unit,
     onNonLinkClick: (() -> Unit)? = null,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
-    val text = remember(contentHtml, linkColor) { htmlToAnnotatedString(contentHtml, linkColor) }
-    ClickableText(
+    val source = remember(contentHtml, linkColor) { htmlToAnnotatedString(contentHtml, linkColor) }
+    val text = remember(source, customEmojis) { replaceCustomEmojiShortcodes(source, customEmojis) }
+    val layoutResult = remember { arrayOfNulls<TextLayoutResult>(1) }
+    Text(
         text = text,
-        modifier = modifier,
-        style = style.copy(color = MaterialTheme.colorScheme.onSurface),
-        onClick = { offset ->
-            val link = text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
-            if (link != null) onLinkClick(link.item) else onNonLinkClick?.invoke()
+        modifier = modifier.pointerInput(text, onLinkClick, onNonLinkClick) {
+            detectTapGestures { position ->
+                val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return@detectTapGestures
+                val link = text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
+                if (link != null) onLinkClick(link.item) else onNonLinkClick?.invoke()
+            }
         },
+        style = style.copy(color = MaterialTheme.colorScheme.onSurface),
+        inlineContent = rememberEmojiInlineContent(source.text, customEmojis),
+        onTextLayout = { layoutResult[0] = it },
     )
 }
 

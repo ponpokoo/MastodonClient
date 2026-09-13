@@ -25,6 +25,7 @@ data class TimelineStatus(
     val supportsEmojiReactions: Boolean = false,
     val previewCard: PreviewCard? = null,
     val mediaAttachments: List<MediaAttachment>,
+    val customEmojis: Map<String, String> = emptyMap(),
 )
 
 data class PreviewCard(
@@ -50,6 +51,7 @@ data class StatusAuthor(
     val displayName: String,
     val accountName: String,
     val avatarUrl: String,
+    val customEmojis: Map<String, String> = emptyMap(),
 )
 
 @Serializable

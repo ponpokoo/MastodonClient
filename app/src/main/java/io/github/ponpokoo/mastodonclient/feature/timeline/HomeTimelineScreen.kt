@@ -123,6 +123,7 @@ import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
@@ -565,7 +566,12 @@ internal fun StatusMenuSheet(
     onReport: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Text(status.author.displayName, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+        CustomEmojiText(
+            status.author.displayName,
+            status.author.customEmojis,
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleMedium,
+        )
         @Composable fun Action(label: String, action: () -> Unit) {
             TextButton(onClick = action, modifier = Modifier.fillMaxWidth()) {
                 Text(label, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
@@ -971,8 +977,9 @@ internal fun StatusCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(5.dp))
-                Text(
-                    "${it.displayName}さんがブーストしました",
+                CustomEmojiText(
+                    text = "${it.displayName}さんがブーストしました",
+                    emojis = it.customEmojis,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -995,8 +1002,9 @@ internal fun StatusCard(
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        status.author.displayName,
+                    CustomEmojiText(
+                        text = status.author.displayName,
+                        emojis = status.author.customEmojis,
                         modifier = Modifier.weight(1f),
                         fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleMedium,
@@ -1042,7 +1050,11 @@ internal fun StatusCard(
 
         Column(modifier = Modifier.padding(start = contentStart)) {
             if (status.spoilerText.isNotBlank()) {
-                Text(status.spoilerText, modifier = Modifier.padding(top = 8.dp))
+                CustomEmojiText(
+                    text = status.spoilerText,
+                    emojis = status.customEmojis,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
                 TextButton(
                     onClick = { contentExpanded = !contentExpanded },
                     contentPadding = PaddingValues(horizontal = 0.dp),
@@ -1053,6 +1065,7 @@ internal fun StatusCard(
             if (contentExpanded && status.contentHtml.isNotBlank()) {
                 StatusContentText(
                     contentHtml = status.contentHtml,
+                    customEmojis = status.customEmojis,
                     modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 8.dp else 0.dp),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = displayPreferences.fontSize.spValue(),

@@ -100,6 +100,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -160,11 +161,9 @@ fun ComposePostScreen(
     }
     BackHandler(onBack = ::requestClose)
     LaunchedEffect(state.posted) { if (state.posted) onPosted() }
-    LaunchedEffect(state.isLoading) {
-        if (!state.isLoading) {
-            focusRequester.requestFocus()
-            keyboardController?.show()
-        }
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboardController?.show()
     }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
@@ -608,7 +607,7 @@ fun ComposePostScreen(
                             )
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text(account.displayName, fontWeight = FontWeight.SemiBold)
+                                CustomEmojiText(account.displayName, account.customEmojis, fontWeight = FontWeight.SemiBold)
                                 Text("@${account.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }

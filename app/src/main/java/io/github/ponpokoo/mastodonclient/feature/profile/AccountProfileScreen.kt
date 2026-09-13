@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.text.style.TextOverflow
 import android.graphics.Bitmap
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
@@ -27,6 +28,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuSheet
@@ -94,7 +96,15 @@ fun AccountProfileScreen(
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text(profile?.author?.displayName ?: "プロフィール") },
+            title = {
+                val author = profile?.author
+                if (author == null) Text("プロフィール") else CustomEmojiText(
+                    text = author.displayName,
+                    emojis = author.customEmojis,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
             actions = {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "プロフィールメニュー") }

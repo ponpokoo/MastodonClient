@@ -16,6 +16,21 @@ import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
     @Test
+    fun mapsStatusAndAuthorEmojisFromTimelineResponse() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"emoji-status","created_at":"2026-09-08T00:00:00Z","content":"<p>:electric:</p>","emojis":[{"shortcode":"electric","url":"https://example.com/electric.gif","static_url":"https://example.com/electric.png"}],"account":{"id":"a","username":"alice","acct":"alice","display_name":"Alice :twitch:","emojis":[{"shortcode":"twitch","url":"https://example.com/twitch.png"}]}}]""",
+            ))
+
+            val status = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server)).getOrThrow().statuses.single()
+
+            assertEquals(mapOf("electric" to "https://example.com/electric.gif"), status.customEmojis)
+            assertEquals(mapOf("twitch" to "https://example.com/twitch.png"), status.author.customEmojis)
+        }
+    }
+
+    @Test
     fun cachedStatusesAreIsolatedByAccountAndInstance() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("[${basicStatusJson("shared")} ]"))

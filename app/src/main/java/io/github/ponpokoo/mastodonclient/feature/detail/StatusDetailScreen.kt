@@ -39,11 +39,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Instant
 import java.time.ZoneId
@@ -68,7 +70,14 @@ fun StatusDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(status?.let { "${it.author.displayName}さんの投稿" } ?: "投稿") },
+                title = {
+                    if (status == null) Text("投稿") else CustomEmojiText(
+                        text = "${status.author.displayName}さんの投稿",
+                        emojis = status.author.customEmojis,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
@@ -211,7 +220,11 @@ private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
         )
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(account.displayName, style = MaterialTheme.typography.titleSmall)
+            CustomEmojiText(
+                account.displayName,
+                account.customEmojis,
+                style = MaterialTheme.typography.titleSmall,
+            )
             Text("@${account.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

@@ -74,6 +74,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
@@ -350,12 +351,12 @@ internal fun ProfileContent(
                     }
                 }
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(profile.author.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    if (profile.customEmojis.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        profile.customEmojis.entries.take(8).forEach { (name, url) ->
-                            AsyncImage(url, name, Modifier.size(24.dp), contentScale = ContentScale.Fit)
-                        }
-                    }
+                    CustomEmojiText(
+                        text = profile.author.displayName,
+                        emojis = profile.customEmojis,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -385,18 +386,27 @@ internal fun ProfileContent(
                         ProfileRegistrationDate(profile.createdAt)
                     }
                     if (profile.noteHtml.isNotBlank()) {
-                        StatusContentText(contentHtml = profile.noteHtml, onLinkClick = onOpenLink)
+                        StatusContentText(
+                            contentHtml = profile.noteHtml,
+                            customEmojis = profile.customEmojis,
+                            onLinkClick = onOpenLink,
+                        )
                     }
                     profile.fields.forEach { field ->
                         Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                            Text(
-                                field.name,
+                            CustomEmojiText(
+                                text = field.name,
+                                emojis = profile.customEmojis,
                                 fontWeight = FontWeight.SemiBold,
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                                StatusContentText(field.valueHtml, onLinkClick = onOpenLink)
+                                StatusContentText(
+                                    contentHtml = field.valueHtml,
+                                    customEmojis = profile.customEmojis,
+                                    onLinkClick = onOpenLink,
+                                )
                             }
                             if (field.verifiedAt != null) {
                                 Text("✓ 認証済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -500,7 +510,7 @@ private fun AccountResult(account: StatusAuthor, onClick: (String) -> Unit) {
         )
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(account.displayName, fontWeight = FontWeight.SemiBold)
+            CustomEmojiText(account.displayName, account.customEmojis, fontWeight = FontWeight.SemiBold)
             Text("@${account.accountName}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -539,7 +549,12 @@ private fun NotificationHeader(
         )
         Spacer(Modifier.width(8.dp))
         Column {
-            Text(notification.account.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            CustomEmojiText(
+                notification.account.displayName,
+                notification.account.customEmojis,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text("@${notification.account.accountName} · $action", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -569,8 +584,9 @@ private fun NotificationStatusQuote(
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    status.author.displayName,
+                CustomEmojiText(
+                    text = status.author.displayName,
+                    emojis = status.author.customEmojis,
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -588,8 +604,9 @@ private fun NotificationStatusQuote(
                 }
             }
             Spacer(Modifier.height(3.dp))
-            Text(
+            CustomEmojiText(
                 text = plainContent,
+                emojis = status.customEmojis,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = preferences.fontSize.spValue(),
                     lineHeight = preferences.lineHeightSp().sp,

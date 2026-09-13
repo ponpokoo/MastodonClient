@@ -4,15 +4,19 @@ import android.content.Intent
 import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import android.view.WindowManager
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
@@ -103,10 +107,19 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     NavHost(
         navController = navController,
         startDestination = Route.Login,
-        enterTransition = { fadeIn(tween(140)) },
-        exitTransition = { fadeOut(tween(100)) },
-        popEnterTransition = { fadeIn(tween(140)) },
-        popExitTransition = { fadeOut(tween(100)) },
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        enterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
+        },
+        exitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
+        },
+        popEnterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220))
+        },
+        popExitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220))
+        },
     ) {
         composable<Route.Login> {
             val loginViewModel: LoginViewModel = viewModel(
@@ -229,6 +242,9 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
                 dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow?.setSoftInputMode(
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE,
+                )
             }
             val route = backStackEntry.toRoute<Route.ComposePost>()
             val composeViewModel: ComposePostViewModel = viewModel(

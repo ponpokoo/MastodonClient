@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,7 +81,13 @@ fun AccountListScreen(
                                 contentScale = ContentScale.Crop,
                             )
                         },
-                        headlineContent = { Text(account.displayName, fontWeight = FontWeight.SemiBold) },
+                        headlineContent = {
+                            CustomEmojiText(
+                                account.displayName,
+                                account.customEmojis,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        },
                         supportingContent = { Text("@${account.accountName}") },
                     )
                     HorizontalDivider()
