@@ -1,174 +1,147 @@
-# UI implementation guidelines
+# UI・機能仕様
 
-## Direction
+現在の実装を基準とする仕様。開発構成と確認手順は [開発ガイド](project-setup.md) にまとめる。
+未実装の構想は末尾に分け、実装済みの機能として扱わない。
 
-The Android UI follows the interaction model and visual rhythm of the official Mastodon Android
-app, while using our own implementation and assets. The references are the
-[Google Play listing](https://play.google.com/store/apps/details?id=org.joinmastodon.android&hl=ja)
-and the user-provided recording of Mastodon for Android 2.13.3.
+## デザイン方針
 
-This is a phone-first product. The MVP does not provide tablet-specific layouts, navigation rails,
-two-pane screens, foldable postures, or landscape-specific composition. The app may still run on a
-large screen, but tablet optimization is not an acceptance criterion.
+**Mastodon公式アプリの情報構造と基本操作に準拠しつつ、このアプリ独自のデザインと使いやすさを出す。**
+公式アプリは画面階層、投稿の読み順、一般的な操作の参考とする。余白、アイコンの配置、
+詳細画面、ダイアログ、表示のカスタマイズは本アプリの利用感に合わせて設計する。
+公式アプリとの見た目の一致そのものを完成条件にはしない。
 
-## Navigation model
+- Jetpack Compose / Material 3を使用し、本文を主役にする。投稿は薄い区切り線で連続させる。
+- 中立色の背景と紫系アクセントを基本とする。ライト・ダーク・システム設定に対応する。
+- 公式のイラストなどのアセットは流用せず、標準アイコンと独自の実装を使う。
+- スマートフォンを対象とする。タブレット専用の2ペインやナビゲーションレールは対象外。
+- アイコンの見た目を小さくしても操作領域は原則48 dp以上とする。システム文字倍率、
+  読み上げラベル、色以外での選択状態の表現を考慮する。
 
-Use the four destinations shown in the official app:
+## 画面構成
 
-1. Home
-2. Explore
-3. Notifications
-4. Profile
+メイン画面はホーム・検索・通知・プロフィールの4タブ。
+ホームから閲覧アカウント、ホーム／ローカル／連合タイムラインを切り替え、
+お知らせ、設定、投稿画面へ進む。リストと保存済み投稿は別画面で表示する。
 
-The selected bottom-navigation item uses a rounded tonal indicator behind the icon. Keep labels
-visible. The profile item uses the current account avatar without adding another permanent
-destination.
+検索はアカウント・投稿・ハッシュタグの結果を表示する。通知は「すべて」「メンション」で
+絞り込む。タブ間で投稿の表示部品を共用し、読み込み・空・エラー・再試行を扱う。
 
-Home has a title/dropdown at the top left, an explicit account switcher in the top bar, and server
-announcements plus settings at the top right. The account switcher shows the active account avatar
-and full account address before selection. Switching it changes the browsing session used by Home,
-Explore, Notifications, and Profile. The timeline dropdown contains Home, Local/real-time feeds,
-Lists, followed hashtags, and later any server-supported feeds. Local and federated timelines
-therefore remain MVP features without occupying separate bottom-navigation slots.
+閲覧アカウントを切り替えるとメイン画面のデータとストリームを切り替える。
+投稿画面の投稿元選択は閲覧アカウントを変更しない。
 
-A rounded compose floating action button sits above the bottom navigation at the lower right. It
-must not cover the final status action row or system navigation inset.
+通常の画面遷移は220msの横スライドを使用する。進むときは遷移先だけを左方向へ、
+戻るときは手前の画面だけを右方向へ動かし、背後の画面は固定する。
+文字の重なりを避けるためフェード・拡大縮小は併用せず、各画面の不透明な背景で覆う。
+投稿画面とメディアビューアは別のダイアログ表示として扱う。
 
-## Visual language
+## 投稿一覧と詳細
 
-- Use Material 3 components and semantics, but match the official app's compact, content-first
-  composition rather than card-heavy default styling.
-- Use neutral page surfaces, thin separators, rounded pills/sheets, and purple as the primary accent.
-  Use Mastodon purple `#6364FF` as the non-dynamic fallback.
-- Support System, Light, and Dark themes. Dynamic Color is not exposed as a setting.
-- Dark mode uses a near-black page surface, a slightly lifted bottom bar/menu surface, subdued
-  dividers, and pale purple selected states.
-- Use edge-to-edge drawing with correct status/navigation bar insets.
-- Recreate layout patterns only. Do not copy Mastodon illustrations, icons, screenshots, or other
-  protected assets into the project.
+`StatusCard` はドメインモデルと表示設定を受け取る共通部品。
+投稿者、ブースト元、HTML本文、CW、リンクカード、メディア、ALT、対応サーバーの
+絵文字リアクションを表示する。CWやセンシティブメディアは表示操作で開く。
+画像・動画は全画面ビューアへ進み、画像の拡大と動画の再生操作に対応する。
 
-## Timeline and status anatomy
+| 項目 | 現在のレイアウト |
+| --- | --- |
+| 投稿外側の余白 | 左8 dp、右16 dp、上12 dp、下2 dp |
+| プロフィール画像 | 小40／標準44／大56 dp |
+| 投稿者情報 | 表示名とアカウント名の2段 |
+| 相対時刻と公開範囲 | 右側に配置し、三点メニューと同じ48 dp領域の縦中央に揃える |
+| 一覧の本文開始位置 | 左余白＋画像幅＋8 dp（標準時は画面左から60 dp） |
+| 一覧の本文と操作列 | 間隔12 dp |
+| 詳細の本文・メディア | 左右16 dp、画像列に合わせた字下げなし |
+| 詳細の操作列 | 本文・メディアの8 dp下。その8 dp下に補助情報 |
+| 詳細の補助情報 | 日時・クライアント名はbodyMedium、反応件数はbodyLarge |
 
-Each status is one continuous row separated by a thin divider, not an elevated card:
+詳細本文の文字サイズと行間もタイムライン設定に従う。詳細専用の文字サイズ設定はない。
+日時は折り返し、件数リンクは幅に応じて次の行へ送る。
 
-1. Avatar and identity row: circular avatar, display name, right-aligned relative time, and full
-   account address. Tapping the avatar opens that account's profile. Do not show a permanent post
-   overflow menu in the timeline row.
-2. Optional context row: boosted-by, reply-to, pinned, or notification context.
-3. Content: body text, content warning control, link preview, poll, and media/ALT presentation.
-4. Action row: reply, boost, favorite, and share by default. Keep the visual icons compact and place
-   the row close to the lower divider while retaining accessible touch targets.
+投稿の三点メニューは中央のダイアログ。各項目はアイコンと左揃えの本文で統一し、対象者名はタイトルにまとめる。
+通常操作とアカウント操作（自分の投稿では削除）を区切り線で分ける。
+項目数が多いときは内部をスクロールする。
+詳細のブースト・お気に入り件数から開くアカウント一覧も中央ダイアログとし、
+タイトルと閉じるボタンを固定する。高さの上限は画面の70%で、少人数なら内容に合わせる。
+**各件数が0の場合はそのリンクを無効化し、一覧ダイアログを開かない。**
+アカウント選択、お知らせなどの他の表示まで中央ダイアログに統一したわけではない。
 
-Recommended baseline dimensions:
+## 設定と初期値
 
-- Horizontal content padding: 16 dp
-- Vertical status padding: 12 dp
-- Avatar: 40 dp
-- Visible action icon: 20-24 dp inside a minimum 48 dp touch target
-- Divider: 1 physical pixel or the closest density-safe equivalent
-- Default body text: 16 sp with 22 sp line height
+`SettingsScreen` の単一画面に以下の項目を配置する。設定はDataStoreへ保存し、表示へ反映する。
+アカウント別の設定キーはローカルのセッションID。その他はアプリ全体に適用する。
 
-Never shrink touch targets when the user chooses a compact display. Counts may appear next to action
-icons, but a zero count should not add visual noise.
+| 区分 | 項目 | 初期値・選択肢 |
+| --- | --- | --- |
+| 外観 | テーマ | システム（ライト／ダークも選択可） |
+| タイムライン表示 | 本文サイズ | 標準。小14／標準16／大18／特大20 sp |
+| 同上 | 行間 | 標準。基準行高18／22／26／30 spに対し、詰める−2／標準±0／広め＋4 sp |
+| 同上 | プロフィール画像サイズ | 標準。小／標準／大 |
+| 同上 | 操作アイコンサイズ | 小。小／標準／大 |
+| 同上 | 操作の順序・表示 | 返信→ブースト→お気に入り→リアクション→ブックマーク→共有。ブックマークは初期非表示 |
+| 同上 | 反応数 | 表示する |
+| 同上 | サムネイルサイズ | コンパクト（標準／大も選択可） |
+| メディア | GIF自動再生 | 常に（Wi-Fiのみ／しないも選択可） |
+| 同上 | 動画自動再生 | しない（常に／Wi-Fiのみも選択可） |
+| タイムラインと通信 | ストリーミング【アカウント別】 | オン（Wi-Fiのみ／オフも選択可） |
+| 同上 | バックグラウンドでは停止 | オン |
+| 同上 | 引っ張って更新時に元の場所にとどまる | オフ |
+| 通知 | 簡易通知 | オン。約15分ごとの確認 |
+| 投稿 | 既定の公開範囲【アカウント別】 | 公開（未収載／フォロワーのみ／ダイレクトも選択可） |
+| 同上 | ALT未入力時の確認 | オン |
+| 同上 | 投稿画面のボタン順 | メディア→投票→絵文字→CW→メンション→下書き保存→下書き削除 |
+| 同上 | リンクをアプリ内で開く | オン |
+| アカウント管理 | 登録済みアカウント | 切替・追加・現在のアカウントからログアウト |
 
-Tapping image or video media opens a full-screen viewer. Images support pinch zoom and panning;
-videos expose playback controls. Unicode reaction chips toggle that reaction directly. Custom emoji
-reaction chips remain display-only until compatible reaction submission is implemented per server.
+タイムライン表示にはサンプル投稿のプレビューと表示設定の初期化がある。
+リアクション操作はサーバー対応時に表示する。
+GIF設定は投稿メディアのgifv再生で使用し、プロフィール画像やカスタム絵文字のアニメーションを
+個別に切り替える設定ではない。Dynamic Colorの設定はない。
 
-## Timeline display customization
+簡易通知は登録済みアカウントをJobSchedulerで確認する方式で、プッシュ通知ではない。
+OSの通知許可と実行制約に従うため、15分ちょうどの到着は保証しない。
+ストリーミングのWi-Fi条件は接続開始時に判定する。
 
-Add a dedicated `Timeline display` screen under Settings > Display. Changes are persisted per app,
-applied immediately, and shown in a live sample-status preview.
+## 投稿と下書き
 
-### Text size
+新規投稿・返信・自分の投稿編集に対応する。投稿元、公開範囲、本文、CW、センシティブ指定、
+画像・動画添付、ALT編集、投票、カスタム絵文字挿入、メンション候補を扱う。
+文字数や添付上限は投稿元サーバーの設定を取得する。
+投票とメディアは併用不可。投票は最大4択、複数選択に対応し、期間の初期値は24時間。
+言語や投票期間を選ぶUI、添付の並べ替えUIはない。
 
-Provide four presets. Apply them on top of the Android system font scale and clamp only where layout
-would otherwise become unusable.
+投稿中・メディア取り込み中は競合する操作を抑止し、ALT未入力時は設定に応じて確認する。
+投稿編集中は投稿元アカウントを切り替えられない。
+投稿元を切り替える際は現在の入力をそのアカウントの一時バッファへ保持し、切替先の入力を復元する。
 
-| Preset | Body size | Default line height |
-|---|---:|---:|
-| Small | 14 sp | 18 sp |
-| Standard | 16 sp | 22 sp |
-| Large | 18 sp | 26 sp |
-| Extra large | 20 sp | 30 sp |
+**永続下書きは明示的に保存する。自動保存の設定はない。**
+画面を閉じるときの入力保持はメモリ上の一時バッファであり、プロセス終了後の復元を保証しない。
+保存済み下書きは投稿元・返信先・編集対象を含むキーで区別し、本文、CW、公開範囲、
+センシティブ指定、添付ファイル情報とALT、投票を保存する。添付はアプリ専用領域へ取り込む。
+保存済み下書きの呼出・削除に対応し、投稿成功時は対応する下書きとバッファを削除する。
 
-### Line spacing
+## プロフィール
 
-Provide Compact, Standard, and Relaxed line-spacing presets. They adjust line height independently
-of the selected font-size preset while preserving at least 1.2 times the effective text size.
+ヘッダー、画像、表示名、アカウント名、自己紹介、プロフィール項目と認証済み表示、
+登録日、投稿・フォロー・フォロワー数を表示する。固定投稿と「投稿」「投稿と返信」「メディア」の
+タブ、追加読み込みに対応する。フォロー数からアカウント一覧を開く。
 
-### Action icons
+自分のプロフィールは表示名・自己紹介・画像・ヘッダー・承認制・プロフィール項目を編集する。
+他のアカウントではフォロー状態を表示し、フォロー／解除、ミュート、ブロック、理由付き通報を扱う。
+ミュート・ブロックの変更は確認ダイアログを使用する。
 
-- Allow reply, boost, favorite, bookmark, and share to be shown or hidden individually.
-- Allow visible actions to be reordered, with reply/boost/favorite/share as the default order.
-- Provide a separate Show counts toggle.
-- Hidden actions must remain available from the status overflow menu so customization never removes
-  functionality.
-- Use familiar Material/Mastodon-style symbols and accessible labels. Do not substitute decorative
-  custom artwork for standard actions.
+プロフィール詳細のメニューに共有・コピー・QR・外部ブラウザーがあり、自分の場合はリスト、
+お気に入り、ブックマーク、フォロー中タグ、アカウント設定も表示する。
+メインのプロフィールタブのメニューとは項目が異なる。
+フォロー中タグとアカウント設定はWebリンクであり、専用のネイティブ画面ではない。
 
-Represent these values as an immutable `TimelineDisplayPreferences` model and persist them with
-DataStore. Expose a `Flow` to Compose so the timeline and preview update without restarting the app.
-Include Reset to defaults.
+## 今後の検討・確認事項
 
-## Screen-specific patterns
+以下は実装済みの保証ではなく、改善候補として管理する。
 
-### Explore
+- 投票の投稿表示・投票操作、言語・投票期間の指定、添付の並べ替えとサーバー制限への対応強化。
+- 下書きの自動保存、ログアウトに伴う下書き・添付の整理方針。
+- プロフィール編集のdiscoverable選択（現状は保存時にtrueを渡す）と未保存入力・失敗時の扱い。
+- フォロー中タグの専用画面と、現在のWebリンク先の妥当性。
+- ネットワーク変更直後のストリーミング制御、データセーバー・動きを減らす設定との連動。
+- 非表示にした操作への代替導線、文字拡大時の折り返し、読み上げ・コントラストの実機確認。
 
-Use a rounded full-width search field with a QR entry point when implemented. Below it, use a
-scrollable tab row for Posts, Hashtags, News, and Recommended. Loading, empty, and retry states stay
-inside the content area and do not move the bottom navigation.
-
-### Notifications
-
-Use a top title and a two-option segmented control for All and Mentions. Notification context is
-shown above or around the referenced status, using the same status renderer as the timeline.
-
-### Profile
-
-Use header media, an overlapping avatar, name/address, counts, bio/link rows, edit/follow controls,
-and Timeline/Media tabs. Put secondary operations such as share, copy link, QR, browser, favorite,
-bookmark, and account settings in a single overflow surface.
-
-### Settings
-
-The top level contains Accounts followed by Actions, Display, and About. Per-account settings open
-as a separate screen or rounded modal surface and contain privacy, filters, notifications, posting
-defaults, server information, account removal, and logout. Destructive actions use the error color
-and require an explicit confirmation.
-
-Settings use plain rows with a leading icon and trailing switch/value. Avoid unnecessary cards.
-
-## Accessibility and content safety
-
-- Every icon-only action has a localized content description and a 48 dp minimum target.
-- Selected, boosted, and favorited states differ by semantics/icon treatment as well as color.
-- Respect system font scaling, screen readers, reduced motion, and contrast settings.
-- Content-warning and sensitive-media controls must remain obvious at every display density.
-- Preserve author-supplied ALT text and expose it to TalkBack before media actions.
-- Keep focus order aligned with the visual order: identity, content, media, actions, overflow.
-
-## Initial Compose components
-
-Implement and test these reusable pieces before assembling every feature screen:
-
-- `MastodonTheme`
-- `AppBottomBar`
-- `TimelineTopBar`
-- `StatusCard`
-- `StatusActionRow`
-- `ComposeButton`
-- `TimelineDisplayPreferences`
-- `TimelineDisplaySettingsScreen`
-
-`StatusCard` receives domain models and display preferences; it must never receive Retrofit DTOs.
-
-## MVP acceptance criteria
-
-- Phone portrait layouts at 360-430 dp widths match the official app's information hierarchy.
-- Home, Explore, Notifications, and Profile retain stable bottom navigation.
-- Light, Dark, and System themes render without clipped or illegible content.
-- Timeline font size, line spacing, action visibility/order, and counts can be changed and restored
-  after process death.
-- Hidden actions remain available in overflow, and all actions meet accessibility target sizes.
-- No tablet-only resources, navigation rail, or two-pane implementation are required.
+UI変更時は公式アプリの慣れた操作を保ちつつ、読みやすさ・押しやすさ・独自の表示調整を評価する。

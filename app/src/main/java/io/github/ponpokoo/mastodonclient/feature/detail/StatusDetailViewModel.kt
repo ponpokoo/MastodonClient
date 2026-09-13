@@ -37,12 +37,18 @@ class StatusDetailViewModel(
 
     fun retry() = load()
 
-    fun showBoosters() = loadAccounts("ブーストしたアカウント") { current ->
-        timelineRepository.getRebloggedBy(current, statusId)
+    fun showBoosters() {
+        if ((_uiState.value.detail?.status?.boostsCount ?: 0L) <= 0L) return
+        loadAccounts("ブーストしたアカウント") { current ->
+            timelineRepository.getRebloggedBy(current, statusId)
+        }
     }
 
-    fun showFavourites() = loadAccounts("お気に入りしたアカウント") { current ->
-        timelineRepository.getFavouritedBy(current, statusId)
+    fun showFavourites() {
+        if ((_uiState.value.detail?.status?.favouritesCount ?: 0L) <= 0L) return
+        loadAccounts("お気に入りしたアカウント") { current ->
+            timelineRepository.getFavouritedBy(current, statusId)
+        }
     }
 
     fun showReaction(reaction: EmojiReaction) =

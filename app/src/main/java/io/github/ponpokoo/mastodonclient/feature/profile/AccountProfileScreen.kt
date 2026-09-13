@@ -31,7 +31,7 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuSheet
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 
@@ -163,7 +163,7 @@ fun AccountProfileScreen(
     }
 
     statusMenu?.let { status ->
-        StatusMenuSheet(
+        StatusMenuDialog(
             status = status,
             isOwnStatus = profile?.isOwnProfile == true && status.author.id == profile.author.id,
             onDismiss = { statusMenu = null },

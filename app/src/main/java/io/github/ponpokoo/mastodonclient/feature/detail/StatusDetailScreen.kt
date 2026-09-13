@@ -17,16 +17,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -137,25 +142,16 @@ fun StatusDetailScreen(
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,
                         videoAutoplay = preferences.videoAutoplay,
+                        fullWidthContent = true,
+                        afterActions = {
+                            StatusDetailMetadata(
+                                status = status,
+                                onBoosters = viewModel::showBoosters,
+                                onFavourites = viewModel::showFavourites,
+                            )
+                        },
                     )
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                            Row(Modifier.clickable(onClick = viewModel::showBoosters).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Repeat, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(6.dp)); Text("${status.boostsCount} ブースト", style = MaterialTheme.typography.bodyMedium)
-                            }
-                            Row(Modifier.clickable(onClick = viewModel::showFavourites).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.FavoriteBorder, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.width(6.dp)); Text("${status.favouritesCount} お気に入り", style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Schedule, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(6.dp)); Text(buildString { append(exactDate(status.createdAt)); status.applicationName?.let { append("  ·  ").append(it) } }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider()
-                    }
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                 }
                 state.detail?.descendants?.let { replies ->
                     if (replies.isNotEmpty()) {
@@ -182,22 +178,79 @@ fun StatusDetailScreen(
     }
 
     state.accountListTitle?.let { accountListTitle ->
-        ModalBottomSheet(onDismissRequest = viewModel::dismissAccounts) {
-            Text(
-                accountListTitle,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            if (state.isLoadingAccounts) {
-                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+        StatusAccountsDialog(
+            title = accountListTitle,
+            accounts = state.accounts,
+            isLoading = state.isLoadingAccounts,
+            onDismiss = viewModel::dismissAccounts,
+            onAccountClick = { accountId ->
+                viewModel.dismissAccounts()
+                onAccountClick(accountId)
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StatusDetailMetadata(
+    status: io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus,
+    onBoosters: () -> Unit,
+    onFavourites: () -> Unit,
+) {
+    Text(
+        buildString {
+            append(exactDate(status.createdAt))
+            status.applicationName?.let { append("  ·  ").append(it) }
+        },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        TextButton(onClick = onBoosters, enabled = status.boostsCount > 0, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 0.dp)) {
+            Text("${status.boostsCount} ブースト", style = MaterialTheme.typography.bodyLarge)
+        }
+        TextButton(onClick = onFavourites, enabled = status.favouritesCount > 0, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 0.dp)) {
+            Text("${status.favouritesCount} お気に入り", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
+
+@Composable
+internal fun StatusAccountsDialog(
+    title: String,
+    accounts: List<StatusAuthor>,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onAccountClick: (String) -> Unit,
+) {
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.7f
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("status_accounts_dialog"),
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 6.dp,
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, contentDescription = "一覧を閉じる")
+                    }
                 }
-            } else if (state.accounts.isEmpty()) {
-                Text("表示できるアカウントはありません", Modifier.padding(20.dp))
-            } else {
-                LazyColumn(Modifier.fillMaxWidth()) {
-                    items(state.accounts, key = StatusAuthor::id) { account ->
-                        AccountRow(account) { onAccountClick(account.id) }
+                HorizontalDivider()
+                when {
+                    isLoading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                    accounts.isEmpty() -> Text("表示できるアカウントはありません", Modifier.padding(20.dp))
+                    else -> LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                        items(accounts, key = StatusAuthor::id) { account ->
+                            AccountRow(account) { onAccountClick(account.id) }
+                        }
                     }
                 }
             }

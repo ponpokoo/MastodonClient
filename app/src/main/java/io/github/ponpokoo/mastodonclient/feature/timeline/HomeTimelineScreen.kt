@@ -8,6 +8,9 @@ import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +37,13 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -487,7 +497,7 @@ fun HomeTimelineScreen(
     }
 
     menuStatus?.let { status ->
-        StatusMenuSheet(
+        StatusMenuDialog(
             status = status,
             isOwnStatus = status.author.id == mainState.session?.accountId,
             onDismiss = { menuStatus = null },
@@ -551,7 +561,7 @@ fun HomeTimelineScreen(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun StatusMenuSheet(
+internal fun StatusMenuDialog(
     status: TimelineStatus,
     isOwnStatus: Boolean,
     onDismiss: () -> Unit,
@@ -565,34 +575,58 @@ internal fun StatusMenuSheet(
     onBlock: () -> Unit,
     onReport: () -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        CustomEmojiText(
-            status.author.displayName,
-            status.author.customEmojis,
-            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        @Composable fun Action(label: String, action: () -> Unit) {
-            TextButton(onClick = action, modifier = Modifier.fillMaxWidth()) {
-                Text(label, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+    val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            CustomEmojiText(
+                status.author.displayName,
+                status.author.customEmojis,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = maxContentHeight).verticalScroll(rememberScrollState())) {
+                @Composable fun Action(
+                    label: String,
+                    icon: ImageVector,
+                    destructive: Boolean = false,
+                    action: () -> Unit,
+                ) {
+                    val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable(onClick = action)
+                            .heightIn(min = 48.dp)
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = color)
+                        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = color)
+                    }
+                }
+                if (isOwnStatus) {
+                    Action(if (status.pinned) "プロフィールへの固定解除" else "プロフィールに固定", Icons.Outlined.PushPin, action = onPin)
+                    Action("ブラウザで開く", Icons.Outlined.Public, action = onOpenBrowser)
+                    Action("編集", Icons.Outlined.Edit, action = onEdit)
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Action("削除", Icons.Outlined.Delete, destructive = true, action = onDelete)
+                } else {
+                    Action("ブラウザで開く", Icons.Outlined.Public, action = onOpenBrowser)
+                    Action("リストに追加", Icons.Outlined.PlaylistAdd, action = onAddToList)
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    Action("フォロー解除", Icons.Outlined.PersonRemove, action = onUnfollow)
+                    Action("ミュート", Icons.Outlined.VolumeOff, action = onMute)
+                    Action("ブロック", Icons.Outlined.Block, action = onBlock)
+                    Action("報告", Icons.Outlined.Flag, action = onReport)
+                }
             }
-        }
-        if (isOwnStatus) {
-            Action(if (status.pinned) "プロフィールへの固定解除" else "プロフィールに固定", onPin)
-            Action("ブラウザで開く", onOpenBrowser)
-            Action("編集", onEdit)
-            Action("削除", onDelete)
-        } else {
-            Action("ブラウザで開く", onOpenBrowser)
-            Action("リストに追加", onAddToList)
-            Action("フォロー解除　${status.author.displayName}さん", onUnfollow)
-            Action("ミュート　${status.author.displayName}さん", onMute)
-            Action("ブロック　${status.author.displayName}さん", onBlock)
-            Action("報告　${status.author.displayName}さん", onReport)
-        }
-        Action("閉じる", onDismiss)
-        Spacer(Modifier.height(24.dp))
-    }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+    )
 }
 
 @Composable
@@ -945,6 +979,8 @@ internal fun StatusCard(
     displayPreferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
+    fullWidthContent: Boolean = false,
+    afterActions: (@Composable () -> Unit)? = null,
 ) {
     var contentExpanded by rememberSaveable(status.statusId) {
         mutableStateOf(status.spoilerText.isBlank())
@@ -953,16 +989,16 @@ internal fun StatusCard(
     var reactionPickerOpen by rememberSaveable(status.statusId) { mutableStateOf(false) }
     val context = LocalContext.current
     val avatarSize = when (displayPreferences.avatarIconSize) {
-        AvatarIconSize.Small -> 34.dp
-        AvatarIconSize.Standard -> 40.dp
-        AvatarIconSize.Large -> 48.dp
+        AvatarIconSize.Small -> 40.dp
+        AvatarIconSize.Standard -> 44.dp
+        AvatarIconSize.Large -> 56.dp
     }
     val contentStart = avatarSize + 8.dp
 
     Column(
         modifier = Modifier.fillMaxWidth()
             .then(if (onStatusClick == null) Modifier else Modifier.clickable { onStatusClick(status.statusId) })
-            .padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 2.dp)
+            .padding(start = 8.dp, top = 12.dp, end = 16.dp, bottom = 2.dp)
             .testTag("timeline_status"),
     ) {
         status.boostedBy?.let {
@@ -1001,43 +1037,15 @@ internal fun StatusCard(
             )
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CustomEmojiText(
-                        text = status.author.displayName,
-                        emojis = status.author.customEmojis,
-                        modifier = Modifier.weight(1f),
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    val (visibilityIcon, visibilityLabel) = statusVisibility(status.visibility)
-                    Icon(
-                        visibilityIcon,
-                        contentDescription = visibilityLabel,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        relativeTime(status.createdAt),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    if (onMoreClick != null) {
-                        IconButton(
-                            onClick = { onMoreClick(status) },
-                            modifier = Modifier.size(34.dp),
-                        ) {
-                            Icon(
-                                Icons.Outlined.MoreVert,
-                                contentDescription = "投稿メニュー",
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-                }
+                CustomEmojiText(
+                    text = status.author.displayName,
+                    emojis = status.author.customEmojis,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
                 Text(
                     "@${status.author.accountName}",
                     style = MaterialTheme.typography.bodySmall,
@@ -1046,9 +1054,41 @@ internal fun StatusCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Spacer(Modifier.width(8.dp))
+            Row(
+                modifier = Modifier.height(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val (visibilityIcon, visibilityLabel) = statusVisibility(status.visibility)
+                Icon(
+                    visibilityIcon,
+                    contentDescription = visibilityLabel,
+                    modifier = Modifier.size(12.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    relativeTime(status.createdAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            if (onMoreClick != null) {
+                IconButton(
+                    onClick = { onMoreClick(status) },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.MoreVert,
+                        contentDescription = "投稿メニュー",
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
 
-        Column(modifier = Modifier.padding(start = contentStart)) {
+        Column(modifier = Modifier.padding(start = if (fullWidthContent) 8.dp else contentStart)) {
             if (status.spoilerText.isNotBlank()) {
                 CustomEmojiText(
                     text = status.spoilerText,
@@ -1150,6 +1190,7 @@ internal fun StatusCard(
                     }
                 }
             }
+            Spacer(Modifier.height(if (fullWidthContent) 8.dp else 12.dp))
             StatusActionRow(
                 status = status,
                 onReply = onReply,
@@ -1175,6 +1216,10 @@ internal fun StatusCard(
                 onBookmark = onBookmark,
                 preferences = displayPreferences,
             )
+            afterActions?.let { content ->
+                Spacer(Modifier.height(8.dp))
+                content()
+            }
         }
     }
 
