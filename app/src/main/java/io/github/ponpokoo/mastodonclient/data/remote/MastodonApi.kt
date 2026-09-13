@@ -235,6 +235,7 @@ interface MastodonApi {
         @Header("Idempotency-Key") idempotencyKey: String,
         @Field("status") status: String,
         @Field("in_reply_to_id") inReplyToId: String? = null,
+        @Field("quoted_status_id") quotedStatusId: String? = null,
         @Field("media_ids[]") mediaIds: List<String>? = null,
         @Field("spoiler_text") spoilerText: String? = null,
         @Field("sensitive") sensitive: Boolean = false,

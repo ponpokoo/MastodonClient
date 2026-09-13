@@ -66,6 +66,22 @@ class SavedTimelinesViewModel(
     init { load() }
     fun retry() = load()
 
+    fun toggleReblog(status: TimelineStatus) {
+        val current = session ?: return
+        viewModelScope.launch {
+            repository.setReblogged(current, status.statusId, !status.reblogged)
+                .onSuccess { updated ->
+                    _state.update { state -> state.copy(statuses = state.statuses.map { item ->
+                        if (item.statusId == status.statusId) item.copy(
+                            reblogged = updated.reblogged,
+                            boostsCount = updated.boostsCount,
+                        ) else item
+                    }) }
+                }
+                .onFailure { error -> _state.update { it.copy(error = error.message ?: "ブーストに失敗しました") } }
+        }
+    }
+
     private fun load() = viewModelScope.launch {
         _state.update { it.copy(loading = true, error = null) }
         val current = authRepository.restoreSession() ?: run {
@@ -131,6 +147,7 @@ fun SavedTimelinesScreen(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onOpenLink: (String) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     Scaffold(
@@ -161,6 +178,8 @@ fun SavedTimelinesScreen(
                         onAuthorClick = onAccountClick,
                         onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,
+                        onBoost = { viewModel.toggleReblog(status) },
+                        onQuote = { onQuote(status) },
                         onUnavailableAction = {},
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,

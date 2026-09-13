@@ -238,12 +238,12 @@ fun ComposePostScreen(
                                     icon = Icons.Outlined.AddPhotoAlternate,
                                     contentDescription = "画像または動画",
                                     enabled = !state.isImportingMedia && !state.isPosting && !state.isLoading && state.pollOptions.isEmpty() &&
-                                        state.attachments.size < state.configuration.maxMediaAttachments,
+                                        !state.quotingNative && state.attachments.size < state.configuration.maxMediaAttachments,
                                 ) { mediaPicker.launch(arrayOf("image/*", "video/*")) }
                                 ComposerAction.Poll -> ComposerToolbarButton(
                                     icon = Icons.Outlined.Poll,
                                     contentDescription = if (state.pollOptions.isEmpty()) "投票を追加" else "投票を解除",
-                                    enabled = state.attachments.isEmpty() && !state.isImportingMedia,
+                                    enabled = !state.quotingNative && state.attachments.isEmpty() && !state.isImportingMedia,
                                 ) {
                                     if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll()
                                 }
@@ -288,7 +288,7 @@ fun ComposePostScreen(
                         else {
                             Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(if (isEditing) "更新" else if (isReply) "返信" else "投稿")
+                            Text(if (isEditing) "更新" else if (isReply) "返信" else if (state.quoteStatusId != null) "引用" else "投稿")
                         }
                     }
                 }
@@ -323,6 +323,38 @@ fun ComposePostScreen(
                             Text(
                                 HtmlCompat.fromHtml(reply.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
                                     .toString().trim(),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+            state.quoteToStatus?.let { quote ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                ) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        AsyncImage(
+                            model = quote.author.avatarUrl,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (state.quotingNative) "${quote.author.displayName} の投稿を引用"
+                                else "${quote.author.displayName} の投稿URLを引用",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                HtmlCompat.fromHtml(quote.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim(),
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.bodyMedium,

@@ -44,6 +44,7 @@ fun AccountProfileScreen(
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -144,7 +145,8 @@ fun AccountProfileScreen(
                 viewModel.refresh()
             },
             onStatusClick = onStatusClick, onOpenLink = onOpenLink,
-            onReply = onReply, onBoost = viewModel::toggleReblog, onFavourite = viewModel::toggleFavourite,
+            onReply = onReply, onBoost = viewModel::toggleReblog, onQuote = onQuote,
+            onFavourite = viewModel::toggleFavourite,
             onBookmark = viewModel::toggleBookmark, onReact = viewModel::setReaction, onAccountClick = onAccountClick,
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
             preferences = preferences,

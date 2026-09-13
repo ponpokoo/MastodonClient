@@ -31,6 +31,7 @@ data class UploadedMedia(
 data class CreateStatusRequest(
     val text: String,
     val replyToId: String? = null,
+    val quotedStatusId: String? = null,
     val mediaIds: List<String> = emptyList(),
     val spoilerText: String = "",
     val sensitive: Boolean = false,

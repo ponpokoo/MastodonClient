@@ -8,9 +8,12 @@ import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -123,6 +127,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
@@ -174,6 +179,7 @@ fun HomeTimelineScreen(
     onLoggedOut: () -> Unit,
     onStatusClick: (String) -> Unit,
     onCompose: (String?) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
     openLinksInApp: Boolean,
     onOpenLinksInAppChange: (Boolean) -> Unit,
@@ -384,6 +390,7 @@ fun HomeTimelineScreen(
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
                     onBoost = actionsViewModel::toggleReblog,
+                    onQuote = onQuote,
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
@@ -402,6 +409,7 @@ fun HomeTimelineScreen(
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
                     onBoost = actionsViewModel::toggleReblog,
+                    onQuote = onQuote,
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
@@ -422,6 +430,7 @@ fun HomeTimelineScreen(
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
                     onBoost = actionsViewModel::toggleReblog,
+                    onQuote = onQuote,
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
@@ -446,6 +455,7 @@ fun HomeTimelineScreen(
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
                     onBoost = actionsViewModel::toggleReblog,
+                    onQuote = onQuote,
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
@@ -873,6 +883,7 @@ private fun TimelineContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -926,6 +937,7 @@ private fun TimelineContent(
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status) },
                         onBoost = { onBoost(status) },
+                        onQuote = { onQuote(status) },
                         onFavourite = { onFavourite(status) },
                         onBookmark = { onBookmark(status) },
                         onReact = { emoji -> onReact(status, emoji) },
@@ -971,6 +983,7 @@ internal fun StatusCard(
     onOpenLink: (String) -> Unit = {},
     onReply: () -> Unit = {},
     onBoost: () -> Unit = {},
+    onQuote: (() -> Unit)? = null,
     onFavourite: () -> Unit = {},
     onBookmark: () -> Unit = {},
     onReact: ((String?) -> Unit)? = null,
@@ -994,6 +1007,7 @@ internal fun StatusCard(
         AvatarIconSize.Large -> 56.dp
     }
     val contentStart = avatarSize + 8.dp
+    val headerEdgeShift = if (onMoreClick == null) 0.dp else 16.dp
 
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -1003,7 +1017,10 @@ internal fun StatusCard(
     ) {
         status.boostedBy?.let {
             Row(
-                modifier = Modifier.padding(start = contentStart, bottom = 6.dp),
+                modifier = Modifier
+                    .padding(start = contentStart, bottom = 6.dp)
+                    .then(if (onAuthorClick == null) Modifier else Modifier.clickable { onAuthorClick(it.id) })
+                    .testTag("status_booster"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
@@ -1056,7 +1073,7 @@ internal fun StatusCard(
             }
             Spacer(Modifier.width(8.dp))
             Row(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.height(48.dp).offset(x = headerEdgeShift),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val (visibilityIcon, visibilityLabel) = statusVisibility(status.visibility)
@@ -1077,7 +1094,7 @@ internal fun StatusCard(
             if (onMoreClick != null) {
                 IconButton(
                     onClick = { onMoreClick(status) },
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(48.dp).offset(x = headerEdgeShift),
                 ) {
                     Icon(
                         Icons.Outlined.MoreVert,
@@ -1111,7 +1128,11 @@ internal fun StatusCard(
                         fontSize = displayPreferences.fontSize.spValue(),
                         lineHeight = displayPreferences.lineHeightSp().sp,
                     ),
-                    onLinkClick = onOpenLink,
+                    onLinkClick = { link ->
+                        val accountId = status.mentionedAccountIdFor(link)
+                        if (accountId != null && onAuthorClick != null) onAuthorClick(accountId)
+                        else onOpenLink(link)
+                    },
                     onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
                 )
             }
@@ -1195,6 +1216,7 @@ internal fun StatusCard(
                 status = status,
                 onReply = onReply,
                 onBoost = onBoost,
+                onQuote = onQuote,
                 onFavourite = onFavourite,
                 onReaction = onReact?.let { { reactionPickerOpen = true } },
                 onShare = {
@@ -1423,12 +1445,14 @@ private fun StatusActionRow(
     status: TimelineStatus,
     onReply: () -> Unit,
     onBoost: () -> Unit,
+    onQuote: (() -> Unit)?,
     onFavourite: () -> Unit,
     onReaction: (() -> Unit)?,
     onShare: () -> Unit,
     onBookmark: () -> Unit = {},
     preferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
 ) {
+    var boostMenuExpanded by remember(status.statusId) { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1438,14 +1462,36 @@ private fun StatusActionRow(
                 StatusAction.Reply -> StatusActionButton(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, preferences, onReply)
                 StatusAction.Boost -> {
                     val canBoost = status.visibility !in setOf("private", "direct")
-                    StatusActionButton(
-                        icon = if (canBoost) Icons.Outlined.Repeat else Icons.Outlined.SyncDisabled,
-                        label = if (canBoost) "ブースト" else "この公開範囲ではブーストできません",
-                        count = status.boostsCount,
-                        preferences = preferences,
-                        onClick = onBoost,
-                        enabled = canBoost,
-                    )
+                    Box {
+                        StatusActionButton(
+                            icon = if (canBoost) Icons.Outlined.Repeat else Icons.Outlined.SyncDisabled,
+                            label = if (canBoost) "ブースト（長押しで引用を選択）" else "この公開範囲ではブーストできません",
+                            count = status.boostsCount,
+                            preferences = preferences,
+                            onClick = onBoost,
+                            onLongClick = onQuote?.let { { boostMenuExpanded = true } },
+                            enabled = canBoost,
+                        )
+                        DropdownMenu(expanded = boostMenuExpanded, onDismissRequest = { boostMenuExpanded = false }) {
+                            DropdownMenuItem(text = { Text(if (status.reblogged) "ブースト解除" else "ブースト") }, onClick = {
+                                boostMenuExpanded = false
+                                onBoost()
+                            })
+                            DropdownMenuItem(
+                                text = { Text(when (status.quoteApproval) {
+                                    null -> "引用（リンク）"
+                                    "manual" -> "引用（承認申請）"
+                                    else -> "引用"
+                                }) },
+                                enabled = onQuote != null &&
+                                    status.quoteApproval !in setOf("denied", "unknown") && status.url != null,
+                                onClick = {
+                                    boostMenuExpanded = false
+                                    onQuote?.invoke()
+                                },
+                            )
+                        }
+                    }
                 }
                 StatusAction.Favourite -> StatusActionButton(
                     if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -1471,6 +1517,7 @@ private fun StatusActionButton(
     count: Long?,
     preferences: TimelineDisplayPreferences,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
     val iconSize = when (preferences.actionIconSize) {
@@ -1479,13 +1526,27 @@ private fun StatusActionButton(
         ActionIconSize.Large -> 24.dp
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+        @Composable fun ButtonIcon() {
             Icon(
                 icon,
                 contentDescription = label,
                 modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f),
             )
+        }
+        if (onLongClick == null) {
+            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { ButtonIcon() }
+        } else {
+            @OptIn(ExperimentalFoundationApi::class)
+            Box(
+                modifier = Modifier.size(48.dp).combinedClickable(
+                    enabled = enabled,
+                    role = Role.Button,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                ),
+                contentAlignment = Alignment.Center,
+            ) { ButtonIcon() }
         }
         if (preferences.showCounts && count != null && count > 0) {
             Text(

@@ -23,9 +23,24 @@ data class StatusDto(
     val pinned: Boolean? = null,
     @SerialName("emoji_reactions") val emojiReactions: List<EmojiReactionDto>? = null,
     val emojis: List<AccountEmojiDto> = emptyList(),
+    val mentions: List<StatusMentionDto> = emptyList(),
+    @SerialName("quote_approval") val quoteApproval: QuoteApprovalDto? = null,
     val card: PreviewCardDto? = null,
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
     val reblog: StatusDto? = null,
+)
+
+@Serializable
+data class StatusMentionDto(
+    val id: String,
+    val username: String = "",
+    val acct: String = "",
+    val url: String = "",
+)
+
+@Serializable
+data class QuoteApprovalDto(
+    @SerialName("current_user") val currentUser: String? = null,
 )
 
 @Serializable

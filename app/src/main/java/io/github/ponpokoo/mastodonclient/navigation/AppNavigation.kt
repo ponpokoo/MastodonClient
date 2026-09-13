@@ -64,6 +64,7 @@ import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
@@ -105,6 +106,13 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 launchSingleTop = true
             }
         }
+    }
+    val openQuote: (TimelineStatus) -> Unit = { status ->
+        navController.navigate(Route.ComposePost(
+            quoteStatusId = status.statusId,
+            quoteStatusUrl = status.url,
+            nativeQuote = status.quoteApproval in setOf("automatic", "manual"),
+        ))
     }
     NavHost(
         navController = navController,
@@ -190,6 +198,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     navController.navigate(Route.StatusDetail(statusId)) { launchSingleTop = true }
                 },
                 onCompose = { replyToId -> navController.navigate(Route.ComposePost(replyToId)) },
+                onQuote = openQuote,
                 onOpenLink = openLink,
                 openLinksInApp = openLinksInApp,
                 onOpenLinksInAppChange = { enabled ->
@@ -226,6 +235,8 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 preferences = appPreferences,
                 onBack = { navController.popBackStack() },
                 onReply = { navController.navigate(Route.ComposePost(it)) },
+                onQuote = openQuote,
+                onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
@@ -262,6 +273,9 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     deleteDraftFile = { uri ->
                         uri.toUri().path?.let { java.io.File(it).delete() }
                     },
+                    quoteStatusId = route.quoteStatusId,
+                    quoteStatusUrl = route.quoteStatusUrl,
+                    nativeQuote = route.nativeQuote,
                 ),
             )
             ComposePostScreen(
@@ -314,6 +328,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onBack = { navController.popBackStack() },
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it.statusId)) },
+                onQuote = openQuote,
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
@@ -358,6 +373,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onBack = { navController.popBackStack() },
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
                 onReply = { navController.navigate(Route.ComposePost(it)) },
+                onQuote = openQuote,
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
@@ -378,6 +394,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
                 onOpenLink = openLink,
+                onQuote = openQuote,
             )
         }
         composable<Route.SavedTimeline> { backStackEntry ->
@@ -401,6 +418,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
                 onOpenLink = openLink,
+                onQuote = openQuote,
             )
         }
         dialog<Route.MediaViewer>(

@@ -26,7 +26,19 @@ data class TimelineStatus(
     val previewCard: PreviewCard? = null,
     val mediaAttachments: List<MediaAttachment>,
     val customEmojis: Map<String, String> = emptyMap(),
+    val mentions: List<StatusMention> = emptyList(),
+    val quoteApproval: String? = null,
 )
+
+data class StatusMention(val accountId: String, val accountName: String, val url: String)
+
+fun TimelineStatus.mentionedAccountIdFor(link: String): String? {
+    if (link.isBlank()) return null
+    val normalized = link.substringBefore('#').substringBefore('?').trimEnd('/')
+    return mentions.firstOrNull { mention ->
+        mention.url.isNotBlank() && mention.url.substringBefore('#').substringBefore('?').trimEnd('/') == normalized
+    }?.accountId
+}
 
 data class PreviewCard(
     val url: String,

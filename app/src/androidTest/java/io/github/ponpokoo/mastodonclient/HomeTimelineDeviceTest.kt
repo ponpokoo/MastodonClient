@@ -21,6 +21,25 @@ class HomeTimelineDeviceTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun statusDetailHasTheSamePostMenu() {
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithTag("instance_input").fetchSemanticsNodes().isNotEmpty()
+        }
+        assumeTrue(
+            "Device has no authenticated Mastodon session",
+            composeRule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().isNotEmpty(),
+        )
+
+        composeRule.onAllNodesWithTag("timeline_status")[0].performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("status_detail").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription("投稿メニュー").performClick()
+        composeRule.onNodeWithText("ブラウザで開く").assertExists()
+    }
+
+    @Test
     fun refreshesAndScrollsAuthenticatedHomeTimeline() {
         composeRule.waitUntil(timeoutMillis = 20_000) {
             composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty() ||

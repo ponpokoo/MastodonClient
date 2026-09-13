@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,29 +34,42 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +78,8 @@ fun StatusDetailScreen(
     preferences: AppPreferences,
     onBack: () -> Unit,
     onReply: (String) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
+    onEditStatus: (String) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -71,8 +87,23 @@ fun StatusDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val status = state.detail?.status
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    var menuStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var confirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+
+    LaunchedEffect(state.isDeleted) { if (state.isDeleted) onBack() }
+    LaunchedEffect(state.actionMessage) {
+        state.actionMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeActionMessage()
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -136,6 +167,8 @@ fun StatusDetailScreen(
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status.statusId) },
                         onBoost = viewModel::toggleReblog,
+                        onQuote = { onQuote(status) },
+                        onMoreClick = { menuStatus = it },
                         onFavourite = viewModel::toggleFavourite,
                         onReact = viewModel::setReaction,
                         onUnavailableAction = {},
@@ -177,6 +210,57 @@ fun StatusDetailScreen(
         }
     }
 
+    menuStatus?.let { selected ->
+        StatusMenuDialog(
+            status = selected,
+            isOwnStatus = selected.author.id == state.currentAccountId,
+            onDismiss = { menuStatus = null },
+            onOpenBrowser = {
+                menuStatus = null
+                selected.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) }
+            },
+            onPin = { menuStatus = null; viewModel.setPinned(selected) },
+            onEdit = { menuStatus = null; onEditStatus(selected.statusId) },
+            onDelete = { menuStatus = null; confirmation = "delete" to selected },
+            onAddToList = { menuStatus = null; listStatus = selected; viewModel.loadLists() },
+            onUnfollow = { menuStatus = null; confirmation = "unfollow" to selected },
+            onMute = { menuStatus = null; confirmation = "mute" to selected },
+            onBlock = { menuStatus = null; confirmation = "block" to selected },
+            onReport = { menuStatus = null; reportStatus = selected },
+        )
+    }
+    confirmation?.let { (action, selected) ->
+        ConfirmStatusActionDialog(
+            action = action,
+            status = selected,
+            onDismiss = { confirmation = null },
+            onConfirm = {
+                when (action) {
+                    "delete" -> viewModel.deleteStatus(selected)
+                    "unfollow" -> viewModel.unfollow(selected)
+                    "mute" -> viewModel.mute(selected)
+                    "block" -> viewModel.block(selected)
+                }
+                confirmation = null
+            },
+        )
+    }
+    reportStatus?.let { selected ->
+        StatusReportDialog(
+            status = selected,
+            onDismiss = { reportStatus = null },
+            onSubmit = { comment -> viewModel.report(selected, comment); reportStatus = null },
+        )
+    }
+    listStatus?.let { selected ->
+        ListPickerSheet(
+            lists = state.lists,
+            loading = state.isLoadingLists,
+            onDismiss = { listStatus = null },
+            onSelected = { listId -> viewModel.addToList(selected, listId); listStatus = null },
+        )
+    }
+
     state.accountListTitle?.let { accountListTitle ->
         StatusAccountsDialog(
             title = accountListTitle,
@@ -208,10 +292,10 @@ private fun StatusDetailMetadata(
     )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         TextButton(onClick = onBoosters, enabled = status.boostsCount > 0, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 0.dp)) {
-            Text("${status.boostsCount} ブースト", style = MaterialTheme.typography.bodyLarge)
+            Text("${status.boostsCount} ブースト", style = MaterialTheme.typography.bodyMedium)
         }
         TextButton(onClick = onFavourites, enabled = status.favouritesCount > 0, modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 0.dp)) {
-            Text("${status.favouritesCount} お気に入り", style = MaterialTheme.typography.bodyLarge)
+            Text("${status.favouritesCount} お気に入り", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

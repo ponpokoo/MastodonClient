@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.tag
 
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +43,7 @@ fun HashtagTimelineScreen(
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
     onReply: (String) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -85,6 +88,7 @@ fun HashtagTimelineScreen(
                             onOpenLink = onOpenLink,
                             onReply = { onReply(status.statusId) },
                             onBoost = { viewModel.toggleReblog(status) },
+                            onQuote = { onQuote(status) },
                             onFavourite = { viewModel.toggleFavourite(status) },
                             onReact = { viewModel.setReaction(status, it) },
                             onUnavailableAction = {},

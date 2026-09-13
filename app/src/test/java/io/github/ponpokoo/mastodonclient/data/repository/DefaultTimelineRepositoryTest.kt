@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
+import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -27,6 +28,22 @@ class DefaultTimelineRepositoryTest {
 
             assertEquals(mapOf("electric" to "https://example.com/electric.gif"), status.customEmojis)
             assertEquals(mapOf("twitch" to "https://example.com/twitch.png"), status.author.customEmojis)
+        }
+    }
+
+    @Test
+    fun mapsMentionAccountIdAndQuoteApproval() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"mention-status","created_at":"2026-09-08T00:00:00Z","content":"<p><a href=\"https://social.example/@alice\">@alice</a></p>","mentions":[{"id":"account-42","username":"alice","acct":"alice@social.example","url":"https://social.example/@alice"}],"quote_approval":{"current_user":"automatic","automatic":[],"manual":[]},"account":{"id":"author","username":"bob","acct":"bob"}}]""",
+            ))
+
+            val status = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server)).getOrThrow().statuses.single()
+
+            assertEquals("account-42", status.mentionedAccountIdFor("https://social.example/@alice/"))
+            assertEquals(null, status.mentionedAccountIdFor("https://unrelated.example/@alice"))
+            assertEquals("automatic", status.quoteApproval)
         }
     }
 
@@ -348,6 +365,23 @@ class DefaultTimelineRepositoryTest {
             assertEquals(true, body.contains("visibility=private"))
             assertEquals(true, body.contains("sensitive=true"))
             assertEquals(true, body.contains("language=ja"))
+        }
+    }
+
+    @Test
+    fun postsNativeQuoteWithoutTurningItIntoAReply() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(basicStatusJson("quoted")))
+
+            DefaultTimelineRepository(ApiClientFactory()).createStatus(
+                testSession(server),
+                CreateStatusRequest(text = "引用本文", quotedStatusId = "source-42"),
+                "quote-key",
+            ).getOrThrow()
+
+            val body = server.takeRequest().body.readUtf8()
+            assertEquals(true, body.contains("quoted_status_id=source-42"))
+            assertEquals(false, body.contains("in_reply_to_id="))
         }
     }
 

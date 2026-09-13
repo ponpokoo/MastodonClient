@@ -19,6 +19,9 @@ sealed interface Route {
     data class ComposePost(
         val replyToId: String? = null,
         val editStatusId: String? = null,
+        val quoteStatusId: String? = null,
+        val quoteStatusUrl: String? = null,
+        val nativeQuote: Boolean = false,
     ) : Route
 
     @Serializable

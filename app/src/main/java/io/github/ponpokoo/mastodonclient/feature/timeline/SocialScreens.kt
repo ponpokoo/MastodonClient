@@ -102,6 +102,7 @@ internal fun SearchContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
@@ -151,7 +152,7 @@ internal fun SearchContent(
                         items(results.statuses, key = { it.timelineId }) { status ->
                             SocialStatus(
                                 status, onStatusClick, onOpenLink, onReply,
-                                onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                                onBoost, onQuote, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
                             )
                         }
                     }
@@ -174,6 +175,7 @@ internal fun NotificationsContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit = {},
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -268,6 +270,7 @@ internal fun ProfileContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
@@ -432,7 +435,7 @@ internal fun ProfileContent(
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
-                    onBoost, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                    onBoost, onQuote, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
                     onMoreClick = onMoreClick,
                     isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
@@ -451,6 +454,7 @@ private fun SocialStatus(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -483,6 +487,7 @@ private fun SocialStatus(
         onOpenLink = onOpenLink,
         onReply = { onReply(status) },
         onBoost = { onBoost(status) },
+        onQuote = { onQuote(status) },
         onFavourite = { onFavourite(status) },
         onBookmark = { onBookmark(status) },
         onReact = { onReact(status, it) },
@@ -584,6 +589,14 @@ private fun NotificationStatusQuote(
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(
+                    model = status.author.avatarUrl,
+                    contentDescription = "${status.author.displayName}のプロフィール画像",
+                    modifier = Modifier.size(28.dp).clip(CircleShape)
+                        .testTag("notification_status_author_avatar"),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.width(8.dp))
                 CustomEmojiText(
                     text = status.author.displayName,
                     emojis = status.author.customEmojis,

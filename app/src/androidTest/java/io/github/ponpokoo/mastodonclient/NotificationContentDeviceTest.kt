@@ -41,7 +41,8 @@ class NotificationContentDeviceTest {
             favouritesCount = 0,
             mediaAttachments = emptyList(),
         )
-        val notification = TimelineNotification("notification-1", "favourite", status.createdAt, author, status)
+        val notifier = StatusAuthor("account-2", "通知した人", "other@example.social", "")
+        val notification = TimelineNotification("notification-1", "favourite", status.createdAt, notifier, status)
 
         composeRule.setContent {
             MaterialTheme {
@@ -67,6 +68,7 @@ class NotificationContentDeviceTest {
             }
         }
 
+        composeRule.onNodeWithTag("notification_status_author_avatar").assertExists()
         composeRule.onNodeWithTag("notification_status_quote").performClick()
         composeRule.runOnIdle { assertEquals("status-1", openedStatusId.get()) }
     }

@@ -7,6 +7,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,11 @@ data class StatusDetailUiState(
     val accountListTitle: String? = null,
     val accounts: List<StatusAuthor> = emptyList(),
     val isLoadingAccounts: Boolean = false,
+    val currentAccountId: String? = null,
+    val lists: List<MastodonList> = emptyList(),
+    val isLoadingLists: Boolean = false,
+    val actionMessage: String? = null,
+    val isDeleted: Boolean = false,
 )
 
 class StatusDetailViewModel(
@@ -75,6 +82,80 @@ class StatusDetailViewModel(
         _uiState.update { it.copy(accountListTitle = null, accounts = emptyList()) }
     }
 
+    fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
+
+    fun setPinned(status: TimelineStatus) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.setPinned(current, status.statusId, !status.pinned).fold(
+                onSuccess = { updated -> _uiState.update { state -> state.copy(
+                    detail = state.detail?.copy(status = updated),
+                    actionMessage = if (updated.pinned) "プロフィールに固定しました" else "固定を解除しました",
+                ) } },
+                onFailure = { showActionError(it, "固定を変更できませんでした") },
+            )
+        }
+    }
+
+    fun deleteStatus(status: TimelineStatus) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.deleteStatus(current, status.statusId).fold(
+                onSuccess = { _uiState.update { it.copy(isDeleted = true) } },
+                onFailure = { showActionError(it, "投稿を削除できませんでした") },
+            )
+        }
+    }
+
+    fun unfollow(status: TimelineStatus) = runAccountAction("フォローを解除しました") {
+        timelineRepository.setFollowing(it, status.author.id, false)
+    }
+
+    fun mute(status: TimelineStatus) = runAccountAction("ミュートしました") {
+        timelineRepository.setMuted(it, status.author.id, true)
+    }
+
+    fun block(status: TimelineStatus) = runAccountAction("ブロックしました") {
+        timelineRepository.setBlocked(it, status.author.id, true)
+    }
+
+    fun report(status: TimelineStatus, comment: String) = runAccountAction("通報を送信しました") {
+        timelineRepository.reportStatus(it, status.author.id, status.statusId, comment)
+    }
+
+    fun loadLists() {
+        val current = session ?: return
+        if (_uiState.value.isLoadingLists) return
+        _uiState.update { it.copy(isLoadingLists = true) }
+        viewModelScope.launch {
+            timelineRepository.getLists(current).fold(
+                onSuccess = { lists -> _uiState.update { it.copy(lists = lists, isLoadingLists = false) } },
+                onFailure = { error ->
+                    _uiState.update { it.copy(isLoadingLists = false) }
+                    showActionError(error, "リストを取得できませんでした")
+                },
+            )
+        }
+    }
+
+    fun addToList(status: TimelineStatus, listId: String) = runAccountAction("リストに追加しました") {
+        timelineRepository.addAccountToList(it, listId, status.author.id)
+    }
+
+    private fun runAccountAction(message: String, request: suspend (AccountSession) -> Result<*>) {
+        val current = session ?: return
+        viewModelScope.launch {
+            request(current).fold(
+                onSuccess = { _uiState.update { it.copy(actionMessage = message) } },
+                onFailure = { showActionError(it, "操作に失敗しました") },
+            )
+        }
+    }
+
+    private fun showActionError(error: Throwable, fallback: String) {
+        _uiState.update { it.copy(actionMessage = error.message ?: fallback) }
+    }
+
     private fun load() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -84,6 +165,7 @@ class StatusDetailViewModel(
                 return@launch
             }
             session = current
+            _uiState.update { it.copy(currentAccountId = current.accountId) }
             timelineRepository.getCachedStatus(current, statusId)?.let { cached ->
                 _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) }
             }

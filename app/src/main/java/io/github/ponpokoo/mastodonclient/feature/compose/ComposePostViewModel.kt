@@ -43,6 +43,9 @@ data class ComposePostUiState(
     val customEmojis: List<CustomEmoji> = emptyList(),
     val drafts: List<ComposeDraft> = emptyList(),
     val replyToStatus: TimelineStatus? = null,
+    val quoteToStatus: TimelineStatus? = null,
+    val quoteStatusId: String? = null,
+    val quotingNative: Boolean = false,
     val mentionCandidates: List<StatusAuthor> = emptyList(),
     val isLoadingMentions: Boolean = false,
     val preferences: AppPreferences = AppPreferences(),
@@ -63,11 +66,17 @@ class ComposePostViewModel(
     private val preferencesStore: UserPreferencesStore,
     private val deleteDraftFile: (String) -> Unit,
     private val draftMediaRepository: DraftMediaRepository,
+    private val initialQuoteStatusId: String? = null,
+    private val initialQuoteStatusUrl: String? = null,
+    private val nativeQuote: Boolean = false,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ComposePostUiState())
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
     private var idempotencyKey = UUID.randomUUID().toString()
     private var activeReplyToId: String? = initialReplyToId
+    private var activeQuoteStatusId: String? = initialQuoteStatusId
+    private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
+    private var activeNativeQuote: Boolean = nativeQuote
 
     init {
         viewModelScope.launch {
@@ -83,10 +92,13 @@ class ComposePostViewModel(
                     drafts = preferencesStore.drafts.first().filter { draft -> draft.sessionId == selected?.sessionId }
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
                     isLoading = selected != null,
+                    quotingNative = activeQuoteStatusId != null && activeNativeQuote,
+                    quoteStatusId = activeQuoteStatusId,
                 )
             }
             selected?.let { session ->
                 loadAccountData(session, restoreBuffer = editStatusId == null)
+                activeQuoteStatusId?.let { quoteId -> loadQuoteTarget(session, quoteId) }
                 initialReplyToId?.let { loadReplyTarget(session, it, insertMention = _uiState.value.text.isBlank()) }
                 editStatusId?.let { statusId ->
                     timelineRepository.getEditableStatus(session, statusId).fold(
@@ -200,9 +212,18 @@ class ComposePostViewModel(
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null) return
         activeReplyToId = draft.replyToId
-        _uiState.update { state -> state.withDraft(draft).copy(actionMessage = "下書きを呼び出しました") }
+        activeQuoteStatusId = draft.quotedStatusId
+        activeQuoteStatusUrl = draft.quotedStatusUrl
+        activeNativeQuote = draft.nativeQuote
+        _uiState.update { state -> state.withDraft(draft).copy(
+            quoteToStatus = null,
+            quoteStatusId = draft.quotedStatusId,
+            quotingNative = draft.quotedStatusId != null && draft.nativeQuote,
+            actionMessage = "下書きを呼び出しました",
+        ) }
         draft.replyToId?.let { viewModelScope.launch { loadReplyTarget(session, it, insertMention = false) } }
             ?: _uiState.update { it.copy(replyToStatus = null) }
+        draft.quotedStatusId?.let { viewModelScope.launch { loadQuoteTarget(session, it) } }
     }
 
     fun deleteDraft(draft: ComposeDraft) {
@@ -226,6 +247,10 @@ class ComposePostViewModel(
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
 
     fun switchPostingAccount(sessionId: String) {
+        if (activeQuoteStatusId != null) {
+            _uiState.update { it.copy(actionMessage = "引用中は投稿元を切り替えられません") }
+            return
+        }
         if (editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting) return
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
@@ -258,6 +283,10 @@ class ComposePostViewModel(
         val state = _uiState.value
         if (state.isPosting || state.isImportingMedia || state.selectedSession == null) return
         if (state.text.isBlank() && state.attachments.isEmpty()) return
+        if (state.quotingNative && (state.attachments.isNotEmpty() || state.pollOptions.isNotEmpty())) {
+            _uiState.update { it.copy(errorMessage = "引用投稿にはメディアや投票を添付できません") }
+            return
+        }
         if (state.pollOptions.isNotEmpty() && state.pollOptions.any(String::isBlank)) {
             _uiState.update { it.copy(errorMessage = "投票の選択肢を入力してください") }
             return
@@ -290,6 +319,7 @@ class ComposePostViewModel(
             val request = CreateStatusRequest(
                 text = state.text,
                 replyToId = activeReplyToId,
+                quotedStatusId = activeQuoteStatusId.takeIf { state.quotingNative },
                 mediaIds = mediaIds,
                 spoilerText = state.spoilerText,
                 sensitive = state.sensitive,
@@ -457,6 +487,9 @@ class ComposePostViewModel(
         key = draftKey(sessionId),
         sessionId = sessionId,
         replyToId = activeReplyToId,
+        quotedStatusId = activeQuoteStatusId,
+        quotedStatusUrl = activeQuoteStatusUrl,
+        nativeQuote = activeNativeQuote,
         text = text,
         spoilerText = spoilerText,
         visibility = visibility,
@@ -471,7 +504,21 @@ class ComposePostViewModel(
         updatedAtEpochMillis = System.currentTimeMillis(),
     )
 
-    private fun draftKey(sessionId: String) = "$sessionId:${activeReplyToId ?: "new"}:${editStatusId.orEmpty()}"
+    private fun draftKey(sessionId: String): String {
+        val base = "$sessionId:${activeReplyToId ?: "new"}:${editStatusId.orEmpty()}"
+        return activeQuoteStatusId?.let { "$base:quote-$it" } ?: base
+    }
+
+    private suspend fun loadQuoteTarget(session: AccountSession, statusId: String) {
+        if (!activeNativeQuote && _uiState.value.text.isBlank()) {
+            _uiState.update { it.copy(text = activeQuoteStatusUrl.orEmpty()) }
+        }
+        timelineRepository.getCachedStatus(session, statusId)?.let { cached ->
+            _uiState.update { it.copy(quoteToStatus = cached) }
+        } ?: timelineRepository.getStatusDetail(session, statusId).onSuccess { detail ->
+            _uiState.update { it.copy(quoteToStatus = detail.status) }
+        }
+    }
 
     private suspend fun loadReplyTarget(session: AccountSession, statusId: String, insertMention: Boolean) {
         timelineRepository.getStatusDetail(session, statusId).onSuccess { detail ->
@@ -520,9 +567,13 @@ class ComposePostViewModel(
         private val preferencesStore: UserPreferencesStore,
         private val deleteDraftFile: (String) -> Unit,
         private val draftMediaRepository: DraftMediaRepository,
+        private val quoteStatusId: String? = null,
+        private val quoteStatusUrl: String? = null,
+        private val nativeQuote: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore, deleteDraftFile, draftMediaRepository) as T
+            ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore,
+                deleteDraftFile, draftMediaRepository, quoteStatusId, quoteStatusUrl, nativeQuote) as T
     }
 }
