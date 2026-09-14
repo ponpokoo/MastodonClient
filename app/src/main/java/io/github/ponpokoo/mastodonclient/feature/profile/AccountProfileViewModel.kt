@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 data class AccountProfileUiState(
     val profile: UserProfile? = null,
@@ -28,6 +29,7 @@ class AccountProfileViewModel(
     private val _uiState = MutableStateFlow(AccountProfileUiState())
     val uiState: StateFlow<AccountProfileUiState> = _uiState.asStateFlow()
     private var session: AccountSession? = null
+    private var statusesJob: Job? = null
 
     init { load() }
     fun retry() = load()
@@ -36,9 +38,10 @@ class AccountProfileViewModel(
         val current = session ?: return
         val existingProfile = _uiState.value.profile ?: return
         if (_uiState.value.isLoading || _uiState.value.isRefreshing) return
+        statusesJob?.cancel()
         viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
-            val refreshedProfile = timelineRepository.getProfile(current, accountId).getOrElse { error ->
+            _uiState.update { it.copy(isRefreshing = true, isLoadingMore = false, errorMessage = null) }
+            val refreshedProfile = timelineRepository.getProfileHeader(current, accountId).getOrElse { error ->
                 _uiState.update {
                     it.copy(
                         isRefreshing = false,
@@ -47,35 +50,32 @@ class AccountProfileViewModel(
                 }
                 return@launch
             }
+            _uiState.update { state -> state.copy(profile = refreshedProfile.copy(
+                statuses = existingProfile.statuses, pinnedStatuses = existingProfile.pinnedStatuses,
+                nextMaxId = existingProfile.nextMaxId, endReached = existingProfile.endReached,
+            )) }
             val selectedTab = _uiState.value.selectedTab
-            val finalProfile = if (selectedTab == ProfileStatusTab.Posts) {
-                refreshedProfile
-            } else {
-                timelineRepository.getProfileStatuses(current, accountId, selectedTab).fold(
-                    onSuccess = { page -> refreshedProfile.copy(
-                        statuses = page.statuses,
-                        nextMaxId = page.nextMaxId,
-                        endReached = page.endReached,
-                    ) },
-                    onFailure = { error ->
-                        _uiState.update {
-                            it.copy(
-                                isRefreshing = false,
-                                errorMessage = error.message ?: "プロフィールを更新できませんでした",
-                            )
-                        }
-                        return@launch
-                    },
-                )
+            timelineRepository.getProfileStatuses(current, accountId, selectedTab).fold(
+                onSuccess = { page -> _uiState.update { state -> state.copy(
+                    profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
+                        endReached = page.endReached), isRefreshing = false,
+                ) } },
+                onFailure = { error -> _uiState.update { it.copy(isRefreshing = false,
+                    errorMessage = error.message ?: "プロフィールを更新できませんでした") } },
+            )
+            if (selectedTab == ProfileStatusTab.Posts) {
+                timelineRepository.getPinnedProfileStatuses(current, accountId).onSuccess { pinned ->
+                    _uiState.update { state -> state.copy(profile = state.profile?.copy(pinnedStatuses = pinned)) }
+                }
             }
-            _uiState.update { it.copy(profile = finalProfile, isRefreshing = false) }
         }
     }
 
     fun selectTab(tab: ProfileStatusTab) {
         if (tab == _uiState.value.selectedTab) return
-        _uiState.update { it.copy(selectedTab = tab, isLoading = true, errorMessage = null) }
-        viewModelScope.launch {
+        statusesJob?.cancel()
+        _uiState.update { it.copy(selectedTab = tab, isLoading = true, isLoadingMore = false, errorMessage = null) }
+        statusesJob = viewModelScope.launch {
             val current = session ?: return@launch
             timelineRepository.getProfileStatuses(current, accountId, tab).fold(
                 { page -> _uiState.update { state -> state.copy(profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId, endReached = page.endReached), isLoading = false) } }, ::showError,
@@ -183,13 +183,42 @@ class AccountProfileViewModel(
         }
     }
 
+    fun addProfileToList(listId: String) {
+        val current = session ?: return
+        viewModelScope.launch {
+            timelineRepository.addAccountToList(current, listId, accountId).fold(
+                onSuccess = { _uiState.update { it.copy(message = "リストに追加しました") } },
+                onFailure = ::showError,
+            )
+        }
+    }
+
     private fun load() = viewModelScope.launch {
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession() ?: run { _uiState.value = AccountProfileUiState(isLoading = false, errorMessage = "ログインが必要です"); return@launch }
         session = current
-        timelineRepository.getProfile(current, accountId).fold({ profile ->
-            _uiState.update { it.copy(profile = profile, isLoading = false) }
-            if (!profile.isOwnProfile) timelineRepository.getRelationship(current, accountId).onSuccess { rel -> _uiState.update { it.copy(relationship = rel) } }
+        timelineRepository.getProfileHeader(current, accountId).fold({ profile ->
+            _uiState.update { it.copy(profile = profile, isLoading = false, isLoadingMore = true) }
+            if (!profile.isOwnProfile) viewModelScope.launch {
+                timelineRepository.getRelationship(current, accountId).onSuccess { rel ->
+                    _uiState.update { it.copy(relationship = rel) }
+                }
+            }
+            statusesJob = viewModelScope.launch {
+                timelineRepository.getProfileStatuses(current, accountId, ProfileStatusTab.Posts).fold(
+                    onSuccess = { page -> _uiState.update { state -> state.copy(
+                        profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
+                            endReached = page.endReached), isLoadingMore = false,
+                    ) } },
+                    onFailure = { error -> _uiState.update { it.copy(isLoadingMore = false,
+                        errorMessage = error.message ?: "投稿を取得できませんでした") } },
+                )
+            }
+            viewModelScope.launch {
+                timelineRepository.getPinnedProfileStatuses(current, accountId).onSuccess { pinned ->
+                    _uiState.update { state -> state.copy(profile = state.profile?.copy(pinnedStatuses = pinned)) }
+                }
+            }
         }, ::showError)
     }
     private fun relationshipMutation(request: suspend (AccountSession, AccountRelationship) -> Result<AccountRelationship>) {

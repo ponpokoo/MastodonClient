@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +18,13 @@ data class AccountListUiState(
     val accounts: List<StatusAuthor> = emptyList(),
     val isLoading: Boolean = true,
     val isLoadingMore: Boolean = false,
+    val nextMaxId: String? = null,
     val endReached: Boolean = false,
     val errorMessage: String? = null,
+    val relationships: Map<String, AccountRelationship> = emptyMap(),
+    val mutatingAccountIds: Set<String> = emptySet(),
+    val relationshipError: String? = null,
+    val viewerAccountId: String? = null,
 )
 
 class AccountListViewModel(
@@ -35,22 +41,64 @@ class AccountListViewModel(
 
     fun retry() = load()
 
+    fun retryRelationships() {
+        val current = session ?: return
+        viewModelScope.launch { loadRelationships(current, _uiState.value.accounts) }
+    }
+
+    fun toggleFollow(accountId: String) {
+        val current = session ?: return
+        val relationship = _uiState.value.relationships[accountId] ?: return
+        if (relationship.requested || accountId in _uiState.value.mutatingAccountIds) return
+        _uiState.update { it.copy(mutatingAccountIds = it.mutatingAccountIds + accountId, relationshipError = null) }
+        viewModelScope.launch {
+            timelineRepository.setFollowing(current, accountId, !relationship.following).fold(
+                onSuccess = { updated -> _uiState.update { state -> state.copy(
+                    relationships = state.relationships + (accountId to updated),
+                    mutatingAccountIds = state.mutatingAccountIds - accountId,
+                ) } },
+                onFailure = { error -> _uiState.update { state -> state.copy(
+                    mutatingAccountIds = state.mutatingAccountIds - accountId,
+                    relationshipError = error.message ?: "フォロー状態を変更できませんでした",
+                ) } },
+            )
+        }
+    }
+
+    private suspend fun loadRelationships(current: AccountSession, accounts: List<StatusAuthor>) {
+        val ids = accounts.map(StatusAuthor::id).filterNot { it == current.accountId }
+        if (ids.isEmpty()) return
+        ids.chunked(40).forEach { batch ->
+            timelineRepository.getRelationships(current, batch).fold(
+                onSuccess = { relationships -> _uiState.update { state -> state.copy(
+                    relationships = state.relationships + relationships, relationshipError = null,
+                ) } },
+                onFailure = { error -> _uiState.update { it.copy(
+                    relationshipError = error.message ?: "フォロー状態を取得できませんでした",
+                ) } },
+            )
+        }
+    }
+
     fun loadMore() {
         val current = session ?: return
         val state = _uiState.value
-        val maxId = state.accounts.lastOrNull()?.id ?: return
+        val maxId = state.nextMaxId ?: return
         if (state.isLoading || state.isLoadingMore || state.endReached) return
         _uiState.update { it.copy(isLoadingMore = true, errorMessage = null) }
         viewModelScope.launch {
-            timelineRepository.getAccountList(current, accountId, followers, maxId).fold(
-                onSuccess = { accounts ->
+            timelineRepository.getAccountListPage(current, accountId, followers, maxId).fold(
+                onSuccess = { page ->
                     _uiState.update {
+                        val merged = (it.accounts + page.accounts).distinctBy(StatusAuthor::id)
                         it.copy(
-                            accounts = (it.accounts + accounts).distinctBy(StatusAuthor::id),
+                            accounts = merged,
                             isLoadingMore = false,
-                            endReached = accounts.isEmpty(),
+                            nextMaxId = page.nextMaxId,
+                            endReached = page.endReached || page.nextMaxId == maxId || merged.size == it.accounts.size,
                         )
                     }
+                    loadRelationships(current, page.accounts)
                 },
                 onFailure = ::showError,
             )
@@ -64,9 +112,12 @@ class AccountListViewModel(
             return@launch
         }
         session = current
-        timelineRepository.getAccountList(current, accountId, followers).fold(
-            onSuccess = { accounts ->
-                _uiState.value = AccountListUiState(accounts = accounts, isLoading = false, endReached = accounts.isEmpty())
+        timelineRepository.getAccountListPage(current, accountId, followers).fold(
+            onSuccess = { page ->
+                _uiState.value = AccountListUiState(accounts = page.accounts, isLoading = false,
+                    nextMaxId = page.nextMaxId, endReached = page.endReached,
+                    viewerAccountId = current.accountId)
+                loadRelationships(current, page.accounts)
             },
             onFailure = ::showError,
         )

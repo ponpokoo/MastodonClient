@@ -4,6 +4,7 @@ import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HowToReg
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Poll
@@ -52,16 +54,20 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,6 +91,7 @@ import java.net.URI
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 internal enum class NotificationFilter(val label: String) {
     All("すべて"),
@@ -197,6 +204,14 @@ internal fun NotificationsContent(
             }
         }
     }
+    LaunchedEffect(listState, state.notifications.size, state.notificationsNextMaxId, selectedFilter) {
+        if (state.notificationsNextMaxId != null && !state.notificationsEndReached) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .distinctUntilChanged().collect { lastVisible ->
+                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) onLoadMore()
+                }
+        }
+    }
     when {
         state.isLoadingNotifications && state.notifications.isEmpty() -> LoadingContent(
             "通知を読み込んでいます", Modifier.padding(padding),
@@ -292,10 +307,30 @@ internal fun ProfileContent(
     onOpenBookmarks: () -> Unit = {},
     onOpenFavourites: () -> Unit = {},
     onToggleFollow: () -> Unit = {},
+    onShareProfile: (() -> Unit)? = null,
+    onOpenProfileBrowser: (() -> Unit)? = null,
+    onAddProfileToList: (() -> Unit)? = null,
+    onCopyProfileUrl: (() -> Unit)? = null,
+    onShowProfileQr: (() -> Unit)? = null,
+    onOpenFollowedTags: (() -> Unit)? = null,
+    onOpenAccountSettings: (() -> Unit)? = null,
+    onMuteProfile: (() -> Unit)? = null,
+    onBlockProfile: (() -> Unit)? = null,
+    onReportProfile: (() -> Unit)? = null,
+    isProfileMuted: Boolean = false,
+    isProfileBlocked: Boolean = false,
     listState: LazyListState? = null,
 ) {
     val profile = state.profile
     val resolvedListState = listState ?: rememberLazyListState()
+    LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab) {
+        if (profile?.nextMaxId != null && !profile.endReached) {
+            snapshotFlow { resolvedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .distinctUntilChanged().collect { lastVisible ->
+                    if (lastVisible != null && lastVisible >= resolvedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
+                }
+        }
+    }
     var profileMenuExpanded by remember { mutableStateOf(false) }
     when {
         state.isLoadingProfile && profile == null -> LoadingContent(
@@ -330,25 +365,55 @@ internal fun ProfileContent(
                         model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
                             .clip(CircleShape).clickable(onClick = onAvatarClick)
-                        .background(MaterialTheme.colorScheme.surface), contentScale = ContentScale.Crop,
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(2.dp, Color.Black, CircleShape),
+                        contentScale = ContentScale.Crop,
                     )
-                    if (profile.isOwnProfile) {
-                        Box(
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp),
-                        ) {
+                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (profile.isOwnProfile) {
+                                Button(onClick = onEditProfile) { Text("プロフィールを編集") }
+                            } else {
+                                Button(onClick = onToggleFollow,
+                                    enabled = relationship != null && !relationship.requested) {
+                                    Text(when {
+                                        relationship?.requested == true -> "リクエスト中"
+                                        relationship?.following == true -> "フォロー解除"
+                                        profile.locked -> "リクエスト"
+                                        else -> "フォロー"
+                                    })
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
                             OutlinedIconButton(
                                 onClick = { profileMenuExpanded = true },
                                 modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Outlined.MoreVert, contentDescription = "プロフィールのその他メニュー")
                             }
-                            DropdownMenu(
-                                expanded = profileMenuExpanded,
-                                onDismissRequest = { profileMenuExpanded = false },
-                            ) {
+                        }
+                        DropdownMenu(
+                            expanded = profileMenuExpanded,
+                            onDismissRequest = { profileMenuExpanded = false },
+                        ) {
+                            if (profile.isOwnProfile) {
+                                onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onCopyProfileUrl?.let { action -> DropdownMenuItem(text = { Text("リンクをコピー") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onShowProfileQr?.let { action -> DropdownMenuItem(text = { Text("QRコードを表示") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onOpenProfileBrowser?.let { action -> DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = { profileMenuExpanded = false; action() }) }
                                 DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
                                 DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })
                                 DropdownMenuItem(text = { Text("お気に入り") }, onClick = { profileMenuExpanded = false; onOpenFavourites() })
+                                onOpenFollowedTags?.let { action -> DropdownMenuItem(text = { Text("フォロー中のハッシュタグ") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onOpenAccountSettings?.let { action -> DropdownMenuItem(text = { Text("アカウント設定") }, onClick = { profileMenuExpanded = false; action() }) }
+                            } else {
+                                onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onOpenProfileBrowser?.let { action -> DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onAddProfileToList?.let { action -> DropdownMenuItem(text = { Text("リストに追加") }, onClick = { profileMenuExpanded = false; action() }) }
+                                if (onMuteProfile != null || onBlockProfile != null || onReportProfile != null) HorizontalDivider()
+                                onMuteProfile?.let { action -> DropdownMenuItem(text = { Text(if (isProfileMuted) "ミュート解除" else "ミュート") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onBlockProfile?.let { action -> DropdownMenuItem(text = { Text(if (isProfileBlocked) "ブロック解除" else "ブロック") }, onClick = { profileMenuExpanded = false; action() }) }
+                                onReportProfile?.let { action -> DropdownMenuItem(text = { Text("通報") }, onClick = { profileMenuExpanded = false; action() }) }
                             }
                         }
                     }
@@ -366,16 +431,20 @@ internal fun ProfileContent(
                     ) {
                         Text(
                             profileAccountHandle(profile.author.accountName, profile.url),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f, fill = profile.isOwnProfile),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        Button(onClick = if (profile.isOwnProfile) onEditProfile else onToggleFollow) {
-                            Text(if (profile.isOwnProfile) "プロフィールを編集" else when {
-                                relationship?.requested == true -> "申請中"
-                                relationship?.following == true -> "フォロー解除"
-                                profile.locked -> "フォロー申請"
-                                else -> "フォロー"
-                            })
+                        if (profile.locked) {
+                            Icon(Icons.Outlined.Lock, contentDescription = "非公開アカウント",
+                                modifier = Modifier.padding(start = 4.dp).size(16.dp))
+                        }
+                        if (relationship?.followedBy == true) {
+                            Text("フォローされてます", modifier = Modifier.padding(start = 6.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1)
                         }
                     }
                     Row(

@@ -24,6 +24,7 @@ data class StatusDetailUiState(
     val accountListTitle: String? = null,
     val accounts: List<StatusAuthor> = emptyList(),
     val isLoadingAccounts: Boolean = false,
+    val accountListError: String? = null,
     val currentAccountId: String? = null,
     val lists: List<MastodonList> = emptyList(),
     val isLoadingLists: Boolean = false,
@@ -59,8 +60,11 @@ class StatusDetailViewModel(
     }
 
     fun showReaction(reaction: EmojiReaction) =
-        loadAccounts("${reaction.name} でリアクションしたアカウント") { current ->
-            timelineRepository.getEmojiReactionedBy(current, statusId).map { accounts ->
+        loadAccounts(
+            if (reaction.accountIds.isEmpty()) "リアクションした人"
+            else "${reaction.name} を付けた人",
+        ) { current ->
+            timelineRepository.getEmojiReactionedBy(current, statusId, reaction.name).map { accounts ->
                 if (reaction.accountIds.isEmpty()) accounts
                 else accounts.filter { it.id in reaction.accountIds }
             }
@@ -79,7 +83,7 @@ class StatusDetailViewModel(
     }
 
     fun dismissAccounts() {
-        _uiState.update { it.copy(accountListTitle = null, accounts = emptyList()) }
+        _uiState.update { it.copy(accountListTitle = null, accounts = emptyList(), accountListError = null) }
     }
 
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
@@ -186,15 +190,19 @@ class StatusDetailViewModel(
         val current = session ?: return
         viewModelScope.launch {
             _uiState.update {
-                it.copy(accountListTitle = title, accounts = emptyList(), isLoadingAccounts = true)
+                it.copy(accountListTitle = title, accounts = emptyList(), isLoadingAccounts = true, accountListError = null)
             }
             request(current)
                 .onSuccess { accounts ->
-                    _uiState.update { it.copy(accounts = accounts, isLoadingAccounts = false) }
+                    _uiState.update { if (it.accountListTitle == title) it.copy(accounts = accounts, isLoadingAccounts = false) else it }
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(isLoadingAccounts = false, errorMessage = error.message ?: "一覧を取得できませんでした")
+                        if (it.accountListTitle == title) it.copy(
+                            isLoadingAccounts = false,
+                            accountListError = error.message?.takeIf { message -> message.length <= 100 }
+                                ?: "一覧を取得できませんでした",
+                        ) else it
                     }
                 }
         }

@@ -12,6 +12,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.SearchResultDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.MarkerResponseDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.CustomEmojiDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.MediaAttachmentDto
+import kotlinx.serialization.json.JsonElement
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Field
@@ -87,10 +88,10 @@ interface MastodonApi {
     ): List<StatusDto>
 
     @GET("api/v1/accounts/{id}/followers")
-    suspend fun getFollowers(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): List<AccountDto>
+    suspend fun getFollowers(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
 
     @GET("api/v1/accounts/{id}/following")
-    suspend fun getFollowing(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): List<AccountDto>
+    suspend fun getFollowing(@Path("id") id: String, @Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
 
     @GET("api/v1/accounts/relationships")
     suspend fun getRelationships(@Query("id[]") ids: List<String>): List<RelationshipDto>
@@ -200,7 +201,7 @@ interface MastodonApi {
 
     // Fedibird extension. Called only when a status advertises emoji_reactions.
     @GET("api/v1/statuses/{id}/emoji_reactioned_by")
-    suspend fun getEmojiReactionedBy(@Path("id") id: String): List<AccountDto>
+    suspend fun getEmojiReactionedBy(@Path("id") id: String): JsonElement
 
     @POST("api/v1/statuses/{id}/favourite")
     suspend fun favourite(@Path("id") id: String): StatusDto

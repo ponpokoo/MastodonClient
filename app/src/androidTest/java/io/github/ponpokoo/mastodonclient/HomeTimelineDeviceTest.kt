@@ -51,6 +51,7 @@ class HomeTimelineDeviceTest {
         assumeTrue("Device has no authenticated Mastodon session", isAuthenticated)
 
         composeRule.onNodeWithContentDescription("アカウントを切り替える").performClick()
+        composeRule.onNodeWithTag("account_switch_dialog").assertExists()
         composeRule.onNodeWithText("アカウントを切り替える").assertExists()
         composeRule.onNodeWithText("アカウントを追加").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("アカウント切替を閉じる").performClick()

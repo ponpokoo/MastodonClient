@@ -7,6 +7,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
 import io.github.ponpokoo.mastodonclient.data.remote.MastodonStreamingDataSource
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.AccountListPage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
@@ -43,6 +44,12 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -54,6 +61,7 @@ class DefaultTimelineRepository(
     private val apiClientFactory: ApiClientFactory,
     private val streamingDataSource: MastodonStreamingDataSource = MastodonStreamingDataSource(),
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
+    private val onReactionSucceeded: suspend (AccountSession, String) -> Unit = { _, _ -> },
 ) : TimelineRepository {
     private data class StatusCacheKey(val instanceUrl: String, val sessionId: String, val statusId: String)
     private fun cacheKey(session: AccountSession, statusId: String) =
@@ -118,6 +126,33 @@ class DefaultTimelineRepository(
         )
     } }
 
+    override suspend fun getProfileHeader(session: AccountSession, accountId: String): Result<UserProfile> = runCatching {
+        val account = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccount(accountId)
+        UserProfile(
+            author = account.toDomain(),
+            headerUrl = account.header,
+            noteHtml = account.note,
+            followersCount = account.followersCount,
+            followingCount = account.followingCount,
+            statusesCount = account.statusesCount,
+            statuses = emptyList(),
+            url = account.url,
+            locked = account.locked,
+            createdAt = account.createdAt,
+            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
+            customEmojis = account.emojis.associate { it.shortcode to it.url },
+            pinnedStatuses = emptyList(),
+            nextMaxId = null,
+            endReached = false,
+            isOwnProfile = account.id == session.accountId,
+        )
+    }
+
+    override suspend fun getPinnedProfileStatuses(session: AccountSession, accountId: String): Result<List<TimelineStatus>> = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getAccountStatuses(accountId, pinned = true).map(StatusDto::toDomain)
+    }
+
     override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> = runCatching {
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccountStatuses(
             id = accountId,
@@ -130,9 +165,16 @@ class DefaultTimelineRepository(
         TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
     }
 
-    override suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String?) = runCatching {
+    override suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String?) =
+        getAccountListPage(session, accountId, followers, maxId).map(AccountListPage::accounts)
+
+    override suspend fun getAccountListPage(session: AccountSession, accountId: String, followers: Boolean, maxId: String?) = runCatching {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        (if (followers) api.getFollowers(accountId, maxId) else api.getFollowing(accountId, maxId)).map(AccountDto::toDomain)
+        val response = if (followers) api.getFollowers(accountId, maxId) else api.getFollowing(accountId, maxId)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        val accounts = response.body().orEmpty().map(AccountDto::toDomain)
+        val nextMaxId = nextAccountListCursor(response.headers()["Link"])
+        AccountListPage(accounts, nextMaxId, nextMaxId == null || accounts.isEmpty())
     }
 
     override suspend fun getLists(session: AccountSession) = runCatching {
@@ -166,6 +208,12 @@ class DefaultTimelineRepository(
 
     override suspend fun getRelationship(session: AccountSession, accountId: String) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).getRelationships(listOf(accountId)).first().toDomain()
+    }
+
+    override suspend fun getRelationships(session: AccountSession, accountIds: List<String>) = runCatching {
+        if (accountIds.isEmpty()) emptyMap()
+        else apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getRelationships(accountIds).associate { it.id to it.toDomain() }
     }
 
     override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean) = runCatching {
@@ -367,8 +415,11 @@ class DefaultTimelineRepository(
     override suspend fun getFavouritedBy(session: AccountSession, statusId: String) =
         loadAccounts(session) { getFavouritedBy(statusId) }
 
-    override suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String) =
-        loadAccounts(session) { getEmojiReactionedBy(statusId) }
+    override suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String) = runCatching {
+        val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getEmojiReactionedBy(statusId)
+        reactionAccountsFromResponse(response, reactionName, json).map(AccountDto::toDomain)
+    }
 
     override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
         updateStatus(session) { if (favourite) favourite(statusId) else unfavourite(statusId) }
@@ -475,9 +526,16 @@ class DefaultTimelineRepository(
         session: AccountSession,
         statusId: String,
         emoji: String?,
-    ) = updateStatus(session) {
-        if (emoji == null) removeFedibirdReaction(statusId)
-        else addFedibirdReaction(statusId, emoji)
+    ): Result<TimelineStatus> {
+        val result = updateStatus(session) {
+            if (emoji == null) removeFedibirdReaction(statusId)
+            else addFedibirdReaction(statusId, emoji)
+        }
+        if (emoji != null && result.isSuccess) {
+            // History storage must not turn a successful server action into a failed one.
+            runCatching { onReactionSucceeded(session, emoji) }
+        }
+        return result
     }
 
     private suspend fun updateStatus(
@@ -496,6 +554,33 @@ class DefaultTimelineRepository(
             .request()
             .map(AccountDto::toDomain)
     }
+}
+
+/** Fedibird returns accounts directly; some compatible servers group them under a reaction. */
+internal fun reactionAccountsFromResponse(response: JsonElement, reactionName: String, json: Json): List<AccountDto> {
+    fun collect(value: JsonElement): List<AccountDto> = when (value) {
+        is JsonArray -> value.flatMap(::collect)
+        is JsonObject -> {
+            if (listOf("id", "username", "acct").all(value::containsKey)) {
+                listOf(json.decodeFromJsonElement<AccountDto>(value))
+            } else {
+                val name = ((value["name"] ?: value["emoji"] ?: value["reaction"]) as? JsonPrimitive)
+                    ?.contentOrNull
+                if (name != null && name.trim(':') != reactionName.trim(':')) {
+                    emptyList()
+                } else {
+                    val nested = listOf("accounts", "account", "users", "reactors", "items", "data")
+                        .mapNotNull(value::get)
+                    val children = nested.ifEmpty {
+                        listOfNotNull(value[reactionName], value[reactionName.trim(':')]).distinct()
+                    }
+                    children.flatMap(::collect)
+                }
+            }
+        }
+        else -> emptyList()
+    }
+    return collect(response).distinctBy(AccountDto::id)
 }
 
 private fun StatusDto.toDomain(): TimelineStatus {
@@ -552,6 +637,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 url = it.url,
                 previewUrl = it.previewUrl,
                 description = it.description,
+                sensitive = displayed.sensitive,
             )
         },
     )
@@ -563,7 +649,19 @@ private fun AccountDto.toDomain() = StatusAuthor(
     accountName = acct,
     avatarUrl = avatar,
     customEmojis = emojis.associate { it.shortcode to it.url },
+    locked = locked,
 )
+
+internal fun nextAccountListCursor(linkHeader: String?): String? {
+    val nextUrl = linkHeader?.let {
+        Regex("""<([^>]+)>\s*;\s*rel="?next"?""", RegexOption.IGNORE_CASE)
+            .find(it)?.groupValues?.getOrNull(1)
+    } ?: return null
+    val query = runCatching { java.net.URI(nextUrl).rawQuery }.getOrNull() ?: return null
+    return query.split('&').firstOrNull { it.startsWith("max_id=") }
+        ?.substringAfter('=')?.takeIf(String::isNotBlank)
+        ?.let { java.net.URLDecoder.decode(it, Charsets.UTF_8.name()) }
+}
 
 private fun io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto.toDomain() = AccountRelationship(
     following = following, followedBy = followedBy, blocking = blocking, blockedBy = blockedBy,

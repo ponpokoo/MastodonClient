@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,7 +26,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -33,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +53,15 @@ fun HashtagTimelineScreen(
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, state.statuses.size, state.nextMaxId) {
+        if (state.nextMaxId != null && !state.endReached) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .distinctUntilChanged().collect { lastVisible ->
+                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
+                }
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -78,7 +91,7 @@ fun HashtagTimelineScreen(
                 onRefresh = viewModel::refresh,
                 modifier = Modifier.fillMaxSize().padding(padding),
             ) {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(state.statuses, key = { it.timelineId }) { status ->
                         StatusCard(
                             status = status,

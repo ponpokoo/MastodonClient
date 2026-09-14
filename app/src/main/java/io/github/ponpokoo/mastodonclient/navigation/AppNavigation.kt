@@ -10,15 +10,21 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
@@ -39,6 +45,10 @@ import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 import io.github.ponpokoo.mastodonclient.feature.login.InstanceLoginScreen
 import io.github.ponpokoo.mastodonclient.feature.login.LoginViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionListOpener
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelFactory
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
@@ -48,6 +58,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
+import io.github.ponpokoo.mastodonclient.feature.detail.StatusAccountsDialog
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostScreen
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
 import io.github.ponpokoo.mastodonclient.feature.web.InAppWebScreen
@@ -65,8 +76,13 @@ import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
+import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
+import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -79,7 +95,17 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     val apiClientFactory = remember { ApiClientFactory() }
     val authStore = remember { SecureAuthStore(context) }
     val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore) }
-    val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory) }
+    val startupRoute by produceState<Route?>(initialValue = null, authRepository) {
+        value = if (runCatching { authRepository.restoreSession() }.getOrNull() == null) Route.Login else Route.Timeline
+    }
+    val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
+        onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
+    val reactionEmojiCache = remember { mutableMapOf<String, List<CustomEmoji>>() }
+    var selectedReaction by remember { mutableStateOf<Pair<String, EmojiReaction>?>(null) }
+    var reactionAccounts by remember { mutableStateOf<List<StatusAuthor>>(emptyList()) }
+    var reactionAccountsLoading by remember { mutableStateOf(false) }
+    var reactionAccountsError by remember { mutableStateOf<String?>(null) }
+    var reactionAccountsJob by remember { mutableStateOf<Job?>(null) }
     val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
@@ -114,9 +140,64 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             nativeQuote = status.quoteApproval in setOf("automatic", "manual"),
         ))
     }
-    NavHost(
+    val loadCustomReactionEmojis: suspend () -> Result<List<CustomEmoji>> = {
+        val session = authRepository.restoreSession()
+        if (session == null) Result.failure(IllegalStateException("ログインし直してください"))
+        else reactionEmojiCache[session.instanceUrl]?.let { Result.success(it) }
+            ?: timelineRepository.getCustomEmojis(session).onSuccess { reactionEmojiCache[session.instanceUrl] = it }
+    }
+    val loadReactionHistory: suspend () -> List<String> = {
+        authRepository.restoreSession()?.let { session ->
+            preferences.reactionHistory.first()[session.sessionId].orEmpty()
+        }.orEmpty()
+    }
+    val saveReactionHistory: suspend (List<String>) -> Unit = { emojis ->
+        authRepository.restoreSession()?.let { session ->
+            preferences.setReactionHistory(session.sessionId, emojis)
+        }
+    }
+    CompositionLocalProvider(
+        LocalReactionListOpener provides { statusId, reaction ->
+            reactionAccountsJob?.cancel()
+            val request = statusId to reaction
+            selectedReaction = request
+            reactionAccounts = emptyList()
+            reactionAccountsLoading = true
+            reactionAccountsError = null
+            reactionAccountsJob = scope.launch {
+                val session = authRepository.restoreSession()
+                if (selectedReaction != request) return@launch
+                if (session == null) {
+                    reactionAccountsError = "ログインし直してください"
+                } else {
+                    val result = timelineRepository.getEmojiReactionedBy(session, statusId, reaction.name)
+                    if (selectedReaction != request) return@launch
+                    result.fold(
+                        onSuccess = { accounts ->
+                            reactionAccounts = if (reaction.accountIds.isEmpty()) accounts
+                                else accounts.filter { it.id in reaction.accountIds }
+                        },
+                        onFailure = {
+                            reactionAccountsError = it.message?.takeIf { message -> message.length <= 100 }
+                                ?: "一覧を取得できませんでした"
+                        },
+                    )
+                }
+                reactionAccountsLoading = false
+            }
+        },
+        LocalCustomReactionEmojiLoader provides loadCustomReactionEmojis,
+        LocalReactionHistoryLoader provides loadReactionHistory,
+        LocalReactionHistorySaver provides saveReactionHistory,
+    ) {
+    val initialRoute = startupRoute
+    if (initialRoute == null) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+    } else NavHost(
         navController = navController,
-        startDestination = Route.Login,
+        startDestination = initialRoute,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         enterTransition = {
             slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
@@ -209,9 +290,6 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 },
                 onMediaClick = openMedia,
                 onSettings = { navController.navigate(Route.Settings) },
-                onEditProfile = { accountId ->
-                    navController.navigate(Route.AccountProfile(accountId, openEditor = true)) { launchSingleTop = true }
-                },
                 onFollowers = { accountId -> navController.navigate(Route.AccountList(accountId, followers = true)) },
                 onFollowing = { accountId -> navController.navigate(Route.AccountList(accountId, followers = false)) },
                 onEditStatus = { statusId -> navController.navigate(Route.ComposePost(editStatusId = statusId)) },
@@ -445,5 +523,24 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 onBack = { navController.popBackStack() },
             )
         }
+    }
+    }
+    selectedReaction?.let { (_, reaction) ->
+        StatusAccountsDialog(
+            title = if (reaction.accountIds.isEmpty()) "リアクションした人"
+                else "${reaction.name} を付けた人",
+            accounts = reactionAccounts,
+            isLoading = reactionAccountsLoading,
+            errorMessage = reactionAccountsError,
+            onDismiss = {
+                reactionAccountsJob?.cancel()
+                selectedReaction = null
+            },
+            onAccountClick = { accountId ->
+                reactionAccountsJob?.cancel()
+                selectedReaction = null
+                navController.navigate(Route.AccountProfile(accountId))
+            },
+        )
     }
 }

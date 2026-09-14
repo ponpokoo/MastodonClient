@@ -171,6 +171,7 @@ fun StatusDetailScreen(
                         onMoreClick = { menuStatus = it },
                         onFavourite = viewModel::toggleFavourite,
                         onReact = viewModel::setReaction,
+                        onReactionLongPress = viewModel::showReaction,
                         onUnavailableAction = {},
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,
@@ -266,6 +267,7 @@ fun StatusDetailScreen(
             title = accountListTitle,
             accounts = state.accounts,
             isLoading = state.isLoadingAccounts,
+            errorMessage = state.accountListError,
             onDismiss = viewModel::dismissAccounts,
             onAccountClick = { accountId ->
                 viewModel.dismissAccounts()
@@ -305,6 +307,7 @@ internal fun StatusAccountsDialog(
     title: String,
     accounts: List<StatusAuthor>,
     isLoading: Boolean,
+    errorMessage: String? = null,
     onDismiss: () -> Unit,
     onAccountClick: (String) -> Unit,
 ) {
@@ -330,6 +333,7 @@ internal fun StatusAccountsDialog(
                     isLoading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
+                    errorMessage != null -> Text(errorMessage, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error)
                     accounts.isEmpty() -> Text("表示できるアカウントはありません", Modifier.padding(20.dp))
                     else -> LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
                         items(accounts, key = StatusAuthor::id) { account ->

@@ -118,6 +118,56 @@ class UserPreferencesStore(
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
 
+    val reactionHistory: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->
+        stored[REACTION_HISTORY]?.let { encoded ->
+            runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+        }.orEmpty()
+    }
+
+    val composerEmojiHistory: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->
+        stored[COMPOSER_EMOJI_HISTORY]?.let { encoded ->
+            runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+        }.orEmpty()
+    }
+
+    suspend fun recordReaction(sessionId: String, emoji: String) {
+        dataStore.edit { stored ->
+            val current = stored[REACTION_HISTORY]?.let { encoded ->
+                runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+            }.orEmpty()
+            val recent = (listOf(emoji) + current[sessionId].orEmpty().filterNot { it == emoji }).take(20)
+            stored[REACTION_HISTORY] = json.encodeToString(current + (sessionId to recent))
+        }
+    }
+
+    suspend fun setReactionHistory(sessionId: String, emojis: List<String>) {
+        dataStore.edit { stored ->
+            val current = stored[REACTION_HISTORY]?.let { encoded ->
+                runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+            }.orEmpty()
+            stored[REACTION_HISTORY] = json.encodeToString(current + (sessionId to emojis.distinct().take(20)))
+        }
+    }
+
+    suspend fun recordComposerEmoji(sessionId: String, emoji: String) {
+        dataStore.edit { stored ->
+            val current = stored[COMPOSER_EMOJI_HISTORY]?.let { encoded ->
+                runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+            }.orEmpty()
+            val recent = (listOf(emoji) + current[sessionId].orEmpty().filterNot { it == emoji }).take(20)
+            stored[COMPOSER_EMOJI_HISTORY] = json.encodeToString(current + (sessionId to recent))
+        }
+    }
+
+    suspend fun setComposerEmojiHistory(sessionId: String, emojis: List<String>) {
+        dataStore.edit { stored ->
+            val current = stored[COMPOSER_EMOJI_HISTORY]?.let { encoded ->
+                runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+            }.orEmpty()
+            stored[COMPOSER_EMOJI_HISTORY] = json.encodeToString(current + (sessionId to emojis.distinct().take(20)))
+        }
+    }
+
     suspend fun setThemeMode(value: ThemeMode) = update { it.copy(themeMode = value) }
     suspend fun setOpenLinksInApp(enabled: Boolean) = update { it.copy(openLinksInApp = enabled) }
     suspend fun setTimelineDisplay(value: TimelineDisplayPreferences) = update { it.copy(timelineDisplay = value) }
@@ -186,6 +236,8 @@ class UserPreferencesStore(
     private companion object {
         val APP_PREFERENCES = stringPreferencesKey("app_preferences_v2")
         val DRAFTS = stringPreferencesKey("compose_drafts")
+        val REACTION_HISTORY = stringPreferencesKey("reaction_history")
+        val COMPOSER_EMOJI_HISTORY = stringPreferencesKey("composer_emoji_history")
         val LEGACY_OPEN_LINKS_IN_APP = booleanPreferencesKey("open_links_in_app")
     }
 }

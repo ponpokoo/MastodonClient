@@ -13,9 +13,77 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    @Test
+    fun preservesLockedAccountsAndFollowRequestRelationships() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"private-one","username":"alice","acct":"alice","locked":true}]""",
+            ))
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"private-one","following":false,"followed_by":true,"requested":true}]""",
+            ))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            val account = repository.getAccountListPage(session, "me", followers = true)
+                .getOrThrow().accounts.single()
+            val relationship = repository.getRelationships(session, listOf(account.id))
+                .getOrThrow().getValue(account.id)
+
+            assertTrue(account.locked)
+            assertTrue(relationship.followedBy)
+            assertTrue(relationship.requested)
+            assertFalse(relationship.following)
+        }
+    }
+
+    @Test
+    fun followsUseLinkCursorInsteadOfLastAccountId() = runTest {
+        MockWebServer().use { server ->
+            val nextUrl = server.url("/api/v1/accounts/me/followers?limit=40&max_id=follow-edge-123")
+            server.enqueue(MockResponse()
+                .addHeader("Link", "<$nextUrl>; rel=\"next\"")
+                .setBody("""[{"id":"account-999","username":"alice","acct":"alice"}]"""))
+            server.enqueue(MockResponse().setBody("""[{"id":"account-500","username":"bob","acct":"bob"}]"""))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            val first = repository.getAccountListPage(session, "me", followers = true).getOrThrow()
+            assertEquals("follow-edge-123", first.nextMaxId)
+            assertFalse(first.endReached)
+            val second = repository.getAccountListPage(session, "me", followers = true, first.nextMaxId).getOrThrow()
+            assertEquals(listOf("account-500"), second.accounts.map { it.id })
+            assertTrue(second.endReached)
+            server.takeRequest()
+            assertEquals("follow-edge-123", server.takeRequest().requestUrl?.queryParameter("max_id"))
+        }
+    }
+
+    @Test
+    fun readsReactionAccountsFromPlainAndGroupedResponses() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"one","username":"alice","acct":"alice","display_name":"Alice"}]""",
+            ))
+            server.enqueue(MockResponse().setBody(
+                """[{"name":"👍","accounts":[{"id":"two","username":"bob","acct":"bob"}]},{"name":"🎉","accounts":[{"id":"three","username":"cara","acct":"cara"}]}]""",
+            ))
+            server.enqueue(MockResponse().setBody(
+                """[{"emoji":"👍","account":{"id":"four","username":"dan","acct":"dan"}}]""",
+            ))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            assertEquals(listOf("one"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
+            assertEquals(listOf("two"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
+            assertEquals(listOf("four"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
+        }
+    }
+
     @Test
     fun mapsStatusAndAuthorEmojisFromTimelineResponse() = runTest {
         MockWebServer().use { server ->
@@ -445,6 +513,25 @@ class DefaultTimelineRepositoryTest {
             val reactionRequest = server.takeRequest()
             assertEquals("PUT", reactionRequest.method)
             assertEquals("/api/v1/statuses/1/emoji_reactions/%F0%9F%91%8D", reactionRequest.path)
+        }
+    }
+
+    @Test
+    fun recordsOnlySuccessfulNewReactions() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(basicStatusJson("1")))
+            server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setBody(basicStatusJson("1")))
+            val recorded = mutableListOf<String>()
+            val repository = DefaultTimelineRepository(ApiClientFactory(),
+                onReactionSucceeded = { _, emoji -> recorded += emoji })
+            val session = testSession(server)
+
+            repository.setFedibirdReaction(session, "1", "👍").getOrThrow()
+            assertTrue(repository.setFedibirdReaction(session, "1", "🎉").isFailure)
+            repository.setFedibirdReaction(session, "1", null).getOrThrow()
+
+            assertEquals(listOf("👍"), recorded)
         }
     }
 

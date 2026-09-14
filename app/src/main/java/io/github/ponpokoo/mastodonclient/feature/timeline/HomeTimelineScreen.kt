@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,13 +15,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -56,10 +60,10 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -68,7 +72,6 @@ import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.SyncDisabled
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.MoreVert
@@ -108,10 +111,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -125,8 +130,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
@@ -137,8 +144,10 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.EditProfileDialog
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
@@ -186,7 +195,6 @@ fun HomeTimelineScreen(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onSettings: () -> Unit,
-    onEditProfile: (String) -> Unit,
     onFollowers: (String) -> Unit,
     onFollowing: (String) -> Unit,
     onEditStatus: (String) -> Unit,
@@ -213,6 +221,7 @@ fun HomeTimelineScreen(
     var confirmation by remember(mainState.session?.sessionId) { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
     var reportStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
+    var editProfileOpen by remember(mainState.session?.sessionId) { mutableStateOf(false) }
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
     var scrollNotificationsAfterRefresh by remember { mutableStateOf(false) }
@@ -262,6 +271,12 @@ fun HomeTimelineScreen(
         actionsState.actionMessage?.let {
             snackbarHostState.showSnackbar(it)
             actionsViewModel.consumeActionMessage()
+        }
+    }
+    LaunchedEffect(profileState.editMessage) {
+        profileState.editMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            profileViewModel.clearEditMessage()
         }
     }
     LaunchedEffect(state.isRefreshing) {
@@ -479,7 +494,7 @@ fun HomeTimelineScreen(
                             onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像")), 0)
                         }
                     },
-                    onEditProfile = { profileState.profile?.author?.id?.let(onEditProfile) },
+                    onEditProfile = { editProfileOpen = true },
                     onOpenLists = onOpenLists,
                     onOpenBookmarks = onOpenBookmarks,
                     onOpenFavourites = onOpenFavourites,
@@ -506,6 +521,14 @@ fun HomeTimelineScreen(
         }
     }
 
+    if (editProfileOpen) {
+        profileState.profile?.let { profile ->
+            EditProfileDialog(profile, onDismiss = { editProfileOpen = false }) { request ->
+                profileViewModel.updateProfile(request)
+                editProfileOpen = false
+            }
+        }
+    }
     menuStatus?.let { status ->
         StatusMenuDialog(
             status = status,
@@ -704,7 +727,7 @@ private fun TimelineTopBar(
     onSettings: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
-    var accountSheetOpen by remember { mutableStateOf(false) }
+    var accountDialogOpen by remember { mutableStateOf(false) }
 
     TopAppBar(
         title = {
@@ -744,7 +767,7 @@ private fun TimelineTopBar(
             }
         },
         actions = {
-            IconButton(onClick = { accountSheetOpen = true }) {
+            IconButton(onClick = { accountDialogOpen = true }) {
                 AsyncImage(
                     model = activeSession?.avatarUrl,
                     contentDescription = "アカウントを切り替える",
@@ -764,50 +787,17 @@ private fun TimelineTopBar(
         },
     )
 
-    if (accountSheetOpen) {
-        ModalBottomSheet(onDismissRequest = { accountSheetOpen = false }) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("アカウントを切り替える", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                IconButton(onClick = { accountSheetOpen = false }) {
-                    Icon(Icons.Outlined.Close, contentDescription = "アカウント切替を閉じる")
-                }
-            }
-            sessions.forEach { session ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        accountSheetOpen = false
-                        onAccountSelected(session.sessionId)
-                    }.then(
-                        if (session.sessionId == activeSession?.sessionId) Modifier.testTag("active_account_switch") else Modifier,
-                    ).padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = session.avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.size(42.dp).clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surface),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(session.displayName.ifBlank { session.username }, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (session.sessionId == activeSession?.sessionId) {
-                        Text("選択中", color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-        }
+    if (accountDialogOpen) {
+        AccountSwitchDialog(
+            title = "アカウントを切り替える",
+            sessions = sessions,
+            selectedSessionId = activeSession?.sessionId,
+            onSelected = { sessionId ->
+                accountDialogOpen = false
+                onAccountSelected(sessionId)
+            },
+            onDismiss = { accountDialogOpen = false },
+        )
     }
 }
 
@@ -974,7 +964,10 @@ private fun TimelineContent(
     }
 }
 
+internal val LocalReactionListOpener = staticCompositionLocalOf<((String, EmojiReaction) -> Unit)?> { null }
+
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun StatusCard(
     status: TimelineStatus,
     onStatusClick: ((String) -> Unit)?,
@@ -987,6 +980,7 @@ internal fun StatusCard(
     onFavourite: () -> Unit = {},
     onBookmark: () -> Unit = {},
     onReact: ((String?) -> Unit)? = null,
+    onReactionLongPress: ((EmojiReaction) -> Unit)? = null,
     onMoreClick: ((TimelineStatus) -> Unit)? = null,
     onUnavailableAction: (String) -> Unit,
     displayPreferences: TimelineDisplayPreferences = TimelineDisplayPreferences(),
@@ -1000,6 +994,7 @@ internal fun StatusCard(
     }
     var mediaRevealed by rememberSaveable(status.statusId) { mutableStateOf(!status.sensitive) }
     var reactionPickerOpen by rememberSaveable(status.statusId) { mutableStateOf(false) }
+    val reactionListOpener = LocalReactionListOpener.current
     val context = LocalContext.current
     val avatarSize = when (displayPreferences.avatarIconSize) {
         AvatarIconSize.Small -> 40.dp
@@ -1107,16 +1102,43 @@ internal fun StatusCard(
 
         Column(modifier = Modifier.padding(start = if (fullWidthContent) 8.dp else contentStart)) {
             if (status.spoilerText.isNotBlank()) {
-                CustomEmojiText(
-                    text = status.spoilerText,
-                    emojis = status.customEmojis,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-                TextButton(
-                    onClick = { contentExpanded = !contentExpanded },
-                    contentPadding = PaddingValues(horizontal = 0.dp),
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 ) {
-                    Text(if (contentExpanded) "隠す" else "表示する")
+                    Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "CW",
+                                modifier = Modifier.clip(RoundedCornerShape(5.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "内容警告",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = { contentExpanded = !contentExpanded }) {
+                                Text(if (contentExpanded) "内容を隠す" else "内容を表示")
+                            }
+                        }
+                        CustomEmojiText(
+                            text = status.spoilerText,
+                            emojis = status.customEmojis,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = displayPreferences.fontSize.spValue(),
+                                lineHeight = displayPreferences.lineHeightSp().sp,
+                            ),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
             if (contentExpanded && status.contentHtml.isNotBlank()) {
@@ -1159,53 +1181,83 @@ internal fun StatusCard(
                     }
                 }
             }
-            status.previewCard?.let { card ->
-                Spacer(Modifier.height(8.dp))
-                PreviewCardView(
-                    card = card,
-                    thumbnailSize = displayPreferences.thumbnailSize,
-                    onClick = { onOpenLink(card.url) },
-                )
+            if (contentExpanded) {
+                status.previewCard?.let { card ->
+                    Spacer(Modifier.height(8.dp))
+                    PreviewCardView(
+                        card = card,
+                        thumbnailSize = displayPreferences.thumbnailSize,
+                        onClick = { onOpenLink(card.url) },
+                    )
+                }
             }
             if (status.reactions.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    status.reactions.forEach { reaction ->
-                        Surface(
-                            modifier = Modifier.testTag("displayed_reaction").then(
-                                if (onReact == null || reaction.imageUrl != null) {
-                                    Modifier
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    val availableWidth = maxWidth
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        status.reactions.forEach { reaction ->
+                            val maxImageWidth = (availableWidth - (22 + reaction.count.toString().length * 10).dp)
+                                .coerceAtLeast(48.dp)
+                            Surface(
+                                modifier = Modifier.testTag("displayed_reaction").then(
+                                    if (onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
+                                    else Modifier.combinedClickable(
+                                        onClick = {
+                                            onReact?.invoke(if (reaction.reactedByMe) null else reaction.name)
+                                        },
+                                        onLongClick = {
+                                            if (onReactionLongPress != null) onReactionLongPress(reaction)
+                                            else reactionListOpener?.invoke(status.statusId, reaction)
+                                        },
+                                    ),
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (reaction.reactedByMe) {
+                                    MaterialTheme.colorScheme.secondaryContainer
                                 } else {
-                                    Modifier.clickable {
-                                        onReact(if (reaction.reactedByMe) null else reaction.name)
-                                    }
+                                    MaterialTheme.colorScheme.surfaceVariant
                                 },
-                            ),
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (reaction.reactedByMe) {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (reaction.imageUrl != null) {
-                                    AsyncImage(
-                                        model = reaction.imageUrl,
-                                        contentDescription = reaction.name,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                } else {
-                                    Text(reaction.name)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (reaction.imageUrl != null) {
+                                        var imageRatio by remember(reaction.imageUrl) { mutableStateOf(1f) }
+                                        val tall = imageRatio < 0.65f
+                                        val imageRequest = remember(reaction.imageUrl) {
+                                            ImageRequest.Builder(context).data(reaction.imageUrl)
+                                                .size(1024, 128).build()
+                                        }
+                                        AsyncImage(
+                                            model = imageRequest,
+                                            contentDescription = reaction.name,
+                                            onSuccess = { result ->
+                                                val size = result.painter.intrinsicSize
+                                                if (size.width.isFinite() && size.height.isFinite() && size.height > 0f) {
+                                                    imageRatio = size.width / size.height
+                                                }
+                                            },
+                                            modifier = Modifier.width((24f * imageRatio).dp.coerceIn(8.dp, maxImageWidth))
+                                                .height(24.dp),
+                                            contentScale = ContentScale.Fit,
+                                        )
+                                        if (tall) {
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(reaction.name, modifier = Modifier.widthIn(max = 80.dp),
+                                                maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    } else {
+                                        Text(reaction.name)
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(reaction.count.toString(), style = MaterialTheme.typography.labelMedium)
                                 }
-                                Spacer(Modifier.width(4.dp))
-                                Text(reaction.count.toString(), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -1246,29 +1298,12 @@ internal fun StatusCard(
     }
 
     if (reactionPickerOpen) {
-        AlertDialog(
-            onDismissRequest = { reactionPickerOpen = false },
-            title = { Text("リアクション") },
-            text = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("👍", "❤️", "🎉", "😂", "😮").forEach { emoji ->
-                        TextButton(onClick = {
-                            reactionPickerOpen = false
-                            onReact?.invoke(emoji)
-                        }) { Text(emoji) }
-                    }
-                }
-            },
-            confirmButton = {
-                if (status.reactions.any { it.reactedByMe }) {
-                    TextButton(onClick = {
-                        reactionPickerOpen = false
-                        onReact?.invoke(null)
-                    }) { Text("取り消す") }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { reactionPickerOpen = false }) { Text("閉じる") }
+        ReactionPickerSheet(
+            canUndo = status.reactions.any { it.reactedByMe },
+            onDismiss = { reactionPickerOpen = false },
+            onSelected = { emoji ->
+                reactionPickerOpen = false
+                onReact?.invoke(emoji)
             },
         )
     }
@@ -1461,16 +1496,17 @@ private fun StatusActionRow(
             when (action) {
                 StatusAction.Reply -> StatusActionButton(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, preferences, onReply)
                 StatusAction.Boost -> {
-                    val canBoost = status.visibility !in setOf("private", "direct")
+                    val canBoost = status.visibility.lowercase() !in setOf("private", "direct", "followers", "followers_only")
                     Box {
                         StatusActionButton(
-                            icon = if (canBoost) Icons.Outlined.Repeat else Icons.Outlined.SyncDisabled,
+                            icon = Icons.Outlined.Repeat,
                             label = if (canBoost) "ブースト（長押しで引用を選択）" else "この公開範囲ではブーストできません",
                             count = status.boostsCount,
                             preferences = preferences,
                             onClick = onBoost,
                             onLongClick = onQuote?.let { { boostMenuExpanded = true } },
                             enabled = canBoost,
+                            crossedOut = !canBoost,
                         )
                         DropdownMenu(expanded = boostMenuExpanded, onDismissRequest = { boostMenuExpanded = false }) {
                             DropdownMenuItem(text = { Text(if (status.reblogged) "ブースト解除" else "ブースト") }, onClick = {
@@ -1519,6 +1555,7 @@ private fun StatusActionButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
+    crossedOut: Boolean = false,
 ) {
     val iconSize = when (preferences.actionIconSize) {
         ActionIconSize.Small -> 18.dp
@@ -1527,12 +1564,21 @@ private fun StatusActionButton(
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         @Composable fun ButtonIcon() {
-            Icon(
-                icon,
-                contentDescription = label,
-                modifier = Modifier.size(iconSize),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f),
-            )
+            val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f)
+            Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = label, modifier = Modifier.matchParentSize(), tint = tint)
+                if (crossedOut) {
+                    Canvas(Modifier.matchParentSize()) {
+                        drawLine(
+                            color = tint,
+                            start = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.1f),
+                            end = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.9f),
+                            strokeWidth = 2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                        )
+                    }
+                }
+            }
         }
         if (onLongClick == null) {
             IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { ButtonIcon() }
@@ -1607,7 +1653,7 @@ private fun relativeTime(value: String): String = runCatching {
 }.getOrDefault("")
 
 private fun statusVisibility(visibility: String): Pair<ImageVector, String> = when (visibility) {
-    "unlisted" -> Icons.Outlined.LockOpen to "ひかえめな公開"
+    "unlisted" -> Icons.Outlined.Group to "ひかえめな公開"
     "private" -> Icons.Outlined.Lock to "フォロワー限定"
     "direct" -> Icons.Outlined.AlternateEmail to "指定した相手のみ"
     else -> Icons.Outlined.Public to "公開"

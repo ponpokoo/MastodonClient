@@ -1,8 +1,11 @@
 package io.github.ponpokoo.mastodonclient.feature.media
 
 import android.net.Uri
+import android.widget.Toast
 import android.widget.MediaController
 import android.widget.VideoView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
@@ -16,13 +19,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +47,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -48,6 +55,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URL
 
 @Composable
 fun MediaViewerScreen(
@@ -66,20 +76,39 @@ fun MediaViewerScreen(
         pageCount = media::size,
     )
     val pageScales = remember { mutableStateMapOf<Int, Float>() }
+    val hiddenPages = remember { mutableStateMapOf<Int, Boolean>() }
     val currentScale = pageScales[pagerState.currentPage] ?: 1f
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var pendingSaveSource by remember { mutableStateOf<String?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
+        val source = pendingSaveSource
+        pendingSaveSource = null
+        if (destination != null && source != null) {
+            scope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    runCatching {
+                        require(Uri.parse(source).scheme == "https")
+                        URL(source).openStream().use { input ->
+                            context.contentResolver.openOutputStream(destination)?.use { output ->
+                                input.copyTo(output)
+                            } ?: error("保存先を開けません")
+                        }
+                    }.isSuccess
+                }
+                Toast.makeText(context, if (saved) "保存しました" else "保存できませんでした", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
     var viewportHeight by remember { mutableFloatStateOf(1f) }
-    val dismissProgress = (dragOffsetY / viewportHeight).coerceIn(0f, 1f)
 
     Box(
-        modifier = Modifier.fillMaxSize()
-            .background(Color.Black.copy(alpha = 1f - dismissProgress * 0.75f)),
+        modifier = Modifier.fillMaxSize().background(Color.Black),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { translationY = dragOffsetY }
                 .background(Color.Black)
                 .onSizeChanged { viewportHeight = it.height.toFloat().coerceAtLeast(1f) }
                 .pointerInput(currentScale, viewportHeight) {
@@ -114,12 +143,18 @@ fun MediaViewerScreen(
         ) {
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().graphicsLayer { translationY = dragOffsetY },
                 userScrollEnabled = currentScale <= MIN_DISMISS_SCALE,
                 beyondViewportPageCount = 1,
             ) { page ->
                 val item = media[page]
-                if (item.type == "video" || item.type == "gifv") {
+                if (item.sensitive && hiddenPages[page] == true) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = { hiddenPages[page] = false }) {
+                            Text("閲覧注意のメディアを表示", color = Color.White)
+                        }
+                    }
+                } else if (item.type == "video" || item.type == "gifv") {
                     LaunchedEffect(page) { pageScales[page] = 1f }
                     VideoViewer(item.url ?: item.previewUrl.orEmpty(), loop = item.type == "gifv")
                 } else {
@@ -141,6 +176,36 @@ fun MediaViewerScreen(
                     contentDescription = "閉じる",
                     tint = Color.White,
                 )
+            }
+
+            IconButton(
+                onClick = {
+                    val item = media[pagerState.currentPage]
+                    val source = item.url ?: item.previewUrl
+                    if (source != null) {
+                        pendingSaveSource = source
+                        val path = Uri.parse(source).lastPathSegment.orEmpty().substringBefore('?')
+                        val extension = path.substringAfterLast('.', "").lowercase()
+                            .takeIf { it.isNotBlank() && it.length <= 5 }
+                            ?: if (item.type == "video" || item.type == "gifv") "mp4" else "jpg"
+                        val baseName = path.substringBeforeLast('.', "media-${item.id}")
+                            .takeIf { it.isNotBlank() } ?: "media-${item.id}"
+                        saveLauncher.launch("$baseName.$extension")
+                    }
+                },
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp),
+            ) {
+                Icon(Icons.Outlined.Download, contentDescription = "メディアを保存", tint = Color.White)
+            }
+
+            val currentItem = media[pagerState.currentPage]
+            if (currentItem.sensitive && hiddenPages[pagerState.currentPage] != true) {
+                TextButton(
+                    onClick = { hiddenPages[pagerState.currentPage] = true },
+                    modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(8.dp),
+                ) {
+                    Text("再び隠す", color = Color.White)
+                }
             }
 
             if (media.size > 1) {
@@ -214,10 +279,10 @@ private fun ZoomableImage(
                             val isPanningZoomedImage = scale > 1f && pressedPointers > 0
                             if (isPinching || isPanningZoomedImage) {
                                 val zoomChange = if (isPinching) event.calculateZoom() else 1f
-                                val nextScale = (scale * zoomChange).coerceIn(1f, MAX_SCALE)
+                                val nextScale = (scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
                                 val panChange = event.calculatePan()
                                 scale = nextScale
-                                offset = if (nextScale == 1f) {
+                                offset = if (nextScale <= 1f) {
                                     Offset.Zero
                                 } else {
                                     offset + panChange * PAN_SPEED_MULTIPLIER
@@ -260,6 +325,7 @@ private fun VideoViewer(url: String, loop: Boolean) {
 
 private const val PAN_SPEED_MULTIPLIER = 2.25f
 private const val MAX_SCALE = 5f
+private const val MIN_SCALE = 0.5f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val MIN_DISMISS_SCALE = 1.01f
 private const val DISMISS_THRESHOLD = 0.2f

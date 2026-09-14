@@ -186,7 +186,20 @@ class ComposePostViewModel(
     }
     fun setPollMultiple(value: Boolean) = change { it.copy(pollMultiple = value) }
 
-    fun insertEmoji(shortcode: String) = onTextChanged(_uiState.value.text + ":$shortcode:")
+    suspend fun loadEmojiHistory(): List<String> = _uiState.value.selectedSession?.let { session ->
+        preferencesStore.composerEmojiHistory.first()[session.sessionId].orEmpty()
+    }.orEmpty()
+
+    suspend fun saveEmojiHistory(emojis: List<String>) {
+        _uiState.value.selectedSession?.let { session ->
+            preferencesStore.setComposerEmojiHistory(session.sessionId, emojis)
+        }
+    }
+
+    fun recordUsedEmoji(emoji: String) {
+        val sessionId = _uiState.value.selectedSession?.sessionId ?: return
+        viewModelScope.launch { preferencesStore.recordComposerEmoji(sessionId, emoji) }
+    }
     fun insertMention(account: StatusAuthor) {
         val mention = "@${account.accountName}"
         val current = _uiState.value.text

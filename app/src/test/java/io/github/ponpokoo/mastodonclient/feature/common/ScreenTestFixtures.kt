@@ -50,7 +50,7 @@ open class ScreenRepositoryFake : TimelineRepository {
     }
     override suspend fun getProfile(session: AccountSession, accountId: String) = Result.success(testProfile())
     override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?) =
-        Result.success(TimelinePage(listOf(testStatus(tab.name)), null, true))
+        Result.success(TimelinePage(listOf(testStatus(if (tab == ProfileStatusTab.Posts) "post" else tab.name)), null, true))
     override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
         Result.success(testStatus(statusId).copy(favourited = favourite, favouritesCount = if (favourite) 1 else 0))
     override suspend fun deleteStatus(session: AccountSession, statusId: String) = Result.success(Unit)

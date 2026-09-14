@@ -64,6 +64,7 @@ data class StatusAuthor(
     val accountName: String,
     val avatarUrl: String,
     val customEmojis: Map<String, String> = emptyMap(),
+    val locked: Boolean = false,
 )
 
 @Serializable
@@ -73,10 +74,17 @@ data class MediaAttachment(
     val url: String?,
     val previewUrl: String?,
     val description: String?,
+    val sensitive: Boolean = false,
 )
 
 data class TimelinePage(
     val statuses: List<TimelineStatus>,
+    val nextMaxId: String?,
+    val endReached: Boolean,
+)
+
+data class AccountListPage(
+    val accounts: List<StatusAuthor>,
     val nextMaxId: String?,
     val endReached: Boolean,
 )

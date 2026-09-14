@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -42,6 +45,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 data class SavedTimelinesUiState(
     val lists: List<MastodonList> = emptyList(),
@@ -114,7 +118,7 @@ class SavedTimelinesViewModel(
                 { page -> _state.update { it.copy(
                     statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::statusId),
                     nextMaxId = page.nextMaxId,
-                    endReached = page.endReached,
+                    endReached = page.endReached || page.nextMaxId == cursor,
                     loadingMore = false,
                 ) } },
                 { error -> _state.update { it.copy(loadingMore = false, error = error.message ?: "続きを取得できませんでした") } },
@@ -150,6 +154,15 @@ fun SavedTimelinesScreen(
     onQuote: (TimelineStatus) -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, state.statuses.size, state.nextMaxId, showLists) {
+        if (!showLists && state.nextMaxId != null && !state.endReached) {
+            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+                .distinctUntilChanged().collect { lastVisible ->
+                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
+                }
+        }
+    }
     Scaffold(
         modifier = Modifier.testTag("saved_timelines_screen"),
         topBar = { TopAppBar(
@@ -169,7 +182,7 @@ fun SavedTimelinesScreen(
                     HorizontalDivider()
                 }
             }
-            else -> LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            else -> LazyColumn(Modifier.fillMaxSize().padding(padding), state = listState) {
                 if (state.statuses.isEmpty()) item { Text("投稿がありません", Modifier.padding(24.dp)) }
                 items(state.statuses, key = TimelineStatus::timelineId) { status ->
                     StatusCard(

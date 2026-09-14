@@ -14,6 +14,28 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OwnProfileViewModelTest : ScreenViewModelTestBase() {
+    @Test fun profileHeaderAppearsBeforeStatusesFinishLoading() = runTest(dispatcher) {
+        val delayedStatuses = CompletableDeferred<Result<TimelinePage>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileHeader(session: AccountSession, accountId: String) =
+                Result.success(testProfile().copy(statuses = emptyList(), pinnedStatuses = emptyList()))
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?) =
+                delayedStatuses.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        assertNotNull(viewModel.uiState.value.profile)
+        assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+        assertTrue(viewModel.uiState.value.isLoadingMoreProfile)
+        delayedStatuses.complete(Result.success(TimelinePage(listOf(testStatus()), null, true)))
+        advanceUntilIdle()
+        assertEquals(listOf("post"), viewModel.uiState.value.profile?.statuses?.map { it.statusId })
+        assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
+    }
+
     @Test fun latestTabWinsAndOldPaginationCannotAppendToIt() = runTest(dispatcher) {
         val oldPage = CompletableDeferred<Result<TimelinePage>>()
         val replies = CompletableDeferred<Result<TimelinePage>>()

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -57,7 +56,6 @@ fun AccountProfileScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
     var confirmAction by remember { mutableStateOf<String?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
@@ -67,6 +65,7 @@ fun AccountProfileScreen(
     var statusConfirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
     var statusReport by remember { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
+    var profileListOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val profile = state.profile
     val profileListState = rememberLazyListState()
@@ -107,27 +106,6 @@ fun AccountProfileScreen(
                 )
             },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
-            actions = {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, "プロフィールメニュー") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    fun close(action: () -> Unit) { menu = false; action() }
-                    DropdownMenuItem(text = { Text("共有") }, onClick = { close { profile?.url?.let { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it), "プロフィールを共有")) } } })
-                    DropdownMenuItem(text = { Text("リンクをコピー") }, onClick = { close { profile?.url?.let { (context.getSystemService(ClipboardManager::class.java)).setPrimaryClip(ClipData.newPlainText("profile", it)) } } })
-                    DropdownMenuItem(text = { Text("QRコードを表示") }, onClick = { close { qrOpen = true } })
-                    DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { close { profile?.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) } } })
-                    if (profile?.isOwnProfile == true) {
-                        DropdownMenuItem(text = { Text("リスト") }, onClick = { close(onOpenLists) })
-                        DropdownMenuItem(text = { Text("お気に入り") }, onClick = { close(onOpenFavourites) })
-                        DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { close(onOpenBookmarks) })
-                        DropdownMenuItem(text = { Text("フォロー中のハッシュタグ") }, onClick = { close { onOpenLink("${profile.url}/followed_tags") } })
-                        DropdownMenuItem(text = { Text("アカウント設定") }, onClick = { close { onOpenLink("${profile.url}/settings/profile") } })
-                    } else if (profile != null) {
-                        DropdownMenuItem(text = { Text(if (state.relationship?.muting == true) "ミュート解除" else "ミュート") }, onClick = { close { confirmAction = "mute" } })
-                        DropdownMenuItem(text = { Text(if (state.relationship?.blocking == true) "ブロック解除" else "ブロック") }, onClick = { close { confirmAction = "block" } })
-                        DropdownMenuItem(text = { Text("通報") }, onClick = { close { reportOpen = true } })
-                    }
-                }
-            },
         )
     }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileContent(
@@ -155,10 +133,35 @@ fun AccountProfileScreen(
             onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像")), 0) } },
             onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("avatar", "image", it, it, "プロフィール画像")), 0) } },
-            onEditProfile = { editOpen = true }, onToggleFollow = viewModel::toggleFollow,
+            onEditProfile = { editOpen = true }, onToggleFollow = {
+                if (state.relationship?.following == true) confirmAction = "unfollow"
+                else viewModel.toggleFollow()
+            },
             onOpenLists = onOpenLists,
             onOpenBookmarks = onOpenBookmarks,
             onOpenFavourites = onOpenFavourites,
+            onShareProfile = { profile?.url?.let {
+                context.startActivity(Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it),
+                    "プロフィールを共有",
+                ))
+            } },
+            onCopyProfileUrl = { profile?.url?.let {
+                context.getSystemService(ClipboardManager::class.java)
+                    .setPrimaryClip(ClipData.newPlainText("profile", it))
+            } },
+            onShowProfileQr = { qrOpen = true },
+            onOpenProfileBrowser = { profile?.url?.let {
+                context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri()))
+            } },
+            onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
+            onOpenFollowedTags = { profile?.url?.let { onOpenLink("$it/followed_tags") } },
+            onOpenAccountSettings = { profile?.url?.let { onOpenLink("$it/settings/profile") } },
+            onMuteProfile = { confirmAction = "mute" },
+            onBlockProfile = { confirmAction = "block" },
+            onReportProfile = { reportOpen = true },
+            isProfileMuted = state.relationship?.muting == true,
+            isProfileBlocked = state.relationship?.blocking == true,
             onMoreClick = { statusMenu = it },
             listState = profileListState,
         )
@@ -206,10 +209,28 @@ fun AccountProfileScreen(
             listStatus = null
         }
     }
+    if (profileListOpen) {
+        ListPickerSheet(state.lists, state.isLoadingLists, { profileListOpen = false }) { listId ->
+            viewModel.addProfileToList(listId)
+            profileListOpen = false
+        }
+    }
 
     confirmAction?.let { action -> AlertDialog(
-        onDismissRequest = { confirmAction = null }, title = { Text(if (action == "mute") "ミュートを変更" else "ブロックを変更") },
-        text = { Text("この操作を実行しますか？") }, confirmButton = { TextButton(onClick = { if (action == "mute") viewModel.toggleMute() else viewModel.toggleBlock(); confirmAction = null }) { Text("実行") } },
+        onDismissRequest = { confirmAction = null }, title = { Text(when (action) {
+            "mute" -> "ミュートを変更"
+            "unfollow" -> "フォローを解除しますか？"
+            else -> "ブロックを変更"
+        }) },
+        text = { Text(if (action == "unfollow") "${profile?.author?.displayName.orEmpty()}さんのフォローを解除します。" else "この操作を実行しますか？") },
+        confirmButton = { TextButton(onClick = {
+            when (action) {
+                "mute" -> viewModel.toggleMute()
+                "unfollow" -> viewModel.toggleFollow()
+                else -> viewModel.toggleBlock()
+            }
+            confirmAction = null
+        }) { Text(if (action == "unfollow") "フォロー解除" else "実行") } },
         dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("キャンセル") } },
     ) }
     if (reportOpen) ReportDialog(onDismiss = { reportOpen = false }, onSubmit = { text, forward -> viewModel.report(text, forward); reportOpen = false })
@@ -225,7 +246,7 @@ fun AccountProfileScreen(
     } }, confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSubmit(text, forward) }) { Text("送信") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
 }
 
-@Composable private fun EditProfileDialog(profile: UserProfile, onDismiss: () -> Unit, onSave: (ProfileEditRequest) -> Unit) {
+@Composable internal fun EditProfileDialog(profile: UserProfile, onDismiss: () -> Unit, onSave: (ProfileEditRequest) -> Unit) {
     val context = LocalContext.current
     var name by remember { mutableStateOf(profile.author.displayName) }; var note by remember { mutableStateOf(androidx.core.text.HtmlCompat.fromHtml(profile.noteHtml, 0).toString()) }; var locked by remember { mutableStateOf(profile.locked) }
     var avatarPath by remember { mutableStateOf<String?>(null) }; var headerPath by remember { mutableStateOf<String?>(null) }

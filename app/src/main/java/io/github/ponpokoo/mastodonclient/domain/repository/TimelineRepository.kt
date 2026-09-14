@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.domain.repository
 
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.AccountListPage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
@@ -59,12 +60,24 @@ interface TimelineRepository {
     suspend fun getProfile(session: AccountSession, accountId: String = session.accountId): Result<UserProfile> =
         Result.failure(UnsupportedOperationException("プロフィールは未対応です"))
 
+    suspend fun getProfileHeader(session: AccountSession, accountId: String = session.accountId): Result<UserProfile> =
+        getProfile(session, accountId)
+
+    suspend fun getPinnedProfileStatuses(session: AccountSession, accountId: String): Result<List<TimelineStatus>> =
+        getProfile(session, accountId).map(UserProfile::pinnedStatuses)
+
     suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String? = null): Result<TimelinePage> =
         Result.failure(UnsupportedOperationException("プロフィール投稿は未対応です"))
     suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String? = null): Result<List<StatusAuthor>> =
         Result.failure(UnsupportedOperationException("アカウント一覧は未対応です"))
+    suspend fun getAccountListPage(session: AccountSession, accountId: String, followers: Boolean, maxId: String? = null): Result<AccountListPage> =
+        getAccountList(session, accountId, followers, maxId).map { accounts ->
+            AccountListPage(accounts, accounts.lastOrNull()?.id, accounts.isEmpty())
+        }
     suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> =
         Result.failure(UnsupportedOperationException("フォロー関係は未対応です"))
+    suspend fun getRelationships(session: AccountSession, accountIds: List<String>): Result<Map<String, AccountRelationship>> =
+        runCatching { accountIds.associateWith { getRelationship(session, it).getOrThrow() } }
     suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> =
         Result.failure(UnsupportedOperationException("フォロー操作は未対応です"))
     suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean): Result<AccountRelationship> =
@@ -100,7 +113,7 @@ interface TimelineRepository {
     suspend fun getFavouritedBy(session: AccountSession, statusId: String): Result<List<StatusAuthor>> =
         Result.failure(UnsupportedOperationException("お気に入り一覧は未対応です"))
 
-    suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String): Result<List<StatusAuthor>> =
+    suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String): Result<List<StatusAuthor>> =
         Result.failure(UnsupportedOperationException("リアクション一覧は未対応です"))
 
     suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean): Result<TimelineStatus> =

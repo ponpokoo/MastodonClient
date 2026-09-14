@@ -68,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -101,6 +102,10 @@ import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
+import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -116,9 +121,10 @@ fun ComposePostScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var accountSheetOpen by remember { mutableStateOf(false) }
+    var accountDialogOpen by remember { mutableStateOf(false) }
     var visibilityMenuOpen by remember { mutableStateOf(false) }
     var emojiSheetOpen by remember { mutableStateOf(false) }
+    var focusAfterEmoji by remember { mutableStateOf(false) }
     var draftSheetOpen by remember { mutableStateOf(false) }
     var mentionSheetOpen by remember { mutableStateOf(false) }
     var deleteDraftDialogOpen by remember { mutableStateOf(false) }
@@ -164,6 +170,14 @@ fun ComposePostScreen(
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
         keyboardController?.show()
+    }
+    LaunchedEffect(emojiSheetOpen, focusAfterEmoji) {
+        if (!emojiSheetOpen && focusAfterEmoji) {
+            delay(16)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+            focusAfterEmoji = false
+        }
     }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
@@ -365,7 +379,10 @@ fun ComposePostScreen(
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { accountSheetOpen = true }
+                modifier = Modifier.fillMaxWidth().clickable {
+                    keyboardController?.hide()
+                    accountDialogOpen = true
+                }
                     .padding(vertical = 10.dp).testTag("compose_account_switcher"),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -508,28 +525,17 @@ fun ComposePostScreen(
         }
     }
 
-    if (accountSheetOpen) {
-        ModalBottomSheet(onDismissRequest = { accountSheetOpen = false }) {
-            Text("投稿元を切り替える", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
-            state.sessions.forEach { session ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        accountSheetOpen = false
-                        viewModel.switchPostingAccount(session.sessionId)
-                    }.padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(session.avatarUrl, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(session.displayName.ifBlank { session.username })
-                        Text("@${session.username} · ${session.instanceUrl.removePrefix("https://")}", style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (session.sessionId == state.selectedSession?.sessionId) Text("選択中")
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-        }
+    if (accountDialogOpen) {
+        AccountSwitchDialog(
+            title = "投稿元を切り替える",
+            sessions = state.sessions,
+            selectedSessionId = state.selectedSession?.sessionId,
+            onSelected = { sessionId ->
+                accountDialogOpen = false
+                viewModel.switchPostingAccount(sessionId)
+            },
+            onDismiss = { accountDialogOpen = false },
+        )
     }
 
     if (draftSheetOpen) {
@@ -652,20 +658,30 @@ fun ComposePostScreen(
     }
 
     if (emojiSheetOpen) {
-        ModalBottomSheet(onDismissRequest = { emojiSheetOpen = false }) {
-            Text("絵文字", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                state.customEmojis.take(80).forEach { emoji ->
-                    IconButton(onClick = { viewModel.insertEmoji(emoji.shortcode); emojiSheetOpen = false }) {
-                        AsyncImage(emoji.url, emoji.shortcode, Modifier.size(30.dp))
+        CompositionLocalProvider(
+            LocalReactionHistoryLoader provides { viewModel.loadEmojiHistory() },
+            LocalReactionHistorySaver provides { viewModel.saveEmojiHistory(it) },
+        ) {
+            ReactionPickerSheet(
+                canUndo = false,
+                title = "絵文字",
+                customEmojisOverride = state.customEmojis,
+                onDismiss = { emojiSheetOpen = false },
+                onSelected = { selected ->
+                    emojiSheetOpen = false
+                    if (selected != null) {
+                        val insertion = if (state.customEmojis.any { it.shortcode == selected }) ":$selected:" else selected
+                        val selection = textFieldValue.selection
+                        val newText = textFieldValue.text.replaceRange(selection.min, selection.max, insertion)
+                        if (newText.length <= state.configuration.maxCharacters) {
+                            textFieldValue = TextFieldValue(newText, TextRange(selection.min + insertion.length))
+                            viewModel.onTextChanged(newText)
+                            viewModel.recordUsedEmoji(selected)
+                        }
+                        focusAfterEmoji = true
                     }
                 }
-            }
-            if (state.customEmojis.isEmpty()) Text("このサーバーのカスタム絵文字を取得できませんでした", Modifier.padding(20.dp))
-            Spacer(Modifier.height(24.dp))
+            )
         }
     }
 
