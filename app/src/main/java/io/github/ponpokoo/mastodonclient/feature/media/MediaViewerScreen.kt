@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -229,7 +230,21 @@ private fun ZoomableImage(
     var scale by remember(url) { mutableFloatStateOf(1f) }
     var offset by remember(url) { mutableStateOf(Offset.Zero) }
     var imageSize by remember(url) { mutableStateOf(IntSize.Zero) }
+    var sourceSize by remember(url) { mutableStateOf(Size.Unspecified) }
     var originalLoaded by remember(url) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    fun boundedOffset(candidate: Offset, newScale: Float): Offset {
+        val viewportWidth = imageSize.width.toFloat()
+        val viewportHeight = imageSize.height.toFloat()
+        if (viewportWidth <= 0f || viewportHeight <= 0f ||
+            !sourceSize.width.isFinite() || !sourceSize.height.isFinite() ||
+            sourceSize.width <= 0f || sourceSize.height <= 0f
+        ) return Offset.Zero
+        val fit = minOf(viewportWidth / sourceSize.width, viewportHeight / sourceSize.height)
+        val maxX = ((sourceSize.width * fit * newScale - viewportWidth) / 2f).coerceAtLeast(0f)
+        val maxY = ((sourceSize.height * fit * newScale - viewportHeight) / 2f).coerceAtLeast(0f)
+        return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
+    }
     LaunchedEffect(scale) { onScaleChanged(scale) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (!originalLoaded && previewUrl != null && previewUrl != url) {
@@ -243,7 +258,10 @@ private fun ZoomableImage(
         AsyncImage(
             model = url,
             contentDescription = description ?: "添付画像",
-            onSuccess = { originalLoaded = true },
+            onSuccess = {
+                originalLoaded = true
+                sourceSize = it.painter.intrinsicSize
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged { imageSize = it }
@@ -261,10 +279,10 @@ private fun ZoomableImage(
                                 offset = Offset.Zero
                             } else {
                                 scale = DOUBLE_TAP_SCALE
-                                offset = Offset(
+                                offset = boundedOffset(Offset(
                                     x = (imageSize.width / 2f - tapPosition.x) * (DOUBLE_TAP_SCALE - 1f),
                                     y = (imageSize.height / 2f - tapPosition.y) * (DOUBLE_TAP_SCALE - 1f),
-                                )
+                                ), DOUBLE_TAP_SCALE)
                             }
                         },
                     )
@@ -285,11 +303,20 @@ private fun ZoomableImage(
                                 offset = if (nextScale <= 1f) {
                                     Offset.Zero
                                 } else {
-                                    offset + panChange * PAN_SPEED_MULTIPLIER
+                                    boundedOffset(offset + panChange * PAN_SPEED_MULTIPLIER, nextScale)
                                 }
                                 event.changes.forEach { change -> change.consume() }
                             }
-                            if (event.changes.none { it.pressed }) break
+                            if (event.changes.none { it.pressed }) {
+                                if (scale < 1f) {
+                                    val start = scale
+                                    scope.launch {
+                                        animate(start, 1f) { value, _ -> scale = value }
+                                        offset = Offset.Zero
+                                    }
+                                }
+                                break
+                            }
                         }
                     }
                 },
@@ -328,4 +355,4 @@ private const val MAX_SCALE = 5f
 private const val MIN_SCALE = 0.5f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val MIN_DISMISS_SCALE = 1.01f
-private const val DISMISS_THRESHOLD = 0.2f
+private const val DISMISS_THRESHOLD = 0.12f

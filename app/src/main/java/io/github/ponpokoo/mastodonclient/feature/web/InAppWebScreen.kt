@@ -5,6 +5,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
@@ -25,6 +30,13 @@ import androidx.core.net.toUri
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun InAppWebScreen(url: String, onBack: () -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+    val navigateBack = {
+        if (canGoBack && webView?.canGoBack() == true) webView?.goBack() else onBack()
+        Unit
+    }
+    BackHandler(onBack = navigateBack)
     val safeUrl = url.takeIf {
         val uri = it.toUri()
         uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()
@@ -34,7 +46,7 @@ fun InAppWebScreen(url: String, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(safeUrl?.toUri()?.host.orEmpty(), maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = navigateBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
                     }
                 },
@@ -57,11 +69,20 @@ fun InAppWebScreen(url: String, onBack: () -> Unit) {
                             javaScriptCanOpenWindowsAutomatically = false
                         }
                         webChromeClient = WebChromeClient()
-                        webViewClient = WebViewClient()
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView, loadedUrl: String?) {
+                                canGoBack = view.canGoBack()
+                            }
+                        }
                         loadUrl(safeUrl)
+                        webView = this
                     }
                 },
-                update = { webView -> if (webView.url != safeUrl) webView.loadUrl(safeUrl) },
+                onRelease = { view ->
+                    if (webView === view) webView = null
+                    view.stopLoading()
+                    view.destroy()
+                },
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
         }

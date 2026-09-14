@@ -1,6 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.compose
 
 import android.net.Uri
+import android.text.format.Formatter
+import java.io.File
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +16,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,6 +86,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -106,6 +110,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
+import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -127,7 +132,8 @@ fun ComposePostScreen(
     var focusAfterEmoji by remember { mutableStateOf(false) }
     var draftSheetOpen by remember { mutableStateOf(false) }
     var mentionSheetOpen by remember { mutableStateOf(false) }
-    var deleteDraftDialogOpen by remember { mutableStateOf(false) }
+    var altEditingUri by remember { mutableStateOf<String?>(null) }
+    var altEditorText by remember { mutableStateOf("") }
     var draftToDelete by remember { mutableStateOf<io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft?>(null) }
     var cwEnabled by remember(state.spoilerText) { mutableStateOf(state.spoilerText.isNotBlank()) }
     val focusRequester = remember { FocusRequester() }
@@ -194,7 +200,7 @@ fun ComposePostScreen(
         }
     }
 
-    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(4)) { uris ->
         viewModel.importMedia(uris.map(Uri::toString))
     }
 
@@ -253,7 +259,9 @@ fun ComposePostScreen(
                                     contentDescription = "画像または動画",
                                     enabled = !state.isImportingMedia && !state.isPosting && !state.isLoading && state.pollOptions.isEmpty() &&
                                         !state.quotingNative && state.attachments.size < state.configuration.maxMediaAttachments,
-                                ) { mediaPicker.launch(arrayOf("image/*", "video/*")) }
+                                ) { mediaPicker.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                ) }
                                 ComposerAction.Poll -> ComposerToolbarButton(
                                     icon = Icons.Outlined.Poll,
                                     contentDescription = if (state.pollOptions.isEmpty()) "投票を追加" else "投票を解除",
@@ -283,19 +291,20 @@ fun ComposePostScreen(
                                 ComposerAction.SaveDraft -> ComposerToolbarButton(
                                     Icons.Outlined.Drafts,
                                     "下書きに保存",
-                                    enabled = hasContent && !isEditing && !state.isImportingMedia,
+                                    enabled = hasContent && !isEditing && !state.isImportingMedia && !state.isLoading,
                                 ) { viewModel.saveDraft() }
                                 ComposerAction.DeleteDraft -> ComposerToolbarButton(
                                     Icons.Outlined.DeleteOutline,
-                                    "下書きを削除",
-                                    enabled = hasContent && !isEditing && !state.isImportingMedia,
-                                ) { deleteDraftDialogOpen = true }
+                                    "本文をクリア",
+                                    enabled = state.text.isNotEmpty() && !state.isPosting && !state.isImportingMedia,
+                                ) { viewModel.onTextChanged("") }
                             }
                         }
                     }
                     Button(
                         onClick = viewModel::post,
-                        enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) && !state.isPosting && !state.isImportingMedia,
+                        enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) &&
+                            !state.isPosting && !state.isImportingMedia && !state.isLoading,
                         modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
                     ) {
                         if (state.isPosting || state.isImportingMedia) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -433,6 +442,33 @@ fun ComposePostScreen(
                     singleLine = true,
                 )
             }
+            if (state.attachments.isNotEmpty()) {
+                Text(
+                    "添付メディア ${state.attachments.size}件",
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            state.attachments.chunked(2).forEach { rowAttachments ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowAttachments.forEach { attachment ->
+                        ComposerAttachmentTile(
+                            attachment = attachment,
+                            modifier = Modifier.weight(1f),
+                            onRemove = { viewModel.removeAttachment(attachment.uri) },
+                            onEditAlt = {
+                                altEditingUri = attachment.uri
+                                altEditorText = attachment.description
+                            },
+                        )
+                    }
+                    if (rowAttachments.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
             Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Box(Modifier.fillMaxWidth().heightIn(min = 160.dp)) {
                     if (textFieldValue.text.isEmpty()) {
@@ -462,37 +498,6 @@ fun ComposePostScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-
-            state.attachments.forEach { attachment ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    tonalElevation = 1.dp,
-                ) {
-                    Column(Modifier.padding(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            AsyncImage(
-                                model = attachment.uri,
-                                contentDescription = attachment.description.ifBlank { null },
-                                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(attachment.fileName, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            TextButton(onClick = { viewModel.removeAttachment(attachment.uri) }) { Text("削除") }
-                        }
-                        OutlinedTextField(
-                            value = attachment.description,
-                            onValueChange = { viewModel.setAttachmentDescription(attachment.uri, it) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            label = { Text("代替テキスト（ALT）") },
-                            supportingText = {
-                                if (attachment.description.isBlank()) Text("未入力", color = MaterialTheme.colorScheme.error)
-                            },
-                        )
-                    }
-                }
             }
 
             if (state.pollOptions.isNotEmpty()) {
@@ -710,20 +715,74 @@ fun ComposePostScreen(
         )
     }
 
-    if (deleteDraftDialogOpen) {
+    altEditingUri?.let { uri ->
         AlertDialog(
-            onDismissRequest = { deleteDraftDialogOpen = false },
-            title = { Text("下書きを削除") },
-            text = { Text("現在の入力内容と保存済みの下書きを削除しますか？") },
+            onDismissRequest = { altEditingUri = null },
+            title = { Text("代替テキスト（ALT）") },
+            text = {
+                OutlinedTextField(
+                    value = altEditorText,
+                    onValueChange = { altEditorText = it.take(state.configuration.mediaDescriptionLimit) },
+                    label = { Text("画像や動画の内容") },
+                    minLines = 3,
+                    maxLines = 6,
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    deleteDraftDialogOpen = false
-                    cwEnabled = false
-                    viewModel.clearComposer()
-                }) { Text("削除", color = MaterialTheme.colorScheme.error) }
+                    viewModel.setAttachmentDescription(uri, altEditorText)
+                    altEditingUri = null
+                }) { Text("保存") }
             },
-            dismissButton = { TextButton(onClick = { deleteDraftDialogOpen = false }) { Text("キャンセル") } },
+            dismissButton = { TextButton(onClick = { altEditingUri = null }) { Text("キャンセル") } },
         )
+    }
+}
+
+@Composable
+private fun ComposerAttachmentTile(
+    attachment: DraftAttachment,
+    modifier: Modifier = Modifier,
+    onRemove: () -> Unit,
+    onEditAlt: () -> Unit,
+) {
+    val context = LocalContext.current
+    val bytes = remember(attachment.uri) { Uri.parse(attachment.uri).path?.let(::File)?.length() ?: 0L }
+    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp) {
+        Column(Modifier.padding(6.dp)) {
+            Box {
+                AsyncImage(
+                    model = attachment.uri,
+                    contentDescription = attachment.description.ifBlank { "添付メディア" },
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+                IconButton(
+                    onClick = onRemove,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+                        .background(Color.Black.copy(alpha = 0.65f), CircleShape),
+                ) {
+                    Icon(Icons.Outlined.Close, contentDescription = "添付を削除", tint = Color.White)
+                }
+            }
+            Text(attachment.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelMedium)
+            if (bytes > 0L) Text(
+                Formatter.formatShortFileSize(context, bytes),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (attachment.description.isNotBlank()) Text(
+                attachment.description,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = onEditAlt, modifier = Modifier.fillMaxWidth()) {
+                Text(if (attachment.description.isBlank()) "ALTを追加" else "ALTを編集", maxLines = 1)
+            }
+        }
     }
 }
 

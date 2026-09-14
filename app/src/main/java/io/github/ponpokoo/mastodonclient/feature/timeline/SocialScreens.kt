@@ -242,17 +242,47 @@ internal fun NotificationsContent(
                 LazyColumn(Modifier.fillMaxWidth().weight(1f), state = listState) {
                     if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
                     items(filteredNotifications, key = TimelineNotification::id) { notification ->
-                        NotificationHeader(notification, onAccountClick)
-                        notification.status?.let { status ->
-                        NotificationStatusQuote(
-                            status = status,
-                            onStatusClick = onStatusClick,
-                            onMoreClick = onMoreClick,
-                            onReply = { onReply(status) },
-                            showReply = notification.type.equals("mention", ignoreCase = true) ||
-                                notification.type.equals("reply", ignoreCase = true),
-                            preferences = preferences.timelineDisplay,
+                        val status = notification.status
+                        val isReply = notification.type.equals("mention", ignoreCase = true) ||
+                            notification.type.equals("reply", ignoreCase = true)
+                        if (isReply && status != null) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                NotificationTypeIcon(Icons.Outlined.ChatBubbleOutline, "返信", notification.type)
+                                Spacer(Modifier.width(8.dp))
+                                Text("返信", style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            StatusCard(
+                                status = status,
+                                onStatusClick = onStatusClick,
+                                onAuthorClick = onAccountClick,
+                                onMediaClick = onMediaClick,
+                                onOpenLink = onOpenLink,
+                                onReply = { onReply(status) },
+                                onBoost = { onBoost(status) },
+                                onQuote = { onQuote(status) },
+                                onFavourite = { onFavourite(status) },
+                                onBookmark = { onBookmark(status) },
+                                onReact = { onReact(status, it) },
+                                onMoreClick = onMoreClick,
+                                onUnavailableAction = {},
+                                displayPreferences = preferences.timelineDisplay,
+                                gifAutoplay = preferences.gifAutoplay,
+                                videoAutoplay = preferences.videoAutoplay,
                             )
+                        } else {
+                            NotificationHeader(notification, onAccountClick)
+                            status?.let {
+                                NotificationStatusQuote(
+                                    status = it,
+                                    onStatusClick = onStatusClick,
+                                    onMoreClick = onMoreClick,
+                                    preferences = preferences.timelineDisplay,
+                                )
+                            }
                         }
                         HorizontalDivider()
                     }
@@ -596,7 +626,7 @@ private fun NotificationHeader(
     onAccountClick: (String) -> Unit,
 ) {
     val (icon, action) = when (notification.type) {
-        "mention" -> Icons.Outlined.AlternateEmail to "メンションしました"
+        "mention" -> Icons.Outlined.ChatBubbleOutline to "返信"
         "reply" -> Icons.Outlined.AlternateEmail to "返信しました"
         "reblog" -> Icons.Outlined.Repeat to "ブーストしました"
         "favourite" -> Icons.Outlined.FavoriteBorder to "お気に入りしました"
@@ -613,7 +643,7 @@ private fun NotificationHeader(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NotificationTypeIcon(icon, action)
+        NotificationTypeIcon(icon, action, notification.type)
         Spacer(Modifier.width(8.dp))
         AsyncImage(
             model = notification.account.avatarUrl,
@@ -639,8 +669,6 @@ private fun NotificationStatusQuote(
     status: TimelineStatus,
     onStatusClick: (String) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit,
-    onReply: () -> Unit,
-    showReply: Boolean,
     preferences: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences,
 ) {
     val plainContent = remember(status.contentHtml) {
@@ -694,31 +722,30 @@ private fun NotificationStatusQuote(
                     lineHeight = preferences.lineHeightSp().sp,
                 ),
             )
-            if (showReply) {
-                TextButton(
-                    onClick = onReply,
-                    modifier = Modifier.align(Alignment.End),
-                ) {
-                    Icon(
-                        Icons.Outlined.ChatBubbleOutline,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("返信")
-                }
+            if (status.mediaAttachments.isNotEmpty()) {
+                Text(
+                    "添付 ${status.mediaAttachments.size}件",
+                    modifier = Modifier.padding(top = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun NotificationTypeIcon(icon: ImageVector, action: String) {
+private fun NotificationTypeIcon(icon: ImageVector, action: String, type: String) {
+    val tint = when (type) {
+        "mention", "reply" -> Color(0xFF2686C4)
+        "favourite" -> Color(0xFFE46487)
+        else -> MaterialTheme.colorScheme.primary
+    }
     Icon(
         imageVector = icon,
         contentDescription = action,
         modifier = Modifier.size(20.dp).testTag("notification_type_icon"),
-        tint = MaterialTheme.colorScheme.primary,
+        tint = tint,
     )
 }
 

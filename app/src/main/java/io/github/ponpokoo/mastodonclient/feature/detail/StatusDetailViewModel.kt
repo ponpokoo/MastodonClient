@@ -44,6 +44,9 @@ class StatusDetailViewModel(
     init { load() }
 
     fun retry() = load()
+    fun refresh() {
+        if (!_uiState.value.isLoading) load()
+    }
 
     fun showBoosters() {
         if ((_uiState.value.detail?.status?.boostsCount ?: 0L) <= 0L) return
@@ -170,8 +173,10 @@ class StatusDetailViewModel(
             }
             session = current
             _uiState.update { it.copy(currentAccountId = current.accountId) }
-            timelineRepository.getCachedStatus(current, statusId)?.let { cached ->
-                _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) }
+            if (_uiState.value.detail == null) {
+                timelineRepository.getCachedStatus(current, statusId)?.let { cached ->
+                    _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) }
+                }
             }
             timelineRepository.getStatusDetail(current, statusId)
                 .onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }

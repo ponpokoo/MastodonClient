@@ -2,6 +2,8 @@ package io.github.ponpokoo.mastodonclient.feature.timeline
 
 import android.content.Intent
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -57,6 +59,7 @@ import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -608,6 +611,7 @@ internal fun StatusMenuDialog(
     onBlock: () -> Unit,
     onReport: () -> Unit,
 ) {
+    val context = LocalContext.current
     val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -640,6 +644,15 @@ internal fun StatusMenuDialog(
                         Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = color)
                         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = color)
                     }
+                }
+                Action("本文をコピー", Icons.Outlined.ContentCopy) {
+                    val plainText = androidx.core.text.HtmlCompat.fromHtml(
+                        status.contentHtml,
+                        androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY,
+                    ).toString().trim()
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("投稿本文", plainText))
+                    onDismiss()
                 }
                 if (isOwnStatus) {
                     Action(if (status.pinned) "プロフィールへの固定解除" else "プロフィールに固定", Icons.Outlined.PushPin, action = onPin)

@@ -411,7 +411,7 @@ private fun ComposerAction.label() = when (this) {
     ComposerAction.ContentWarning -> "内容警告（CW）"
     ComposerAction.Mention -> "メンション（@）"
     ComposerAction.SaveDraft -> "下書きに保存"
-    ComposerAction.DeleteDraft -> "下書きを削除"
+    ComposerAction.DeleteDraft -> "本文をクリア"
 }
 
 private fun Any?.displayLabel(): String = when (this) {

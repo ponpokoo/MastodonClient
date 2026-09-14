@@ -24,6 +24,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 @Serializable enum class StreamingPolicy { On, WifiOnly, Off }
 @Serializable enum class ThemeMode { Light, Dark, System }
 @Serializable enum class StatusAction { Reply, Boost, Favourite, Reaction, Bookmark, Share }
+// Keep DeleteDraft as the serialized value so existing toolbar orders load; its UI action now clears only body text.
 @Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, SaveDraft, DeleteDraft }
 
 @Serializable

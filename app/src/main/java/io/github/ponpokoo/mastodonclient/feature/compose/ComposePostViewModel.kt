@@ -25,6 +25,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -223,17 +227,33 @@ class ComposePostViewModel(
     fun restoreDraft(draft: ComposeDraft) {
         if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
-        if (draft.sessionId != session.sessionId || editStatusId != null) return
+        if (draft.sessionId != session.sessionId || editStatusId != null || _uiState.value.isLoading) return
         activeReplyToId = draft.replyToId
         activeQuoteStatusId = draft.quotedStatusId
         activeQuoteStatusUrl = draft.quotedStatusUrl
         activeNativeQuote = draft.nativeQuote
         _uiState.update { state -> state.withDraft(draft).copy(
+            drafts = state.drafts.filterNot { it.key == draft.key },
             quoteToStatus = null,
             quoteStatusId = draft.quotedStatusId,
             quotingNative = draft.quotedStatusId != null && draft.nativeQuote,
-            actionMessage = "下書きを呼び出しました",
+            isLoading = true,
         ) }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                // The attachment files now belong to the active composer; deleting the
+                // saved draft must not delete them.
+                withContext(NonCancellable) { preferencesStore.deleteDraft(draft.key) }
+                _uiState.update { it.copy(isLoading = false, actionMessage = "下書きを取り出しました") }
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                _uiState.update { it.copy(
+                    isLoading = false,
+                    drafts = (it.drafts + draft).sortedByDescending(ComposeDraft::updatedAtEpochMillis),
+                    actionMessage = "下書きを一覧から削除できませんでした",
+                ) }
+            }
+        }
         draft.replyToId?.let { viewModelScope.launch { loadReplyTarget(session, it, insertMention = false) } }
             ?: _uiState.update { it.copy(replyToStatus = null) }
         draft.quotedStatusId?.let { viewModelScope.launch { loadQuoteTarget(session, it) } }
@@ -245,9 +265,9 @@ class ComposePostViewModel(
         if (draft.sessionId != session.sessionId) return
         viewModelScope.launch {
             preferencesStore.deleteDraft(draft.key)
-            if (draft.key != draftKey(session.sessionId)) {
-                draft.attachmentUris.forEach(deleteDraftFile)
-            }
+            val retainedUris = _uiState.value.attachments.map(DraftAttachment::uri).toSet() +
+                preferencesStore.drafts.first().flatMap(ComposeDraft::attachmentUris)
+            draft.attachmentUris.filterNot(retainedUris::contains).forEach(deleteDraftFile)
             _uiState.update { state ->
                 state.copy(
                     drafts = state.drafts.filterNot { it.key == draft.key },
@@ -294,7 +314,7 @@ class ComposePostViewModel(
 
     fun post(skipAltReminder: Boolean = false) {
         val state = _uiState.value
-        if (state.isPosting || state.isImportingMedia || state.selectedSession == null) return
+        if (state.isPosting || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
         if (state.text.isBlank() && state.attachments.isEmpty()) return
         if (state.quotingNative && (state.attachments.isNotEmpty() || state.pollOptions.isNotEmpty())) {
             _uiState.update { it.copy(errorMessage = "引用投稿にはメディアや投票を添付できません") }
@@ -369,7 +389,7 @@ class ComposePostViewModel(
     }
 
     fun saveDraft() {
-        if (waitForMediaImport()) return
+        if (waitForMediaImport() || _uiState.value.isLoading) return
         viewModelScope.launch {
             saveDraftNow()
             _uiState.update { it.copy(actionMessage = "下書きに保存しました") }
@@ -401,31 +421,6 @@ class ComposePostViewModel(
             preferencesStore.removeComposeBuffer(key)
             attachments.forEach { deleteDraftFile(it.uri) }
             onDiscarded()
-        }
-    }
-
-    fun clearComposer() {
-        if (waitForMediaImport()) return
-        val state = _uiState.value
-        val session = state.selectedSession ?: return
-        val key = draftKey(session.sessionId)
-        state.attachments.forEach { deleteDraftFile(it.uri) }
-        preferencesStore.removeComposeBuffer(key)
-        viewModelScope.launch {
-            preferencesStore.deleteDraft(key)
-            _uiState.update { current -> current.copy(
-                drafts = preferencesStore.drafts.first().filter { it.sessionId == session.sessionId }
-                    .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
-            ) }
-        }
-        activeReplyToId = initialReplyToId
-        _uiState.update {
-            it.copy(
-                text = "", spoilerText = "", attachments = emptyList(), pollOptions = emptyList(),
-                sensitive = false, errorMessage = null, altReminderVisible = false,
-                replyToStatus = it.replyToStatus.takeIf { initialReplyToId != null },
-                actionMessage = "下書きを削除しました",
-            )
         }
     }
 

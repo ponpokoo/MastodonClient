@@ -39,6 +39,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -135,9 +136,12 @@ fun StatusDetailScreen(
                 Text(state.errorMessage ?: "投稿を表示できませんでした")
                 TextButton(onClick = viewModel::retry) { Text("再試行") }
             }
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding).testTag("status_detail"),
+            else -> PullToRefreshBox(
+                isRefreshing = state.isLoading,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize().padding(padding),
             ) {
+                LazyColumn(modifier = Modifier.fillMaxSize().testTag("status_detail")) {
                 state.detail?.ancestors?.let { ancestors ->
                     if (ancestors.isNotEmpty()) {
                         item { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
@@ -206,6 +210,7 @@ fun StatusDetailScreen(
                             HorizontalDivider()
                         }
                     }
+                }
                 }
             }
         }
