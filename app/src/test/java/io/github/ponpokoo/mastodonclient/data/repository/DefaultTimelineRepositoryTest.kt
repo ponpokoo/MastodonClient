@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -239,14 +240,33 @@ class DefaultTimelineRepositoryTest {
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val session = testSession(server)
 
-            val notifications = repository.getNotifications(session).getOrThrow().notifications
+            val notificationPage = repository.getNotifications(session).getOrThrow()
+            val notifications = notificationPage.notifications
             val results = repository.search(session, "android").getOrThrow()
 
             assertEquals("mention", notifications.single().type)
+            assertEquals("n1", notificationPage.nextMaxId)
+            assertFalse(notificationPage.endReached)
             assertEquals("found", results.statuses.single().statusId)
             assertEquals("android", results.hashtags.single().name)
             assertEquals("/api/v1/notifications?limit=80", server.takeRequest().path)
             assertEquals("/api/v2/search?q=android&limit=20&resolve=false", server.takeRequest().path)
+        }
+    }
+
+    @Test
+    fun emptyNotificationPageEndsPagination() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("[]"))
+
+            val page = DefaultTimelineRepository(ApiClientFactory())
+                .getNotifications(testSession(server), maxId = "n1")
+                .getOrThrow()
+
+            assertTrue(page.notifications.isEmpty())
+            assertNull(page.nextMaxId)
+            assertTrue(page.endReached)
+            assertEquals("/api/v1/notifications?max_id=n1&limit=80", server.takeRequest().path)
         }
     }
 

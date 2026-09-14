@@ -17,6 +17,7 @@ data class NotificationsUiState(
     val notifications: List<TimelineNotification> = emptyList(),
     val isLoadingNotifications: Boolean = false,
     val notificationsError: String? = null,
+    val notificationsErrorIsPagination: Boolean = false,
     val notificationsNextMaxId: String? = null,
     val notificationsEndReached: Boolean = false,
     val isLoadingMoreNotifications: Boolean = false,
@@ -44,7 +45,10 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         if (_uiState.value.isLoadingNotifications || (!force && hasLoaded)) return
         notificationsJob?.cancel()
         notificationsJob = requestScope.launch {
-            _uiState.update { it.copy(isLoadingNotifications = true, isLoadingMoreNotifications = false, notificationsError = null) }
+            _uiState.update { it.copy(
+                isLoadingNotifications = true, isLoadingMoreNotifications = false,
+                notificationsError = null, notificationsErrorIsPagination = false,
+            ) }
             timelineRepository.getNotifications(session)
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
@@ -77,7 +81,9 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         val cursor = state.notificationsNextMaxId ?: return
         if (state.isLoadingNotifications || state.isLoadingMoreNotifications || state.notificationsEndReached) return
         notificationsJob = requestScope.launch {
-            _uiState.update { it.copy(isLoadingMoreNotifications = true, notificationsError = null) }
+            _uiState.update { it.copy(
+                isLoadingMoreNotifications = true, notificationsError = null, notificationsErrorIsPagination = false,
+            ) }
             timelineRepository.getNotifications(session, maxId = cursor)
                 .forSession(snapshot).onSuccess { page ->
                     _uiState.update { current ->
@@ -95,6 +101,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                         it.copy(
                             isLoadingMoreNotifications = false,
                             notificationsError = error.message ?: "通知の続きを取得できませんでした",
+                            notificationsErrorIsPagination = true,
                         )
                     }
                 }

@@ -292,6 +292,15 @@ internal fun NotificationsContent(
                                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
                             }
                         }
+                    } else if (state.notificationsError != null) {
+                        item {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(state.notificationsError, color = MaterialTheme.colorScheme.error)
+                                TextButton(onClick = if (state.notificationsErrorIsPagination) onLoadMore else onRefresh) {
+                                    Text("再試行")
+                                }
+                            }
+                        }
                     } else if (!state.notificationsEndReached && state.notificationsNextMaxId != null) {
                         item {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {

@@ -14,6 +14,32 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    @Test fun shortNotificationPageStillLoadsOlderHistory() = runTest(dispatcher) {
+        val requestedCursors = mutableListOf<String?>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                requestedCursors += maxId
+                return Result.success(when (maxId) {
+                    null -> NotificationPage(listOf(testNotification("new")), "new", false)
+                    "new" -> NotificationPage(listOf(testNotification("old")), "old", false)
+                    else -> NotificationPage(emptyList(), null, true)
+                })
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.loadNotifications()
+        advanceUntilIdle()
+        viewModel.loadNextNotifications()
+        advanceUntilIdle()
+
+        assertEquals(listOf(null, "new"), requestedCursors)
+        assertEquals(listOf("new", "old"), viewModel.uiState.value.notifications.map { it.id })
+        assertFalse(viewModel.uiState.value.notificationsEndReached)
+    }
+
     @Test fun refreshSupersedesPaginationAndSavesMarker() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<NotificationPage>>()
         val repository = object : ScreenRepositoryFake() {

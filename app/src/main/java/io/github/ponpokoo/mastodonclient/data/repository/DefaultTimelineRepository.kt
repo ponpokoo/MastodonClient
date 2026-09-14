@@ -279,7 +279,9 @@ class DefaultTimelineRepository(
         NotificationPage(
             notifications = notifications,
             nextMaxId = notifications.lastOrNull()?.id,
-            endReached = notifications.size < limit,
+            // Instances can cap the page below the requested limit. Only an empty
+            // response proves there are no older notifications to request.
+            endReached = notifications.isEmpty(),
         )
     }
 
