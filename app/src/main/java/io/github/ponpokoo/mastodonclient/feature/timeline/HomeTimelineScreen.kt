@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
@@ -35,8 +37,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -123,6 +127,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -217,7 +222,15 @@ fun HomeTimelineScreen(
     val destinations = MainDestination.entries
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
-    val notificationListState = rememberLazyListState()
+    val searchListState = rememberLazyListState()
+    val allNotificationsListState = rememberLazyListState()
+    val mentionsNotificationsListState = rememberLazyListState()
+    val reactionsNotificationsListState = rememberLazyListState()
+    val notificationListStates = listOf(
+        allNotificationsListState,
+        mentionsNotificationsListState,
+        reactionsNotificationsListState,
+    )
     val profileListState = rememberLazyListState()
     var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
     var menuStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
@@ -295,7 +308,7 @@ fun HomeTimelineScreen(
         if (notificationsState.isLoadingNotifications && scrollNotificationsAfterRefresh) {
             notificationsRefreshStarted = true
         } else if (!notificationsState.isLoadingNotifications && notificationsRefreshStarted) {
-            notificationListState.animateScrollToItem(0)
+            notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
             notificationsRefreshStarted = false
             scrollNotificationsAfterRefresh = false
         }
@@ -347,7 +360,7 @@ fun HomeTimelineScreen(
                                 if (pagerState.currentPage == page) {
                                     when (item) {
                                         MainDestination.Home -> timelineListState.animateScrollToItem(0)
-                                        MainDestination.Notifications -> notificationListState.animateScrollToItem(0)
+                                        MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
                                         MainDestination.Profile -> profileListState.animateScrollToItem(0)
                                         MainDestination.Explore -> Unit
                                     }
@@ -389,6 +402,7 @@ fun HomeTimelineScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { destinations[it] },
+            userScrollEnabled = false,
         ) { page ->
             when (val pageDestination = destinations[page]) {
                 MainDestination.Home -> TimelineContent(
@@ -434,6 +448,7 @@ fun HomeTimelineScreen(
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
+                    listState = searchListState,
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
@@ -456,7 +471,7 @@ fun HomeTimelineScreen(
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
-                    listState = notificationListState,
+                    listStates = notificationListStates,
                     selectedFilter = notificationFilter,
                     onSelectFilter = { notificationFilter = it },
                 )
@@ -522,6 +537,26 @@ fun HomeTimelineScreen(
                 )
             }
         }
+        Spacer(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .windowInsetsTopHeight(WindowInsets.statusBars)
+                .testTag("status_bar_scroll_to_top")
+                .pointerInput(destination, notificationFilter) {
+                    detectTapGestures(onTap = {
+                        scope.launch {
+                            when (destination) {
+                                MainDestination.Home -> timelineListState.animateScrollToItem(0)
+                                MainDestination.Explore -> searchListState.animateScrollToItem(0)
+                                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal]
+                                    .animateScrollToItem(0)
+                                MainDestination.Profile -> profileListState.animateScrollToItem(0)
+                            }
+                        }
+                    })
+                },
+        )
     }
 
     if (editProfileOpen) {

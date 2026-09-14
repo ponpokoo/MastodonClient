@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -116,7 +118,9 @@ internal fun SearchContent(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences = AppPreferences(),
+    listState: LazyListState? = null,
 ) {
+    val resolvedListState = listState ?: rememberLazyListState()
     Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
         OutlinedTextField(
             value = state.searchQuery,
@@ -138,7 +142,7 @@ internal fun SearchContent(
             state.searchResults == null -> MessageContent("検索語を入力してください")
             else -> {
                 val results = state.searchResults
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), state = resolvedListState) {
                     if (results.accounts.isNotEmpty()) {
                         item { SectionTitle("アカウント") }
                         items(results.accounts, key = StatusAuthor::id) { AccountResult(it, onAccountClick) }
@@ -190,25 +194,31 @@ internal fun NotificationsContent(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences,
-    listState: LazyListState,
+    listStates: List<LazyListState>,
     selectedFilter: NotificationFilter,
     onSelectFilter: (NotificationFilter) -> Unit,
 ) {
-    val filteredNotifications = remember(state.notifications, selectedFilter) {
-        state.notifications.filter { notification ->
-            when (selectedFilter) {
-                NotificationFilter.All -> true
-                NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true) ||
-                    notification.type.equals("reply", ignoreCase = true)
-                NotificationFilter.Reactions -> notification.type.contains("reaction", ignoreCase = true)
-            }
+    check(listStates.size == NotificationFilter.entries.size)
+    val filterPagerState = rememberPagerState(
+        initialPage = selectedFilter.ordinal,
+        pageCount = { NotificationFilter.entries.size },
+    )
+    LaunchedEffect(selectedFilter) {
+        if (filterPagerState.currentPage != selectedFilter.ordinal) {
+            filterPagerState.animateScrollToPage(selectedFilter.ordinal)
         }
     }
-    LaunchedEffect(listState, state.notifications.size, state.notificationsNextMaxId, selectedFilter) {
+    LaunchedEffect(filterPagerState.currentPage) {
+        NotificationFilter.entries.getOrNull(filterPagerState.currentPage)?.let { filter ->
+            if (filter != selectedFilter) onSelectFilter(filter)
+        }
+    }
+    val selectedListState = listStates[selectedFilter.ordinal]
+    LaunchedEffect(selectedListState, state.notifications.size, state.notificationsNextMaxId, selectedFilter) {
         if (state.notificationsNextMaxId != null && !state.notificationsEndReached) {
-            snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            snapshotFlow { selectedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
                 .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) onLoadMore()
+                    if (lastVisible != null && lastVisible >= selectedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
                 }
         }
     }
@@ -239,7 +249,21 @@ internal fun NotificationsContent(
                         )
                     }
                 }
-                LazyColumn(Modifier.fillMaxWidth().weight(1f), state = listState) {
+                HorizontalPager(
+                    state = filterPagerState,
+                    modifier = Modifier.fillMaxWidth().weight(1f).testTag("notification_filter_pager"),
+                    key = { NotificationFilter.entries[it] },
+                ) { page ->
+                    val filter = NotificationFilter.entries[page]
+                    val filteredNotifications = state.notifications.filter { notification ->
+                        when (filter) {
+                            NotificationFilter.All -> true
+                            NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true) ||
+                                notification.type.equals("reply", ignoreCase = true)
+                            NotificationFilter.Reactions -> notification.type.contains("reaction", ignoreCase = true)
+                        }
+                    }
+                    LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
                     if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
                     items(filteredNotifications, key = TimelineNotification::id) { notification ->
                         val status = notification.status
@@ -307,6 +331,7 @@ internal fun NotificationsContent(
                                 TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
                             }
                         }
+                    }
                     }
                 }
             }
