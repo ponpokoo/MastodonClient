@@ -92,7 +92,7 @@ interface TimelineRepository {
     suspend fun getNotifications(
         session: AccountSession,
         maxId: String? = null,
-        limit: Int = 40,
+        limit: Int = 80,
     ): Result<NotificationPage> =
         Result.failure(UnsupportedOperationException("通知は未対応です"))
 

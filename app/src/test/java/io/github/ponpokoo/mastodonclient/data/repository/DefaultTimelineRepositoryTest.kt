@@ -245,7 +245,7 @@ class DefaultTimelineRepositoryTest {
             assertEquals("mention", notifications.single().type)
             assertEquals("found", results.statuses.single().statusId)
             assertEquals("android", results.hashtags.single().name)
-            assertEquals("/api/v1/notifications?limit=40", server.takeRequest().path)
+            assertEquals("/api/v1/notifications?limit=80", server.takeRequest().path)
             assertEquals("/api/v2/search?q=android&limit=20&resolve=false", server.takeRequest().path)
         }
     }
