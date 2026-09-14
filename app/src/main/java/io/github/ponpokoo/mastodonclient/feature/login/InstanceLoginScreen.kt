@@ -29,9 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import io.github.ponpokoo.mastodonclient.R
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,7 +63,7 @@ fun InstanceLoginScreen(
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Mastodon Client") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.app_name)) }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()

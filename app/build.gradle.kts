@@ -1,7 +1,16 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+val releaseSigningFile = rootProject.file("release-signing.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningFile.isFile) {
+        releaseSigningFile.inputStream().use(::load)
+    }
 }
 
 android {
@@ -14,14 +23,36 @@ android {
         applicationId = "io.github.ponpokoo.mastodonclient"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "0.1.0-beta.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningFile.isFile) {
+            create("release") {
+                val keystorePath = requireNotNull(releaseSigningProperties.getProperty("storeFile")) {
+                    "release-signing.properties: storeFile is missing"
+                }
+                val passwordPath = requireNotNull(releaseSigningProperties.getProperty("passwordFile")) {
+                    "release-signing.properties: passwordFile is missing"
+                }
+                storeFile = file(keystorePath)
+                val passwordFile = file(passwordPath)
+                require(storeFile!!.isFile && passwordFile.isFile) { "Release signing files are missing" }
+                storePassword = passwordFile.readText().trim()
+                keyAlias = requireNotNull(releaseSigningProperties.getProperty("keyAlias")) {
+                    "release-signing.properties: keyAlias is missing"
+                }
+                keyPassword = storePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = false
             }

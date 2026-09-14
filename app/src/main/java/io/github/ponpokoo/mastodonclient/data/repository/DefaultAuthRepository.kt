@@ -102,7 +102,7 @@ class DefaultAuthRepository(
         const val REDIRECT_SCHEME = "io.github.ponpokoo.mastodonclient"
         const val REDIRECT_URI = "$REDIRECT_SCHEME://oauth/callback"
         const val SCOPES = "read write"
-        private const val CLIENT_NAME = "Mastodon Client for Android"
+        private const val CLIENT_NAME = "Nagisa for Mastodon"
         private const val WEBSITE = "https://github.com/ponpokoo/MastodonClient"
     }
 }

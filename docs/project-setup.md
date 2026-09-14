@@ -7,7 +7,9 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 
 | 項目 | 設定 |
 | --- | --- |
-| プロジェクト／アプリ名 | MastodonClient／Mastodon Client |
+| プロジェクト／アプリ名 | MastodonClient／Nagisa |
+| バージョン | `0.1.0-beta.1`（versionCode 2） |
+| 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
 | 言語・UI | Kotlin・Jetpack Compose・Material 3 |
@@ -37,6 +39,7 @@ navigation/ 型付き画面遷移
 - サーバー情報は`/api/v2/instance`で取得する。特定のインスタンスや均一なサーバーバージョンを前提にしない。
 - アプリ登録、PKCE（S256）、OAuth state検証、トークン交換、認証情報検証を行う。
   現在の要求スコープは`read write`。古い権限のセッションでは必要に応じて再認証する。
+- OAuth登録名の変更は新規登録から反映される。保存済みのアプリ登録を使う既存アカウントの投稿元名は変わらない。
 - OAuth関連の秘密情報とアカウントセッションはAndroid KeystoreのAES-GCMで暗号化してDataStoreに保存する。
 - 複数アカウントの復元・切替・ローカルログアウトを扱う。APIのベースURLは選択セッションから決める。
 - API DTOをUIに渡さずドメインモデルへ変換する。Mastodon IDは常にString。
@@ -86,6 +89,18 @@ SDKの場所はローカルの`local.properties`で管理する。
 
 `assembleDebugAndroidTest`は実機テスト用APKのビルドであり、実機テストの実行ではない。
 コード変更の範囲に応じて確認し、ドキュメントのみの更新ではビルドを必須にしない。
+
+配布用Release APKは、Git管理外の`release-signing.properties`がある場合だけ自動署名する。
+このファイルには`storeFile`（PKCS12鍵の絶対パス）、`passwordFile`（パスワードを1行で保存したファイルの絶対パス）、
+`keyAlias`を指定する。鍵とパスワードは別の安全な場所へバックアップし、GitやReleasesにはアップロードしない。
+
+```sh
+./gradlew testDebugUnitTest assembleRelease
+```
+
+署名済みAPKは`app/build/outputs/apk/release/app-release.apk`に出力される。
+署名設定がない場合は`app-release-unsigned.apk`となり、そのまま配布しない。
+Debug版とRelease版は署名が異なるため、同じapplication IDのまま上書きインストールできない。
 
 既存の回帰テストはアカウント切替・ログアウト後の遅延応答、検索のやり直し、
 プロフィールのタブ切替、通知再取得と追加取得の競合、既読位置の分離、
