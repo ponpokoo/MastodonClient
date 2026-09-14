@@ -56,7 +56,11 @@ data class EmojiReaction(
     val reactedByMe: Boolean,
     val imageUrl: String?,
     val accountIds: Set<String>,
-)
+    val domain: String? = null,
+) {
+    val apiName: String
+        get() = if (domain.isNullOrBlank() || '@' in name) name else "$name@$domain"
+}
 
 data class StatusAuthor(
     val id: String,

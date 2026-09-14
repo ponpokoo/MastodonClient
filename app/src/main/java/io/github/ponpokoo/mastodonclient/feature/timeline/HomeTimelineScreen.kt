@@ -1208,7 +1208,7 @@ internal fun StatusCard(
                                     if (onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
                                     else Modifier.combinedClickable(
                                         onClick = {
-                                            onReact?.invoke(if (reaction.reactedByMe) null else reaction.name)
+                                            onReact?.invoke(if (reaction.reactedByMe) null else reaction.apiName)
                                         },
                                         onLongClick = {
                                             if (onReactionLongPress != null) onReactionLongPress(reaction)

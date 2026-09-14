@@ -41,13 +41,14 @@ class StatusInteractionDeviceTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
-    fun customReactionTapSendsAndLongPressOpensAccounts() {
+    fun remoteCustomReactionTapSendsDomainAndLongPressOpensAccounts() {
         val sentReaction = AtomicReference<String?>(null)
         val listedReaction = AtomicReference<String?>(null)
         composeRule.setContent {
             MaterialTheme {
                 StatusCard(
-                    status = status().copy(reactions = listOf(EmojiReaction("custom", 2, false, "https://example.social/custom.png", emptySet()))),
+                    status = status().copy(reactions = listOf(EmojiReaction("custom", 2, false,
+                        "https://example.social/custom.png", emptySet(), domain = "misskey.example"))),
                     onStatusClick = null,
                     onReact = sentReaction::set,
                     onReactionLongPress = { listedReaction.set(it.name) },
@@ -57,7 +58,7 @@ class StatusInteractionDeviceTest {
         }
 
         composeRule.onNodeWithTag("displayed_reaction").performClick()
-        composeRule.runOnIdle { assertEquals("custom", sentReaction.get()) }
+        composeRule.runOnIdle { assertEquals("custom@misskey.example", sentReaction.get()) }
         sentReaction.set(null)
         composeRule.onNodeWithTag("displayed_reaction").performTouchInput { longClick() }
         composeRule.runOnIdle {

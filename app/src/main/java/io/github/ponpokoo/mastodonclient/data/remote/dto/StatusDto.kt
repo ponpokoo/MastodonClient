@@ -57,6 +57,7 @@ data class EmojiReactionDto(
     val url: String? = null,
     @SerialName("static_url") val staticUrl: String? = null,
     @SerialName("account_ids") val accountIds: List<String> = emptyList(),
+    val domain: String? = null,
 )
 
 @Serializable

@@ -614,6 +614,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 reactedByMe = it.me,
                 imageUrl = it.staticUrl ?: it.url,
                 accountIds = it.accountIds.toSet(),
+                domain = it.domain,
             )
         },
         supportsEmojiReactions = displayed.emojiReactions != null,

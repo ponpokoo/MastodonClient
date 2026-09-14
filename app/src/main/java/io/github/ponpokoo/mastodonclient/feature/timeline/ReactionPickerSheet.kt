@@ -209,7 +209,7 @@ internal fun ReactionPickerSheet(
                                     onLongClick = { pendingDeletion = name }) { onSelected(emoji.shortcode) }
                             } ?: run {
                                 Box(Modifier.size(cellSize).combinedClickable(
-                                    onClick = {}, onLongClick = { pendingDeletion = name }),
+                                    onClick = { onSelected(name) }, onLongClick = { pendingDeletion = name }),
                                     contentAlignment = Alignment.Center) {
                                     Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.labelSmall)

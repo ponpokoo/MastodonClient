@@ -517,6 +517,26 @@ class DefaultTimelineRepositoryTest {
     }
 
     @Test
+    fun reusesRemoteReactionWithItsServerDomain() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"id":"1","created_at":"2026-09-08T00:00:00Z","account":{"id":"a","username":"alice","acct":"alice"},"emoji_reactions":[{"name":"ee","domain":"misskey.example","count":1,"url":"https://misskey.example/ee.png"}]}]""",
+            ))
+            server.enqueue(MockResponse().setBody(basicStatusJson("1")))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            val reaction = repository.getHomeTimeline(session).getOrThrow().statuses.single().reactions.single()
+            assertEquals("ee", reaction.name)
+            assertEquals("ee@misskey.example", reaction.apiName)
+            repository.setFedibirdReaction(session, "1", reaction.apiName).getOrThrow()
+
+            server.takeRequest()
+            assertEquals("/api/v1/statuses/1/emoji_reactions/ee@misskey.example", server.takeRequest().path)
+        }
+    }
+
+    @Test
     fun recordsOnlySuccessfulNewReactions() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(basicStatusJson("1")))
