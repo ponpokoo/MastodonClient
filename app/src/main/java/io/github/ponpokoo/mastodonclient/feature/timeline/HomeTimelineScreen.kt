@@ -12,7 +12,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
@@ -37,10 +35,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -127,7 +123,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -329,6 +324,17 @@ fun HomeTimelineScreen(
             else -> Unit
         }
     }
+    val scrollCurrentListToTop: () -> Unit = {
+        scope.launch {
+            when (destination) {
+                MainDestination.Home -> timelineListState.animateScrollToItem(0)
+                MainDestination.Explore -> searchListState.animateScrollToItem(0)
+                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
+                MainDestination.Profile -> profileListState.animateScrollToItem(0)
+            }
+        }
+        Unit
+    }
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(
@@ -343,9 +349,12 @@ fun HomeTimelineScreen(
                     sessions = mainState.sessions,
                     onAccountSelected = mainViewModel::switchAccount,
                     onSettings = onSettings,
+                    onTitleClick = scrollCurrentListToTop,
                 )
             } else {
-                TopAppBar(title = { Text(destination.label) })
+                TopAppBar(title = {
+                    Text(destination.label, modifier = Modifier.clickable(onClick = scrollCurrentListToTop))
+                })
             }
         },
         bottomBar = {
@@ -537,26 +546,6 @@ fun HomeTimelineScreen(
                 )
             }
         }
-        Spacer(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .windowInsetsTopHeight(WindowInsets.statusBars)
-                .testTag("status_bar_scroll_to_top")
-                .pointerInput(destination, notificationFilter) {
-                    detectTapGestures(onTap = {
-                        scope.launch {
-                            when (destination) {
-                                MainDestination.Home -> timelineListState.animateScrollToItem(0)
-                                MainDestination.Explore -> searchListState.animateScrollToItem(0)
-                                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal]
-                                    .animateScrollToItem(0)
-                                MainDestination.Profile -> profileListState.animateScrollToItem(0)
-                            }
-                        }
-                    })
-                },
-        )
     }
 
     if (editProfileOpen) {
@@ -773,6 +762,7 @@ private fun TimelineTopBar(
     sessions: List<AccountSession>,
     onAccountSelected: (String) -> Unit,
     onSettings: () -> Unit,
+    onTitleClick: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var accountDialogOpen by remember { mutableStateOf(false) }
@@ -781,7 +771,6 @@ private fun TimelineTopBar(
         title = {
             Box {
                 Row(
-                    modifier = Modifier.clickable { feedMenuOpen = true },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -790,8 +779,11 @@ private fun TimelineTopBar(
                             TimelineFeed.Local -> "ローカル"
                             TimelineFeed.Federated -> "連合"
                         },
+                        modifier = Modifier.clickable(onClick = onTitleClick),
                     )
-                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
+                    IconButton(onClick = { feedMenuOpen = true }) {
+                        Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
+                    }
                 }
                 DropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
                     TimelineFeed.entries.forEach { feed ->
