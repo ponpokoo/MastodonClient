@@ -61,15 +61,19 @@ class NotificationContentDeviceTest {
                     onAccountClick = {},
                     onMediaClick = { _, _ -> },
                     preferences = AppPreferences(),
-                    listState = rememberLazyListState(),
+                    listStates = listOf(
+                        rememberLazyListState(),
+                        rememberLazyListState(),
+                        rememberLazyListState(),
+                    ),
                     selectedFilter = NotificationFilter.All,
                     onSelectFilter = {},
                 )
             }
         }
 
-        composeRule.onNodeWithTag("notification_status_author_avatar").assertExists()
-        composeRule.onNodeWithTag("notification_status_quote").performClick()
+        composeRule.onNodeWithTag("notification_status_author_avatar", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("notification_status_quote", useUnmergedTree = true).performClick()
         composeRule.runOnIdle { assertEquals("status-1", openedStatusId.get()) }
     }
 }

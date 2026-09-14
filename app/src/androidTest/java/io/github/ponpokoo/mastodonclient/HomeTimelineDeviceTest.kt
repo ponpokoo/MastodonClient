@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeUp
@@ -143,17 +144,25 @@ class HomeTimelineDeviceTest {
             assumeTrue("No timeline statuses visible after scrolling", it.isNotEmpty())
         }
 
-        composeRule.onNodeWithTag("main_tab_home").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("timeline_list").performTouchInput { swipeDown() }
+        composeRule.onNodeWithTag("app_bar_scroll_to_top").performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("timeline_list").performTouchInput { swipeLeft() }
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("search_screen").assertExists()
+        composeRule.onNodeWithTag("timeline_list").assertExists()
+
+        composeRule.onNodeWithTag("main_tab_notifications").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("notifications_screen").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("notification_filter_pager").performTouchInput { swipeLeft() }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("notification_filter_mentions").assertIsSelected()
 
         composeRule.onNodeWithTag("main_tab_home").performClick()
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+        }
 
         composeRule.onNodeWithTag("main_tab_profile").performClick()
         composeRule.waitUntil(timeoutMillis = 20_000) {

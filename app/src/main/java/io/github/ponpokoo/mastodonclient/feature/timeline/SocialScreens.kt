@@ -243,6 +243,7 @@ internal fun NotificationsContent(
                 SecondaryTabRow(selectedTabIndex = selectedFilter.ordinal) {
                     NotificationFilter.entries.forEach { filter ->
                         Tab(
+                            modifier = Modifier.testTag("notification_filter_${filter.name.lowercase()}"),
                             selected = selectedFilter == filter,
                             onClick = { onSelectFilter(filter) },
                             text = { Text(filter.label) },

@@ -353,7 +353,10 @@ fun HomeTimelineScreen(
                 )
             } else {
                 TopAppBar(title = {
-                    Text(destination.label, modifier = Modifier.clickable(onClick = scrollCurrentListToTop))
+                    Text(
+                        destination.label,
+                        modifier = Modifier.testTag("app_bar_scroll_to_top").clickable(onClick = scrollCurrentListToTop),
+                    )
                 })
             }
         },
@@ -779,7 +782,7 @@ private fun TimelineTopBar(
                             TimelineFeed.Local -> "ローカル"
                             TimelineFeed.Federated -> "連合"
                         },
-                        modifier = Modifier.clickable(onClick = onTitleClick),
+                        modifier = Modifier.testTag("app_bar_scroll_to_top").clickable(onClick = onTitleClick),
                     )
                     IconButton(onClick = { feedMenuOpen = true }) {
                         Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
