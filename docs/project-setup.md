@@ -8,7 +8,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| バージョン | `0.1.0-beta.1`（versionCode 2） |
+| バージョン | `0.1.0-beta.2`（versionCode 3） |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
