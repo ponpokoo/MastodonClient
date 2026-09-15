@@ -125,6 +125,13 @@ interface TimelineRepository {
     suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean): Result<TimelineStatus> =
         Result.failure(UnsupportedOperationException("ブックマーク操作は未対応です"))
 
+    suspend fun votePoll(
+        session: AccountSession,
+        statusId: String,
+        pollId: String,
+        choices: Set<Int>,
+    ): Result<TimelineStatus> = Result.failure(UnsupportedOperationException("アンケート投票は未対応です"))
+
     suspend fun createStatus(
         session: AccountSession,
         text: String,

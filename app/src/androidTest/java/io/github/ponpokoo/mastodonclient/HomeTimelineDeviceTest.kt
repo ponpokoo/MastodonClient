@@ -144,7 +144,7 @@ class HomeTimelineDeviceTest {
             assumeTrue("No timeline statuses visible after scrolling", it.isNotEmpty())
         }
 
-        composeRule.onNodeWithTag("app_bar_scroll_to_top").performClick()
+        composeRule.onNodeWithTag("main_tab_home").performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("timeline_list").performTouchInput { swipeLeft() }

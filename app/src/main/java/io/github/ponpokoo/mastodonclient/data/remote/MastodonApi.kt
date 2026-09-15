@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.AccountDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.CredentialApplicationDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.TokenDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
+import io.github.ponpokoo.mastodonclient.data.remote.dto.PollDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusContextDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.AnnouncementDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
@@ -220,6 +221,13 @@ interface MastodonApi {
 
     @POST("api/v1/statuses/{id}/unbookmark")
     suspend fun unbookmark(@Path("id") id: String): StatusDto
+
+    @FormUrlEncoded
+    @POST("api/v1/polls/{id}/votes")
+    suspend fun votePoll(
+        @Path("id") id: String,
+        @Field("choices[]") choices: List<Int>,
+    ): PollDto
 
     @POST("api/v1/statuses/{id}/pin")
     suspend fun pin(@Path("id") id: String): StatusDto

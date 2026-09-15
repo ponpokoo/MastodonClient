@@ -115,6 +115,7 @@ internal fun SearchContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
+    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences = AppPreferences(),
@@ -163,7 +164,7 @@ internal fun SearchContent(
                         items(results.statuses, key = { it.timelineId }) { status ->
                             SocialStatus(
                                 status, onStatusClick, onOpenLink, onReply,
-                                onBoost, onQuote, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                                onBoost, onQuote, onFavourite, onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
                             )
                         }
                     }
@@ -190,6 +191,7 @@ internal fun NotificationsContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
     onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -292,6 +294,7 @@ internal fun NotificationsContent(
                                 onFavourite = { onFavourite(status) },
                                 onBookmark = { onBookmark(status) },
                                 onReact = { onReact(status, it) },
+                                onVotePoll = { choices -> onVotePoll(status, choices) },
                                 onMoreClick = onMoreClick,
                                 onUnavailableAction = {},
                                 displayPreferences = preferences.timelineDisplay,
@@ -354,6 +357,7 @@ internal fun ProfileContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
+    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
     onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -569,7 +573,7 @@ internal fun ProfileContent(
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
-                    onBoost, onQuote, onFavourite, onBookmark, onReact, onAccountClick, onMediaClick, preferences,
+                    onBoost, onQuote, onFavourite, onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
                     onMoreClick = onMoreClick,
                     isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
@@ -592,6 +596,7 @@ private fun SocialStatus(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences,
@@ -625,6 +630,7 @@ private fun SocialStatus(
         onFavourite = { onFavourite(status) },
         onBookmark = { onBookmark(status) },
         onReact = { onReact(status, it) },
+        onVotePoll = { choices -> onVotePoll(status, choices) },
         onMoreClick = onMoreClick,
         onUnavailableAction = {},
         displayPreferences = preferences.timelineDisplay,

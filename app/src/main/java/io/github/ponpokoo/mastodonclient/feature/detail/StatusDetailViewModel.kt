@@ -85,6 +85,11 @@ class StatusDetailViewModel(
         timelineRepository.setFedibirdReaction(current, status.statusId, emoji)
     }
 
+    fun votePoll(choices: Set<Int>) = mutateStatus { current, status ->
+        val poll = status.poll ?: return@mutateStatus Result.failure(IllegalStateException("アンケートが見つかりません"))
+        timelineRepository.votePoll(current, status.statusId, poll.id, choices)
+    }
+
     fun dismissAccounts() {
         _uiState.update { it.copy(accountListTitle = null, accounts = emptyList(), accountListError = null) }
     }

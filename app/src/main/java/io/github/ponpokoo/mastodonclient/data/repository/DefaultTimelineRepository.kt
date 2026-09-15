@@ -432,6 +432,21 @@ class DefaultTimelineRepository(
     override suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean) =
         updateStatus(session) { if (bookmarked) bookmark(statusId) else unbookmark(statusId) }
 
+    override suspend fun votePoll(
+        session: AccountSession,
+        statusId: String,
+        pollId: String,
+        choices: Set<Int>,
+    ) = runCatching {
+        require(choices.isNotEmpty()) { "投票する選択肢を選んでください" }
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val poll = api.votePoll(pollId, choices.sorted())
+        val cached = statusCache[cacheKey(session, statusId)] ?: api.getStatus(statusId).toDomain()
+        cached.copy(poll = poll.toDomain()).also { updated ->
+            statusCache[cacheKey(session, statusId)] = updated
+        }
+    }
+
     override suspend fun setPinned(session: AccountSession, statusId: String, pinned: Boolean) =
         updateStatus(session) { if (pinned) pin(statusId) else unpin(statusId) }
 
@@ -663,6 +678,21 @@ private fun StatusDto.toDomain(): TimelineStatus {
         },
     )
 }
+
+private fun io.github.ponpokoo.mastodonclient.data.remote.dto.PollDto.toDomain() =
+    io.github.ponpokoo.mastodonclient.domain.model.StatusPoll(
+        id = id,
+        expiresAt = expiresAt,
+        expired = expired,
+        multiple = multiple,
+        votesCount = votesCount,
+        votersCount = votersCount,
+        voted = voted,
+        ownVotes = ownVotes.toSet(),
+        options = options.map { option ->
+            io.github.ponpokoo.mastodonclient.domain.model.PollOption(option.title, option.votesCount)
+        },
+    )
 
 private fun AccountDto.toDomain() = StatusAuthor(
     id = id,

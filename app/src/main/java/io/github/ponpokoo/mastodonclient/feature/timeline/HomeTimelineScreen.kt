@@ -84,6 +84,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -325,18 +326,6 @@ fun HomeTimelineScreen(
             else -> Unit
         }
     }
-    val scrollCurrentListToTop: () -> Unit = {
-        scope.launch {
-            when (destination) {
-                MainDestination.Home -> timelineListState.animateScrollToItem(0)
-                MainDestination.Explore -> searchListState.animateScrollToItem(0)
-                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
-                MainDestination.Profile -> profileListState.animateScrollToItem(0)
-            }
-        }
-        Unit
-    }
-
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
@@ -350,15 +339,9 @@ fun HomeTimelineScreen(
                     sessions = mainState.sessions,
                     onAccountSelected = mainViewModel::switchAccount,
                     onSettings = onSettings,
-                    onTitleClick = scrollCurrentListToTop,
                 )
             } else {
-                TopAppBar(title = {
-                    Text(
-                        destination.label,
-                        modifier = Modifier.testTag("app_bar_scroll_to_top").clickable(onClick = scrollCurrentListToTop),
-                    )
-                })
+                TopAppBar(title = { Text(destination.label) })
             }
         },
         bottomBar = {
@@ -439,6 +422,7 @@ fun HomeTimelineScreen(
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
+                    onVotePoll = actionsViewModel::votePoll,
                     onMoreClick = { menuStatus = it },
                     onUnavailableAction = { label ->
                         scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
@@ -458,6 +442,7 @@ fun HomeTimelineScreen(
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
+                    onVotePoll = actionsViewModel::votePoll,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
@@ -480,6 +465,7 @@ fun HomeTimelineScreen(
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
+                    onVotePoll = actionsViewModel::votePoll,
                     onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
@@ -505,6 +491,7 @@ fun HomeTimelineScreen(
                     onFavourite = actionsViewModel::toggleFavourite,
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
+                    onVotePoll = actionsViewModel::votePoll,
                     onMoreClick = { menuStatus = it },
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
@@ -766,7 +753,6 @@ private fun TimelineTopBar(
     sessions: List<AccountSession>,
     onAccountSelected: (String) -> Unit,
     onSettings: () -> Unit,
-    onTitleClick: () -> Unit,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var accountDialogOpen by remember { mutableStateOf(false) }
@@ -775,6 +761,7 @@ private fun TimelineTopBar(
         title = {
             Box {
                 Row(
+                    modifier = Modifier.testTag("feed_selector").clickable { feedMenuOpen = true },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -783,11 +770,8 @@ private fun TimelineTopBar(
                             TimelineFeed.Local -> "ローカル"
                             TimelineFeed.Federated -> "連合"
                         },
-                        modifier = Modifier.testTag("app_bar_scroll_to_top").clickable(onClick = onTitleClick),
                     )
-                    IconButton(onClick = { feedMenuOpen = true }) {
-                        Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
-                    }
+                    Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
                 }
                 DropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
                     TimelineFeed.entries.forEach { feed ->
@@ -921,6 +905,7 @@ private fun TimelineContent(
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
+    onVotePoll: (TimelineStatus, Set<Int>) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit,
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
@@ -975,6 +960,7 @@ private fun TimelineContent(
                         onFavourite = { onFavourite(status) },
                         onBookmark = { onBookmark(status) },
                         onReact = { emoji -> onReact(status, emoji) },
+                        onVotePoll = { choices -> onVotePoll(status, choices) },
                         onMoreClick = onMoreClick,
                         onUnavailableAction = onUnavailableAction,
                         displayPreferences = preferences.timelineDisplay,
@@ -1031,6 +1017,7 @@ internal fun StatusCard(
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     fullWidthContent: Boolean = false,
+    onVotePoll: ((Set<Int>) -> Unit)? = null,
     afterActions: (@Composable () -> Unit)? = null,
 ) {
     var contentExpanded by rememberSaveable(status.statusId) {
@@ -1205,7 +1192,7 @@ internal fun StatusCard(
             if (contentExpanded) {
                 status.poll?.let { poll ->
                     Spacer(Modifier.height(8.dp))
-                    PollCard(poll)
+                    PollCard(poll, onVote = onVotePoll)
                 }
             }
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
@@ -1360,8 +1347,10 @@ internal fun StatusCard(
 }
 
 @Composable
-private fun PollCard(poll: StatusPoll) {
+private fun PollCard(poll: StatusPoll, onVote: ((Set<Int>) -> Unit)?) {
     val totalVotes = poll.votesCount.coerceAtLeast(0)
+    var selectedChoices by rememberSaveable(poll.id) { mutableStateOf(poll.ownVotes) }
+    val canVote = !poll.expired && poll.voted != true && onVote != null
     Surface(
         modifier = Modifier.fillMaxWidth().testTag("status_poll"),
         shape = RoundedCornerShape(12.dp),
@@ -1378,16 +1367,25 @@ private fun PollCard(poll: StatusPoll) {
                 val fraction = optionVotes?.takeIf { totalVotes > 0 }
                     ?.let { (it.toFloat() / totalVotes).coerceIn(0f, 1f) } ?: 0f
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = if (canVote) Modifier.fillMaxWidth().clickable {
+                            selectedChoices = if (poll.multiple) {
+                                selectedChoices.toMutableSet().apply {
+                                    if (!add(index)) remove(index)
+                                }
+                            } else setOf(index)
+                        } else Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Box(
                             modifier = Modifier.size(18.dp).clip(CircleShape)
                                 .background(
-                                    if (index in poll.ownVotes) MaterialTheme.colorScheme.primary
+                                    if (index in selectedChoices) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.outline,
                                 )
                                 .padding(4.dp),
                         ) {
-                            if (index in poll.ownVotes) {
+                            if (index in selectedChoices) {
                                 Box(
                                     Modifier.fillMaxSize().clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.onPrimary),
@@ -1414,6 +1412,13 @@ private fun PollCard(poll: StatusPoll) {
                         )
                     }
                 }
+            }
+            if (canVote) {
+                Button(
+                    onClick = { onVote?.invoke(selectedChoices) },
+                    enabled = selectedChoices.isNotEmpty(),
+                    modifier = Modifier.align(Alignment.End),
+                ) { Text("投票する") }
             }
             val voteLabel = poll.votersCount?.let { "${it}人が投票" } ?: "${totalVotes}票"
             Text(

@@ -40,6 +40,13 @@ class StatusActionsViewModel(private val timelineRepository: TimelineRepository,
         timelineRepository.setFedibirdReaction(it, status.statusId, emoji)
     }
 
+    fun votePoll(status: TimelineStatus, choices: Set<Int>) {
+        val poll = status.poll ?: return
+        mutateStatus(successMessage = "投票しました") {
+            timelineRepository.votePoll(it, status.statusId, poll.id, choices)
+        }
+    }
+
     fun setPinned(status: TimelineStatus) = mutateStatus(
         successMessage = if (status.pinned) "プロフィールの固定を解除しました" else "プロフィールに固定しました",
     ) { timelineRepository.setPinned(it, status.statusId, !status.pinned) }
