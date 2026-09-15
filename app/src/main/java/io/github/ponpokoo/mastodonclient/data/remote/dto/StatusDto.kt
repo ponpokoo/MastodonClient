@@ -26,8 +26,28 @@ data class StatusDto(
     val mentions: List<StatusMentionDto> = emptyList(),
     @SerialName("quote_approval") val quoteApproval: QuoteApprovalDto? = null,
     val card: PreviewCardDto? = null,
+    val poll: PollDto? = null,
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
     val reblog: StatusDto? = null,
+)
+
+@Serializable
+data class PollDto(
+    val id: String,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    val expired: Boolean = false,
+    val multiple: Boolean = false,
+    @SerialName("votes_count") val votesCount: Long = 0,
+    @SerialName("voters_count") val votersCount: Long? = null,
+    val voted: Boolean? = null,
+    @SerialName("own_votes") val ownVotes: List<Int> = emptyList(),
+    val options: List<PollOptionDto> = emptyList(),
+)
+
+@Serializable
+data class PollOptionDto(
+    val title: String = "",
+    @SerialName("votes_count") val votesCount: Long? = null,
 )
 
 @Serializable

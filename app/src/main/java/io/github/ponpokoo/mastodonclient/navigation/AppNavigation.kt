@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -114,8 +115,22 @@ fun AppNavigation(preferences: UserPreferencesStore) {
         if (uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
             val tagIndex = uri.pathSegments.indexOf("tags")
             val hashtag = uri.pathSegments.getOrNull(tagIndex + 1)
-            if (tagIndex >= 0 && !hashtag.isNullOrBlank()) {
+            if (uri.isYouTubeUrl()) {
+                val openYoutube = Intent(Intent.ACTION_VIEW, uri)
+                    .setPackage("com.google.android.youtube")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    context.startActivity(openYoutube)
+                } catch (_: ActivityNotFoundException) {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            } else if (tagIndex >= 0 && !hashtag.isNullOrBlank()) {
                 navController.navigate(Route.HashtagTimeline(hashtag)) { launchSingleTop = true }
+            } else if (uri.scheme == "http") {
+                // Keep the app-wide cleartext policy strict; HTTP-only links use the browser.
+                context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } else if (openLinksInApp) {
                 navController.navigate(Route.WebPage(url)) { launchSingleTop = true }
             } else {
@@ -543,4 +558,13 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             },
         )
     }
+}
+
+private fun android.net.Uri.isYouTubeUrl(): Boolean {
+    val normalizedHost = host?.lowercase() ?: return false
+    return normalizedHost == "youtu.be" ||
+        normalizedHost == "youtube.com" ||
+        normalizedHost.endsWith(".youtube.com") ||
+        normalizedHost == "youtube-nocookie.com" ||
+        normalizedHost.endsWith(".youtube-nocookie.com")
 }

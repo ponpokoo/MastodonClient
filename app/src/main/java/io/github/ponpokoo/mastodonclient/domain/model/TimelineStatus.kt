@@ -24,10 +24,28 @@ data class TimelineStatus(
     val reactions: List<EmojiReaction> = emptyList(),
     val supportsEmojiReactions: Boolean = false,
     val previewCard: PreviewCard? = null,
+    val poll: StatusPoll? = null,
     val mediaAttachments: List<MediaAttachment>,
     val customEmojis: Map<String, String> = emptyMap(),
     val mentions: List<StatusMention> = emptyList(),
     val quoteApproval: String? = null,
+)
+
+data class StatusPoll(
+    val id: String,
+    val expiresAt: String?,
+    val expired: Boolean,
+    val multiple: Boolean,
+    val votesCount: Long,
+    val votersCount: Long?,
+    val voted: Boolean?,
+    val ownVotes: Set<Int>,
+    val options: List<PollOption>,
+)
+
+data class PollOption(
+    val title: String,
+    val votesCount: Long?,
 )
 
 data class StatusMention(val accountId: String, val accountName: String, val url: String)

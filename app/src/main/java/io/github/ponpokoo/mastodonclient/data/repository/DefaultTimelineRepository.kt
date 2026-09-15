@@ -633,6 +633,24 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 } else null,
             )
         },
+        poll = displayed.poll?.let { poll ->
+            io.github.ponpokoo.mastodonclient.domain.model.StatusPoll(
+                id = poll.id,
+                expiresAt = poll.expiresAt,
+                expired = poll.expired,
+                multiple = poll.multiple,
+                votesCount = poll.votesCount,
+                votersCount = poll.votersCount,
+                voted = poll.voted,
+                ownVotes = poll.ownVotes.toSet(),
+                options = poll.options.map { option ->
+                    io.github.ponpokoo.mastodonclient.domain.model.PollOption(
+                        title = option.title,
+                        votesCount = option.votesCount,
+                    )
+                },
+            )
+        },
         mediaAttachments = displayed.mediaAttachments.map {
             MediaAttachment(
                 id = it.id,

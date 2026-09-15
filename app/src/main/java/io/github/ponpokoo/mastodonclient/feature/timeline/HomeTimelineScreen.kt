@@ -139,6 +139,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
+import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
@@ -1201,6 +1202,12 @@ internal fun StatusCard(
                     onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
                 )
             }
+            if (contentExpanded) {
+                status.poll?.let { poll ->
+                    Spacer(Modifier.height(8.dp))
+                    PollCard(poll)
+                }
+            }
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
                 Spacer(Modifier.height(8.dp))
                 if (mediaRevealed) {
@@ -1349,6 +1356,72 @@ internal fun StatusCard(
                 onReact?.invoke(emoji)
             },
         )
+    }
+}
+
+@Composable
+private fun PollCard(poll: StatusPoll) {
+    val totalVotes = poll.votesCount.coerceAtLeast(0)
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("status_poll"),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "アンケート",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            poll.options.forEachIndexed { index, option ->
+                val optionVotes = option.votesCount
+                val fraction = optionVotes?.takeIf { totalVotes > 0 }
+                    ?.let { (it.toFloat() / totalVotes).coerceIn(0f, 1f) } ?: 0f
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier.size(18.dp).clip(CircleShape)
+                                .background(
+                                    if (index in poll.ownVotes) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                )
+                                .padding(4.dp),
+                        ) {
+                            if (index in poll.ownVotes) {
+                                Box(
+                                    Modifier.fillMaxSize().clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.onPrimary),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(option.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        optionVotes?.let { votes ->
+                            Text(
+                                "${(fraction * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().height(4.dp).clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(fraction).fillMaxSize()
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
+                }
+            }
+            val voteLabel = poll.votersCount?.let { "${it}人が投票" } ?: "${totalVotes}票"
+            Text(
+                "${if (poll.expired) "投票終了" else "投票受付中"}・$voteLabel${if (poll.multiple) "・複数選択可" else ""}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
