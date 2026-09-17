@@ -52,9 +52,14 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
             timelineRepository.getNotifications(session)
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
-                    _uiState.update {
-                        it.copy(
-                            notifications = page.notifications,
+                    _uiState.update { current ->
+                        current.copy(
+                            // Keep a streaming event that may have arrived while
+                            // this REST refresh was in flight, and retain older
+                            // pages already loaded below the refreshed first page.
+                            notifications = (page.notifications + current.notifications)
+                                .distinctBy(TimelineNotification::id)
+                                .sortedByDescending(TimelineNotification::createdAt),
                             isLoadingNotifications = false,
                             notificationsNextMaxId = page.nextMaxId,
                             notificationsEndReached = page.endReached,
@@ -73,6 +78,9 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                 }
         }
     }
+
+    /** Refresh whenever the notification tab becomes visible or returns to foreground. */
+    fun onNotificationsVisible() = loadNotifications(force = true)
 
     fun loadNextNotifications() {
         val state = _uiState.value

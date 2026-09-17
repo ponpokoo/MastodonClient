@@ -11,10 +11,14 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
@@ -22,6 +26,102 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainTabsIntegrationTest : ScreenViewModelTestBase() {
+    @Test fun cancellationRollsBackAndReleasesPendingAction() = runTest(dispatcher) {
+        val started = CompletableDeferred<Unit>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean): Result<TimelineStatus> {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val manager = StatusActionManager(repository)
+        val pending = requireNotNull(manager.beginFavourite(testAccount, testStatus()))
+        val request = launch { manager.complete(pending) }
+        runCurrent()
+        assertTrue(started.isCompleted)
+
+        request.cancelAndJoin()
+
+        assertNotNull(manager.beginFavourite(testAccount, testStatus()))
+    }
+
+    @Test fun reblogUpdatesImmediatelyAndUsesServerResult() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<TimelineStatus>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun setReblogged(session: AccountSession, statusId: String, reblogged: Boolean) =
+                delayed.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val timeline = own(TimelineViewModel(repository, browsing))
+        val actions = own(StatusActionsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        actions.toggleReblog(timeline.uiState.value.statuses.single())
+        advanceUntilIdle()
+        assertTrue(timeline.uiState.value.statuses.single().reblogged)
+        assertEquals(1L, timeline.uiState.value.statuses.single().boostsCount)
+
+        delayed.complete(Result.success(testStatus().copy(reblogged = true, boostsCount = 3)))
+        advanceUntilIdle()
+        assertTrue(timeline.uiState.value.statuses.single().reblogged)
+        assertEquals(3L, timeline.uiState.value.statuses.single().boostsCount)
+    }
+
+    @Test fun favouriteRemovalUpdatesImmediatelyAndDoesNotMakeCountNegative() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<TimelineStatus>>()
+        val initial = testStatus().copy(favourited = true, favouritesCount = 1)
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                Result.success(TimelinePage(listOf(initial), null, true))
+            override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
+                delayed.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val timeline = own(TimelineViewModel(repository, browsing))
+        val actions = own(StatusActionsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        actions.toggleFavourite(timeline.uiState.value.statuses.single())
+        advanceUntilIdle()
+        assertFalse(timeline.uiState.value.statuses.single().favourited)
+        assertEquals(0L, timeline.uiState.value.statuses.single().favouritesCount)
+
+        delayed.complete(Result.success(initial.copy(favourited = false, favouritesCount = 0)))
+        advanceUntilIdle()
+        assertFalse(timeline.uiState.value.statuses.single().favourited)
+        assertEquals(0L, timeline.uiState.value.statuses.single().favouritesCount)
+    }
+
+    @Test fun favouriteUpdatesImmediatelyBlocksRepeatedTapAndRollsBackOnFailure() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<TimelineStatus>>()
+        val repository = object : ScreenRepositoryFake() {
+            var requests = 0
+            override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean): Result<TimelineStatus> {
+                requests++
+                return delayed.await()
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val timeline = own(TimelineViewModel(repository, browsing))
+        val actions = own(StatusActionsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        actions.toggleFavourite(timeline.uiState.value.statuses.single())
+        advanceUntilIdle()
+        assertTrue(timeline.uiState.value.statuses.single().favourited)
+        assertEquals(1L, timeline.uiState.value.statuses.single().favouritesCount)
+
+        actions.toggleFavourite(timeline.uiState.value.statuses.single())
+        advanceUntilIdle()
+        assertEquals(1, repository.requests)
+
+        delayed.complete(Result.failure(IllegalStateException("network failed")))
+        advanceUntilIdle()
+        assertFalse(timeline.uiState.value.statuses.single().favourited)
+        assertEquals(0L, timeline.uiState.value.statuses.single().favouritesCount)
+        assertEquals("network failed", actions.uiState.value.actionMessage)
+    }
+
     @Test fun statusActionsUpdateAllTabsAndKeepBoostIdentity() = runTest(dispatcher) {
         val repository = ScreenRepositoryFake()
         val browsing = BrowsingSession().apply { activate(testAccount) }

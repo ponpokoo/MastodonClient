@@ -104,7 +104,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -152,6 +151,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.EditProfileDialog
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
@@ -244,10 +244,18 @@ fun HomeTimelineScreen(
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, destination) {
+        mainViewModel.setForeground(
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+        )
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> mainViewModel.setForeground(true)
+                Lifecycle.Event.ON_START -> {
+                    mainViewModel.setForeground(true)
+                    if (destination == MainDestination.Notifications) {
+                        notificationsViewModel.onNotificationsVisible()
+                    }
+                }
                 Lifecycle.Event.ON_STOP -> mainViewModel.setForeground(false)
                 else -> Unit
             }
@@ -321,7 +329,7 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(destination) {
         when (destination) {
-            MainDestination.Notifications -> notificationsViewModel.loadNotifications()
+            MainDestination.Notifications -> notificationsViewModel.onNotificationsVisible()
             MainDestination.Profile -> profileViewModel.loadProfile()
             else -> Unit
         }
@@ -935,7 +943,7 @@ private fun TimelineContent(
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onRetry) { Text("再読み込み") }
         }
-        else -> PullToRefreshBox(
+        else -> AppPullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -995,6 +1003,7 @@ private fun TimelineContent(
 }
 
 internal val LocalReactionListOpener = staticCompositionLocalOf<((String, EmojiReaction) -> Unit)?> { null }
+internal val LocalFavouriteListOpener = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -1026,6 +1035,7 @@ internal fun StatusCard(
     var mediaRevealed by rememberSaveable(status.statusId) { mutableStateOf(!status.sensitive) }
     var reactionPickerOpen by rememberSaveable(status.statusId) { mutableStateOf(false) }
     val reactionListOpener = LocalReactionListOpener.current
+    val favouriteListOpener = LocalFavouriteListOpener.current
     val context = LocalContext.current
     val avatarSize = when (displayPreferences.avatarIconSize) {
         AvatarIconSize.Small -> 40.dp
@@ -1307,6 +1317,9 @@ internal fun StatusCard(
                 onBoost = onBoost,
                 onQuote = onQuote,
                 onFavourite = onFavourite,
+                onFavouriteLongClick = favouriteListOpener?.takeIf { status.favouritesCount > 0 }?.let { opener ->
+                    { opener(status.statusId) }
+                },
                 onReaction = onReact?.let { { reactionPickerOpen = true } },
                 onShare = {
                     val url = status.url
@@ -1603,6 +1616,7 @@ private fun StatusActionRow(
     onBoost: () -> Unit,
     onQuote: (() -> Unit)?,
     onFavourite: () -> Unit,
+    onFavouriteLongClick: (() -> Unit)? = null,
     onReaction: (() -> Unit)?,
     onShare: () -> Unit,
     onBookmark: () -> Unit = {},
@@ -1652,7 +1666,11 @@ private fun StatusActionRow(
                 }
                 StatusAction.Favourite -> StatusActionButton(
                     if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    "お気に入り", status.favouritesCount, preferences, onFavourite,
+                    if (onFavouriteLongClick == null) "お気に入り" else "お気に入り（長押しで一覧）",
+                    status.favouritesCount,
+                    preferences,
+                    onFavourite,
+                    onLongClick = onFavouriteLongClick,
                 )
                 StatusAction.Reaction -> if (onReaction != null && status.supportsEmojiReactions) {
                     StatusActionButton(Icons.Outlined.SentimentSatisfiedAlt, "リアクション", null, preferences, onReaction)

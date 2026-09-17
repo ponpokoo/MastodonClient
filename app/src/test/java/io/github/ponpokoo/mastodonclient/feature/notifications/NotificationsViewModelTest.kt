@@ -14,6 +14,64 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    @Test fun becomingVisibleRefreshesAnAlreadyLoadedNotificationList() = runTest(dispatcher) {
+        var requests = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                requests++
+                return Result.success(NotificationPage(listOf(testNotification("notification-$requests")), null, true))
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+
+        assertEquals(2, requests)
+        assertEquals(
+            listOf("notification-2", "notification-1"),
+            viewModel.uiState.value.notifications.map(TimelineNotification::id),
+        )
+    }
+
+    @Test fun refreshKeepsStreamNotificationReceivedWhileRequestIsInFlight() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<NotificationPage>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = delayed.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        browsing.publish(
+            browsing.snapshot.value,
+            BrowsingSession.Change.Stream(
+                TimelineStreamEvent.NotificationReceived(
+                    testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z"),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        delayed.complete(
+            Result.success(
+                NotificationPage(
+                    listOf(testNotification("fetched").copy(createdAt = "2026-09-08T00:00:00Z")),
+                    null,
+                    true,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("live", "fetched"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
+    }
+
     @Test fun shortNotificationPageStillLoadsOlderHistory() = runTest(dispatcher) {
         val requestedCursors = mutableListOf<String?>()
         val repository = object : ScreenRepositoryFake() {

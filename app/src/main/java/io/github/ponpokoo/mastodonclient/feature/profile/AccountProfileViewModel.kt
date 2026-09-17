@@ -6,6 +6,9 @@ import io.github.ponpokoo.mastodonclient.domain.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 
 data class AccountProfileUiState(
     val profile: UserProfile? = null,
@@ -25,13 +28,29 @@ class AccountProfileViewModel(
     private val accountId: String,
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
+    private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountProfileUiState())
     val uiState: StateFlow<AccountProfileUiState> = _uiState.asStateFlow()
     private var session: AccountSession? = null
     private var statusesJob: Job? = null
 
-    init { load() }
+    init {
+        viewModelScope.launch {
+            statusActionManager.updates.collect { update ->
+                val current = session ?: return@collect
+                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl) {
+                    _uiState.update { state -> state.copy(profile = state.profile?.let { profile ->
+                        profile.copy(
+                            statuses = profile.statuses.map { it.withStatusActionUpdate(update) },
+                            pinnedStatuses = profile.pinnedStatuses.map { it.withStatusActionUpdate(update) },
+                        )
+                    }) }
+                }
+            }
+        }
+        load()
+    }
     fun retry() = load()
 
     fun refresh() {
@@ -113,8 +132,10 @@ class AccountProfileViewModel(
         ) }
     }
     fun clearMessage() = _uiState.update { it.copy(message = null, errorMessage = null) }
-    fun toggleFavourite(status: TimelineStatus) = mutateStatus(status) { timelineRepository.setFavourite(it, status.statusId, !status.favourited) }
-    fun toggleReblog(status: TimelineStatus) = mutateStatus(status) { timelineRepository.setReblogged(it, status.statusId, !status.reblogged) }
+    fun toggleFavourite(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginFavourite)
+    fun toggleReblog(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginReblog)
     fun toggleBookmark(status: TimelineStatus) = mutateStatus(status) { timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked) }
     fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus(status) { timelineRepository.setFedibirdReaction(it, status.statusId, emoji) }
     fun setPinned(status: TimelineStatus) = mutateStatus(status) {
@@ -249,7 +270,25 @@ class AccountProfileViewModel(
             ))
         } }.onFailure(::showError) }
     }
-    class Factory(private val accountId: String, private val timelineRepository: TimelineRepository, private val authRepository: AuthRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = AccountProfileViewModel(accountId, timelineRepository, authRepository) as T
+
+    private fun runOptimisticAction(
+        status: TimelineStatus,
+        begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
+    ) {
+        val current = session ?: return
+        val pending = begin(current, status) ?: return
+        viewModelScope.launch {
+            statusActionManager.complete(pending).onFailure(::showError)
+        }
+    }
+
+    class Factory(
+        private val accountId: String,
+        private val timelineRepository: TimelineRepository,
+        private val authRepository: AuthRepository,
+        private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            AccountProfileViewModel(accountId, timelineRepository, authRepository, statusActionManager) as T
     }
 }

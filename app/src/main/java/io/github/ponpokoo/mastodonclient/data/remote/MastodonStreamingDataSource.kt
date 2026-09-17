@@ -40,6 +40,14 @@ class MastodonStreamingDataSource(
                     val source = response.body?.source() ?: throw IOException("ストリーミング応答が空です")
                     var eventName: String? = null
                     val payload = StringBuilder()
+                    fun dispatchPendingEvent() {
+                        val event = eventName
+                        if (event != null && payload.isNotEmpty()) {
+                            trySend(StreamingMessage(event, payload.toString()))
+                        }
+                        eventName = null
+                        payload.clear()
+                    }
                     while (!source.exhausted()) {
                         val line = source.readUtf8Line() ?: break
                         when {
@@ -48,18 +56,14 @@ class MastodonStreamingDataSource(
                                 if (payload.isNotEmpty()) payload.append('\n')
                                 payload.append(line.substringAfter(':').trimStart())
                             }
-                            line.isEmpty() -> {
-                                val event = eventName
-                                if (event != null && payload.isNotEmpty()) {
-                                    trySend(StreamingMessage(event, payload.toString()))
-                                }
-                                eventName = null
-                                payload.clear()
-                            }
+                            line.isEmpty() -> dispatchPendingEvent()
                         }
                     }
+                    dispatchPendingEvent()
                 }
-                close()
+                // A user stream is expected to stay open. Treat an EOF as a
+                // transient failure so the repository's retry policy reconnects.
+                throw IOException("ストリーミング接続が切断されました")
             } catch (error: Throwable) {
                 if (!call.isCanceled()) close(error) else close()
             }

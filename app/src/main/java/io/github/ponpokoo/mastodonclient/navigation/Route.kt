@@ -22,6 +22,9 @@ sealed interface Route {
         val quoteStatusId: String? = null,
         val quoteStatusUrl: String? = null,
         val nativeQuote: Boolean = false,
+        val sharedText: String? = null,
+        val sharedImageUri: String? = null,
+        val shareRequestId: String? = null,
     ) : Route
 
     @Serializable

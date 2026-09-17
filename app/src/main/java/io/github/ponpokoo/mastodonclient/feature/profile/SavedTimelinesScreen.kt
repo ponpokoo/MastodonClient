@@ -18,11 +18,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -62,27 +68,45 @@ class SavedTimelinesViewModel(
     private val listId: String?,
     private val repository: TimelineRepository,
     private val authRepository: AuthRepository,
+    private val statusActionManager: StatusActionManager = StatusActionManager(repository),
 ) : ViewModel() {
     private val _state = MutableStateFlow(SavedTimelinesUiState())
     val state = _state.asStateFlow()
     private var session: AccountSession? = null
 
-    init { load() }
+    init {
+        viewModelScope.launch {
+            statusActionManager.updates.collect { update ->
+                val current = session ?: return@collect
+                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl) {
+                    _state.update { state -> state.copy(
+                        statuses = state.statuses.map { it.withStatusActionUpdate(update) },
+                    ) }
+                }
+            }
+        }
+        load()
+    }
     fun retry() = load()
 
-    fun toggleReblog(status: TimelineStatus) {
+    fun toggleFavourite(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginFavourite)
+
+    fun toggleReblog(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginReblog)
+
+    fun clearError() = _state.update { it.copy(error = null) }
+
+    private fun runOptimisticAction(
+        status: TimelineStatus,
+        begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
+    ) {
         val current = session ?: return
+        val pending = begin(current, status) ?: return
         viewModelScope.launch {
-            repository.setReblogged(current, status.statusId, !status.reblogged)
-                .onSuccess { updated ->
-                    _state.update { state -> state.copy(statuses = state.statuses.map { item ->
-                        if (item.statusId == status.statusId) item.copy(
-                            reblogged = updated.reblogged,
-                            boostsCount = updated.boostsCount,
-                        ) else item
-                    }) }
-                }
-                .onFailure { error -> _state.update { it.copy(error = error.message ?: "ブーストに失敗しました") } }
+            statusActionManager.complete(pending).onFailure { error ->
+                _state.update { it.copy(error = error.message ?: "投稿を更新できませんでした") }
+            }
         }
     }
 
@@ -131,10 +155,11 @@ class SavedTimelinesViewModel(
         private val listId: String?,
         private val repository: TimelineRepository,
         private val authRepository: AuthRepository,
+        private val statusActionManager: StatusActionManager = StatusActionManager(repository),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            SavedTimelinesViewModel(kind, listId, repository, authRepository) as T
+            SavedTimelinesViewModel(kind, listId, repository, authRepository, statusActionManager) as T
     }
 }
 
@@ -155,6 +180,13 @@ fun SavedTimelinesScreen(
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.error, state.statuses.isNotEmpty()) {
+        if (state.statuses.isNotEmpty()) state.error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
     LaunchedEffect(listState, state.statuses.size, state.nextMaxId, showLists) {
         if (!showLists && state.nextMaxId != null && !state.endReached) {
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
@@ -165,6 +197,7 @@ fun SavedTimelinesScreen(
     }
     Scaffold(
         modifier = Modifier.testTag("saved_timelines_screen"),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(
             title = { Text(title) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
@@ -192,6 +225,7 @@ fun SavedTimelinesScreen(
                         onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,
                         onBoost = { viewModel.toggleReblog(status) },
+                        onFavourite = { viewModel.toggleFavourite(status) },
                         onQuote = { onQuote(status) },
                         onUnavailableAction = {},
                         displayPreferences = preferences.timelineDisplay,

@@ -11,6 +11,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
+import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,12 +39,25 @@ class StatusDetailViewModel(
     private val statusId: String,
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
+    private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StatusDetailUiState())
     val uiState: StateFlow<StatusDetailUiState> = _uiState.asStateFlow()
     private var session: AccountSession? = null
 
-    init { load() }
+    init {
+        viewModelScope.launch {
+            statusActionManager.updates.collect { update ->
+                val current = session ?: return@collect
+                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl) {
+                    _uiState.update { state -> state.copy(
+                        detail = state.detail?.copy(status = state.detail.status.withStatusActionUpdate(update)),
+                    ) }
+                }
+            }
+        }
+        load()
+    }
 
     fun retry() = load()
     fun refresh() {
@@ -73,13 +89,9 @@ class StatusDetailViewModel(
             }
         }
 
-    fun toggleFavourite() = mutateStatus { current, status ->
-        timelineRepository.setFavourite(current, status.statusId, !status.favourited)
-    }
+    fun toggleFavourite() = runOptimisticAction(statusActionManager::beginFavourite)
 
-    fun toggleReblog() = mutateStatus { current, status ->
-        timelineRepository.setReblogged(current, status.statusId, !status.reblogged)
-    }
+    fun toggleReblog() = runOptimisticAction(statusActionManager::beginReblog)
 
     fun setReaction(emoji: String?) = mutateStatus { current, status ->
         timelineRepository.setFedibirdReaction(current, status.statusId, emoji)
@@ -241,13 +253,27 @@ class StatusDetailViewModel(
         }
     }
 
+    private fun runOptimisticAction(
+        begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
+    ) {
+        val current = session ?: return
+        val status = _uiState.value.detail?.status ?: return
+        val pending = begin(current, status) ?: return
+        viewModelScope.launch {
+            statusActionManager.complete(pending).onFailure { error ->
+                showActionError(error, "投稿を更新できませんでした")
+            }
+        }
+    }
+
     class Factory(
         private val statusId: String,
         private val timelineRepository: TimelineRepository,
         private val authRepository: AuthRepository,
+        private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StatusDetailViewModel(statusId, timelineRepository, authRepository) as T
+            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager) as T
     }
 }

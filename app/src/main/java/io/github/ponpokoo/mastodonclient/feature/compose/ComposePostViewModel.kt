@@ -73,6 +73,8 @@ class ComposePostViewModel(
     private val initialQuoteStatusId: String? = null,
     private val initialQuoteStatusUrl: String? = null,
     private val nativeQuote: Boolean = false,
+    private val initialSharedText: String? = null,
+    private val initialSharedMediaUri: String? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ComposePostUiState())
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
@@ -81,6 +83,7 @@ class ComposePostViewModel(
     private var activeQuoteStatusId: String? = initialQuoteStatusId
     private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
     private var activeNativeQuote: Boolean = nativeQuote
+    private var initialShareApplied = false
 
     init {
         viewModelScope.launch {
@@ -102,6 +105,7 @@ class ComposePostViewModel(
             }
             selected?.let { session ->
                 loadAccountData(session, restoreBuffer = editStatusId == null)
+                applyInitialShare()
                 activeQuoteStatusId?.let { quoteId -> loadQuoteTarget(session, quoteId) }
                 initialReplyToId?.let { loadReplyTarget(session, it, insertMention = _uiState.value.text.isBlank()) }
                 editStatusId?.let { statusId ->
@@ -150,6 +154,22 @@ class ComposePostViewModel(
                 _uiState.update { it.copy(isImportingMedia = false) }
             }
         }
+    }
+
+    private fun applyInitialShare() {
+        if (initialShareApplied) return
+        initialShareApplied = true
+        initialSharedText?.trim()?.takeIf(String::isNotEmpty)?.let { sharedText ->
+            _uiState.update { state ->
+                val merged = when {
+                    sharedText in state.text -> state.text
+                    state.text.isBlank() -> sharedText
+                    else -> "${state.text.trimEnd()}\n$sharedText"
+                }
+                state.copy(text = merged.take(state.configuration.maxCharacters))
+            }
+        }
+        initialSharedMediaUri?.let { importMedia(listOf(it)) }
     }
 
     private fun waitForMediaImport(): Boolean {
@@ -578,10 +598,13 @@ class ComposePostViewModel(
         private val quoteStatusId: String? = null,
         private val quoteStatusUrl: String? = null,
         private val nativeQuote: Boolean = false,
+        private val initialSharedText: String? = null,
+        private val initialSharedMediaUri: String? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore,
-                deleteDraftFile, draftMediaRepository, quoteStatusId, quoteStatusUrl, nativeQuote) as T
+                deleteDraftFile, draftMediaRepository, quoteStatusId, quoteStatusUrl, nativeQuote,
+                initialSharedText, initialSharedMediaUri) as T
     }
 }

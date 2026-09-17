@@ -1,6 +1,9 @@
 package io.github.ponpokoo.mastodonclient.data.remote
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.retry
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -26,6 +29,31 @@ class MastodonStreamingDataSourceTest {
             val request = server.takeRequest()
             assertEquals("/api/v1/streaming/user", request.path)
             assertEquals("Bearer secret-token", request.getHeader("Authorization"))
+        }
+    }
+
+    @Test
+    fun reconnectsWhenServerClosesStreamAndKeepsFinalEvent() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBody("event: notification\ndata: {\"id\":\"first\"}"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBody("event: notification\ndata: {\"id\":\"second\"}\n\n"),
+            )
+
+            val messages = MastodonStreamingDataSource()
+                .observeUser(server.url("/").toString(), "secret-token")
+                .retry(1)
+                .take(2)
+                .toList()
+
+            assertEquals(listOf("{\"id\":\"first\"}", "{\"id\":\"second\"}"), messages.map { it.payload })
+            assertEquals(2, server.requestCount)
         }
     }
 }

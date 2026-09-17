@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +38,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultInstanceRepository
@@ -47,12 +49,14 @@ import io.github.ponpokoo.mastodonclient.feature.login.InstanceLoginScreen
 import io.github.ponpokoo.mastodonclient.feature.login.LoginViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionListOpener
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelFactory
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
@@ -62,6 +66,7 @@ import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusAccountsDialog
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostScreen
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
+import io.github.ponpokoo.mastodonclient.feature.compose.IncomingShareBus
 import io.github.ponpokoo.mastodonclient.feature.web.InAppWebScreen
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -91,6 +96,7 @@ import kotlinx.serialization.json.Json
 @Composable
 fun AppNavigation(preferences: UserPreferencesStore) {
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val apiClientFactory = remember { ApiClientFactory() }
@@ -101,15 +107,34 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
         onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
+    val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
     val reactionEmojiCache = remember { mutableMapOf<String, List<CustomEmoji>>() }
     var selectedReaction by remember { mutableStateOf<Pair<String, EmojiReaction>?>(null) }
     var reactionAccounts by remember { mutableStateOf<List<StatusAuthor>>(emptyList()) }
     var reactionAccountsLoading by remember { mutableStateOf(false) }
     var reactionAccountsError by remember { mutableStateOf<String?>(null) }
     var reactionAccountsJob by remember { mutableStateOf<Job?>(null) }
+    var selectedFavouriteStatusId by remember { mutableStateOf<String?>(null) }
+    var favouriteAccounts by remember { mutableStateOf<List<StatusAuthor>>(emptyList()) }
+    var favouriteAccountsLoading by remember { mutableStateOf(false) }
+    var favouriteAccountsError by remember { mutableStateOf<String?>(null) }
+    var favouriteAccountsJob by remember { mutableStateOf<Job?>(null) }
     val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
+    val incomingShare by IncomingShareBus.share.collectAsStateWithLifecycle()
+    LaunchedEffect(incomingShare, startupRoute, currentBackStackEntry?.destination?.route) {
+        val shared = incomingShare ?: return@LaunchedEffect
+        if (startupRoute == null || authRepository.restoreSession() == null) return@LaunchedEffect
+        navController.navigate(
+            Route.ComposePost(
+                sharedText = shared.text,
+                sharedImageUri = shared.imageUri,
+                shareRequestId = shared.requestId,
+            ),
+        ) { launchSingleTop = true }
+        IncomingShareBus.consume(shared.requestId)
+    }
     val openLink: (String) -> Unit = { url ->
         val uri = url.toUri()
         if (uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
@@ -172,6 +197,33 @@ fun AppNavigation(preferences: UserPreferencesStore) {
         }
     }
     CompositionLocalProvider(
+        LocalFavouriteListOpener provides { statusId ->
+            favouriteAccountsJob?.cancel()
+            selectedFavouriteStatusId = statusId
+            favouriteAccounts = emptyList()
+            favouriteAccountsLoading = true
+            favouriteAccountsError = null
+            favouriteAccountsJob = scope.launch {
+                val session = authRepository.restoreSession()
+                if (selectedFavouriteStatusId != statusId) return@launch
+                if (session == null) {
+                    favouriteAccountsError = "ログインし直してください"
+                } else {
+                    timelineRepository.getFavouritedBy(session, statusId).fold(
+                        onSuccess = { accounts ->
+                            if (selectedFavouriteStatusId == statusId) favouriteAccounts = accounts
+                        },
+                        onFailure = { error ->
+                            if (selectedFavouriteStatusId == statusId) {
+                                favouriteAccountsError = error.message?.takeIf { it.length <= 100 }
+                                    ?: "お気に入りしたアカウントを取得できませんでした"
+                            }
+                        },
+                    )
+                }
+                if (selectedFavouriteStatusId == statusId) favouriteAccountsLoading = false
+            }
+        },
         LocalReactionListOpener provides { statusId, reaction ->
             reactionAccountsJob?.cancel()
             val request = statusId to reaction
@@ -276,7 +328,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 OwnProfileViewModel(timelineRepository, browsing)
             })
             val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
-                StatusActionsViewModel(timelineRepository, browsing)
+                StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
             })
             HomeTimelineScreen(
                 viewModel = timelineViewModel,
@@ -321,6 +373,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     route.statusId,
                     timelineRepository,
                     authRepository,
+                    statusActionManager,
                 ),
             )
             StatusDetailScreen(
@@ -369,6 +422,8 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     quoteStatusId = route.quoteStatusId,
                     quoteStatusUrl = route.quoteStatusUrl,
                     nativeQuote = route.nativeQuote,
+                    initialSharedText = route.sharedText,
+                    initialSharedMediaUri = route.sharedImageUri,
                 ),
             )
             ComposePostScreen(
@@ -412,6 +467,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     route.accountId,
                     timelineRepository,
                     authRepository,
+                    statusActionManager,
                 ),
             )
             AccountProfileScreen(
@@ -457,6 +513,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                     route.hashtag,
                     timelineRepository,
                     authRepository,
+                    statusActionManager,
                 ),
             )
             HashtagTimelineScreen(
@@ -474,7 +531,9 @@ fun AppNavigation(preferences: UserPreferencesStore) {
         }
         composable<Route.Lists> {
             val savedViewModel: SavedTimelinesViewModel = viewModel(
-                factory = SavedTimelinesViewModel.Factory(null, null, timelineRepository, authRepository),
+                factory = SavedTimelinesViewModel.Factory(
+                    null, null, timelineRepository, authRepository, statusActionManager,
+                ),
             )
             SavedTimelinesScreen(
                 title = "リスト",
@@ -498,7 +557,9 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 else -> SavedTimelineKind.Favourites
             }
             val savedViewModel: SavedTimelinesViewModel = viewModel(
-                factory = SavedTimelinesViewModel.Factory(kind, route.listId, timelineRepository, authRepository),
+                factory = SavedTimelinesViewModel.Factory(
+                    kind, route.listId, timelineRepository, authRepository, statusActionManager,
+                ),
             )
             SavedTimelinesScreen(
                 title = route.title,
@@ -554,6 +615,23 @@ fun AppNavigation(preferences: UserPreferencesStore) {
             onAccountClick = { accountId ->
                 reactionAccountsJob?.cancel()
                 selectedReaction = null
+                navController.navigate(Route.AccountProfile(accountId))
+            },
+        )
+    }
+    selectedFavouriteStatusId?.let {
+        StatusAccountsDialog(
+            title = "お気に入りしたアカウント",
+            accounts = favouriteAccounts,
+            isLoading = favouriteAccountsLoading,
+            errorMessage = favouriteAccountsError,
+            onDismiss = {
+                favouriteAccountsJob?.cancel()
+                selectedFavouriteStatusId = null
+            },
+            onAccountClick = { accountId ->
+                favouriteAccountsJob?.cancel()
+                selectedFavouriteStatusId = null
                 navController.navigate(Route.AccountProfile(accountId))
             },
         )

@@ -26,6 +26,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusMention
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import androidx.compose.runtime.CompositionLocalProvider
@@ -39,6 +40,31 @@ import org.junit.Test
 
 class StatusInteractionDeviceTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test
+    fun longPressingFavouriteOpensFavouritedAccountsWithoutTogglingFavourite() {
+        val favourites = AtomicInteger()
+        val listedStatusId = AtomicReference<String?>(null)
+        composeRule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalFavouriteListOpener provides listedStatusId::set) {
+                    StatusCard(
+                        status = status().copy(favouritesCount = 1),
+                        onStatusClick = null,
+                        onFavourite = { favourites.incrementAndGet() },
+                        onUnavailableAction = {},
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithContentDescription("お気に入り（長押しで一覧）")
+            .performTouchInput { longClick() }
+        composeRule.runOnIdle {
+            assertEquals(0, favourites.get())
+            assertEquals("status-1", listedStatusId.get())
+        }
+    }
 
     @Test
     fun remoteCustomReactionTapSendsDomainAndLongPressOpensAccounts() {

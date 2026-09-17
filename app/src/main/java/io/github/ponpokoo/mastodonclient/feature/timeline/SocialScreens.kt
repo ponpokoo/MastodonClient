@@ -54,7 +54,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -83,6 +82,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
@@ -236,7 +236,7 @@ internal fun NotificationsContent(
             Text(state.notificationsError, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = onRefresh) { Text("再試行") }
         }
-        else -> PullToRefreshBox(
+        else -> AppPullToRefreshBox(
             isRefreshing = state.isLoadingNotifications,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
@@ -413,7 +413,7 @@ internal fun ProfileContent(
             Text(state.profileError ?: "プロフィールを表示できませんでした")
             TextButton(onClick = onRetry) { Text("再試行") }
         }
-        else -> PullToRefreshBox(
+        else -> AppPullToRefreshBox(
             isRefreshing = state.isRefreshingProfile,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),

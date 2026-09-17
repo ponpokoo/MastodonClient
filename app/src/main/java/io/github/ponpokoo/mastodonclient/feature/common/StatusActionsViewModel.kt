@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -18,19 +19,32 @@ data class StatusActionsUiState(
 )
 
 /** Common actions for all main tabs; results are broadcast to each tab's own state. */
-class StatusActionsViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
+class StatusActionsViewModel(
+    private val timelineRepository: TimelineRepository,
+    browsing: BrowsingSession,
+    private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(StatusActionsUiState())
     val uiState = _uiState.asStateFlow()
-    init { observeSession() }
+    init {
+        observeSession()
+        viewModelScope.launch {
+            statusActionManager.updates.collect { update ->
+                val snapshot = currentSnapshot() ?: return@collect
+                val account = snapshot.account ?: return@collect
+                if (update.sessionId == account.sessionId && update.instanceUrl == account.instanceUrl) {
+                    browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(update.status))
+                }
+            }
+        }
+    }
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) { _uiState.value = StatusActionsUiState() }
 
-    fun toggleFavourite(status: TimelineStatus) = mutateStatus {
-        timelineRepository.setFavourite(it, status.statusId, !status.favourited)
-    }
+    fun toggleFavourite(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginFavourite)
 
-    fun toggleReblog(status: TimelineStatus) = mutateStatus {
-        timelineRepository.setReblogged(it, status.statusId, !status.reblogged)
-    }
+    fun toggleReblog(status: TimelineStatus) =
+        runOptimisticAction(status, statusActionManager::beginReblog)
 
     fun toggleBookmark(status: TimelineStatus) = mutateStatus {
         timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked)
@@ -113,6 +127,22 @@ class StatusActionsViewModel(private val timelineRepository: TimelineRepository,
     }
 
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
+
+    private fun runOptimisticAction(
+        status: TimelineStatus,
+        begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
+    ) {
+        val snapshot = currentSnapshot() ?: return
+        val pending = begin(snapshot.account!!, status) ?: return
+        requestScope.launch {
+            statusActionManager.complete(pending).forSession(snapshot).onFailure { error ->
+                val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
+                    "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
+                } else error.message ?: "投稿を更新できませんでした"
+                _uiState.update { it.copy(actionMessage = message) }
+            }
+        }
+    }
 
     private fun mutateStatus(
         successMessage: String? = null,

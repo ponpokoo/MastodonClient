@@ -6,6 +6,9 @@ import android.app.job.JobParameters
 import android.app.job.JobService
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import android.text.Html
 import androidx.core.app.NotificationCompat
@@ -25,10 +28,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.ByteArrayOutputStream
 
 class NotificationPollingJobService : JobService() {
     private var runningScope: CoroutineScope? = null
     private var runningJob: Job? = null
+    private val avatarClient by lazy {
+        OkHttpClient.Builder().followRedirects(true).followSslRedirects(true).build()
+    }
 
     override fun onStartJob(params: JobParameters): Boolean {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -100,6 +109,7 @@ class NotificationPollingJobService : JobService() {
         val body = statusText.ifBlank {
             "@${notification.account.accountName} · ${session.instanceUrl.removePrefix("https://")}"
         }
+        val avatar = loadAvatarIcon(notification.account.avatarUrl)
         val requestCode = "${session.sessionId}:${notification.id}".hashCode()
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -111,6 +121,7 @@ class NotificationPollingJobService : JobService() {
         )
         val systemNotification = NotificationCompat.Builder(this, NotificationPollingScheduler.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
+            .setLargeIcon(avatar)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -127,6 +138,32 @@ class NotificationPollingJobService : JobService() {
         }
     }
 
+    private fun loadAvatarIcon(url: String): Bitmap? {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) return null
+        return runCatching {
+            avatarClient.newCall(Request.Builder().url(url).get().build()).execute().use responseUse@ { response ->
+                if (!response.isSuccessful) return@responseUse null
+                val responseBody = response.body ?: return@responseUse null
+                if (responseBody.contentLength() > MAX_AVATAR_BYTES) return@responseUse null
+                val bytes = responseBody.byteStream().use inputUse@ { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (output.size() + read > MAX_AVATAR_BYTES) return@inputUse null
+                        output.write(buffer, 0, read)
+                    }
+                    output.toByteArray()
+                } ?: return@responseUse null
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@responseUse null
+                if (decoded.width <= AVATAR_ICON_SIZE && decoded.height <= AVATAR_ICON_SIZE) decoded
+                else Bitmap.createScaledBitmap(decoded, AVATAR_ICON_SIZE, AVATAR_ICON_SIZE, true)
+            }
+        }.getOrNull()
+    }
+
     private fun String.toPlainText(): String = Html.fromHtml(
         this,
         Html.FROM_HTML_MODE_COMPACT,
@@ -137,6 +174,8 @@ class NotificationPollingJobService : JobService() {
         const val FETCH_LIMIT = 40
         const val MAX_NOTIFICATIONS_PER_ACCOUNT = 5
         const val MAX_BODY_LENGTH = 240
+        const val MAX_AVATAR_BYTES = 2 * 1024 * 1024
+        const val AVATAR_ICON_SIZE = 128
     }
 }
 

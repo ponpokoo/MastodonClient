@@ -31,6 +31,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.navigation.AppNavigation
 import io.github.ponpokoo.mastodonclient.feature.login.OAuthCallbackBus
+import io.github.ponpokoo.mastodonclient.feature.compose.IncomingShareBus
 import io.github.ponpokoo.mastodonclient.notification.NotificationPollingScheduler
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 
@@ -44,8 +45,7 @@ class MainActivity : ComponentActivity() {
                 else add(GifDecoder.Factory())
             }.build()
         }
-        OAuthCallbackBus.accept(intent?.data)
-        intent?.data = null
+        acceptIncomingIntent(intent)
         setContent {
             val preferencesStore = remember { UserPreferencesStore(applicationContext) }
             val preferences by preferencesStore.preferences.collectAsStateWithLifecycle(
@@ -104,7 +104,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        OAuthCallbackBus.accept(intent.data)
-        intent.data = null
+        acceptIncomingIntent(intent)
+    }
+
+    private fun acceptIncomingIntent(intent: Intent?) {
+        OAuthCallbackBus.accept(intent?.data)
+        if (intent?.data?.scheme == "io.github.ponpokoo.mastodonclient") intent.data = null
+        IncomingShareBus.accept(intent)
+        if (intent?.action == Intent.ACTION_SEND) intent.action = null
     }
 }
