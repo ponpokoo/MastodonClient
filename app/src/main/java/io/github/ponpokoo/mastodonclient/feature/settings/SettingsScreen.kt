@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -66,7 +67,10 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
+internal fun SettingsPageContent(
+    page: SettingsPage,
+    onPage: (SettingsPage) -> Unit,
+    maintenance: SettingsMaintenanceViewModel,
     store: UserPreferencesStore,
     activeSession: AccountSession?,
     sessions: List<AccountSession>,
@@ -87,7 +91,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("設定") },
+                title = { Text(page.title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
@@ -97,238 +101,240 @@ fun SettingsScreen(
         },
     ) { padding ->
         LazyColumn(contentPadding = padding, modifier = Modifier.testTag("settings_screen")) {
-            item { SectionTitle("外観") }
-            item {
-                ChoiceRow("テーマ", preferences.themeMode, ThemeMode.entries) {
-                    scope.launch { store.setThemeMode(it) }
+            if (page == SettingsPage.Appearance) {
+                item { SectionTitle("外観") }
+                item {
+                    ChoiceRow("テーマ", preferences.themeMode, ThemeMode.entries) {
+                        scope.launch { store.setThemeMode(it) }
+                    }
                 }
             }
-            item { SectionTitle("タイムライン表示") }
-            item {
-                ChoiceRow("フォントサイズ", preferences.timelineDisplay.fontSize, FontSizePreset.entries) {
-                    updateDisplay(preferences.timelineDisplay.copy(fontSize = it))
+            if (page == SettingsPage.Timeline) {
+                item { SectionTitle("タイムライン表示") }
+                item {
+                    ChoiceRow("フォントサイズ", preferences.timelineDisplay.fontSize, FontSizePreset.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(fontSize = it))
+                    }
                 }
-            }
-            item {
-                ChoiceRow("行間", preferences.timelineDisplay.lineSpacing, LineSpacingPreset.entries) {
-                    updateDisplay(preferences.timelineDisplay.copy(lineSpacing = it))
+                item {
+                    ChoiceRow("行間", preferences.timelineDisplay.lineSpacing, LineSpacingPreset.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(lineSpacing = it))
+                    }
                 }
-            }
-            item {
-                ChoiceRow("ユーザーアイコンサイズ", preferences.timelineDisplay.avatarIconSize, AvatarIconSize.entries) {
-                    updateDisplay(preferences.timelineDisplay.copy(avatarIconSize = it))
+                item {
+                    ChoiceRow("ユーザーアイコンサイズ", preferences.timelineDisplay.avatarIconSize, AvatarIconSize.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(avatarIconSize = it))
+                    }
                 }
-            }
-            item {
-                ChoiceRow("アクションボタンサイズ", preferences.timelineDisplay.actionIconSize, ActionIconSize.entries) {
-                    updateDisplay(preferences.timelineDisplay.copy(actionIconSize = it))
+                item {
+                    ChoiceRow("アクションボタンサイズ", preferences.timelineDisplay.actionIconSize, ActionIconSize.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(actionIconSize = it))
+                    }
                 }
-            }
-            item {
-                ChoiceRow("サムネイルサイズ", preferences.timelineDisplay.thumbnailSize, ThumbnailSize.entries) {
-                    updateDisplay(preferences.timelineDisplay.copy(thumbnailSize = it))
+                item {
+                    ChoiceRow("サムネイルサイズ", preferences.timelineDisplay.thumbnailSize, ThumbnailSize.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(thumbnailSize = it))
+                    }
                 }
-            }
-            item {
-                SwitchRow("反応数を表示", preferences.timelineDisplay.showCounts) {
-                    updateDisplay(preferences.timelineDisplay.copy(showCounts = it))
+                item {
+                    SwitchRow("反応数を表示", preferences.timelineDisplay.showCounts) {
+                        updateDisplay(preferences.timelineDisplay.copy(showCounts = it))
+                    }
                 }
-            }
-            item { Text("投稿下部アイコン", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
-            items(preferences.timelineDisplay.actionOrder, key = { it }) { action ->
-                val index = preferences.timelineDisplay.actionOrder.indexOf(action)
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = action !in preferences.timelineDisplay.hiddenActions,
-                        onCheckedChange = { visible ->
-                            val hidden = preferences.timelineDisplay.hiddenActions.toMutableSet().apply {
-                                if (visible) remove(action) else add(action)
-                            }
-                            updateDisplay(preferences.timelineDisplay.copy(hiddenActions = hidden))
+                item { Text("投稿下部アイコン", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
+                item {
+                    ReorderActionList(
+                        order = preferences.timelineDisplay.actionOrder,
+                        label = { it.label() }, icon = { it.settingsIcon() },
+                        onReorder = { updateDisplay(preferences.timelineDisplay.copy(actionOrder = it)) },
+                        leading = { action ->
+                            Checkbox(
+                                checked = action !in preferences.timelineDisplay.hiddenActions,
+                                onCheckedChange = { visible ->
+                                    val hidden = preferences.timelineDisplay.hiddenActions.toMutableSet().apply {
+                                        if (visible) remove(action) else add(action)
+                                    }
+                                    updateDisplay(preferences.timelineDisplay.copy(hiddenActions = hidden))
+                                },
+                            )
                         },
                     )
-                    Text(action.label(), Modifier.weight(1f))
-                    IconButton(
-                        enabled = index > 0,
-                        onClick = {
-                            updateDisplay(preferences.timelineDisplay.copy(
-                                actionOrder = preferences.timelineDisplay.actionOrder.move(index, index - 1),
-                            ))
-                        },
-                    ) { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "上へ") }
-                    IconButton(
-                        enabled = index < preferences.timelineDisplay.actionOrder.lastIndex,
-                        onClick = {
-                            updateDisplay(preferences.timelineDisplay.copy(
-                                actionOrder = preferences.timelineDisplay.actionOrder.move(index, index + 1),
-                            ))
-                        },
-                    ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "下へ") }
                 }
-            }
-            item {
-                TextButton(
-                    onClick = { updateDisplay(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences()) },
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                ) { Text("表示設定を初期値に戻す") }
-            }
-            item {
-                Text("プレビュー", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                StatusCard(
-                    status = previewStatus,
-                    onStatusClick = null,
-                    onUnavailableAction = {},
-                    displayPreferences = preferences.timelineDisplay,
-                    gifAutoplay = preferences.gifAutoplay,
-                    videoAutoplay = preferences.videoAutoplay,
-                )
-            }
-
-            item { SectionTitle("メディア") }
-            item {
-                ChoiceRow("GIFの自動再生", preferences.gifAutoplay, AutoplayPolicy.entries) {
-                    scope.launch { store.setGifAutoplay(it) }
-                }
-            }
-            item {
-                ChoiceRow("動画の自動再生", preferences.videoAutoplay, AutoplayPolicy.entries) {
-                    scope.launch { store.setVideoAutoplay(it) }
-                }
-            }
-
-            item { SectionTitle("タイムラインと通信") }
-            item {
-                ChoiceRow("ストリーミング", accountPreferences.streaming, StreamingPolicy.entries, activeSession == null) {
-                    updateAccount(accountPreferences.copy(streaming = it))
-                }
-            }
-            item {
-                SwitchRow("バックグラウンドでは停止", preferences.pauseStreamingInBackground) {
-                    scope.launch { store.setPauseStreamingInBackground(it) }
-                }
-            }
-            item {
-                SwitchRow("引っ張って更新時に元の場所にとどまる", preferences.keepPositionOnPullRefresh) {
-                    scope.launch { store.setKeepPositionOnPullRefresh(it) }
-                }
-            }
-
-            item { SectionTitle("通知") }
-            item {
-                SwitchRow("簡易通知（約15分ごとに確認）", preferences.simpleNotificationsEnabled) {
-                    scope.launch { store.setSimpleNotificationsEnabled(it) }
-                }
-            }
-            item {
-                Text(
-                    "端末がアプリのバックグラウンド実行を制限している場合、通知が遅れたり届かなかったりすることがあります。",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (preferences.simpleNotificationSetupFailed) {
                 item {
-                    Text(
-                        "定期確認を登録できませんでした。簡易通知を一度オフにしてから、もう一度オンにしてください。",
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                    TextButton(
+                        onClick = { updateDisplay(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences()) },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    ) { Text("表示設定を初期値に戻す") }
+                }
+                item {
+                    Text("プレビュー", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                    StatusCard(
+                        status = previewStatus,
+                        onStatusClick = null,
+                        onUnavailableAction = {},
+                        displayPreferences = preferences.timelineDisplay,
+                        gifAutoplay = preferences.gifAutoplay,
+                        videoAutoplay = preferences.videoAutoplay,
                     )
                 }
-            }
 
-            item { SectionTitle("投稿") }
-            activeSession?.let { session ->
+            }
+            if (page == SettingsPage.Media) {
+                item { SectionTitle("メディア") }
+                item {
+                    ChoiceRow("GIFの自動再生", preferences.gifAutoplay, AutoplayPolicy.entries) {
+                        scope.launch { store.setGifAutoplay(it) }
+                    }
+                }
+                item {
+                    ChoiceRow("動画の自動再生", preferences.videoAutoplay, AutoplayPolicy.entries) {
+                        scope.launch { store.setVideoAutoplay(it) }
+                    }
+                }
+
+            }
+            if (page == SettingsPage.Connection) {
+                item { SectionTitle("タイムラインと通信") }
+                item {
+                    ChoiceRow("ストリーミング", accountPreferences.streaming, StreamingPolicy.entries, activeSession == null) {
+                        updateAccount(accountPreferences.copy(streaming = it))
+                    }
+                }
+                item {
+                    SwitchRow("バックグラウンドでは停止", preferences.pauseStreamingInBackground) {
+                        scope.launch { store.setPauseStreamingInBackground(it) }
+                    }
+                }
+                item {
+                    SwitchRow("引っ張って更新時に元の場所にとどまる", preferences.keepPositionOnPullRefresh) {
+                        scope.launch { store.setKeepPositionOnPullRefresh(it) }
+                    }
+                }
+
+            }
+            if (page == SettingsPage.Notifications) {
+                item { SectionTitle("通知") }
+                item {
+                    SwitchRow("簡易通知（約15分ごとに確認）", preferences.simpleNotificationsEnabled) {
+                        scope.launch { store.setSimpleNotificationsEnabled(it) }
+                    }
+                }
                 item {
                     Text(
-                        "@${session.username} · ${session.instanceUrl}",
+                        "端末がアプリのバックグラウンド実行を制限している場合、通知が遅れたり届かなかったりすることがあります。",
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-            item {
-                ChoiceRow("既定の公開範囲", accountPreferences.defaultVisibility, PostVisibility.entries, activeSession == null) {
-                    updateAccount(accountPreferences.copy(defaultVisibility = it))
-                }
-            }
-            item {
-                SwitchRow("代替テキスト未入力時に確認", preferences.altTextReminder) {
-                    scope.launch { store.setAltTextReminder(it) }
-                }
-            }
-            item { Text("投稿画面のボタン順", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
-            items(preferences.composerActionOrder, key = { it }) { action ->
-                val index = preferences.composerActionOrder.indexOf(action)
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(action.label(), Modifier.weight(1f))
-                    IconButton(
-                        enabled = index > 0,
-                        onClick = {
-                            scope.launch {
-                                store.setComposerActionOrder(preferences.composerActionOrder.move(index, index - 1))
-                            }
-                        },
-                    ) { Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "上へ") }
-                    IconButton(
-                        enabled = index < preferences.composerActionOrder.lastIndex,
-                        onClick = {
-                            scope.launch {
-                                store.setComposerActionOrder(preferences.composerActionOrder.move(index, index + 1))
-                            }
-                        },
-                    ) { Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "下へ") }
-                }
-            }
-            item {
-                SwitchRow("リンクをアプリ内で開く", preferences.openLinksInApp) {
-                    scope.launch { store.setOpenLinksInApp(it) }
-                }
-            }
-            item { SectionTitle("アカウント管理") }
-            items(sessions, key = AccountSession::sessionId) { session ->
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(
-                        model = session.avatarUrl,
-                        contentDescription = "${session.displayName.ifBlank { session.username }}のアイコン",
-                        modifier = Modifier.size(46.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop,
-                    )
-                    Spacer(Modifier.padding(horizontal = 6.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(session.displayName.ifBlank { session.username }, style = MaterialTheme.typography.titleSmall)
+                if (preferences.simpleNotificationSetupFailed) {
+                    item {
                         Text(
-                            "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
+                            "定期確認を登録できませんでした。簡易通知を一度オフにしてから、もう一度オンにしてください。",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+
+            }
+            if (page == SettingsPage.Composer) {
+                item { SectionTitle("投稿") }
+                activeSession?.let { session ->
+                    item {
+                        Text(
+                            "@${session.username} · ${session.instanceUrl}",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        if (session.sessionId == activeSession?.sessionId) {
-                            Text("現在のアカウント", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                        }
+                    }
+                }
+                item {
+                    ChoiceRow("既定の公開範囲", accountPreferences.defaultVisibility, PostVisibility.entries, activeSession == null) {
+                        updateAccount(accountPreferences.copy(defaultVisibility = it))
+                    }
+                }
+                item {
+                    SwitchRow("代替テキスト未入力時に確認", preferences.altTextReminder) {
+                        scope.launch { store.setAltTextReminder(it) }
+                    }
+                }
+                item { Text("投稿画面のボタン順", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
+                item {
+                    ReorderActionList(
+                        order = preferences.composerActionOrder,
+                        label = { it.label() }, icon = { it.settingsIcon() },
+                        onReorder = { scope.launch { store.setComposerActionOrder(it) } },
+                    )
+                }
+                item {
+                    SwitchRow("リンクをアプリ内で開く", preferences.openLinksInApp) {
+                        scope.launch { store.setOpenLinksInApp(it) }
                     }
                 }
             }
-            item {
-                TextButton(onClick = onAddAccount, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                    Icon(Icons.Outlined.PersonAdd, contentDescription = null)
-                    Spacer(Modifier.padding(horizontal = 4.dp))
-                    Text("アカウントを追加")
+            if (page == SettingsPage.Accounts) {
+                item { SectionTitle("アカウント管理") }
+                items(sessions, key = AccountSession::sessionId) { session ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(
+                            model = session.avatarUrl,
+                            contentDescription = "${session.displayName.ifBlank { session.username }}のアイコン",
+                            modifier = Modifier.size(46.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.padding(horizontal = 6.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(session.displayName.ifBlank { session.username }, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (session.sessionId == activeSession?.sessionId) {
+                                Text("現在のアカウント", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+                item {
+                    TextButton(onClick = onAddAccount, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                        Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                        Spacer(Modifier.padding(horizontal = 4.dp))
+                        Text("アカウントを追加")
+                    }
+                }
+                item {
+                    TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                        Text("現在のアカウントからログアウト", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
-            item {
-                TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                    Text("現在のアカウントからログアウト", color = MaterialTheme.colorScheme.error)
+            if (page == SettingsPage.Root) {
+                items(SettingsPage.entries.filter { it != SettingsPage.Root }) { destination ->
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text(destination.title) },
+                        supportingContent = { Text(destination.description) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
+                        modifier = Modifier.clickable { onPage(destination) }.testTag("settings_category_" + destination.name),
+                    )
+                    HorizontalDivider(Modifier.padding(horizontal = 20.dp))
+                }
+            }
+            if (page == SettingsPage.Storage) {
+                item { CacheSettings(maintenance) }
+            }
+            if (page == SettingsPage.About) {
+                item {
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text("Nagisa") },
+                        supportingContent = { Text("バージョン " + maintenance.versionName + " (" + maintenance.versionCode + ")") },
+                    )
                 }
             }
             item { Spacer(Modifier.padding(bottom = 24.dp)) }

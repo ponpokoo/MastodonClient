@@ -16,6 +16,7 @@ import retrofit2.HttpException
 data class NotificationsUiState(
     val notifications: List<TimelineNotification> = emptyList(),
     val isLoadingNotifications: Boolean = false,
+    val isPullRefreshingNotifications: Boolean = false,
     val notificationsError: String? = null,
     val notificationsErrorIsPagination: Boolean = false,
     val notificationsNextMaxId: String? = null,
@@ -38,7 +39,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         if (requested && snapshot.account != null) loadNotifications()
     }
 
-    fun loadNotifications(force: Boolean = false) {
+    fun loadNotifications(force: Boolean = false, showPullRefreshIndicator: Boolean = false) {
         requested = true
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
@@ -46,7 +47,9 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         notificationsJob?.cancel()
         notificationsJob = requestScope.launch {
             _uiState.update { it.copy(
-                isLoadingNotifications = true, isLoadingMoreNotifications = false,
+                isLoadingNotifications = true,
+                isPullRefreshingNotifications = showPullRefreshIndicator,
+                isLoadingMoreNotifications = false,
                 notificationsError = null, notificationsErrorIsPagination = false,
             ) }
             timelineRepository.getNotifications(session)
@@ -61,6 +64,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                                 .distinctBy(TimelineNotification::id)
                                 .sortedByDescending(TimelineNotification::createdAt),
                             isLoadingNotifications = false,
+                            isPullRefreshingNotifications = false,
                             notificationsNextMaxId = page.nextMaxId,
                             notificationsEndReached = page.endReached,
                             unreadNotifications = 0,
@@ -74,13 +78,20 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                     val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
                         "通知を表示するには、ログアウト後に再ログインして通知の読み取りを許可してください。"
                     } else error.message ?: "通知を取得できませんでした"
-                    _uiState.update { it.copy(isLoadingNotifications = false, notificationsError = message) }
+                    _uiState.update { it.copy(
+                        isLoadingNotifications = false,
+                        isPullRefreshingNotifications = false,
+                        notificationsError = message,
+                    ) }
                 }
         }
     }
 
     /** Refresh whenever the notification tab becomes visible or returns to foreground. */
     fun onNotificationsVisible() = loadNotifications(force = true)
+
+    /** Refresh initiated by the pull-to-refresh gesture. */
+    fun refreshNotifications() = loadNotifications(force = true, showPullRefreshIndicator = true)
 
     fun loadNextNotifications() {
         val state = _uiState.value

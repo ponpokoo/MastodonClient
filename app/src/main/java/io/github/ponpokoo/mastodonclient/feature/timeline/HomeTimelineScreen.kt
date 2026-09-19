@@ -138,6 +138,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
+import io.github.ponpokoo.mastodonclient.domain.model.replyToAccountName
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
@@ -253,6 +254,8 @@ fun HomeTimelineScreen(
                 Lifecycle.Event.ON_START -> {
                     mainViewModel.setForeground(true)
                     if (destination == MainDestination.Notifications) {
+                        scrollNotificationsAfterRefresh = true
+                        notificationsRefreshStarted = false
                         notificationsViewModel.onNotificationsVisible()
                     }
                 }
@@ -329,13 +332,18 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(destination) {
         when (destination) {
-            MainDestination.Notifications -> notificationsViewModel.onNotificationsVisible()
+            MainDestination.Notifications -> {
+                scrollNotificationsAfterRefresh = true
+                notificationsRefreshStarted = false
+                notificationsViewModel.onNotificationsVisible()
+            }
             MainDestination.Profile -> profileViewModel.loadProfile()
             else -> Unit
         }
     }
     Box(Modifier.fillMaxSize()) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             if (destination == MainDestination.Home) {
                 TimelineTopBar(
@@ -462,7 +470,7 @@ fun HomeTimelineScreen(
                     onRefresh = {
                         scrollNotificationsAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         notificationsRefreshStarted = false
-                        notificationsViewModel.loadNotifications(force = true)
+                        notificationsViewModel.refreshNotifications()
                     },
                     onLoadMore = notificationsViewModel::loadNextNotifications,
                     onStatusClick = onStatusClick,
@@ -1142,6 +1150,21 @@ internal fun StatusCard(
         }
 
         Column(modifier = Modifier.padding(start = if (fullWidthContent) 8.dp else contentStart)) {
+            status.replyToAccountName()?.let { accountName ->
+                Text(
+                    text = "返信先: @$accountName",
+                    modifier = Modifier.padding(top = 6.dp)
+                        .then(
+                            if (onAuthorClick == null || status.inReplyToAccountId == null) Modifier
+                            else Modifier.clickable { onAuthorClick(status.inReplyToAccountId) },
+                        )
+                        .testTag("status_reply_target"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (status.spoilerText.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),

@@ -612,6 +612,8 @@ private fun StatusDto.toDomain(): TimelineStatus {
         customEmojis = displayed.emojis.associate { it.shortcode to it.url },
         mentions = displayed.mentions.map { io.github.ponpokoo.mastodonclient.domain.model.StatusMention(it.id, it.acct, it.url) },
         quoteApproval = displayed.quoteApproval?.currentUser,
+        inReplyToId = displayed.inReplyToId,
+        inReplyToAccountId = displayed.inReplyToAccountId,
         spoilerText = displayed.spoilerText,
         sensitive = displayed.sensitive,
         visibility = displayed.visibility,

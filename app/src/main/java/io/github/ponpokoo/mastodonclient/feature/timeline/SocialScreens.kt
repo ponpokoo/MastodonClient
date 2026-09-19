@@ -6,6 +6,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Edit
@@ -237,7 +239,7 @@ internal fun NotificationsContent(
             TextButton(onClick = onRefresh) { Text("再試行") }
         }
         else -> AppPullToRefreshBox(
-            isRefreshing = state.isLoadingNotifications,
+            isRefreshing = state.isPullRefreshingNotifications,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
@@ -435,7 +437,7 @@ internal fun ProfileContent(
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
                             .clip(CircleShape).clickable(onClick = onAvatarClick)
                             .background(MaterialTheme.colorScheme.surface)
-                            .border(2.dp, Color.Black, CircleShape),
+                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                         contentScale = ContentScale.Crop,
                     )
                     Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)) {
@@ -454,13 +456,13 @@ internal fun ProfileContent(
                                 }
                             }
                             Spacer(Modifier.width(8.dp))
+                            Box {
                             OutlinedIconButton(
                                 onClick = { profileMenuExpanded = true },
                                 modifier = Modifier.size(48.dp),
                             ) {
                                 Icon(Icons.Outlined.MoreVert, contentDescription = "プロフィールのその他メニュー")
                             }
-                        }
                         DropdownMenu(
                             expanded = profileMenuExpanded,
                             onDismissRequest = { profileMenuExpanded = false },
@@ -487,44 +489,51 @@ internal fun ProfileContent(
                         }
                     }
                 }
+                }
+                }
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    CustomEmojiText(
-                        text = profile.author.displayName,
-                        emojis = profile.customEmojis,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            profileAccountHandle(profile.author.accountName, profile.url),
-                            modifier = Modifier.weight(1f, fill = profile.isOwnProfile),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (profile.locked) {
-                            Icon(Icons.Outlined.Lock, contentDescription = "非公開アカウント",
-                                modifier = Modifier.padding(start = 4.dp).size(16.dp))
+                    androidx.compose.foundation.layout.BoxWithConstraints {
+                        val handle = profileAccountHandle(profile.author.accountName, profile.url)
+                        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                        val density = androidx.compose.ui.platform.LocalDensity.current
+                        val badgeStyle = MaterialTheme.typography.labelSmall
+                        val handleStyle = MaterialTheme.typography.bodyLarge
+                        val badgeWidth = measurer.measure("フォローされています", badgeStyle).size.width
+                        val handleWidth = measurer.measure(handle, handleStyle).size.width
+                        val extraWidth = with(density) { (if (profile.locked) 28.dp else 8.dp).roundToPx() }
+                        val badgeById = handleWidth + badgeWidth + extraWidth <= constraints.maxWidth
+                        val followed = relationship?.followedBy == true
+                        Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CustomEmojiText(
+                                text = profile.author.displayName, emojis = profile.customEmojis,
+                                modifier = Modifier.weight(1f, fill = false),
+                                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                            )
+                            if (followed && !badgeById) {
+                                Text("フォローされています", Modifier.padding(start = 8.dp),
+                                    style = badgeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1)
+                            }
                         }
-                        if (relationship?.followedBy == true) {
-                            Text("フォローされてます", modifier = Modifier.padding(start = 6.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(handle, Modifier.weight(1f, fill = false), style = handleStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (profile.locked) Icon(Icons.Outlined.Lock, "非公開アカウント", Modifier.padding(start = 4.dp).size(16.dp))
+                            if (followed && badgeById) Text("フォローされています", Modifier.padding(start = 8.dp),
+                                style = badgeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
                         }
                     }
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
-                        ProfileCount("投稿", profile.statusesCount)
-                        Box(Modifier.clickable(onClick = onFollowing)) { ProfileCount("フォロー", profile.followingCount) }
-                        Box(Modifier.clickable(onClick = onFollowers)) { ProfileCount("フォロワー", profile.followersCount) }
-                        ProfileRegistrationDate(profile.createdAt)
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp), contentAlignment = Alignment.TopCenter) { ProfileCount("投稿", profile.statusesCount) }
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClick = onFollowing), contentAlignment = Alignment.TopCenter) { ProfileCount("フォロー", profile.followingCount) }
+                        Box(Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClick = onFollowers), contentAlignment = Alignment.TopCenter) { ProfileCount("フォロワー", profile.followersCount) }
+                        Box(Modifier.weight(1.3f), contentAlignment = Alignment.TopCenter) { ProfileRegistrationDate(profile.createdAt) }
                     }
                     if (profile.noteHtml.isNotBlank()) {
                         StatusContentText(
@@ -533,24 +542,34 @@ internal fun ProfileContent(
                             onLinkClick = onOpenLink,
                         )
                     }
-                    profile.fields.forEach { field ->
-                        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                            CustomEmojiText(
-                                text = field.name,
-                                emojis = profile.customEmojis,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Box(Modifier.fillMaxWidth().padding(top = 2.dp)) {
-                                StatusContentText(
-                                    contentHtml = field.valueHtml,
-                                    customEmojis = profile.customEmojis,
-                                    onLinkClick = onOpenLink,
-                                )
-                            }
-                            if (field.verifiedAt != null) {
-                                Text("✓ 認証済み", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    if (profile.fields.isNotEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        ) {
+                            Column {
+                                profile.fields.forEachIndexed { index, field ->
+                                    if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 12.dp))
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            CustomEmojiText(
+                                                text = field.name, emojis = profile.customEmojis,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            StatusContentText(field.valueHtml, customEmojis = profile.customEmojis, onLinkClick = onOpenLink)
+                                        }
+                                        if (field.verifiedAt != null) {
+                                            Icon(Icons.Outlined.Check, contentDescription = "リンク確認済み",
+                                                modifier = Modifier.padding(start = 8.dp).size(16.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

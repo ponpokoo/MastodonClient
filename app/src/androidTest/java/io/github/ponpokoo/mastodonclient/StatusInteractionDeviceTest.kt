@@ -298,6 +298,27 @@ class StatusInteractionDeviceTest {
         }
     }
 
+    @Test
+    fun selfReplyShowsReplyTargetAndOpensItsAccount() {
+        val openedAccount = AtomicReference<String?>(null)
+        composeRule.setContent {
+            MaterialTheme {
+                StatusCard(
+                    status = status().copy(
+                        inReplyToId = "parent-status",
+                        inReplyToAccountId = "author",
+                    ),
+                    onStatusClick = null,
+                    onAuthorClick = openedAccount::set,
+                    onUnavailableAction = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("返信先: @bob@social.example").performClick()
+        composeRule.runOnIdle { assertEquals("author", openedAccount.get()) }
+    }
+
     private fun status() = TimelineStatus(
         timelineId = "status-1",
         statusId = "status-1",

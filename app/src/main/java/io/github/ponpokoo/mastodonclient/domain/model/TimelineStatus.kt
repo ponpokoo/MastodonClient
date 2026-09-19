@@ -29,6 +29,8 @@ data class TimelineStatus(
     val customEmojis: Map<String, String> = emptyMap(),
     val mentions: List<StatusMention> = emptyList(),
     val quoteApproval: String? = null,
+    val inReplyToId: String? = null,
+    val inReplyToAccountId: String? = null,
 )
 
 data class StatusPoll(
@@ -49,6 +51,13 @@ data class PollOption(
 )
 
 data class StatusMention(val accountId: String, val accountName: String, val url: String)
+
+fun TimelineStatus.replyToAccountName(): String? {
+    if (inReplyToId == null) return null
+    val replyAccountId = inReplyToAccountId ?: return null
+    return mentions.firstOrNull { it.accountId == replyAccountId }?.accountName
+        ?: author.accountName.takeIf { author.id == replyAccountId }
+}
 
 fun TimelineStatus.mentionedAccountIdFor(link: String): String? {
     if (link.isBlank()) return null

@@ -6,6 +6,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
+import io.github.ponpokoo.mastodonclient.domain.model.replyToAccountName
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -104,7 +105,7 @@ class DefaultTimelineRepositoryTest {
     fun mapsMentionAccountIdAndQuoteApproval() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(
-                """[{"id":"mention-status","created_at":"2026-09-08T00:00:00Z","content":"<p><a href=\"https://social.example/@alice\">@alice</a></p>","mentions":[{"id":"account-42","username":"alice","acct":"alice@social.example","url":"https://social.example/@alice"}],"quote_approval":{"current_user":"automatic","automatic":[],"manual":[]},"account":{"id":"author","username":"bob","acct":"bob"}}]""",
+                """[{"id":"mention-status","created_at":"2026-09-08T00:00:00Z","in_reply_to_id":"parent-status","in_reply_to_account_id":"account-42","content":"<p><a href=\"https://social.example/@alice\">@alice</a></p>","mentions":[{"id":"account-42","username":"alice","acct":"alice@social.example","url":"https://social.example/@alice"}],"quote_approval":{"current_user":"automatic","automatic":[],"manual":[]},"account":{"id":"author","username":"bob","acct":"bob"}}]""",
             ))
 
             val status = DefaultTimelineRepository(ApiClientFactory())
@@ -113,6 +114,9 @@ class DefaultTimelineRepositoryTest {
             assertEquals("account-42", status.mentionedAccountIdFor("https://social.example/@alice/"))
             assertEquals(null, status.mentionedAccountIdFor("https://unrelated.example/@alice"))
             assertEquals("automatic", status.quoteApproval)
+            assertEquals("parent-status", status.inReplyToId)
+            assertEquals("account-42", status.inReplyToAccountId)
+            assertEquals("alice@social.example", status.replyToAccountName())
         }
     }
 

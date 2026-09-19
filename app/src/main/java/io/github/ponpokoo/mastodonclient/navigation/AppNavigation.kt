@@ -442,6 +442,15 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 value = authRepository.getSessions()
             }
             SettingsScreen(
+                maintenance = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel>(
+                    factory = ScreenViewModelFactory {
+                        io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel(
+                            io.github.ponpokoo.mastodonclient.data.repository.DefaultAppMaintenanceRepository(
+                                io.github.ponpokoo.mastodonclient.data.local.AppMaintenanceDataSource(context),
+                            ),
+                        )
+                    },
+                ),
                 store = preferences,
                 activeSession = activeSession,
                 sessions = sessions,

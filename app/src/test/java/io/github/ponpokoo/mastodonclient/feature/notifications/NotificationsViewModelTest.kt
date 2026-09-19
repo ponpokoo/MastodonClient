@@ -14,6 +14,42 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    @Test fun automaticRefreshDoesNotShowPullRefreshIndicator() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<NotificationPage>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = delayed.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isLoadingNotifications)
+        assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
+        delayed.complete(Result.success(NotificationPage(listOf(testNotification()), null, true)))
+        advanceUntilIdle()
+    }
+
+    @Test fun manualRefreshShowsPullRefreshIndicatorUntilRequestCompletes() = runTest(dispatcher) {
+        val delayed = CompletableDeferred<Result<NotificationPage>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = delayed.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.refreshNotifications()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isPullRefreshingNotifications)
+        delayed.complete(Result.success(NotificationPage(listOf(testNotification()), null, true)))
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
+    }
+
     @Test fun becomingVisibleRefreshesAnAlreadyLoadedNotificationList() = runTest(dispatcher) {
         var requests = 0
         val repository = object : ScreenRepositoryFake() {

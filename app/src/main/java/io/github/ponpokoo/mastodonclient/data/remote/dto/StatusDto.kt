@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 data class StatusDto(
     val id: String,
     @SerialName("created_at") val createdAt: String,
+    @SerialName("in_reply_to_id") val inReplyToId: String? = null,
+    @SerialName("in_reply_to_account_id") val inReplyToAccountId: String? = null,
     val account: AccountDto,
     val content: String = "",
     @SerialName("spoiler_text") val spoilerText: String = "",
