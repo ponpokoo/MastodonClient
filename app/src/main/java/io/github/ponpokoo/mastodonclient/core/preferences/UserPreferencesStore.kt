@@ -73,10 +73,12 @@ data class AppPreferences(
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val pauseStreamingInBackground: Boolean = true,
     val keepPositionOnPullRefresh: Boolean = false,
+    val foregroundNotificationsEnabled: Boolean = true,
     val simpleNotificationsEnabled: Boolean = true,
     val simpleNotificationSetupFailed: Boolean = false,
     val altTextReminder: Boolean = true,
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
+    val hiddenComposerActions: Set<ComposerAction> = emptySet(),
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
@@ -178,6 +180,8 @@ class UserPreferencesStore(
         update { it.copy(pauseStreamingInBackground = enabled) }
     suspend fun setKeepPositionOnPullRefresh(enabled: Boolean) =
         update { it.copy(keepPositionOnPullRefresh = enabled) }
+    suspend fun setForegroundNotificationsEnabled(enabled: Boolean) =
+        update { it.copy(foregroundNotificationsEnabled = enabled) }
     suspend fun setSimpleNotificationsEnabled(enabled: Boolean) =
         update { it.copy(simpleNotificationsEnabled = enabled, simpleNotificationSetupFailed = false) }
     suspend fun setSimpleNotificationSetupFailed(failed: Boolean) =
@@ -185,6 +189,9 @@ class UserPreferencesStore(
     suspend fun setAltTextReminder(enabled: Boolean) = update { it.copy(altTextReminder = enabled) }
     suspend fun setComposerActionOrder(value: List<ComposerAction>) = update {
         it.copy(composerActionOrder = value.distinct() + ComposerAction.entries.filterNot(value::contains))
+    }
+    suspend fun setHiddenComposerActions(value: Set<ComposerAction>) = update {
+        it.copy(hiddenComposerActions = value)
     }
     suspend fun setAccountPreferences(sessionId: String, value: AccountPreferences) = update {
         it.copy(accountPreferences = it.accountPreferences + (sessionId to value))

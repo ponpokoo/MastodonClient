@@ -34,6 +34,7 @@ class MainSessionViewModel(
     private val timelineRepository: TimelineRepository,
     preferencesStore: UserPreferencesStore? = null,
     private val networkIsWifi: () -> Boolean = { true },
+    private val systemNotifications: io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository? = null,
 ) : ViewModel() {
     val browsing = BrowsingSession()
     private val mutableState = MutableStateFlow(MainSessionUiState())
@@ -41,17 +42,38 @@ class MainSessionViewModel(
     private var restoreJob: Job? = null
     private var accountChangeJob: Job? = null
     private var streamingJob: Job? = null
-    private var isForeground = true
+    private var preferencesReady = preferencesStore == null
+    @Volatile private var isForeground = true
+    private var foregroundLifecycle: androidx.lifecycle.Lifecycle? = null
+    private val foregroundObserver = androidx.lifecycle.LifecycleEventObserver { _, _ ->
+        setForeground(foregroundLifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) == true)
+    }
+
+    fun bindForegroundLifecycle(lifecycle: androidx.lifecycle.Lifecycle) {
+        if (foregroundLifecycle === lifecycle) return
+        foregroundLifecycle?.removeObserver(foregroundObserver)
+        foregroundLifecycle = lifecycle
+        setForeground(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        lifecycle.addObserver(foregroundObserver)
+    }
+
+    override fun onCleared() {
+        foregroundLifecycle?.removeObserver(foregroundObserver)
+        foregroundLifecycle = null
+        super.onCleared()
+    }
 
     init {
         preferencesStore?.let { store ->
             viewModelScope.launch {
                 store.preferences.collect { preferences ->
+                    val firstPreferences = !preferencesReady
+                    preferencesReady = true
                     val previous = mutableState.value.preferences
                     mutableState.update { it.copy(preferences = preferences) }
                     val sessionId = mutableState.value.session?.sessionId
-                    if (previous.forAccount(sessionId).streaming != preferences.forAccount(sessionId).streaming ||
-                        previous.pauseStreamingInBackground != preferences.pauseStreamingInBackground
+                    if (firstPreferences || previous.forAccount(sessionId).streaming != preferences.forAccount(sessionId).streaming ||
+                        previous.pauseStreamingInBackground != preferences.pauseStreamingInBackground || previous.foregroundNotificationsEnabled != preferences.foregroundNotificationsEnabled
                     ) startStreaming()
                 }
             }
@@ -118,6 +140,7 @@ class MainSessionViewModel(
 
     private fun startStreaming() {
         streamingJob?.cancel()
+        if (!preferencesReady) return
         val snapshot = browsing.snapshot.value
         val account = snapshot.account ?: return
         val preferences = uiState.value.preferences
@@ -135,6 +158,18 @@ class MainSessionViewModel(
                 }.collect { event ->
                     currentCoroutineContext().ensureActive()
                     browsing.publish(snapshot, BrowsingSession.Change.Stream(event))
+                    if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.NotificationReceived &&
+                        isForeground && uiState.value.preferences.foregroundNotificationsEnabled && browsing.snapshot.value == snapshot
+                    ) {
+                        launch {
+                            // Delivery must never interrupt the stream or publish a stale account's notification.
+                            runCatchingCancellable {
+                                systemNotifications?.show(account, event.notification) {
+                                    isForeground && browsing.snapshot.value == snapshot && uiState.value.preferences.foregroundNotificationsEnabled
+                                }
+                            }
+                        }
+                    }
                 }
         }
     }

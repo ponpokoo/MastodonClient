@@ -239,6 +239,7 @@ fun HomeTimelineScreen(
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
     var scrollNotificationsAfterRefresh by remember { mutableStateOf(false) }
+    var scrollNotificationsOnlyWhenNew by remember { mutableStateOf(false) }
     var notificationsRefreshStarted by remember { mutableStateOf(false) }
     var scrollProfileAfterRefresh by remember { mutableStateOf(false) }
     var profileRefreshStarted by remember { mutableStateOf(false) }
@@ -246,20 +247,16 @@ fun HomeTimelineScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner, destination) {
-        mainViewModel.setForeground(
-            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-        )
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
-                    mainViewModel.setForeground(true)
                     if (destination == MainDestination.Notifications) {
                         scrollNotificationsAfterRefresh = true
+                        scrollNotificationsOnlyWhenNew = true
                         notificationsRefreshStarted = false
                         notificationsViewModel.onNotificationsVisible()
                     }
                 }
-                Lifecycle.Event.ON_STOP -> mainViewModel.setForeground(false)
                 else -> Unit
             }
         }
@@ -316,9 +313,12 @@ fun HomeTimelineScreen(
         if (notificationsState.isLoadingNotifications && scrollNotificationsAfterRefresh) {
             notificationsRefreshStarted = true
         } else if (!notificationsState.isLoadingNotifications && notificationsRefreshStarted) {
-            notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
+            if (!scrollNotificationsOnlyWhenNew || notificationsState.refreshAddedNewNotifications) {
+                notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
+            }
             notificationsRefreshStarted = false
             scrollNotificationsAfterRefresh = false
+            scrollNotificationsOnlyWhenNew = false
         }
     }
     LaunchedEffect(profileState.isRefreshingProfile) {
@@ -334,6 +334,7 @@ fun HomeTimelineScreen(
         when (destination) {
             MainDestination.Notifications -> {
                 scrollNotificationsAfterRefresh = true
+                scrollNotificationsOnlyWhenNew = true
                 notificationsRefreshStarted = false
                 notificationsViewModel.onNotificationsVisible()
             }
@@ -469,6 +470,7 @@ fun HomeTimelineScreen(
                     padding = padding,
                     onRefresh = {
                         scrollNotificationsAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
+                        scrollNotificationsOnlyWhenNew = false
                         notificationsRefreshStarted = false
                         notificationsViewModel.refreshNotifications()
                     },

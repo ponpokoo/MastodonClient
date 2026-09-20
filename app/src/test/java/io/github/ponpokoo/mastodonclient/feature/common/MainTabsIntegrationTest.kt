@@ -171,6 +171,81 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         assertNull(actions.uiState.value.actionMessage)
     }
 
+    @Test fun systemNotificationsDoNotBlockStreamAndCancelOnBackground() = runTest(dispatcher) {
+        val stream = MutableSharedFlow<TimelineStreamEvent>()
+        val repository = object : ScreenRepositoryFake() {
+            override fun observeUserStream(session: AccountSession) = stream
+        }
+        val auth = object : AuthRepository {
+            override suspend fun restoreSession() = testAccount
+            override suspend fun getSessions() = listOf(testAccount, secondAccount)
+            override suspend fun switchSession(sessionId: String) = secondAccount
+            override suspend fun logout() = Unit
+            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.failure<String>(UnsupportedOperationException())
+            override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
+        }
+        val delivered = mutableListOf<String>()
+        val pending = CompletableDeferred<Unit>()
+        val main = own(MainSessionViewModel(auth, repository,
+            systemNotifications = io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository { session, notification, valid ->
+                if (notification.id == "pending") {
+                    withContext(NonCancellable) { pending.await() }
+                }
+                if (valid()) delivered += "${session.sessionId}:${notification.id}"
+            },
+        ))
+        val notifications = own(NotificationsViewModel(repository, main.browsing))
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("first")))
+        advanceUntilIdle()
+        assertEquals(listOf("${testAccount.sessionId}:first"), delivered)
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("pending")))
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("next")))
+        advanceUntilIdle()
+        assertEquals(3, notifications.uiState.value.unreadNotifications)
+        assertTrue(delivered.contains("${testAccount.sessionId}:next"))
+        main.setForeground(false)
+        pending.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(delivered.any { it.endsWith(":pending") })
+        main.setForeground(true)
+        advanceUntilIdle()
+        main.switchAccount(secondAccount.sessionId)
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("second")))
+        advanceUntilIdle()
+        assertTrue(delivered.contains("${secondAccount.sessionId}:second"))
+    }
+
+    @Test fun systemNotificationFailureDoesNotStopStreaming() = runTest(dispatcher) {
+        val stream = MutableSharedFlow<TimelineStreamEvent>()
+        val repository = object : ScreenRepositoryFake() {
+            override fun observeUserStream(session: AccountSession) = stream
+        }
+        val auth = object : AuthRepository {
+            override suspend fun restoreSession() = testAccount
+            override suspend fun getSessions() = listOf(testAccount)
+            override suspend fun logout() = Unit
+            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.failure<String>(UnsupportedOperationException())
+            override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
+        }
+        var attempts = 0
+        val main = own(MainSessionViewModel(auth, repository,
+            systemNotifications = io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository { _, _, _ ->
+                attempts++
+                error("notification unavailable")
+            },
+        ))
+        val notifications = own(NotificationsViewModel(repository, main.browsing))
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("one")))
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("two")))
+        advanceUntilIdle()
+        assertEquals(2, attempts)
+        assertEquals(2, notifications.uiState.value.unreadNotifications)
+    }
     @Test fun allTabsShareOneStreamAndBackgroundStopsIt() = runTest(dispatcher) {
         val stream = MutableSharedFlow<TimelineStreamEvent>()
         val repository = object : ScreenRepositoryFake() {

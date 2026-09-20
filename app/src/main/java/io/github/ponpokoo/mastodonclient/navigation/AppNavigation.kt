@@ -95,6 +95,7 @@ import kotlinx.serialization.json.Json
 
 @Composable
 fun AppNavigation(preferences: UserPreferencesStore) {
+    val appLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val context = LocalContext.current.applicationContext
@@ -308,12 +309,16 @@ fun AppNavigation(preferences: UserPreferencesStore) {
         }
         composable<Route.Timeline> {
             val mainViewModel: MainSessionViewModel = viewModel(factory = ScreenViewModelFactory {
-                MainSessionViewModel(authRepository, timelineRepository, preferences, networkIsWifi = {
+                MainSessionViewModel(authRepository, timelineRepository, preferences,
+                    systemNotifications = io.github.ponpokoo.mastodonclient.data.repository.DefaultSystemNotificationRepository(
+                        io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSource(context),
+                    ), networkIsWifi = {
                     val manager = context.getSystemService(ConnectivityManager::class.java)
                     manager.getNetworkCapabilities(manager.activeNetwork)
                         ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                })
+                }).also { it.bindForegroundLifecycle(appLifecycle) }
             })
+            SideEffect { mainViewModel.bindForegroundLifecycle(appLifecycle) }
             val browsing = mainViewModel.browsing
             val timelineViewModel: TimelineViewModel = viewModel(factory = ScreenViewModelFactory {
                 TimelineViewModel(timelineRepository, browsing)

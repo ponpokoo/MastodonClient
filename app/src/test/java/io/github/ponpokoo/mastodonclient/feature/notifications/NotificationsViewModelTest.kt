@@ -72,6 +72,22 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
             listOf("notification-2", "notification-1"),
             viewModel.uiState.value.notifications.map(TimelineNotification::id),
         )
+        assertTrue(viewModel.uiState.value.refreshAddedNewNotifications)
+    }
+
+    @Test fun refreshReportsWhenNoNewNotificationWasAdded() = runTest(dispatcher) {
+        val repository = ScreenRepositoryFake()
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.refreshAddedNewNotifications)
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.refreshAddedNewNotifications)
     }
 
     @Test fun refreshKeepsStreamNotificationReceivedWhileRequestIsInFlight() = runTest(dispatcher) {

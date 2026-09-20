@@ -23,6 +23,7 @@ data class NotificationsUiState(
     val notificationsEndReached: Boolean = false,
     val isLoadingMoreNotifications: Boolean = false,
     val unreadNotifications: Int = 0,
+    val refreshAddedNewNotifications: Boolean = false,
 )
 
 class NotificationsViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
@@ -50,12 +51,14 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                 isLoadingNotifications = true,
                 isPullRefreshingNotifications = showPullRefreshIndicator,
                 isLoadingMoreNotifications = false,
+                refreshAddedNewNotifications = false,
                 notificationsError = null, notificationsErrorIsPagination = false,
             ) }
             timelineRepository.getNotifications(session)
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
                     _uiState.update { current ->
+                        val existingIds = current.notifications.mapTo(mutableSetOf(), TimelineNotification::id)
                         current.copy(
                             // Keep a streaming event that may have arrived while
                             // this REST refresh was in flight, and retain older
@@ -68,6 +71,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                             notificationsNextMaxId = page.nextMaxId,
                             notificationsEndReached = page.endReached,
                             unreadNotifications = 0,
+                            refreshAddedNewNotifications = page.notifications.any { it.id !in existingIds },
                         )
                     }
                     page.notifications.firstOrNull()?.id?.let { latestId ->
@@ -81,6 +85,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                     _uiState.update { it.copy(
                         isLoadingNotifications = false,
                         isPullRefreshingNotifications = false,
+                        refreshAddedNewNotifications = false,
                         notificationsError = message,
                     ) }
                 }

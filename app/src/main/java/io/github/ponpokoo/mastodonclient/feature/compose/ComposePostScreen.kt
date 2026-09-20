@@ -252,7 +252,9 @@ fun ComposePostScreen(
                         horizontalArrangement = Arrangement.spacedBy(0.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        state.preferences.composerActionOrder.forEach { action ->
+                        state.preferences.composerActionOrder
+                            .filterNot { it in state.preferences.hiddenComposerActions }
+                            .forEach { action ->
                             when (action) {
                                 ComposerAction.Media -> ComposerToolbarButton(
                                     icon = Icons.Outlined.AddPhotoAlternate,

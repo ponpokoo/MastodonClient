@@ -15,7 +15,13 @@ This repository is a generic Android Mastodon client. It must not assume that th
 - Prefer current, non-deprecated Mastodon endpoints (for example `/api/v2/media`).
 - Follow `docs/ui-guidelines.md` for phone navigation, status rendering, theming, and timeline
   customization. Tablet-specific UI is out of scope for the MVP.
-- Keep the project compiling and tests passing after each implementation slice.
+- Keep the project compiling and existing tests valid. Choose validation by change scope using
+  `docs/project-setup.md`; do not run the full suite after every small edit.
+- Documentation-only edits need content/link/diff checks, not Gradle builds or tests.
+- Add or update tests for changed behavior, meaningful failure cases, and regressions. Avoid tests
+  that duplicate coverage, mirror implementation details, or only assert static text/layout values.
+- Run affected tests first. Expand to the full suite for shared infrastructure changes, release
+  candidates, or evidence of wider impact. Do not repeat successful checks without relevant changes.
 
 ## MVP order
 

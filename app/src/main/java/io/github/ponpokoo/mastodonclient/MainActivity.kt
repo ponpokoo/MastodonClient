@@ -51,18 +51,19 @@ class MainActivity : ComponentActivity() {
             val preferences by preferencesStore.preferences.collectAsStateWithLifecycle(
                 initialValue = AppPreferences(),
             )
-            val notificationEnabled by produceState<Boolean?>(null, preferencesStore) {
+            val notificationEnabled by produceState<Pair<Boolean, Boolean>?>(null, preferencesStore) {
                 preferencesStore.preferences.collect { current ->
-                    value = current.simpleNotificationsEnabled
+                    value = current.simpleNotificationsEnabled to current.foregroundNotificationsEnabled
                 }
             }
             val notificationPermission = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission(),
             ) { granted ->
-                if (granted) NotificationPollingScheduler.runImmediately(applicationContext)
+                if (granted && preferences.simpleNotificationsEnabled) NotificationPollingScheduler.runImmediately(applicationContext)
             }
             LaunchedEffect(notificationEnabled) {
-                val enabled = notificationEnabled ?: return@LaunchedEffect
+                val modes = notificationEnabled ?: return@LaunchedEffect
+                val enabled = modes.first
                 NotificationPollingScheduler.ensureNotificationChannel(applicationContext)
                 val registered = NotificationPollingScheduler.setEnabled(
                     applicationContext,
@@ -70,7 +71,7 @@ class MainActivity : ComponentActivity() {
                 )
                 preferencesStore.setSimpleNotificationSetupFailed(!registered)
                 if (
-                    enabled &&
+                    (enabled || modes.second) &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     ContextCompat.checkSelfPermission(
                         applicationContext,

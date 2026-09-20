@@ -8,7 +8,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| バージョン | `0.1.0-beta.3`（versionCode 4） |
+| 作業ツリーのバージョン | `0.1.1`（versionCode 5）。公開状況は [更新・リリース計画](release-plan.md) を参照 |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -64,6 +64,7 @@ navigation/ 型付き画面遷移
 | NotificationsViewModel | 通知・追加取得・未読件数・既読位置 |
 | OwnProfileViewModel | 自分のプロフィール・タブ・更新・追加取得 |
 | StatusActionsViewModel | メイン4タブの投稿・アカウント操作、リスト選択 |
+| SettingsMaintenanceViewModel | 画像キャッシュ削除の実行状態・結果、インストール済みAPKの版情報 |
 
 `HomeTimelineScreen`は各状態を個別に購読する。別画面のプロフィール編集・関係操作は
 `AccountProfileViewModel`が担当し、表示には共通の`ProfileUiState`を使う。
@@ -78,17 +79,41 @@ navigation/ 型付き画面遷移
 投稿の反応更新ではブースト行の識別情報を保ち、削除時は一覧と通知の参照を更新する。
 この経路はメイン画面内の同期用であり、全画面共通の永続キャッシュではない。
 
+お気に入り・ブーストは共有の`StatusActionManager`で操作中状態と即時更新・確定・巻き戻しを管理し、
+メイン4タブ以外の詳細・ハッシュタグ・保存済み投稿にも反映する。
+前景判定はActivityのライフサイクルに従い、詳細や設定へ移動してもストリームを維持する。
+前景のAndroid通知は`SystemNotificationRepository`経由で配信し、簡易通知と配信済みIDを共有する。
+
 ## ビルドと確認
 
 Android Studioでルートを開き、SDK 37とプロジェクトで使用するJDKを設定する。
 SDKの場所はローカルの`local.properties`で管理する。
 
-```sh
-./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest
+変更に対応する最小限の確認を選ぶ。各編集のたびに全テストや全APKを生成しない。
+
+| 変更範囲 | 基本の確認 |
+| --- | --- |
+| 文書のみ | 記載とコードの整合、参照先、`git diff --check`。Gradle・実機テストは不要 |
+| 文言・色・余白など表示のみ | 変更画面の表示確認と必要なコンパイル／Debugビルド。固定値を再記述する単体テストは追加しない |
+| ViewModel・Repositoryなどの振る舞い | 影響する既存テストを選択実行し、未カバーの振る舞い・失敗条件のみ追加。アプリのコンパイルも確認 |
+| 認証・セッション・共有状態・通信基盤、依存関係・ビルド設定 | 影響範囲に応じて単体テスト全体とDebugビルド。OS連携へ影響する場合は該当する端末確認 |
+| 通知許可・共有Intent・ジェスチャーなどOS／UI連携 | 該当する端末テストまたは手動確認。テストAPKを使う場合だけ生成 |
+| 配布候補 | 単体テスト全体、Releaseビルド、署名・版番号・APK確認、変更機能の端末確認 |
+
+例えば通知ViewModelだけを変更した場合は、次のように対象を指定する（Windows PowerShell）。
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest --tests '*NotificationsViewModelTest'
 ```
 
+新しいテストは利用者から見える挙動、データの整合、実際の不具合の再発防止を検証する。
+同じ条件を重ねたテスト、実装をそのまま写した期待値、単なる定数・文言の一致確認は増やさない。
+既存テストを削る場合は、重複先または不要になった仕様を確認する。件数だけを理由に削除しない。
+成功後の再実行は関連コードの変更、失敗、未解決の懸念がある場合に限る。
+
 `assembleDebugAndroidTest`は実機テスト用APKのビルドであり、実機テストの実行ではない。
-コード変更の範囲に応じて確認し、ドキュメントのみの更新ではビルドを必須にしない。
+実行する場合は端末を接続し、`connectedDebugAndroidTest`で対象を絞るか、必要な操作を手動確認する。
+確認結果には対象・コマンド・結果を記録し、未実行項目を成功扱いにしない。
 
 配布用Release APKは、Git管理外の`release-signing.properties`がある場合だけ自動署名する。
 このファイルには`storeFile`（PKCS12鍵の絶対パス）、`passwordFile`（パスワードを1行で保存したファイルの絶対パス）、
@@ -108,6 +133,7 @@ Debug版とRelease版は署名が異なるため、同じapplication IDのまま
 キャンセルを無視するテスト用要求でも古い応答が反映されないことを確認する。
 
 実機確認が必要な変更では、Android 8.0以上の端末とテスト用アカウントを使用する。
+以下は確認の候補であり、毎回すべてを実施するチェックリストではない。変更した経路を選ぶ。
 
 1. インスタンス入力→接続確認→ブラウザー認証→アプリ復帰→タイムラインを確認する。
 2. 再起動時の復元、アカウント追加・切替・ログアウトを確認し、別アカウントの情報が混ざらないことを確認する。

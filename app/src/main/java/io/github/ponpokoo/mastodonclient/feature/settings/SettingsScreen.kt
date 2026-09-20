@@ -215,6 +215,15 @@ internal fun SettingsPageContent(
             if (page == SettingsPage.Notifications) {
                 item { SectionTitle("通知") }
                 item {
+                    SwitchRow("起動中の通知", preferences.foregroundNotificationsEnabled) {
+                        scope.launch { store.setForegroundNotificationsEnabled(it) }
+                    }
+                }
+                item {
+                    Text("アプリが前面にある間、閲覧中アカウントの新着通知をAndroid通知に表示します。ストリーミングと端末の通知許可が必要です。",
+                        Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                }
+                item {
                     SwitchRow("簡易通知（約15分ごとに確認）", preferences.simpleNotificationsEnabled) {
                         scope.launch { store.setSimpleNotificationsEnabled(it) }
                     }
@@ -267,6 +276,17 @@ internal fun SettingsPageContent(
                         order = preferences.composerActionOrder,
                         label = { it.label() }, icon = { it.settingsIcon() },
                         onReorder = { scope.launch { store.setComposerActionOrder(it) } },
+                        leading = { action ->
+                            Checkbox(
+                                checked = action !in preferences.hiddenComposerActions,
+                                onCheckedChange = { visible ->
+                                    val hidden = preferences.hiddenComposerActions.toMutableSet().apply {
+                                        if (visible) remove(action) else add(action)
+                                    }
+                                    scope.launch { store.setHiddenComposerActions(hidden) }
+                                },
+                            )
+                        },
                     )
                 }
                 item {
