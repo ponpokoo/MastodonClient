@@ -17,3 +17,6 @@ local.properties
 /release-signing.properties
 *.jks
 *.p12
+# Per-developer Firebase project configuration.
+/app/google-services.json
+/.npm-cache/

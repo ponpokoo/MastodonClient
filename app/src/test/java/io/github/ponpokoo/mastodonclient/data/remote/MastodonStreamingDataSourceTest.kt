@@ -12,6 +12,23 @@ import org.junit.Test
 
 class MastodonStreamingDataSourceTest {
     @Test
+    fun receivesUpdateAfterQuietConnectionLongerThanDefaultHttpTimeout() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBodyDelay(11, java.util.concurrent.TimeUnit.SECONDS)
+                    .setBody("event: update\ndata: {\"id\":\"after-idle\"}\n\n"),
+            )
+            val message = MastodonStreamingDataSource()
+                .observeUser(server.url("/").toString(), "test-token")
+                .first()
+            assertEquals("update", message.event)
+            assertEquals("{\"id\":\"after-idle\"}", message.payload)
+            assertEquals(1, server.requestCount)
+        }
+    }
+    @Test
     fun readsServerSentUserEventWithAuthorizationHeader() = runTest {
         MockWebServer().use { server ->
             server.enqueue(

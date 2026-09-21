@@ -171,7 +171,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         assertNull(actions.uiState.value.actionMessage)
     }
 
-    @Test fun systemNotificationsDoNotBlockStreamAndCancelOnBackground() = runTest(dispatcher) {
+    @Test fun systemNotificationsDoNotBlockStreamAndFinishAfterMovingToBackground() = runTest(dispatcher) {
         val stream = MutableSharedFlow<TimelineStreamEvent>()
         val repository = object : ScreenRepositoryFake() {
             override fun observeUserStream(session: AccountSession) = stream
@@ -186,10 +186,14 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         }
         val delivered = mutableListOf<String>()
         val pending = CompletableDeferred<Unit>()
+        val stale = CompletableDeferred<Unit>()
         val main = own(MainSessionViewModel(auth, repository,
             systemNotifications = io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository { session, notification, valid ->
                 if (notification.id == "pending") {
                     withContext(NonCancellable) { pending.await() }
+                }
+                if (notification.id == "stale") {
+                    withContext(NonCancellable) { stale.await() }
                 }
                 if (valid()) delivered += "${session.sessionId}:${notification.id}"
             },
@@ -208,11 +212,16 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         main.setForeground(false)
         pending.complete(Unit)
         advanceUntilIdle()
-        assertFalse(delivered.any { it.endsWith(":pending") })
+        assertTrue(delivered.any { it.endsWith(":pending") })
         main.setForeground(true)
+        advanceUntilIdle()
+        stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("stale")))
         advanceUntilIdle()
         main.switchAccount(secondAccount.sessionId)
         advanceUntilIdle()
+        stale.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(delivered.contains("${testAccount.sessionId}:stale"))
         stream.emit(TimelineStreamEvent.NotificationReceived(testNotification("second")))
         advanceUntilIdle()
         assertTrue(delivered.contains("${secondAccount.sessionId}:second"))

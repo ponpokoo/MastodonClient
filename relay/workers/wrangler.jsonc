@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nagisa-relay",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-09-21",
+  "workers_dev": true,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "nagisa-relay",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["* * * * *"] },
+  "vars": {
+    "RELAY_ENABLED": "false",
+    "PUBLIC_ORIGIN": "https://replace-me.workers.dev",
+    "VAPID_PUBLIC_KEYS": "[]",
+    "FCM_PROJECT_ID": "replace-me"
+  }
+}

@@ -29,15 +29,21 @@ data class TimelineUiState(
     val announcementsError: String? = null,
     val refreshNewStatusCount: Int? = null,
     val selectedFeed: TimelineFeed = TimelineFeed.Home,
+    val unseenStreamIds: Set<String> = emptySet(),
+    val streamAutoScrollId: Long = 0,
+    val streamAtTopCount: Int? = null,
 )
 
 class TimelineViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState = _uiState.asStateFlow()
     private var timelineJob: Job? = null
+    private var followingTop = false
+    private var streamSequence = 0L
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        followingTop = false
         _uiState.value = TimelineUiState(isInitialLoading = snapshot.generation == 0L || snapshot.account != null)
         if (snapshot.account != null) loadInitial()
     }
@@ -46,6 +52,7 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         if (_uiState.value.isRefreshing || _uiState.value.isInitialLoading || _uiState.value.isLoadingMore) return
+        val idsAtStart = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
         timelineJob = requestScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
             timelineRepository.getTimeline(session, _uiState.value.selectedFeed)
@@ -54,7 +61,8 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
                     val newCount = page.statuses.count { it.timelineId !in existingIds }
                     _uiState.update {
                         it.copy(
-                            statuses = page.statuses,
+                            statuses = (it.statuses.filter { status -> status.timelineId !in idsAtStart || status.timelineId in it.unseenStreamIds } + page.statuses)
+                                .distinctBy(TimelineStatus::timelineId),
                             isRefreshing = false,
                             endReached = page.endReached,
                             nextMaxId = page.nextMaxId,
@@ -103,6 +111,9 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
             _uiState.update {
                 it.copy(
                     selectedFeed = feed,
+                    unseenStreamIds = emptySet(),
+                    streamAutoScrollId = 0,
+                    streamAtTopCount = null,
                     statuses = emptyList(),
                     isInitialLoading = true,
                     isLoadingMore = false,
@@ -116,7 +127,7 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
                 .forSession(snapshot).onSuccess { page ->
                     _uiState.update {
                         it.copy(
-                            statuses = page.statuses,
+                            statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::timelineId),
                             isInitialLoading = false,
                             endReached = page.endReached,
                             nextMaxId = page.nextMaxId,
@@ -160,6 +171,15 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         _uiState.update { it.copy(announcementsVisible = false) }
     }
 
+    fun updateViewport(atTopAndVisible: Boolean) {
+        followingTop = atTopAndVisible
+        if (atTopAndVisible) _uiState.update { it.copy(unseenStreamIds = emptySet()) }
+    }
+
+    fun consumeStreamNotice(id: Long) {
+        _uiState.update { if (it.streamAutoScrollId == id) it.copy(streamAtTopCount = null) else it }
+    }
+
     fun consumeRefreshResult() {
         _uiState.update { it.copy(refreshNewStatusCount = null) }
     }
@@ -172,7 +192,7 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         timelineJob = requestScope.launch {
             timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot).fold(
                 onSuccess = { page -> _uiState.update { it.copy(
-                    statuses = page.statuses, isInitialLoading = false,
+                    statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::timelineId), isInitialLoading = false,
                     endReached = page.endReached, nextMaxId = page.nextMaxId,
                 ) } },
                 onFailure = { showError(it, initial = true) },
@@ -184,12 +204,26 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         _uiState.update { current ->
             when (change) {
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.map { it.withUpdatedActions(change.status) })
-                is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId })
+                is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {
                     is TimelineStreamEvent.StatusAdded -> if (current.selectedFeed == TimelineFeed.Home) {
-                        current.copy(statuses = (listOf(event.status) + current.statuses).distinctBy(TimelineStatus::timelineId))
+                        val exists = current.statuses.any { it.timelineId == event.status.timelineId }
+                        if (event.isEdit) {
+                            current.copy(statuses = current.statuses.map {
+                                if (it.statusId == event.status.statusId) event.status.copy(timelineId = it.timelineId, boostedBy = it.boostedBy) else it
+                            })
+                        } else if (exists) {
+                            current.copy(statuses = current.statuses.map { if (it.timelineId == event.status.timelineId) event.status else it })
+                        } else {
+                            current.copy(
+                                statuses = listOf(event.status) + current.statuses,
+                                unseenStreamIds = if (followingTop) emptySet() else current.unseenStreamIds + event.status.timelineId,
+                                streamAutoScrollId = if (followingTop) ++streamSequence else current.streamAutoScrollId,
+                                streamAtTopCount = if (followingTop) (current.streamAtTopCount ?: 0) + 1 else null,
+                            )
+                        }
                     } else current
-                    is TimelineStreamEvent.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == event.statusId || it.timelineId == event.statusId })
+                    is TimelineStreamEvent.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == event.statusId || it.timelineId == event.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == event.statusId || it.timelineId == event.statusId }.map { it.timelineId }.toSet())
                     is TimelineStreamEvent.NotificationReceived -> current
                 }
             }

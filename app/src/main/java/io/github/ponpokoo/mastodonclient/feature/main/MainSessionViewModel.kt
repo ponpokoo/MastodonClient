@@ -161,11 +161,11 @@ class MainSessionViewModel(
                     if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.NotificationReceived &&
                         isForeground && uiState.value.preferences.foregroundNotificationsEnabled && browsing.snapshot.value == snapshot
                     ) {
-                        launch {
+                        viewModelScope.launch {
                             // Delivery must never interrupt the stream or publish a stale account's notification.
                             runCatchingCancellable {
                                 systemNotifications?.show(account, event.notification) {
-                                    isForeground && browsing.snapshot.value == snapshot && uiState.value.preferences.foregroundNotificationsEnabled
+                                    browsing.snapshot.value == snapshot && uiState.value.preferences.foregroundNotificationsEnabled
                                 }
                             }
                         }

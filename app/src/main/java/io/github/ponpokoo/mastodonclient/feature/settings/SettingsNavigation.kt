@@ -24,7 +24,7 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Timeline("タイムライン表示", "文字・アイコン・操作の並びとプレビュー"),
     Media("メディア", "GIF・動画の自動再生"),
     Connection("タイムラインと通信", "ストリーミング・更新時の動作"),
-    Notifications("通知", "バックグラウンドの簡易通知"),
+    Notifications("通知", "リアルタイム通知・簡易通知"),
     Composer("投稿", "公開範囲・ALT確認・ボタンの並び"),
     Accounts("アカウント管理", "登録済みアカウント・追加・ログアウト"),
     Storage("ストレージ", "画像キャッシュの削除"),
@@ -40,6 +40,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onAddAccount: () -> Unit,
+    pushSettings: PushSettingsViewModel? = null,
 ) {
     val nav = rememberNavController()
     NavHost(
@@ -63,6 +64,7 @@ fun SettingsScreen(
                     onBack = { if (page == SettingsPage.Root) onBack() else nav.popBackStack() },
                     onLogout = onLogout,
                     onAddAccount = onAddAccount,
+                    pushSettings = pushSettings,
                 )
             }
         }

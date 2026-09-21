@@ -72,7 +72,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
             listOf("notification-2", "notification-1"),
             viewModel.uiState.value.notifications.map(TimelineNotification::id),
         )
-        assertTrue(viewModel.uiState.value.refreshAddedNewNotifications)
+        assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
     }
 
     @Test fun refreshReportsWhenNoNewNotificationWasAdded() = runTest(dispatcher) {
@@ -83,17 +83,20 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.refreshAddedNewNotifications)
+        assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        assertFalse(viewModel.uiState.value.refreshAddedNewNotifications)
+        assertFalse(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
     }
 
     @Test fun refreshKeepsStreamNotificationReceivedWhileRequestIsInFlight() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<NotificationPage>>()
+        val old = testNotification("old").copy(createdAt = "2026-09-08T00:00:00Z")
+        var requests = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = delayed.await()
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                if (++requests == 1) Result.success(NotificationPage(listOf(old), null, true)) else delayed.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
         val viewModel = own(NotificationsViewModel(repository, browsing))
@@ -101,19 +104,20 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        val live = testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z")
         browsing.publish(
             browsing.snapshot.value,
             BrowsingSession.Change.Stream(
-                TimelineStreamEvent.NotificationReceived(
-                    testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z"),
-                ),
+                TimelineStreamEvent.NotificationReceived(live),
             ),
         )
         advanceUntilIdle()
         delayed.complete(
             Result.success(
                 NotificationPage(
-                    listOf(testNotification("fetched").copy(createdAt = "2026-09-08T00:00:00Z")),
+                    listOf(live, old),
                     null,
                     true,
                 ),
@@ -121,7 +125,8 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         )
         advanceUntilIdle()
 
-        assertEquals(listOf("live", "fetched"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
+        assertEquals(listOf("live", "old"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
+        assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
     }
 
     @Test fun shortNotificationPageStillLoadsOlderHistory() = runTest(dispatcher) {

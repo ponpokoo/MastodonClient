@@ -9,7 +9,8 @@ import org.junit.Rule
 import org.junit.Test
 
 class InstanceDiscoveryDeviceTest {
-    @get:Rule
+    @get:Rule(order = 0) val notificationPermission = NotificationPermissionRule()
+    @get:Rule(order = 1)
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test

@@ -317,7 +317,7 @@ class DefaultTimelineRepository(
             streamingDataSource.observeUser(streamingUrl, session.accessToken).mapNotNull { message ->
                 when (message.event) {
                     "update", "status.update" -> runCatching {
-                        TimelineStreamEvent.StatusAdded(json.decodeFromString<StatusDto>(message.payload).toDomain())
+                        TimelineStreamEvent.StatusAdded(json.decodeFromString<StatusDto>(message.payload).toDomain(), isEdit = message.event == "status.update")
                     }.getOrNull()
                     "delete" -> TimelineStreamEvent.StatusDeleted(message.payload.trim('"'))
                     "notification" -> runCatching {

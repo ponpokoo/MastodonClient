@@ -29,6 +29,8 @@ data class PendingOAuth(
     val clientSecret: String,
     val codeVerifier: String,
     val state: String,
+    val scopes: String = "read write",
+    val reauthorizeSessionId: String? = null,
 )
 
 @Serializable
@@ -40,35 +42,49 @@ private data class StoredSession(
     val displayName: String,
     val avatarUrl: String,
     val accessToken: String,
+    val scopes: String = "",
 )
+
+interface AuthStore {
+    suspend fun findApplication(instanceUrl: String): RegisteredApplication?
+    suspend fun saveApplication(application: RegisteredApplication)
+    suspend fun savePending(pending: PendingOAuth)
+    suspend fun getPending(): PendingOAuth?
+    suspend fun clearPending()
+    suspend fun saveSession(session: AccountSession)
+    suspend fun getSessions(): List<AccountSession>
+    suspend fun getSession(): AccountSession?
+    suspend fun setActiveSession(sessionId: String): AccountSession?
+    suspend fun removeSession(sessionId: String)
+}
 
 class SecureAuthStore(
     context: Context,
     private val cipher: KeystoreCipher = KeystoreCipher(),
     private val json: Json = Json { ignoreUnknownKeys = true },
-) {
+) : AuthStore {
     private val dataStore = context.applicationContext.authDataStore
 
-    suspend fun findApplication(instanceUrl: String): RegisteredApplication? =
+    override suspend fun findApplication(instanceUrl: String): RegisteredApplication? =
         read<List<RegisteredApplication>>(REGISTRATIONS)
             ?.firstOrNull { it.instanceUrl == instanceUrl }
 
-    suspend fun saveApplication(application: RegisteredApplication) {
+    override suspend fun saveApplication(application: RegisteredApplication) {
         val applications = read<List<RegisteredApplication>>(REGISTRATIONS).orEmpty()
             .filterNot { it.instanceUrl == application.instanceUrl } + application
         write(REGISTRATIONS, json.encodeToString(applications))
     }
 
-    suspend fun savePending(pending: PendingOAuth) =
+    override suspend fun savePending(pending: PendingOAuth) =
         write(PENDING, json.encodeToString(pending))
 
-    suspend fun getPending(): PendingOAuth? = read(PENDING)
+    override suspend fun getPending(): PendingOAuth? = read(PENDING)
 
-    suspend fun clearPending() {
+    override suspend fun clearPending() {
         dataStore.edit { it.remove(PENDING) }
     }
 
-    suspend fun saveSession(session: AccountSession) {
+    override suspend fun saveSession(session: AccountSession) {
         val sessions = getSessions().filterNot {
             it.instanceUrl == session.instanceUrl && it.accountId == session.accountId
         } + session
@@ -77,7 +93,7 @@ class SecureAuthStore(
         dataStore.edit { it.remove(SESSION) }
     }
 
-    suspend fun getSessions(): List<AccountSession> {
+    override suspend fun getSessions(): List<AccountSession> {
         val stored = read<List<StoredSession>>(SESSIONS)?.map(StoredSession::toDomain).orEmpty()
         if (stored.isNotEmpty()) return stored
         val legacy = read<StoredSession>(SESSION)?.toDomain() ?: return emptyList()
@@ -86,21 +102,20 @@ class SecureAuthStore(
         return listOf(legacy)
     }
 
-    suspend fun getSession(): AccountSession? {
+    override suspend fun getSession(): AccountSession? {
         val sessions = getSessions()
         val activeId = dataStore.data.map { it[ACTIVE_SESSION_ID] }.first()
         return sessions.firstOrNull { it.sessionId == activeId } ?: sessions.firstOrNull()
     }
 
-    suspend fun setActiveSession(sessionId: String): AccountSession? {
+    override suspend fun setActiveSession(sessionId: String): AccountSession? {
         val session = getSessions().firstOrNull { it.sessionId == sessionId } ?: return null
         dataStore.edit { it[ACTIVE_SESSION_ID] = sessionId }
         return session
     }
 
-    suspend fun clearSession() {
-        val current = getSession() ?: return
-        val remaining = getSessions().filterNot { it.sessionId == current.sessionId }
+    override suspend fun removeSession(sessionId: String) {
+        val remaining = getSessions().filterNot { it.sessionId == sessionId }
         if (remaining.isEmpty()) {
             dataStore.edit {
                 it.remove(SESSIONS)
@@ -109,7 +124,7 @@ class SecureAuthStore(
             }
         } else {
             write(SESSIONS, json.encodeToString(remaining.map(AccountSession::toStored)))
-            dataStore.edit { it[ACTIVE_SESSION_ID] = remaining.first().sessionId }
+            dataStore.edit { if (it[ACTIVE_SESSION_ID] == sessionId) it[ACTIVE_SESSION_ID] = remaining.first().sessionId }
         }
     }
 
@@ -140,6 +155,7 @@ private fun AccountSession.toStored() = StoredSession(
     displayName = displayName,
     avatarUrl = avatarUrl,
     accessToken = accessToken,
+    scopes = scopes,
 )
 
 private fun StoredSession.toDomain() = AccountSession(
@@ -150,4 +166,5 @@ private fun StoredSession.toDomain() = AccountSession(
     displayName = displayName,
     avatarUrl = avatarUrl,
     accessToken = accessToken,
+    scopes = scopes,
 )

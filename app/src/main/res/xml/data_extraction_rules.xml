@@ -5,9 +5,13 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="file" path="datastore/secure_push_control.preferences_pb" />
+        <exclude domain="file" path="datastore/secure_push.preferences_pb" />
         <exclude domain="file" path="datastore/secure_auth.preferences_pb" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="file" path="datastore/secure_push_control.preferences_pb" />
+        <exclude domain="file" path="datastore/secure_push.preferences_pb" />
         <exclude domain="file" path="datastore/secure_auth.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

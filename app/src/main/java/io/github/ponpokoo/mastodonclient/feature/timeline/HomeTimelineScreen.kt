@@ -238,9 +238,6 @@ fun HomeTimelineScreen(
     var editProfileOpen by remember(mainState.session?.sessionId) { mutableStateOf(false) }
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
-    var scrollNotificationsAfterRefresh by remember { mutableStateOf(false) }
-    var scrollNotificationsOnlyWhenNew by remember { mutableStateOf(false) }
-    var notificationsRefreshStarted by remember { mutableStateOf(false) }
     var scrollProfileAfterRefresh by remember { mutableStateOf(false) }
     var profileRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
@@ -250,12 +247,15 @@ fun HomeTimelineScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
+                    viewModel.updateViewport(destination == MainDestination.Home && timelineListState.firstVisibleItemIndex == 0 &&
+                        timelineListState.firstVisibleItemScrollOffset == 0 && !timelineListState.isScrollInProgress)
                     if (destination == MainDestination.Notifications) {
-                        scrollNotificationsAfterRefresh = true
-                        scrollNotificationsOnlyWhenNew = true
-                        notificationsRefreshStarted = false
                         notificationsViewModel.onNotificationsVisible()
                     }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    viewModel.updateViewport(false)
+                    viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
                 }
                 else -> Unit
             }
@@ -275,17 +275,36 @@ fun HomeTimelineScreen(
             state.errorMessage?.let { snackbarHostState.showSnackbar(it) }
         }
     }
-    LaunchedEffect(state.refreshNewStatusCount) {
+    var refreshNotice by remember(mainState.session?.sessionId, state.selectedFeed) { mutableStateOf<String?>(null) }
+    val isHomeVisible = destination == MainDestination.Home
+    LaunchedEffect(isHomeVisible, lifecycleOwner, state.selectedFeed, mainState.session?.sessionId) {
+        snapshotFlow {
+            isHomeVisible && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                timelineListState.firstVisibleItemIndex == 0 && timelineListState.firstVisibleItemScrollOffset == 0 &&
+                !timelineListState.isScrollInProgress
+        }.collect { viewModel.updateViewport(it) }
+    }
+    DisposableEffect(viewModel, destination) {
+        onDispose {
+            viewModel.updateViewport(false)
+            viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
+        }
+    }
+    LaunchedEffect(state.refreshNewStatusCount, mainState.session?.sessionId, state.selectedFeed) {
         state.refreshNewStatusCount?.let { count ->
-            val showJob = launch {
-                snackbarHostState.showSnackbar(
-                    if (count == 0) "新しい投稿はありません" else "新しい投稿 ${count}件を取得しました",
-                )
-            }
+            refreshNotice = if (count == 0) "新しい投稿はありません" else "新着 ${count}件"
             delay(1_800)
-            snackbarHostState.currentSnackbarData?.dismiss()
-            showJob.join()
+            refreshNotice = null
             viewModel.consumeRefreshResult()
+        }
+    }
+    LaunchedEffect(state.streamAutoScrollId, isHomeVisible, mainState.session?.sessionId, state.selectedFeed) {
+        if (isHomeVisible && state.streamAutoScrollId > 0 && state.streamAtTopCount != null) {
+            val requestId = state.streamAutoScrollId
+            timelineListState.scrollToItem(0)
+            viewModel.updateViewport(true)
+            delay(1_800)
+            viewModel.consumeStreamNotice(requestId)
         }
     }
     LaunchedEffect(actionsState.actionMessage) {
@@ -309,16 +328,12 @@ fun HomeTimelineScreen(
             scrollHomeAfterRefresh = false
         }
     }
-    LaunchedEffect(notificationsState.isLoadingNotifications) {
-        if (notificationsState.isLoadingNotifications && scrollNotificationsAfterRefresh) {
-            notificationsRefreshStarted = true
-        } else if (!notificationsState.isLoadingNotifications && notificationsRefreshStarted) {
-            if (!scrollNotificationsOnlyWhenNew || notificationsState.refreshAddedNewNotifications) {
+    LaunchedEffect(notificationsState.refreshResult) {
+        notificationsState.refreshResult?.let { result ->
+            if (result.hasNewNotifications) {
                 notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
             }
-            notificationsRefreshStarted = false
-            scrollNotificationsAfterRefresh = false
-            scrollNotificationsOnlyWhenNew = false
+            notificationsViewModel.consumeRefreshResult(result.id)
         }
     }
     LaunchedEffect(profileState.isRefreshingProfile) {
@@ -333,9 +348,6 @@ fun HomeTimelineScreen(
     LaunchedEffect(destination) {
         when (destination) {
             MainDestination.Notifications -> {
-                scrollNotificationsAfterRefresh = true
-                scrollNotificationsOnlyWhenNew = true
-                notificationsRefreshStarted = false
                 notificationsViewModel.onNotificationsVisible()
             }
             MainDestination.Profile -> profileViewModel.loadProfile()
@@ -468,12 +480,7 @@ fun HomeTimelineScreen(
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
                     padding = padding,
-                    onRefresh = {
-                        scrollNotificationsAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
-                        scrollNotificationsOnlyWhenNew = false
-                        notificationsRefreshStarted = false
-                        notificationsViewModel.refreshNotifications()
-                    },
+                    onRefresh = notificationsViewModel::refreshNotifications,
                     onLoadMore = notificationsViewModel::loadNextNotifications,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
@@ -539,6 +546,18 @@ fun HomeTimelineScreen(
             }
         }
     }
+        val newPostMessage = when {
+            state.unseenStreamIds.isNotEmpty() -> "新着 ${state.unseenStreamIds.size}件"
+            state.streamAtTopCount != null -> "新着 ${state.streamAtTopCount}件"
+            else -> refreshNotice
+        }
+        if (destination == MainDestination.Home && newPostMessage != null && snackbarHostState.currentSnackbarData == null) {
+            Box(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp)) {
+                TimelineNotice(newPostMessage, onClick = if (state.unseenStreamIds.isNotEmpty()) {
+                    { scope.launch { timelineListState.animateScrollToItem(0); viewModel.updateViewport(true) }; Unit }
+                } else null)
+            }
+        }
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -546,14 +565,7 @@ fun HomeTimelineScreen(
                 .statusBarsPadding()
                 .padding(top = 64.dp),
         ) { data ->
-            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
-                Text(
-                    data.visuals.message,
-                    Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.inverseOnSurface,
-                )
-            }
+            TimelineNotice(data.visuals.message)
         }
     }
 
@@ -1827,4 +1839,18 @@ private fun compactCount(count: Long): String = when {
     count < 1_000 -> count.toString()
     count < 1_000_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0).replace(".0K", "K")
     else -> String.format(Locale.US, "%.1fM", count / 1_000_000.0).replace(".0M", "M")
+}
+
+@Composable
+private fun TimelineNotice(message: String, onClick: (() -> Unit)? = null) {
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
+        Box(
+            Modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(message, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.inverseOnSurface)
+        }
+    }
 }

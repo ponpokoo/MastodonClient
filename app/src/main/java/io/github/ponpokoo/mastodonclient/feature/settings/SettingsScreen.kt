@@ -77,6 +77,7 @@ internal fun SettingsPageContent(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onAddAccount: () -> Unit,
+    pushSettings: PushSettingsViewModel? = null,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
@@ -214,6 +215,7 @@ internal fun SettingsPageContent(
             }
             if (page == SettingsPage.Notifications) {
                 item { SectionTitle("通知") }
+                if (pushSettings != null) item { PushNotificationSettings(pushSettings, sessions) }
                 item {
                     SwitchRow("起動中の通知", preferences.foregroundNotificationsEnabled) {
                         scope.launch { store.setForegroundNotificationsEnabled(it) }
@@ -297,6 +299,10 @@ internal fun SettingsPageContent(
             }
             if (page == SettingsPage.Accounts) {
                 item { SectionTitle("アカウント管理") }
+                if (pushSettings != null) item {
+                    val error by pushSettings.error.collectAsStateWithLifecycle()
+                    error?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error) }
+                }
                 items(sessions, key = AccountSession::sessionId) { session ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),

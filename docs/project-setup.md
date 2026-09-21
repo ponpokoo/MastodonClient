@@ -19,7 +19,8 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 
 単一の`app`モジュールを使用する。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
-DataStore、Custom Tabs、ZXingを使用する。
+DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
+FirebaseとRelayの設定は[Android接続手順](firebase-android.md)を参照。
 Roomは依存のみで、Entity・DAOを使った永続タイムラインキャッシュは未実装。
 Hiltはカタログに定義があるが未導入で、依存は手動で組み立てる。
 
@@ -94,6 +95,7 @@ SDKの場所はローカルの`local.properties`で管理する。
 | 変更範囲 | 基本の確認 |
 | --- | --- |
 | 文書のみ | 記載とコードの整合、参照先、`git diff --check`。Gradle・実機テストは不要 |
+| Workers版Relay | `relay/workers`でNode.js 22以降の`npm ci`・`npm test`。D1・workerdで検証。Android変更がなければGradle不要 |
 | 文言・色・余白など表示のみ | 変更画面の表示確認と必要なコンパイル／Debugビルド。固定値を再記述する単体テストは追加しない |
 | ViewModel・Repositoryなどの振る舞い | 影響する既存テストを選択実行し、未カバーの振る舞い・失敗条件のみ追加。アプリのコンパイルも確認 |
 | 認証・セッション・共有状態・通信基盤、依存関係・ビルド設定 | 影響範囲に応じて単体テスト全体とDebugビルド。OS連携へ影響する場合は該当する端末確認 |

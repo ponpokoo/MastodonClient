@@ -18,7 +18,8 @@ import org.junit.Rule
 import org.junit.Test
 
 class HomeTimelineDeviceTest {
-    @get:Rule
+    @get:Rule(order = 0) val notificationPermission = NotificationPermissionRule()
+    @get:Rule(order = 1)
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Test

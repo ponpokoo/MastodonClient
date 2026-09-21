@@ -102,9 +102,48 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     val scope = rememberCoroutineScope()
     val apiClientFactory = remember { ApiClientFactory() }
     val authStore = remember { SecureAuthStore(context) }
-    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore) }
+    val pushRuntime = remember { io.github.ponpokoo.mastodonclient.notification.PushRuntime.get(context) }
+    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control) }
+    val pushSettings: io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel = viewModel(
+        factory = ScreenViewModelFactory { io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel(pushRuntime.control, authRepository) },
+    )
+    androidx.compose.runtime.DisposableEffect(appLifecycle, pushSettings) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, _ ->
+            pushSettings.setForeground(appLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        }
+        appLifecycle.addObserver(observer)
+        pushSettings.setForeground(appLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        onDispose { appLifecycle.removeObserver(observer); pushSettings.setForeground(false) }
+    }
+    val pushCallback by io.github.ponpokoo.mastodonclient.feature.login.OAuthCallbackBus.callback.collectAsStateWithLifecycle()
+    LaunchedEffect(pushCallback) {
+        pushCallback?.let { callback ->
+            if (pushSettings.handlesCallback()) {
+                io.github.ponpokoo.mastodonclient.feature.login.OAuthCallbackBus.consume(callback)
+                pushSettings.complete(callback)
+            }
+        }
+    }
+    val authorizationUrl by pushSettings.authorizationUrl.collectAsStateWithLifecycle()
+    val browserContext = LocalContext.current
+    LaunchedEffect(authorizationUrl) {
+        authorizationUrl?.let { url ->
+            try {
+                androidx.browser.customtabs.CustomTabsIntent.Builder().build().launchUrl(browserContext, url.toUri())
+                pushSettings.urlOpened()
+            } catch (_: ActivityNotFoundException) { pushSettings.browserFailed() }
+        }
+    }
     val startupRoute by produceState<Route?>(initialValue = null, authRepository) {
         value = if (runCatching { authRepository.restoreSession() }.getOrNull() == null) Route.Login else Route.Timeline
+    }
+    val authenticationChange by pushSettings.authenticated.collectAsStateWithLifecycle()
+    LaunchedEffect(authenticationChange, startupRoute) {
+        if (authenticationChange > 0 && startupRoute != null) {
+            val destination = if (pushSettings.requiresLogin) Route.Login else Route.Timeline
+            navController.navigate(destination) { popUpTo(navController.graph.id) { inclusive = true }; launchSingleTop = true }
+            pushSettings.navigationHandled()
+        }
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
         onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
@@ -459,15 +498,10 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 store = preferences,
                 activeSession = activeSession,
                 sessions = sessions,
+                pushSettings = pushSettings,
                 onBack = { navController.popBackStack() },
                 onAddAccount = { navController.navigate(Route.AddAccount) },
-                onLogout = {
-                    scope.launch {
-                        authRepository.logout()
-                        val destination = if (authRepository.restoreSession() == null) Route.Login else Route.Timeline
-                        navController.navigate(destination) { popUpTo(Route.Timeline) { inclusive = true } }
-                    }
-                },
+                onLogout = pushSettings::logout,
             )
         }
         composable<Route.WebPage> { backStackEntry ->

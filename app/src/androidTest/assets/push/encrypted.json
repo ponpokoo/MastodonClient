@@ -1,0 +1,15 @@
+{
+  "keys": {
+    "publicKey": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+    "privateKey": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgq1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM96hRANCAAQlcbK-zf3jYFUarx7Q9M02bBHOvlVfiby3sYalMzkXMWjs4uvgGFl70wR5uG48j47O1XfKWRh-kkaZDbaCAIsO",
+    "authSecret": "BTBZMqHH6r4Tts7J_aSIgg"
+  },
+  "standard": {
+    "version": "1",
+    "registrationId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "messageId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "encoding": "aes128gcm",
+    "headers": "{}",
+    "body": "CQkJCQkJCQkJCQkJCQkJCQAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_IpetInrbwiQ8EBM5VEIbGBxPvaBcshH2gh09kvVjJV2p0nUjJ-zUug8GdVyaEejmGPsWWdh6HWxe4NjO2LAeL8YCYtO9_roltQIVTFm6gJzQxd8JqJ6iosuOdmik1yVsboRPIfBQn2m04OhYuYzMMpbnd47Ez-wa1BC7YlUttLHD5cINovo18mjqfwGMWAyFkfSeRVteL9IcKie9hFFI2SnhjPiyMfdcQsGqXtrAkiVwPBA9ZrqZ7Q3TSeOTO5SW4eJOybDMrTD09U_E8uauni3cnpPnFbEciRJAQt6HN"
+  }
+}

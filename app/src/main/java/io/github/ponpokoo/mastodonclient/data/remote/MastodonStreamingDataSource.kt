@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.data.remote
 
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,9 @@ data class StreamingMessage(
 
 class MastodonStreamingDataSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
+        // SSE can be quiet longer than a normal HTTP response. Keep the connection
+        // open between heartbeats; awaitClose still cancels it on session/lifecycle changes.
+        .readTimeout(0, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(true)
         .build(),
 ) {

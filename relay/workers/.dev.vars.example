@@ -1,0 +1,4 @@
+# Keep disabled until real credentials and allowed VAPID public keys are configured.
+RELAY_ENABLED="false"
+# FCM_CLIENT_EMAIL="nagisa-relay@YOUR_PROJECT.iam.gserviceaccount.com"
+# FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"

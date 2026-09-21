@@ -35,6 +35,18 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.ListDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusSourceDto
 
 interface MastodonApi {
+    @GET("api/v1/push/subscription")
+    suspend fun getPushSubscription(): io.github.ponpokoo.mastodonclient.data.remote.dto.PushSubscriptionDto
+
+    @FormUrlEncoded
+    @POST("api/v1/push/subscription")
+    suspend fun registerPushSubscription(
+        @retrofit2.http.FieldMap fields: Map<String, String>,
+    ): io.github.ponpokoo.mastodonclient.data.remote.dto.PushSubscriptionDto
+
+    @DELETE("api/v1/push/subscription")
+    suspend fun removePushSubscription(): retrofit2.Response<Unit>
+
     @GET("api/v2/instance")
     suspend fun getInstance(): InstanceDto
 

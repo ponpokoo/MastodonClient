@@ -174,6 +174,65 @@ class TimelineViewModelTest {
         assertFalse(viewModel.uiState.value.statuses.isEmpty())
     }
 
+    @Test
+    fun streamCountsUniqueUnreadPostsAndDoesNotCountEdits() = runTest(dispatcher) {
+        val model = createTimeline(FakeTimelineRepository(), FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.updateViewport(false)
+        suspend fun emit(event: io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent) {
+            mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+                io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change.Stream(event))
+            advanceUntilIdle()
+        }
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("live")))
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("live")))
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("first").copy(contentHtml = "edited"), isEdit = true))
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("unseen edit"), isEdit = true))
+        assertEquals(setOf("live"), model.uiState.value.unseenStreamIds)
+        assertEquals(listOf("live", "first"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals("edited", model.uiState.value.statuses.last().contentHtml)
+        model.updateViewport(true)
+        assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("top")))
+        assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
+        assertEquals(1, model.uiState.value.streamAtTopCount)
+        val firstRequest = model.uiState.value.streamAutoScrollId
+        emit(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("top2")))
+        model.consumeStreamNotice(firstRequest)
+        assertEquals(2, model.uiState.value.streamAtTopCount)
+        model.consumeStreamNotice(model.uiState.value.streamAutoScrollId)
+        assertEquals(null, model.uiState.value.streamAtTopCount)
+    }
+
+    @Test
+    fun refreshKeepsStreamingArrivalAndFeedChangeClearsUnreadCount() = runTest(dispatcher) {
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        var calls = 0
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                if (++calls == 2) return pending.await()
+                return Result.success(TimelinePage(listOf(status("first")), null, true))
+            }
+        }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.updateViewport(false)
+        model.refresh()
+        advanceUntilIdle()
+        mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+            io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change.Stream(
+                io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(status("live"))))
+        advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("http"), status("first")), null, true)))
+        advanceUntilIdle()
+        assertEquals(listOf("live", "http", "first"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals(setOf("live"), model.uiState.value.unseenStreamIds)
+        assertEquals(1, model.uiState.value.refreshNewStatusCount)
+        model.selectFeed(TimelineFeed.Local)
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
+        assertEquals(null, model.uiState.value.streamAtTopCount)
+    }
     private lateinit var mainViewModel: MainSessionViewModel
     private fun createTimeline(repository: TimelineRepository, auth: AuthRepository): TimelineViewModel {
         mainViewModel = MainSessionViewModel(auth, repository)

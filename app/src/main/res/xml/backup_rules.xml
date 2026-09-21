@@ -8,4 +8,6 @@
 <full-backup-content>
     <!-- Android Keystore keys cannot be restored on another device. -->
     <exclude domain="file" path="datastore/secure_auth.preferences_pb" />
+    <exclude domain="file" path="datastore/secure_push.preferences_pb" />
+    <exclude domain="file" path="datastore/secure_push_control.preferences_pb" />
 </full-backup-content>

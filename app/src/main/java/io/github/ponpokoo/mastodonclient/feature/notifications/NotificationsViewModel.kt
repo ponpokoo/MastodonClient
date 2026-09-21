@@ -23,7 +23,12 @@ data class NotificationsUiState(
     val notificationsEndReached: Boolean = false,
     val isLoadingMoreNotifications: Boolean = false,
     val unreadNotifications: Int = 0,
-    val refreshAddedNewNotifications: Boolean = false,
+    val refreshResult: NotificationsRefreshResult? = null,
+)
+
+data class NotificationsRefreshResult(
+    val id: Long,
+    val hasNewNotifications: Boolean,
 )
 
 class NotificationsViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
@@ -32,11 +37,14 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
     private var notificationsJob: Job? = null
     private var requested = false
     private var hasLoaded = false
+    private var nextRefreshResultId = 0L
+    private val unacknowledgedStreamNotificationIds = mutableSetOf<String>()
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         _uiState.value = NotificationsUiState()
         hasLoaded = false
+        unacknowledgedStreamNotificationIds.clear()
         if (requested && snapshot.account != null) loadNotifications()
     }
 
@@ -45,20 +53,33 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         if (_uiState.value.isLoadingNotifications || (!force && hasLoaded)) return
+        val knownIdsAtRequestStart = _uiState.value.notifications
+            .mapTo(mutableSetOf(), TimelineNotification::id)
         notificationsJob?.cancel()
         notificationsJob = requestScope.launch {
             _uiState.update { it.copy(
                 isLoadingNotifications = true,
                 isPullRefreshingNotifications = showPullRefreshIndicator,
                 isLoadingMoreNotifications = false,
-                refreshAddedNewNotifications = false,
+                refreshResult = null,
                 notificationsError = null, notificationsErrorIsPagination = false,
             ) }
             timelineRepository.getNotifications(session)
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
+                    val fetchedNewIds = page.notifications
+                        .asSequence()
+                        .map(TimelineNotification::id)
+                        .filterNot(knownIdsAtRequestStart::contains)
+                        .toSet()
+                    val hasNewNotifications = fetchedNewIds.isNotEmpty() ||
+                        unacknowledgedStreamNotificationIds.isNotEmpty()
+                    unacknowledgedStreamNotificationIds.clear()
+                    val refreshResult = NotificationsRefreshResult(
+                        id = ++nextRefreshResultId,
+                        hasNewNotifications = hasNewNotifications,
+                    )
                     _uiState.update { current ->
-                        val existingIds = current.notifications.mapTo(mutableSetOf(), TimelineNotification::id)
                         current.copy(
                             // Keep a streaming event that may have arrived while
                             // this REST refresh was in flight, and retain older
@@ -71,7 +92,7 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                             notificationsNextMaxId = page.nextMaxId,
                             notificationsEndReached = page.endReached,
                             unreadNotifications = 0,
-                            refreshAddedNewNotifications = page.notifications.any { it.id !in existingIds },
+                            refreshResult = refreshResult,
                         )
                     }
                     page.notifications.firstOrNull()?.id?.let { latestId ->
@@ -85,7 +106,6 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                     _uiState.update { it.copy(
                         isLoadingNotifications = false,
                         isPullRefreshingNotifications = false,
-                        refreshAddedNewNotifications = false,
                         notificationsError = message,
                     ) }
                 }
@@ -97,6 +117,12 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
 
     /** Refresh initiated by the pull-to-refresh gesture. */
     fun refreshNotifications() = loadNotifications(force = true, showPullRefreshIndicator = true)
+
+    fun consumeRefreshResult(id: Long) {
+        _uiState.update { state ->
+            if (state.refreshResult?.id == id) state.copy(refreshResult = null) else state
+        }
+    }
 
     fun loadNextNotifications() {
         val state = _uiState.value
@@ -135,6 +161,9 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
     override fun onChange(change: BrowsingSession.Change) {
         if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.NotificationReceived) {
             val notification = change.event.notification
+            if (_uiState.value.notifications.none { it.id == notification.id }) {
+                unacknowledgedStreamNotificationIds += notification.id
+            }
             _uiState.update { current ->
                 if (current.notifications.any { it.id == notification.id }) current else current.copy(
                     notifications = listOf(notification) + current.notifications,

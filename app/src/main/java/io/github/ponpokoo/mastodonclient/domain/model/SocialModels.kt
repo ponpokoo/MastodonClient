@@ -78,7 +78,7 @@ data class SearchResults(
 )
 
 sealed interface TimelineStreamEvent {
-    data class StatusAdded(val status: TimelineStatus) : TimelineStreamEvent
+    data class StatusAdded(val status: TimelineStatus, val isEdit: Boolean = false) : TimelineStreamEvent
     data class StatusDeleted(val statusId: String) : TimelineStreamEvent
     data class NotificationReceived(val notification: TimelineNotification) : TimelineStreamEvent
 }
