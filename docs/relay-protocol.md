@@ -5,8 +5,9 @@ Android側の鍵生成・購読状態の暗号化保存・再開処理も実装�
 [ローカルRelay](../relay/README.md)の登録・受付・永続キュー・模擬送信も実装済み。
 [設定・認証フロー](push-settings.md)にも接続済み。
 [Workers＋D1試験版](../relay/workers/README.md)に実FCM送信アダプターを追加した。
-公開環境の設定と実配信の確認は未実施。手順は[Workers配置](relay-workers-setup.md)を参照する。
-[0.2.0計画](push-notifications-0.2.0.md)の第1段階として登録APIを定義する。
+公開Relayの設定・登録接続・実配信確認は完了。設定手順は[Workers配置](relay-workers-setup.md)、
+全体の検証状況は[更新・リリース計画](release-plan.md)を参照する。
+本書はRelay登録APIの契約を定義する。
 配送・暗号文取得のローカル契約は [Relay README](../relay/README.md#http契約) を参照する。
 
 ## 登録・FCMトークン更新

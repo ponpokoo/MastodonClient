@@ -20,6 +20,14 @@
     "headers": "{\"encryption\":\"salt=\\\"CQkJCQkJCQkJCQkJCQkJCQ\\\";rs=4096\",\"crypto-key\":\"dh=\\\"BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8\\\";p256ecdsa=ignored\"}",
     "body": "15rII-o5Zef4HYm0FUx-WRRRw79H98H-pWsiHfIdISzRwc1LThm5_p5GHz23BCggS-tZXECIMe5QRwQFeJdVGVhRW4WblJbXeho1r3ANYZN6ImHam3wsKmqCAEMaid2KHujL8WzhU1HEtaMXvL93FYRbTBpLGla4t0o1ZDXkCTEY2ZeSkIeuLMBJPe49Bs4uzu-Tbi_EleIGhdv50Qmos9NUACwDGuSU7DbcNgwIN85mdx6GagbXfz0NBukKJ2F3cRM66EH-qYpjAjfFyj4J2xdXLo5x3Z0TszgYGEGQJQ"
   },
+  "emojiReaction": {
+    "version": "1",
+    "registrationId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
+    "messageId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+    "encoding": "aesgcm",
+    "headers": "{\"encryption\":\"salt=\\\"CQkJCQkJCQkJCQkJCQkJCQ\\\";rs=4096\",\"crypto-key\":\"dh=\\\"BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8\\\";p256ecdsa=ignored\"}",
+    "body": "15rII-o5Zef4HYm0FUx-WRRRw79H99K-8z50X6xKdjGJl9xTWUHhss4QR2zlRHR5EowUFRzPfbsGSw8DcZ9-AlJeZ4WLi53XbBons3AUdtQfdPspeL2Csf1o_Mz-PgQqa536ng71GjPC_sAP9MNQgEv6iZas0JcDApXW5DXkAzEY6FY_DAZA9lrqqS9OH6MlQXGlQKMAgWXWhu86VlG0xSNA"
+  },
   "large": {
     "version": "1",
     "registrationId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",

@@ -22,6 +22,8 @@ class PushSubscriptionRequest(
 )
 
 interface PushSubscriptionRepository {
+    /** Known optional alert types advertised by this instance, never inferred from its hostname. */
+    suspend fun additionalAlerts(session: AccountSession): Set<String> = emptySet()
     suspend fun get(session: AccountSession): PushSubscription?
     suspend fun register(session: AccountSession, request: PushSubscriptionRequest): PushSubscription
     suspend fun remove(session: AccountSession)

@@ -50,6 +50,9 @@ interface MastodonApi {
     @GET("api/v2/instance")
     suspend fun getInstance(): InstanceDto
 
+    @GET("api/v1/instance")
+    suspend fun getLegacyInstance(): InstanceDto
+
     @FormUrlEncoded
     @POST("api/v1/apps")
     suspend fun createApplication(

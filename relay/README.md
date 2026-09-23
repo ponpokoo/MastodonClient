@@ -1,6 +1,6 @@
 # Nagisa Relay（ローカル開発版）
 
-Node.jsの標準機能のみで動く、Nagisa 0.2.0向けの通知中継実装。
+Node.jsの標準機能のみで動く、Nagisa 2.0.0向けの通知中継実装。
 登録・解除・暗号文受付・永続キュー・模擬FCM送信を検証する。
 実際のFCM送信とVAPID検証は未実装。
 Workers Free＋D1での実FCM送信用コードは、別実装の[Workers試験版](workers/README.md)を参照する。

@@ -34,13 +34,14 @@ class DefaultPushRegistrationRepository(
         store.write(session.sessionId, record)
         val current = subscriptions.get(session)
         check(current == null || current.endpoint == endpoint) { "Another push subscription already exists" }
-        if (current == null || alerts.any { (type, enabled) -> current.alerts[type] != enabled } ||
+        val requestedAlerts = subscriptions.additionalAlerts(session).associateWith { true } + alerts
+        if (current == null || requestedAlerts.any { (type, enabled) -> current.alerts[type] != enabled } ||
             (standard != null && current.standard != standard)) {
             val created = subscriptions.register(session, PushSubscriptionRequest(
-                endpoint, record.keys.publicKey, record.keys.authSecret, alerts, standard,
+                endpoint, record.keys.publicKey, record.keys.authSecret, requestedAlerts, standard,
             ))
             check(created.endpoint == endpoint) { "Server returned a different push endpoint" }
-            check(alerts.all { (type, enabled) -> created.alerts[type] == enabled } &&
+            check(requestedAlerts.all { (type, enabled) -> created.alerts[type] == enabled } &&
                 (standard == null || created.standard == standard)) { "Server did not accept the requested push options" }
         }
         store.write(session.sessionId, record.copy(state = PushRegistrationState.ACTIVE))

@@ -12,8 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 private val AppPullToRefreshThreshold = 56.dp
+private val AppPullToRefreshIndicatorDistance = 48.dp
 
-/** Pull-to-refresh with a shorter, app-wide trigger distance. */
+/** Pull-to-refresh with separate app-wide trigger and indicator travel distances. */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun AppPullToRefreshBox(
@@ -35,6 +36,7 @@ fun AppPullToRefreshBox(
         PullToRefreshDefaults.Indicator(
             state = state,
             isRefreshing = isRefreshing,
+            maxDistance = AppPullToRefreshIndicatorDistance,
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }

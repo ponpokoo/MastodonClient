@@ -10,6 +10,22 @@ import retrofit2.HttpException
 class DefaultPushSubscriptionRepository(
     private val clients: ApiClientFactory,
 ) : PushSubscriptionRepository {
+    override suspend fun additionalAlerts(session: AccountSession): Set<String> {
+        val publicApi = clients.create(session.instanceUrl)
+        val instance = try {
+            publicApi.getInstance()
+        } catch (error: HttpException) {
+            if (error.code() != 404) throw error
+            try { publicApi.getLegacyInstance() } catch (legacyError: HttpException) {
+                if (legacyError.code() != 404) throw legacyError
+                return emptySet()
+            }
+        }
+        // Fedibird's push API permits data[alerts][emoji_reaction]. Other capabilities
+        // are not automatically treated as push alert types.
+        return if ("emoji_reaction" in instance.fedibirdCapabilities.orEmpty()) setOf("emoji_reaction") else emptySet()
+    }
+
     override suspend fun get(session: AccountSession) = try {
         api(session).getPushSubscription().toDomain()
     } catch (error: HttpException) {

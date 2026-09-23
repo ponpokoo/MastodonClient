@@ -10,6 +10,7 @@ data class InstanceDto(
     val version: String? = null,
     val configuration: InstanceConfigurationDto? = null,
     val urls: InstanceUrlsDto? = null,
+    @SerialName("fedibird_capabilities") val fedibirdCapabilities: List<String>? = null,
 )
 
 @Serializable

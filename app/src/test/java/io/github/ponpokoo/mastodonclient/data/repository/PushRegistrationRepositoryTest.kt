@@ -45,6 +45,8 @@ class PushRegistrationRepositoryTest {
         var posts = 0
         var deletes = 0
         var ignoreOptions = false
+        var additional = emptySet<String>()
+        override suspend fun additionalAlerts(session: AccountSession) = additional
         override suspend fun get(session: AccountSession): PushSubscription? {
             getError?.let { throw it }
             return current
@@ -173,5 +175,31 @@ class PushRegistrationRepositoryTest {
         val repository = DefaultPushRegistrationRepository(store, relay, remote)
         try { repository.enable(account, "fcm", alerts); fail() } catch (_: IllegalStateException) { }
         assertEquals(PushRegistrationState.REGISTERING, repository.state(account))
+    }
+
+    @Test fun advertisedReactionIsAddedToNewSubscription() = runTest {
+        val remote = Mastodon().apply { additional = setOf("emoji_reaction") }
+        val repository = DefaultPushRegistrationRepository(MemoryStore(), Relay(), remote)
+        repository.enable(account, "fcm", alerts)
+        assertEquals(alerts + ("emoji_reaction" to true), remote.current!!.alerts)
+        assertEquals(PushRegistrationState.ACTIVE, repository.state(account))
+    }
+
+    @Test fun existingSubscriptionGainsReactionOnRestartWithoutChangingKeysOrEndpoint() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon()
+        DefaultPushRegistrationRepository(store, relay, remote).enable(account, "fcm", alerts)
+        val saved = store.records.getValue(account.sessionId)
+        assertFalse(remote.current!!.alerts.containsKey("emoji_reaction"))
+        remote.additional = setOf("emoji_reaction")
+        remote.registerError = IOException("Lost upgrade response")
+        val restored = DefaultPushRegistrationRepository(store, relay, remote)
+        try { restored.enable(account, "fcm", alerts); fail() } catch (_: IOException) { }
+        remote.registerError = null
+        restored.enable(account, "fcm", alerts)
+        assertEquals(true, remote.current!!.alerts["emoji_reaction"])
+        assertEquals(2, remote.posts)
+        assertEquals(saved.keys, store.records.getValue(account.sessionId).keys)
+        assertEquals(saved.endpoint, remote.current!!.endpoint)
+        assertEquals(PushRegistrationState.ACTIVE, restored.state(account))
     }
 }

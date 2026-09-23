@@ -13,6 +13,39 @@ import retrofit2.HttpException
 import java.net.URLDecoder
 
 class PushSubscriptionProtocolTest {
+    @Test fun reactionSupportUsesAdvertisedCapabilityAndStaysIsolatedPerInstance() = runTest {
+        MockWebServer().use { fedibird -> MockWebServer().use { standard ->
+            fedibird.enqueue(MockResponse().setBody("""{"fedibird_capabilities":["emoji_reaction","future_feature"]}"""))
+            standard.enqueue(MockResponse().setBody("""{"version":"4.5.0"}"""))
+            val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
+            assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(fedibird)))
+            assertTrue(repository.additionalAlerts(session(standard)).isEmpty())
+            assertEquals("/api/v2/instance", fedibird.takeRequest().path)
+            assertNull(standard.takeRequest().getHeader("Authorization"))
+            fedibird.enqueue(MockResponse().setBody("""{"id":"id","endpoint":"https://relay.example/push/id","alerts":{"emoji_reaction":true}}"""))
+            val result = repository.register(session(fedibird), PushSubscriptionRequest(
+                "https://relay.example/push/id", "key", "auth", mapOf("emoji_reaction" to true)))
+            assertEquals(true, result.alerts["emoji_reaction"])
+            assertTrue(URLDecoder.decode(fedibird.takeRequest().body.readUtf8(), "UTF-8")
+                .contains("data[alerts][emoji_reaction]=true"))
+        } }
+    }
+
+    @Test fun legacyInstanceDiscoveryFallsBackOnlyOnNotFound() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
+            server.enqueue(MockResponse().setResponseCode(404))
+            server.enqueue(MockResponse().setBody("""{"fedibird_capabilities":["emoji_reaction"]}"""))
+            assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(server)))
+            assertEquals("/api/v2/instance", server.takeRequest().path)
+            assertEquals("/api/v1/instance", server.takeRequest().path)
+            server.enqueue(MockResponse().setResponseCode(503))
+            try { repository.additionalAlerts(session(server)); fail() }
+            catch (error: HttpException) { assertEquals(503, error.code()) }
+            assertEquals(3, server.requestCount)
+        }
+    }
+
     private fun session(server: MockWebServer, token: String = "mastodon-token") =
         AccountSession("session", server.url("/").toString(), "account", "name", "Name", "", token)
 

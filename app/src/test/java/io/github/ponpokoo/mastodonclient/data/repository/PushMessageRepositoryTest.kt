@@ -55,6 +55,15 @@ class PushMessageRepositoryTest {
             assertEquals("<b>そのままのテキスト</b>", notification.body)
         }
     }
+    @Test fun encryptedFedibirdReactionReachesNotificationPresenter() = runTest {
+        val env = Environment()
+        assertEquals(PushReceiveResult.PROCESSED, env.repository.receive(inline("emojiReaction")))
+        val notification = env.displayed.single().second
+        assertEquals("emoji_reaction", notification.type)
+        assertEquals("テストさんがリアクションしました", notification.title)
+        assertEquals("🎉", notification.body)
+    }
+
     @Test fun largeFetchUsesStoredRelayAndNoTransportProvidedUrl() = runTest {
         val env = Environment().apply { onFetch = { envelope("large") } }
         assertEquals(PushReceiveResult.PROCESSED, env.repository.receive(fetchMessage() + ("url" to "https://attacker.example/")))

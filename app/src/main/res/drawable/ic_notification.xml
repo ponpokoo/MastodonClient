@@ -4,7 +4,9 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- Monochrome silhouette of Nagisa's elephant, suitable for status-bar tinting. -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M12,22a2.5,2.5 0,0 0,2.45 -2h-4.9A2.5,2.5 0,0 0,12 22zM19,16v-5a7,7 0,0 0,-5.5 -6.84V3.5a1.5,1.5 0,0 0,-3 0v0.66A7,7 0,0 0,5 11v5l-2,2v1h18v-1z" />
+        android:fillType="evenOdd"
+        android:pathData="M1.5,10.8 C1.5,6.7 4.6,4.2 8.7,4.2 C13.1,4.2 16.2,7.2 16.2,11.3 C16.2,13.5 17.3,14.4 18.5,14.1 C20.2,13.7 20.8,11.2 21.6,9.2 C22,8.2 22.6,8.3 22.7,9.3 C23,14.8 19,19.3 13.8,20.2 C10.7,20.8 8,19.6 5.2,18.4 C2.5,17.2 1.5,14.7 1.5,10.8 Z M5.5,11.6 A0.9,1.2 0,1 0,7.3 11.6 A0.9,1.2 0,1 0,5.5 11.6 Z M10.5,14 A0.9,1.2 0,1 0,12.3 14 A0.9,1.2 0,1 0,10.5 14 Z" />
 </vector>

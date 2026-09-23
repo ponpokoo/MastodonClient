@@ -35,6 +35,8 @@ const privateKey = createPrivateKey({ key: { kty: 'EC', crv: 'P-256', x: pub.sub
   y: pub.subarray(33).toString('base64url'), d: ua.getPrivateKey().toString('base64url') }, format: 'jwk' });
 const fixture = { keys: { publicKey: pub.toString('base64url'), privateKey: privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64url'), authSecret: auth.toString('base64url') },
   standard: encrypt('aes128gcm', payload), legacy: encrypt('aesgcm', payload),
+  emojiReaction: encrypt('aesgcm', JSON.stringify({ notification_id: 'reaction-id', notification_type: 'emoji_reaction',
+    title: 'テストさんがリアクションしました', body: '🎉' })),
   large: encrypt('aes128gcm', JSON.stringify({ notification_id: 'large-id', title: 'Large', body: 'x'.repeat(6000) })),
   invalidStandardPadding: encrypt('aes128gcm', payload, true), invalidLegacyPadding: encrypt('aesgcm', payload, true) };
 const directory = new URL('../../app/src/test/resources/push/', import.meta.url);

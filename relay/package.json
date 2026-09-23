@@ -1,8 +1,8 @@
 {
   "name": "nagisa-relay",
-  "version": "0.2.0-dev",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node src/server.mjs", "test": "node --test test", "demo": "node demo.mjs" },
+  "scripts": { "start": "node src/server.mjs", "test": "node --test test/*.test.mjs", "demo": "node demo.mjs" },
   "engines": { "node": ">=20" }
 }

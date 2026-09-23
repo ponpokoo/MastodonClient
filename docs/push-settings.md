@@ -1,13 +1,13 @@
 # リアルタイム通知の設定と購読管理
 
-2026-09-21時点のローカル実装。[全体計画](push-notifications-0.2.0.md)と
-[受信・復号・表示](push-reception.md)を参照。
+2026-09-21時点の実装仕様。[受信・復号・表示](push-reception.md)と
+[Firebase Android接続](firebase-android.md)を参照。
 
 ## 利用者向けの動作
 
 - 設定 → 通知に、アカウントごとのリアルタイム通知スイッチを追加。
   準備中・オフ・再認証待ち・登録中・有効・解除待ち・エラーを表示する。
-- Relayの接続設定がない現ビルドでは「準備中」と表示し、有効化を禁止する。
+- Relayの接続設定がないビルドでは「準備中」と表示し、有効化を禁止する。
   既存の起動中の通知・簡易通知は引き続き利用できる。
 - 有効化時はAndroid 13以上の通知許可を確認する。
   `push`権限がない既存アカウントには再認証ボタンを表示する。
@@ -19,6 +19,22 @@
 ## 保存・解除・再開
 
 `DefaultPushControlRepository`が希望する設定と購読状態を調整する。
+
+Fedibirdの絵文字リアクションは、インスタンス情報の`fedibird_capabilities`に
+`emoji_reaction`がある場合だけ`data[alerts][emoji_reaction]=true`で購読する。
+ホスト名やバージョン文字列では判定せず、通常のMastodonへ独自の通知種類を送らない。
+機能情報はv2を優先し、404の場合だけv1へフォールバックする。
+新規購読と既存購読の再照合の両方に適用し、更新後のアプリ起動時のトークン同期で反映する。
+購読のendpoint・暗号鍵・Relay登録IDは維持する。再認証やRelayの更新は不要。
+受信側は通知種類による除外をせず、復号したタイトル・本文を既存の共通通知処理へ渡す。
+
+根拠: Fedibird公式の[Push購読パラメーター](https://github.com/fedibird/mastodon/blob/main/app/controllers/api/v1/push/subscriptions_controller.rb)と
+[公開機能情報](https://github.com/fedibird/mastodon/blob/main/app/serializers/rest/instance_serializer.rb)。
+
+修正後、Push・Instance関連の単体テストとDebugビルドが成功。
+既存購読への追加・応答消失後の再開、通常サーバーとの分離、暗号化されたリアクション通知の
+復号から表示処理への引き渡しを確認した。実際の絵文字リアクション通知の到着も利用者が確認済み。
+
 `secure_push_control` DataStoreに設定、FCMトークン、解除待ち情報をAndroid Keystoreで
 暗号化保存する。このファイルはバックアップと端末移行の対象外。
 
