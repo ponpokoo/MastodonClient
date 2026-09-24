@@ -7,77 +7,21 @@
 
 ## 現行版
 
-| 項目 | v2.0.0 |
+| 項目 | v2.0.1 |
 | --- | --- |
-| 対象コミット | `e459f74` |
-| アプリ版番号 | versionName `2.0.0`、versionCode `6` |
-| 配布APKのSHA-256 | `a58b677e10780b9f9309576faa38d6eead4083eb9232b709cac6cac0ca8852a9` |
+| 公開日 | 2026-09-25（日本時間） |
+| 対象コミット | `a0af610` |
+| 公開区分 | GitHub ReleaseのPre-release |
+| アプリ版番号 | versionName `2.0.1`、versionCode `7` |
+| 配布APK | `app-release.apk` |
+| 配布APKのSHA-256 | `fed3fb797a9f11bdc810b3a9ef94ce84c205960b02fc8c39ea97a175d0ebcc20` |
 
-2.0.0は公開済みの現行版。比較元は`v0.1.1`。
-[Nagisa 2.0.0のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.0.0)を
-リリースノートの正本とする。
+[Nagisa 2.0.1のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.0.1)を
+リリースノートの正本とする。公開ページでPre-release設定と添付APKのSHA-256を確認済み。
 
-## 以前の公開版
+## v2.0.1の変更と確認記録
 
-| 項目 | v0.1.1 |
-| --- | --- |
-| 公開日 | 2026-09-20 |
-| 対象コミット | `3aa8106` |
-| アプリ版番号 | versionName `0.1.1`、versionCode `5` |
-| 配布APKのSHA-256 | `f93b0c9f8ad29f1672dc47fcf08d09a00725edcaaab9a1f283308a202d9735e4` |
-
-[Nagisa 0.1.1のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v0.1.1)に、
-設定・プロフィール・配色・返信先表示・通知更新などの変更と署名済みAPKを掲載した。
-この版のリリースノートと検証結果は公開ページを正本とし、次回版のリリースノートへ複製しない。
-
-## v2.0.0の変更と確認記録
-
-### 変更内容
-
-- バックグラウンドのリアルタイム通知：MastodonのWeb Push購読、暗号文の受信・復号、
-  Firebase Cloud Messaging、Workers＋D1のRelay、Android通知表示を接続した。
-  アカウントごとの有効化、`push`権限の再認証、解除・再試行、トークン更新を扱う。
-  実際の通知到着と継続受信は利用者が確認済み。詳細は
-  [受信・復号・表示](push-reception.md)、[通知設定](push-settings.md)、
-  [Firebase Android接続](firebase-android.md)、[Relay登録API契約](relay-protocol.md)、
-  [公開Relayの設定](relay-workers-setup.md)を参照する。
-- Fedibirdの絵文字リアクション通知：インスタンスの`fedibird_capabilities`に
-  `emoji_reaction`がある場合に限り、Push購読の通知種類へ追加する。
-  v2インスタンス情報を優先し、404のときだけv1を参照する。既存購読の再照合にも適用し、
-  通常のMastodonへ独自項目を送らない。実際の絵文字リアクション通知の到着は利用者が確認済み。
-- Streamingの再接続：SSE専用クライアントの読み取りタイムアウトを無期限にし、
-  無通信が続いた後も接続を保つ。Fedibirdで報告された新着停止と同じ原因だったかは未確認。
-  再接続中の取りこぼしをHTTPで補完する機能は含まない。
-- ホームタイムラインの新着表示：先頭ではStreaming新着を自動表示し、
-  閲覧途中では位置を保って件数を表示する。件数表示をタップすると先頭へ移動する。
-  HTTP更新中に届いたStreaming新着を保持する。
-- 通知一覧の更新：手動・自動更新とも、未表示の新着があるときだけ先頭へ移動する。Streamingで先に追加された通知も新着判定に含める。
-- 表示調整：Android通知の小アイコンをNagisaの象の単色シルエットに変更し、引っ張って更新のインジケーター移動距離を調整する。
-
-### リリース時の確認記録
-
-- Push通知の実装時に単体テスト133件、Pixel_10a AVD（Android 17）の端末テスト25件、Debugビルドが成功。既存ホーム画面の2件はログイン済みセッションがなく対象外。詳細は[通知設定](push-settings.md)と[Firebase Android接続](firebase-android.md)を参照する。
-- Workers＋D1版Relayのローカルテスト23件と、公開RelayへのAndroid登録・解除テストが成功。利用者は再認証、通知有効化、実通知の到着、2026-09-23までの継続受信を確認した。
-- Streamingの読み取りタイムアウト修正では、無通信11秒後の更新を含む関連テスト18件とDebugビルドが成功。ホームの新着表示も関連単体テストとDebugビルドを確認済み。
-- Fedibirdの絵文字リアクション購読は関連単体テストとDebugビルドが成功。
-  実際の絵文字リアクション通知の到着も利用者が確認した。
-- 公開WorkersのCPU時間と無料枠使用量は利用者が確認済み。具体的な計測値はこの文書に記録していない。
-- 2026-09-23の2.0.0公開前確認でAndroid単体テスト138件、Workers＋D1版Relayのテスト23件、
-  ローカルRelayのテスト16件が成功。Releaseビルドも成功。
-- 署名済みAPKのversionNameは`2.0.0`、versionCodeは`6`。APK Signature Scheme v2で検証成功。
-  署名証明書は公開済み0.1.1と同じ。今回ビルドした未署名APKと全154エントリの内容が一致。
-  SHA-256: `a58b677e10780b9f9309576faa38d6eead4083eb9232b709cac6cac0ca8852a9`。
-- 2.0.0用APKの確認時にエミュレーターは接続されておらず、端末テストは実行していない。
-
-### 未確認事項
-
-- ホームのスクロール位置と新着件数、通知の手動・自動更新、通知アイコンの2.0.0用APKでの端末確認は未実施。
-- 物理端末のDoze・強制停止など個別条件での配送は未確認。
-
-## 2.0.1リリース候補
-
-比較元は`v2.0.0`。`2.0.1`（versionCode `7`、未公開）の公開日は未定。
-以下は比較元以降の変更。配布候補は`app/build/outputs/apk/release/app-release.apk`。
+以下は`v2.0.0`からの変更。配布APKは公開ページに添付済み。
 
 ### 今回の変更内容
 
@@ -89,7 +33,7 @@
 
 詳細な表示・設定仕様は[UI・機能仕様](ui-guidelines.md)を参照する。
 
-### これまでの確認と残る作業
+### リリース時の確認記録と未確認事項
 
 - 通知の既読条件と画面表示の関連テストを更新し、Android単体テスト143件が成功。アイコン・件数調整後のエミュレーター表示を利用者が確認した。
 - Fedibirdの`emoji_reaction`通知のアカウントIDと、対象投稿の`emoji_reactions[].account_ids`の一致を利用者が確認した。アカウント一覧ダイアログの変更と通知設定の文面も利用者が了承した。
@@ -97,7 +41,6 @@
 - 自動の画面遷移テストはエミュレーターにログイン状態がなく、テスト用アカウントでも待機して完走しなかった。テスト用アカウントは削除を確認済み。
 - 2026-09-25に配布候補でAndroid単体テスト146件が成功（失敗・エラー・スキップなし）。署名付きReleaseビルドも成功。
 - 配布APK内のversionNameは`2.0.1`、versionCodeは`7`。APK Signature Scheme v2で署名検証済み。署名証明書は2.0.0と同じ。SHA-256: `fed3fb797a9f11bdc810b3a9ef94ce84c205960b02fc8c39ea97a175d0ebcc20`。
-- 今回の確認時点では接続済み端末がなく、配布候補での端末テストは未実施。前述の実機・エミュレーター確認は開発中の記録であり、このAPKの端末テスト結果ではない。
 
 ## 次回以降の候補
 
