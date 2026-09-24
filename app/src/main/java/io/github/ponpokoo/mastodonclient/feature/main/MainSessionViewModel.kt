@@ -11,6 +11,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -104,6 +105,15 @@ class MainSessionViewModel(
                 activate(account, sessions)
             }.onFailure(::showError)
         }
+    }
+
+    /** Wait for startup or another account change before opening a notification for this account. */
+    suspend fun switchAccountAndWait(sessionId: String): Boolean {
+        restoreJob?.cancelAndJoin()
+        accountChangeJob?.join()
+        switchAccount(sessionId)
+        accountChangeJob?.join()
+        return uiState.value.session?.sessionId == sessionId
     }
 
     fun logout() {

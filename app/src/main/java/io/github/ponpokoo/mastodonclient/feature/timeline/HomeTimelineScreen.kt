@@ -164,6 +164,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -192,6 +193,8 @@ fun HomeTimelineScreen(
     notificationsViewModel: NotificationsViewModel,
     profileViewModel: OwnProfileViewModel,
     actionsViewModel: StatusActionsViewModel,
+    notificationOpenRequest: NotificationOpenRequest? = null,
+    onNotificationOpenHandled: (NotificationOpenRequest) -> Unit = {},
     onLoggedOut: () -> Unit,
     onStatusClick: (String) -> Unit,
     onCompose: (String?) -> Unit,
@@ -243,6 +246,19 @@ fun HomeTimelineScreen(
     var profileRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(notificationOpenRequest) {
+        val request = notificationOpenRequest ?: return@LaunchedEffect
+        if (!mainViewModel.switchAccountAndWait(request.sessionId)) {
+            onNotificationOpenHandled(request)
+            return@LaunchedEffect
+        }
+        notificationFilter = NotificationFilter.All
+        pagerState.scrollToPage(MainDestination.Notifications.ordinal)
+        allNotificationsListState.scrollToItem(0)
+        if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsVisible()
+        onNotificationOpenHandled(request)
+    }
 
     DisposableEffect(lifecycleOwner, destination) {
         val observer = LifecycleEventObserver { _, event ->

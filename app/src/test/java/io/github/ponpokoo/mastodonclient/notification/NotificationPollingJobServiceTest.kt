@@ -1,9 +1,18 @@
 package io.github.ponpokoo.mastodonclient.notification
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotificationPollingJobServiceTest {
+    @Test
+    fun foregroundSettingControlsPeriodicNotificationDisplayOnlyWhileAppIsVisible() {
+        assertFalse(canShowPolledNotification(isForeground = true, foregroundNotificationsEnabled = false))
+        assertTrue(canShowPolledNotification(isForeground = true, foregroundNotificationsEnabled = true))
+        assertTrue(canShowPolledNotification(isForeground = false, foregroundNotificationsEnabled = false))
+    }
+
     @Test
     fun mapsKnownNotificationTypesToJapaneseTitles() {
         assertEquals("ぽんぽこ さんからメンション", notificationTitle("mention", "ぽんぽこ"))

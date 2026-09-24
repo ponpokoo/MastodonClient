@@ -59,6 +59,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
@@ -93,8 +94,18 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+private data class PendingNotificationNavigation(
+    val source: NotificationOpenRequest,
+    val target: NotificationOpenRequest,
+    val backStackEntryId: String,
+)
+
 @Composable
-fun AppNavigation(preferences: UserPreferencesStore) {
+fun AppNavigation(
+    preferences: UserPreferencesStore,
+    notificationOpenRequest: NotificationOpenRequest? = null,
+    onNotificationOpenHandled: (NotificationOpenRequest) -> Unit = {},
+) {
     val appLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -136,6 +147,34 @@ fun AppNavigation(preferences: UserPreferencesStore) {
     }
     val startupRoute by produceState<Route?>(initialValue = null, authRepository) {
         value = if (runCatching { authRepository.restoreSession() }.getOrNull() == null) Route.Login else Route.Timeline
+    }
+    var readyNotificationNavigation by remember { mutableStateOf<PendingNotificationNavigation?>(null) }
+    LaunchedEffect(notificationOpenRequest, startupRoute) {
+        val request = notificationOpenRequest ?: run {
+            readyNotificationNavigation = null
+            return@LaunchedEffect
+        }
+        if (startupRoute == null) return@LaunchedEffect
+        readyNotificationNavigation = null
+        val sessionId = request.sessionId.ifBlank {
+            runCatching { authRepository.restoreSession()?.sessionId }.getOrNull().orEmpty()
+        }
+        val accountExists = runCatching { authRepository.getSessions().any { it.sessionId == sessionId } }
+            .getOrDefault(false)
+        if (!accountExists) {
+            onNotificationOpenHandled(request)
+            return@LaunchedEffect
+        }
+        if (navController.currentBackStackEntry?.destination?.route != Route.Timeline::class.qualifiedName) {
+            navController.navigate(Route.Timeline) {
+                popUpTo(navController.graph.id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+        val targetEntryId = navController.currentBackStackEntry?.id ?: return@LaunchedEffect
+        readyNotificationNavigation = PendingNotificationNavigation(
+            request, request.copy(sessionId = sessionId), targetEntryId,
+        )
     }
     val authenticationChange by pushSettings.authenticated.collectAsStateWithLifecycle()
     LaunchedEffect(authenticationChange, startupRoute) {
@@ -346,7 +385,7 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 }
             }
         }
-        composable<Route.Timeline> {
+        composable<Route.Timeline> { backStackEntry ->
             val mainViewModel: MainSessionViewModel = viewModel(factory = ScreenViewModelFactory {
                 MainSessionViewModel(authRepository, timelineRepository, preferences,
                     systemNotifications = io.github.ponpokoo.mastodonclient.data.repository.DefaultSystemNotificationRepository(
@@ -381,6 +420,15 @@ fun AppNavigation(preferences: UserPreferencesStore) {
                 notificationsViewModel = notificationsViewModel,
                 profileViewModel = profileViewModel,
                 actionsViewModel = actionsViewModel,
+                notificationOpenRequest = readyNotificationNavigation
+                    ?.takeIf { it.backStackEntryId == backStackEntry.id }?.target,
+                onNotificationOpenHandled = { handled ->
+                    val pending = readyNotificationNavigation
+                    if (pending?.target == handled && pending.backStackEntryId == backStackEntry.id) {
+                        readyNotificationNavigation = null
+                        onNotificationOpenHandled(pending.source)
+                    }
+                },
                 onLoggedOut = {
                     navController.navigate(Route.Login) {
                         popUpTo(Route.Timeline) { inclusive = true }

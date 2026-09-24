@@ -68,6 +68,8 @@ class NotificationContentDeviceTest {
                     ),
                     selectedFilter = NotificationFilter.All,
                     onSelectFilter = {},
+                    newNoticeMessage = null,
+                    onNewNoticeClick = null,
                 )
             }
         }

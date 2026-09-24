@@ -9,7 +9,7 @@ import io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSour
 
 class DefaultSystemNotificationRepository(private val local: SystemNotificationDataSource) : SystemNotificationRepository, PushNotificationPresenter {
     override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) =
-        local.showNotification(session, notification, isCurrent)
+        local.showNotification(session, notification) { isCurrent() }
 
     override suspend fun show(session: AccountSession, notification: PushNotification, isCurrent: suspend () -> Boolean) =
         local.showPush(session, notification, isCurrent)

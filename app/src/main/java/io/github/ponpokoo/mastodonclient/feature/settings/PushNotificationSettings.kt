@@ -25,8 +25,8 @@ internal fun PushNotificationSettings(viewModel: PushSettingsViewModel, sessions
         pendingPermission = null
     }
     Column(Modifier.fillMaxWidth().padding(20.dp).testTag("push_settings")) {
-        Text("リアルタイム通知", style = MaterialTheme.typography.titleMedium)
-        Text("アカウントごとに、バックグラウンドのプッシュ通知を設定します。", style = MaterialTheme.typography.bodySmall)
+        Text("バックグラウンドの通知（Push）", style = MaterialTheme.typography.titleMedium)
+        Text("アプリが画面にない間も通知を受信します。ストリーミングがオフの場合でも動作します。", style = MaterialTheme.typography.bodySmall)
         sessions.forEach { session ->
             val state = states[session.sessionId] ?: PushControlState()
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -49,7 +49,7 @@ internal fun PushNotificationSettings(viewModel: PushSettingsViewModel, sessions
                 PushControlStatus.OFF -> "オフ"
                 PushControlStatus.NEEDS_AUTH -> "通知の権限を取得するため、再認証が必要です。"
                 PushControlStatus.REGISTERING -> "登録中…"
-                PushControlStatus.ACTIVE -> "有効（端末の通知許可と通信状態に従います）"
+                PushControlStatus.ACTIVE -> "有効（端末の通知許可に従います）"
                 PushControlStatus.REMOVING -> "解除待ち"
                 PushControlStatus.ERROR -> "登録できませんでした。再試行してください。"
             }, style = MaterialTheme.typography.bodySmall)

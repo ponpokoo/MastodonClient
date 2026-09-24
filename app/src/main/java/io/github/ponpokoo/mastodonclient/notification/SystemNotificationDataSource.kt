@@ -3,7 +3,6 @@ package io.github.ponpokoo.mastodonclient.notification
 import android.Manifest
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -13,7 +12,6 @@ import android.text.Html
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import io.github.ponpokoo.mastodonclient.MainActivity
 import io.github.ponpokoo.mastodonclient.R
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
@@ -50,7 +48,7 @@ class SystemNotificationDataSource(private val context: android.content.Context)
     suspend fun showNotification(
         session: AccountSession,
         notification: TimelineNotification,
-        isCurrent: () -> Boolean = { true },
+        isCurrent: suspend () -> Boolean = { true },
     ): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
         NotificationPollingScheduler.ensureNotificationChannel(context)
         val accountName = notification.account.displayName.ifBlank { notification.account.accountName }
@@ -69,13 +67,10 @@ class SystemNotificationDataSource(private val context: android.content.Context)
         isCurrent: suspend () -> Boolean,
     ): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
         NotificationPollingScheduler.ensureNotificationChannel(context)
-        val requestCode = "${session.sessionId}:$id".hashCode()
         val pendingIntent = PendingIntent.getActivity(
             context,
-            requestCode,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
+            0,
+            NotificationOpenIntent.create(context, session.sessionId, id),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notificationTag = "${session.sessionId}:$id"

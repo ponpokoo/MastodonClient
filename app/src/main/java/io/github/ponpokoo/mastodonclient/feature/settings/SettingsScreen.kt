@@ -214,25 +214,32 @@ internal fun SettingsPageContent(
 
             }
             if (page == SettingsPage.Notifications) {
-                item { SectionTitle("通知") }
+                item { SectionTitle("通知を受け取る方法") }
+                item {
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text("ストリーミング") },
+                        supportingContent = {
+                            Column {
+                                Text(
+                                    activeSession?.let { "@${it.username} · ${accountPreferences.streaming.displayLabel()}" }
+                                        ?: "閲覧中のアカウントがありません",
+                                )
+                                Text("タイムラインと通知をリアルタイムで更新します。Pushとは独立して動作します。")
+                            }
+                        },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) },
+                        modifier = Modifier.clickable { onPage(SettingsPage.Connection) }.testTag("notification_streaming_link"),
+                    )
+                }
                 if (pushSettings != null) item { PushNotificationSettings(pushSettings, sessions) }
                 item {
-                    SwitchRow("起動中の通知", preferences.foregroundNotificationsEnabled) {
-                        scope.launch { store.setForegroundNotificationsEnabled(it) }
-                    }
-                }
-                item {
-                    Text("アプリが前面にある間、閲覧中アカウントの新着通知をAndroid通知に表示します。ストリーミングと端末の通知許可が必要です。",
-                        Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
-                }
-                item {
-                    SwitchRow("簡易通知（約15分ごとに確認）", preferences.simpleNotificationsEnabled) {
+                    SwitchRow("定期確認通知（約15分ごと）", preferences.simpleNotificationsEnabled) {
                         scope.launch { store.setSimpleNotificationsEnabled(it) }
                     }
                 }
                 item {
                     Text(
-                        "端末がアプリのバックグラウンド実行を制限している場合、通知が遅れたり届かなかったりすることがあります。",
+                        "新着を定期的に確認します。Push利用中も補助として動作します。端末がバックグラウンド動作を制限している場合は、通知が遅れたり届かなかったりすることがあります。",
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -241,14 +248,27 @@ internal fun SettingsPageContent(
                 if (preferences.simpleNotificationSetupFailed) {
                     item {
                         Text(
-                            "定期確認を登録できませんでした。簡易通知を一度オフにしてから、もう一度オンにしてください。",
+                            "定期確認を登録できませんでした。定期確認通知を一度オフにしてから、もう一度オンにしてください。",
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
-
+                item { SectionTitle("Android通知の表示") }
+                item {
+                    SwitchRow("起動中のAndroid通知", preferences.foregroundNotificationsEnabled) {
+                        scope.launch { store.setForegroundNotificationsEnabled(it) }
+                    }
+                }
+                item {
+                    Text(
+                        "アプリを表示中に、上の方法で届いた新着をAndroid通知にも表示します。オフでも通知一覧の更新には影響しません。",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (page == SettingsPage.Composer) {
                 item { SectionTitle("投稿") }

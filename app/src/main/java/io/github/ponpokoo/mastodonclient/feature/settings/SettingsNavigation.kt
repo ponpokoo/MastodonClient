@@ -24,7 +24,7 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Timeline("タイムライン表示", "文字・アイコン・操作の並びとプレビュー"),
     Media("メディア", "GIF・動画の自動再生"),
     Connection("タイムラインと通信", "ストリーミング・更新時の動作"),
-    Notifications("通知", "リアルタイム通知・簡易通知"),
+    Notifications("通知", "通知の受け取り方・Android通知の表示"),
     Composer("投稿", "公開範囲・ALT確認・ボタンの並び"),
     Accounts("アカウント管理", "登録済みアカウント・追加・ログアウト"),
     Storage("ストレージ", "画像キャッシュの削除"),

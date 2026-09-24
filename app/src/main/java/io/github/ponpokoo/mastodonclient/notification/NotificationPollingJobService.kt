@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
+import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepository
 import kotlinx.coroutines.CancellationException
@@ -51,7 +52,8 @@ class NotificationPollingJobService : JobService() {
     }
 
     private suspend fun pollNotifications() {
-        if (!io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore(applicationContext).preferences.first().simpleNotificationsEnabled) return
+        val preferencesStore = UserPreferencesStore(applicationContext)
+        if (!preferencesStore.preferences.first().simpleNotificationsEnabled) return
         NotificationPollingScheduler.ensureNotificationChannel(applicationContext)
         if (!canPostNotifications()) return
         val sessions = SecureAuthStore(applicationContext).getSessions()
@@ -75,7 +77,14 @@ class NotificationPollingJobService : JobService() {
                     .takeWhile { it.id != previousId }
                     .take(MAX_NOTIFICATIONS_PER_ACCOUNT)
                     .asReversed()
-                    .forEach { notifier.showNotification(session, it) }
+                    .forEach { notification ->
+                        notifier.showNotification(session, notification) {
+                            canShowPolledNotification(
+                                PushVisibility.foreground,
+                                preferencesStore.preferences.first().foregroundNotificationsEnabled,
+                            )
+                        }
+                    }
             }
             markers.edit().putString(markerKey, newestId).apply()
         }
@@ -93,6 +102,9 @@ class NotificationPollingJobService : JobService() {
         const val MAX_NOTIFICATIONS_PER_ACCOUNT = 5
     }
 }
+internal fun canShowPolledNotification(isForeground: Boolean, foregroundNotificationsEnabled: Boolean): Boolean =
+    !isForeground || foregroundNotificationsEnabled
+
 internal fun notificationTitle(type: String, accountName: String): String {
     val normalizedType = type.lowercase()
     if ("reaction" in normalizedType) return "$accountName さんがリアクションしました"

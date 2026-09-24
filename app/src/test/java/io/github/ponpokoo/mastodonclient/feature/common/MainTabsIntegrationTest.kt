@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.emitAll
@@ -26,6 +27,64 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MainTabsIntegrationTest : ScreenViewModelTestBase() {
+    @Test fun notificationAccountSelectionWaitsForStartupRestore() = runTest(dispatcher) {
+        val restoreStarted = CompletableDeferred<Unit>()
+        val auth = object : AuthRepository {
+            override suspend fun restoreSession(): AccountSession? {
+                restoreStarted.complete(Unit)
+                awaitCancellation()
+            }
+            override suspend fun getSessions() = listOf(testAccount, secondAccount)
+            override suspend fun switchSession(sessionId: String) =
+                listOf(testAccount, secondAccount).firstOrNull { it.sessionId == sessionId }
+            override suspend fun logout() = Unit
+            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.failure<String>(UnsupportedOperationException())
+            override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
+        }
+        val main = own(MainSessionViewModel(auth, ScreenRepositoryFake()))
+        runCurrent()
+        restoreStarted.await()
+
+        val selected = async { main.switchAccountAndWait(secondAccount.sessionId) }
+        advanceUntilIdle()
+
+        assertTrue(selected.await())
+        assertEquals(secondAccount.sessionId, main.uiState.value.session?.sessionId)
+    }
+
+    @Test fun notificationAccountSelectionWaitsForAnotherAccountChange() = runTest(dispatcher) {
+        val switchStarted = CompletableDeferred<Unit>()
+        val releaseSwitch = CompletableDeferred<Unit>()
+        val auth = object : AuthRepository {
+            override suspend fun restoreSession() = testAccount
+            override suspend fun getSessions() = listOf(testAccount, secondAccount)
+            override suspend fun switchSession(sessionId: String): AccountSession? {
+                if (sessionId == secondAccount.sessionId) {
+                    switchStarted.complete(Unit)
+                    releaseSwitch.await()
+                }
+                return listOf(testAccount, secondAccount).firstOrNull { it.sessionId == sessionId }
+            }
+            override suspend fun logout() = Unit
+            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.failure<String>(UnsupportedOperationException())
+            override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
+        }
+        val main = own(MainSessionViewModel(auth, ScreenRepositoryFake()))
+        advanceUntilIdle()
+
+        main.switchAccount(secondAccount.sessionId)
+        runCurrent()
+        switchStarted.await()
+        val selected = async { main.switchAccountAndWait(testAccount.sessionId) }
+        runCurrent()
+        assertFalse(selected.isCompleted)
+
+        releaseSwitch.complete(Unit)
+        advanceUntilIdle()
+        assertTrue(selected.await())
+        assertEquals(testAccount.sessionId, main.uiState.value.session?.sessionId)
+    }
+
     @Test fun cancellationRollsBackAndReleasesPendingAction() = runTest(dispatcher) {
         val started = CompletableDeferred<Unit>()
         val repository = object : ScreenRepositoryFake() {

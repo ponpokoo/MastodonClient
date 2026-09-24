@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -312,28 +315,27 @@ internal fun StatusAccountsDialog(
     onDismiss: () -> Unit,
     onAccountClick: (String) -> Unit,
 ) {
-    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.7f
+    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
+    val minHeight = minOf(129.dp, maxHeight)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("status_accounts_dialog"),
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight, max = maxHeight).testTag("status_accounts_dialog"),
             shape = RoundedCornerShape(24.dp),
             tonalElevation = 6.dp,
         ) {
             Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().height(64.dp).padding(start = 20.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Outlined.Close, contentDescription = "一覧を閉じる")
                     }
                 }
                 HorizontalDivider()
                 when {
-                    isLoading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
+                    isLoading -> Spacer(Modifier.height(64.dp))
                     errorMessage != null -> Text(errorMessage, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error)
                     accounts.isEmpty() -> Text("表示できるアカウントはありません", Modifier.padding(20.dp))
                     else -> LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
@@ -349,17 +351,43 @@ internal fun StatusAccountsDialog(
 
 @Composable
 private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
+    var loadAvatar by remember(account.id, account.avatarUrl) { mutableStateOf(false) }
+    var avatarFailed by remember(account.id, account.avatarUrl) { mutableStateOf(false) }
+    LaunchedEffect(account.id, account.avatarUrl) {
+        // Draw the account name first, then start the avatar request on a later frame.
+        withFrameNanos { }
+        withFrameNanos { }
+        loadAvatar = true
+    }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(
-            model = account.avatarUrl,
-            contentDescription = null,
-            modifier = Modifier.size(44.dp).clip(CircleShape),
-            contentScale = ContentScale.Crop,
-        )
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (account.avatarUrl.isBlank() || avatarFailed) {
+                Icon(
+                    Icons.Filled.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(26.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (loadAvatar && account.avatarUrl.isNotBlank()) {
+                AsyncImage(
+                    model = account.avatarUrl,
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize(),
+                    contentScale = ContentScale.Crop,
+                    onLoading = { avatarFailed = false },
+                    onSuccess = { avatarFailed = false },
+                    onError = { avatarFailed = true },
+                )
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column {
             CustomEmojiText(

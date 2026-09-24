@@ -12,7 +12,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.produceState
@@ -33,9 +35,13 @@ import io.github.ponpokoo.mastodonclient.navigation.AppNavigation
 import io.github.ponpokoo.mastodonclient.feature.login.OAuthCallbackBus
 import io.github.ponpokoo.mastodonclient.feature.compose.IncomingShareBus
 import io.github.ponpokoo.mastodonclient.notification.NotificationPollingScheduler
+import io.github.ponpokoo.mastodonclient.notification.NotificationOpenIntent
+import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 
 class MainActivity : ComponentActivity() {
+    private var notificationOpenRequest by mutableStateOf<NotificationOpenRequest?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -97,7 +103,16 @@ class MainActivity : ComponentActivity() {
                         isAppearanceLightNavigationBars = !darkTheme
                     }
                 }
-                AppNavigation(preferences = preferencesStore)
+                AppNavigation(
+                    preferences = preferencesStore,
+                    notificationOpenRequest = notificationOpenRequest,
+                    onNotificationOpenHandled = { handled ->
+                        if (notificationOpenRequest == handled) {
+                            notificationOpenRequest = null
+                            if (NotificationOpenIntent.parse(intent) == handled) NotificationOpenIntent.clear(intent)
+                        }
+                    },
+                )
             }
         }
     }
@@ -109,6 +124,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun acceptIncomingIntent(intent: Intent?) {
+        NotificationOpenIntent.parse(intent)?.let { notificationOpenRequest = it }
         OAuthCallbackBus.accept(intent?.data)
         if (intent?.data?.scheme == "io.github.ponpokoo.mastodonclient") intent.data = null
         IncomingShareBus.accept(intent)
