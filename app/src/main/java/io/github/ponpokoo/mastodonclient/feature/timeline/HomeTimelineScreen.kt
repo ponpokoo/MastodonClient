@@ -55,14 +55,14 @@ import androidx.compose.material.icons.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.AlternateEmail
@@ -78,7 +78,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
@@ -119,6 +119,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -292,9 +293,13 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(state.refreshNewStatusCount, mainState.session?.sessionId, state.selectedFeed) {
         state.refreshNewStatusCount?.let { count ->
-            refreshNotice = if (count == 0) "新しい投稿はありません" else "新着 ${count}件"
-            delay(1_800)
-            refreshNotice = null
+            if (count > 0) {
+                refreshNotice = "新着 ${count}件"
+                delay(1_800)
+                refreshNotice = null
+            } else {
+                refreshNotice = null
+            }
             viewModel.consumeRefreshResult()
         }
     }
@@ -330,10 +335,13 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(notificationsState.refreshResult) {
         notificationsState.refreshResult?.let { result ->
-            if (result.hasNewNotifications) {
-                notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
-            }
             notificationsViewModel.consumeRefreshResult(result.id)
+        }
+    }
+    LaunchedEffect(notificationsState.shownNewNotice?.id) {
+        notificationsState.shownNewNotice?.let { notice ->
+            delay(1_800)
+            notificationsViewModel.consumeShownNewNotice(notice.id)
         }
     }
     LaunchedEffect(profileState.isRefreshingProfile) {
@@ -352,6 +360,37 @@ fun HomeTimelineScreen(
             }
             MainDestination.Profile -> profileViewModel.loadProfile()
             else -> Unit
+        }
+    }
+    DisposableEffect(notificationsViewModel, destination) {
+        onDispose {
+            if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsHidden()
+        }
+    }
+    LaunchedEffect(
+        destination, notificationFilter, notificationsState.notifications,
+        notificationsState.isInitialPageLoaded, notificationsState.isLoadingNotifications, lifecycleOwner,
+    ) {
+        if (destination == MainDestination.Notifications &&
+            notificationsState.isInitialPageLoaded && !notificationsState.isLoadingNotifications &&
+            (notificationsState.notificationsError == null || notificationsState.notificationsErrorIsPagination)
+        ) {
+            val shown = notificationsState.notifications.filter(notificationFilter::includes)
+            val newestId = shown.firstOrNull()?.id
+            if (newestId != null) {
+                val listState = notificationListStates[notificationFilter.ordinal]
+                val shownIds = shown.mapTo(mutableSetOf(), io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification::id)
+                snapshotFlow {
+                    lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 &&
+                        !listState.isScrollInProgress &&
+                        listState.layoutInfo.visibleItemsInfo.any { it.key == newestId }
+                }.distinctUntilChanged().collect { newestIsShown ->
+                    if (newestIsShown) notificationsViewModel.onLatestNotificationsShown(
+                        shownIds, notificationFilter == NotificationFilter.All,
+                    )
+                }
+            }
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -498,6 +537,22 @@ fun HomeTimelineScreen(
                     listStates = notificationListStates,
                     selectedFilter = notificationFilter,
                     onSelectFilter = { notificationFilter = it },
+                    newNoticeMessage = if (snackbarHostState.currentSnackbarData == null) {
+                        when {
+                            notificationsState.pendingNewNotificationIds.isNotEmpty() ->
+                                "新着 ${notificationsState.pendingNewNotificationIds.size}件"
+                            notificationsState.shownNewNotice != null ->
+                                "新着 ${notificationsState.shownNewNotice?.count}件"
+                            else -> null
+                        }
+                    } else null,
+                    onNewNoticeClick = if (notificationsState.pendingNewNotificationIds.isNotEmpty()) {
+                        {
+                            notificationFilter = NotificationFilter.All
+                            scope.launch { allNotificationsListState.scrollToItem(0) }
+                            Unit
+                        }
+                    } else null,
                 )
                 MainDestination.Profile -> ProfileContent(
                     state = profileState,
@@ -1666,7 +1721,7 @@ private fun StatusActionRow(
     ) {
         preferences.actionOrder.filterNot { it in preferences.hiddenActions }.forEach { action ->
             when (action) {
-                StatusAction.Reply -> StatusActionButton(Icons.Outlined.ChatBubbleOutline, "返信", status.repliesCount, preferences, onReply)
+                StatusAction.Reply -> StatusActionButton(Icons.AutoMirrored.Filled.Reply, "返信", status.repliesCount, preferences, onReply)
                 StatusAction.Boost -> {
                     val canBoost = status.visibility.lowercase() !in setOf("private", "direct", "followers", "followers_only")
                     Box {
@@ -1702,7 +1757,7 @@ private fun StatusActionRow(
                     }
                 }
                 StatusAction.Favourite -> StatusActionButton(
-                    if (status.favourited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    if (status.favourited) Icons.Filled.Star else Icons.Outlined.StarBorder,
                     if (onFavouriteLongClick == null) "お気に入り" else "お気に入り（長押しで一覧）",
                     status.favouritesCount,
                     preferences,
@@ -1738,7 +1793,19 @@ private fun StatusActionButton(
         ActionIconSize.Standard -> 21.dp
         ActionIconSize.Large -> 24.dp
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    val displayedCount = count?.takeIf { preferences.showCounts && it > 0 }
+    @OptIn(ExperimentalFoundationApi::class)
+    Row(
+        modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ).padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         @Composable fun ButtonIcon() {
             val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f)
             Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
@@ -1756,25 +1823,14 @@ private fun StatusActionButton(
                 }
             }
         }
-        if (onLongClick == null) {
-            IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) { ButtonIcon() }
-        } else {
-            @OptIn(ExperimentalFoundationApi::class)
-            Box(
-                modifier = Modifier.size(48.dp).combinedClickable(
-                    enabled = enabled,
-                    role = Role.Button,
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                ),
-                contentAlignment = Alignment.Center,
-            ) { ButtonIcon() }
-        }
-        if (preferences.showCounts && count != null && count > 0) {
+        ButtonIcon()
+        if (displayedCount != null) {
+            Spacer(Modifier.width(4.dp))
             Text(
-                compactCount(count),
+                compactCount(displayedCount),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
     }
@@ -1842,15 +1898,20 @@ private fun compactCount(count: Long): String = when {
 }
 
 @Composable
-private fun TimelineNotice(message: String, onClick: (() -> Unit)? = null) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.inverseSurface) {
-        Box(
-            Modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 7.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(message, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.inverseOnSurface)
+internal fun TimelineNotice(message: String, onClick: (() -> Unit)? = null) {
+    Box(
+        Modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = if (onClick != null) 48.dp else 36.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF34465C)) {
+            Box(
+                Modifier.heightIn(min = 36.dp).padding(horizontal = 12.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(message, style = MaterialTheme.typography.labelLarge,
+                    color = Color(0xFFF5F7FC))
+            }
         }
     }
 }

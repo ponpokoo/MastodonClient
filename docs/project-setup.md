@@ -8,7 +8,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| 作業ツリーのバージョン | `2.0.0`（versionCode 6）。公開状況は [更新・リリース計画](release-plan.md) を参照 |
+| 作業ツリーのバージョン | `2.0.1`（versionCode 7、未公開）。公開状況は [更新・リリース計画](release-plan.md) を参照 |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -101,6 +101,11 @@ SDKの場所はローカルの`local.properties`で管理する。
 | 認証・セッション・共有状態・通信基盤、依存関係・ビルド設定 | 影響範囲に応じて単体テスト全体とDebugビルド。OS連携へ影響する場合は該当する端末確認 |
 | 通知許可・共有Intent・ジェスチャーなどOS／UI連携 | 該当する端末テストまたは手動確認。テストAPKを使う場合だけ生成 |
 | 配布候補 | 単体テスト全体、Releaseビルド、署名・版番号・APK確認、変更機能の端末確認 |
+
+連続するUI調整では編集ごとにGradleを実行しない。まず差分と関連コードを確認し、変更をまとめる。
+確認用APKは変更後の画面をエミュレーター・実機で見る段階で必要な場合に生成する。
+コンパイル確認だけで足りる場合は対象のコンパイルを選び、同じ変更に対してDebug APKビルドと重ねて実行しない。
+APK生成後に関連コードが変わっていなければ再ビルドしない。配布候補では表の確認を行う。
 
 例えば通知ViewModelだけを変更した場合は、次のように対象を指定する（Windows PowerShell）。
 

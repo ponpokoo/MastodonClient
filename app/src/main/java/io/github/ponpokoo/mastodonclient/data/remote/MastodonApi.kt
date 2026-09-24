@@ -187,6 +187,9 @@ interface MastodonApi {
         @Query("limit") limit: Int = 80,
     ): List<NotificationDto>
 
+    @GET("api/v1/markers")
+    suspend fun getNotificationMarker(@Query("timeline[]") timeline: String = "notifications"): MarkerResponseDto
+
     @FormUrlEncoded
     @POST("api/v1/markers")
     suspend fun saveNotificationMarker(

@@ -58,7 +58,11 @@ data class TimelineNotification(
     val createdAt: String,
     val account: StatusAuthor,
     val status: TimelineStatus?,
-)
+) {
+    /** The status aggregate can change; show an emoji only when this actor has one unique match. */
+    val matchingReaction: EmojiReaction?
+        get() = status?.reactions?.singleOrNull { account.id in it.accountIds }
+}
 
 data class NotificationPage(
     val notifications: List<TimelineNotification>,

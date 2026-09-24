@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,9 +94,9 @@ internal fun <T : Any> ReorderActionList(
 }
 
 internal fun StatusAction.settingsIcon(): ImageVector = when (this) {
-    StatusAction.Reply -> Icons.Outlined.ChatBubbleOutline
+    StatusAction.Reply -> Icons.AutoMirrored.Filled.Reply
     StatusAction.Boost -> Icons.Outlined.Repeat
-    StatusAction.Favourite -> Icons.Outlined.FavoriteBorder
+    StatusAction.Favourite -> Icons.Outlined.StarBorder
     StatusAction.Reaction -> Icons.Outlined.SentimentSatisfiedAlt
     StatusAction.Bookmark -> Icons.Outlined.BookmarkBorder
     StatusAction.Share -> Icons.Outlined.Share

@@ -22,9 +22,16 @@ data class NotificationsUiState(
     val notificationsNextMaxId: String? = null,
     val notificationsEndReached: Boolean = false,
     val isLoadingMoreNotifications: Boolean = false,
-    val unreadNotifications: Int = 0,
+    val isInitialPageLoaded: Boolean = false,
+    val pendingNewNotificationIds: Set<String> = emptySet(),
+    val highlightedNotificationIds: Set<String> = emptySet(),
+    val shownNewNotice: ShownNewNotice? = null,
     val refreshResult: NotificationsRefreshResult? = null,
-)
+) {
+    val unreadNotifications: Int get() = pendingNewNotificationIds.size
+}
+
+data class ShownNewNotice(val id: Long, val count: Int)
 
 data class NotificationsRefreshResult(
     val id: Long,
@@ -38,13 +45,14 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
     private var requested = false
     private var hasLoaded = false
     private var nextRefreshResultId = 0L
-    private val unacknowledgedStreamNotificationIds = mutableSetOf<String>()
+    private var nextShownNoticeId = 0L
+    private var lastSentMarkerId: String? = null
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         _uiState.value = NotificationsUiState()
         hasLoaded = false
-        unacknowledgedStreamNotificationIds.clear()
+        lastSentMarkerId = null
         if (requested && snapshot.account != null) loadNotifications()
     }
 
@@ -55,31 +63,36 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         if (_uiState.value.isLoadingNotifications || (!force && hasLoaded)) return
         val knownIdsAtRequestStart = _uiState.value.notifications
             .mapTo(mutableSetOf(), TimelineNotification::id)
+        val pendingAtRequestStart = _uiState.value.pendingNewNotificationIds
+        val initialLoad = !hasLoaded
         notificationsJob?.cancel()
+        _uiState.update { it.copy(
+            isLoadingNotifications = true,
+            isPullRefreshingNotifications = showPullRefreshIndicator,
+            isLoadingMoreNotifications = false,
+            refreshResult = null,
+            notificationsError = null, notificationsErrorIsPagination = false,
+        ) }
         notificationsJob = requestScope.launch {
-            _uiState.update { it.copy(
-                isLoadingNotifications = true,
-                isPullRefreshingNotifications = showPullRefreshIndicator,
-                isLoadingMoreNotifications = false,
-                refreshResult = null,
-                notificationsError = null, notificationsErrorIsPagination = false,
-            ) }
+            val markerId = if (initialLoad) {
+                timelineRepository.getNotificationMarker(session).forSession(snapshot).getOrNull()
+            } else null
             timelineRepository.getNotifications(session)
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
-                    val fetchedNewIds = page.notifications
-                        .asSequence()
-                        .map(TimelineNotification::id)
-                        .filterNot(knownIdsAtRequestStart::contains)
-                        .toSet()
-                    val hasNewNotifications = fetchedNewIds.isNotEmpty() ||
-                        unacknowledgedStreamNotificationIds.isNotEmpty()
-                    unacknowledgedStreamNotificationIds.clear()
+                    val fetchedNewIds = if (initialLoad) {
+                        markerId?.let { lastRead ->
+                            page.notifications.takeWhile { it.id != lastRead }.mapTo(mutableSetOf(), TimelineNotification::id)
+                        }.orEmpty()
+                    } else {
+                        page.notifications.map(TimelineNotification::id).filterNotTo(mutableSetOf(), knownIdsAtRequestStart::contains)
+                    }
                     val refreshResult = NotificationsRefreshResult(
                         id = ++nextRefreshResultId,
-                        hasNewNotifications = hasNewNotifications,
+                        hasNewNotifications = fetchedNewIds.isNotEmpty() || _uiState.value.pendingNewNotificationIds.isNotEmpty(),
                     )
                     _uiState.update { current ->
+                        val streamedDuringRefresh = current.pendingNewNotificationIds - pendingAtRequestStart
                         current.copy(
                             // Keep a streaming event that may have arrived while
                             // this REST refresh was in flight, and retain older
@@ -89,14 +102,14 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
                                 .sortedByDescending(TimelineNotification::createdAt),
                             isLoadingNotifications = false,
                             isPullRefreshingNotifications = false,
+                            isInitialPageLoaded = true,
                             notificationsNextMaxId = page.nextMaxId,
                             notificationsEndReached = page.endReached,
-                            unreadNotifications = 0,
+                            pendingNewNotificationIds = current.pendingNewNotificationIds + fetchedNewIds,
+                            highlightedNotificationIds = fetchedNewIds + streamedDuringRefresh +
+                                (if (initialLoad) pendingAtRequestStart else emptySet()),
                             refreshResult = refreshResult,
                         )
-                    }
-                    page.notifications.firstOrNull()?.id?.let { latestId ->
-                        timelineRepository.saveNotificationMarker(session, latestId)
                     }
                 }
                 .onFailure { error ->
@@ -117,6 +130,40 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
 
     /** Refresh initiated by the pull-to-refresh gesture. */
     fun refreshNotifications() = loadNotifications(force = true, showPullRefreshIndicator = true)
+
+    fun onNotificationsHidden() {
+        _uiState.update { it.copy(highlightedNotificationIds = emptySet(), shownNewNotice = null) }
+    }
+
+    /** Called only after the newest row in the selected list is actually laid out at the top. */
+    fun onLatestNotificationsShown(shownIds: Set<String>, allNotificationsShown: Boolean) {
+        val snapshot = currentSnapshot() ?: return
+        if (shownIds.isEmpty()) return
+        val state = _uiState.value
+        if (!state.isInitialPageLoaded || state.isLoadingNotifications ||
+            (state.notificationsError != null && !state.notificationsErrorIsPagination)) return
+        val acknowledged = state.pendingNewNotificationIds.intersect(shownIds)
+        if (acknowledged.isNotEmpty()) {
+            _uiState.update { current -> current.copy(
+                pendingNewNotificationIds = current.pendingNewNotificationIds - acknowledged,
+                shownNewNotice = ShownNewNotice(++nextShownNoticeId, acknowledged.size),
+            ) }
+        }
+        val latestId = if (allNotificationsShown) state.notifications.firstOrNull()?.id else null
+        if (latestId != null && latestId in shownIds && latestId != lastSentMarkerId) {
+            lastSentMarkerId = latestId
+            requestScope.launch {
+                val result = timelineRepository.saveNotificationMarker(snapshot.account!!, latestId).forSession(snapshot)
+                if (result.isFailure && lastSentMarkerId == latestId) lastSentMarkerId = null
+            }
+        }
+    }
+
+    fun consumeShownNewNotice(id: Long) {
+        _uiState.update { state ->
+            if (state.shownNewNotice?.id == id) state.copy(shownNewNotice = null) else state
+        }
+    }
 
     fun consumeRefreshResult(id: Long) {
         _uiState.update { state ->
@@ -161,13 +208,11 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
     override fun onChange(change: BrowsingSession.Change) {
         if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.NotificationReceived) {
             val notification = change.event.notification
-            if (_uiState.value.notifications.none { it.id == notification.id }) {
-                unacknowledgedStreamNotificationIds += notification.id
-            }
             _uiState.update { current ->
                 if (current.notifications.any { it.id == notification.id }) current else current.copy(
                     notifications = listOf(notification) + current.notifications,
-                    unreadNotifications = current.unreadNotifications + 1,
+                    pendingNewNotificationIds = current.pendingNewNotificationIds + notification.id,
+                    highlightedNotificationIds = current.highlightedNotificationIds + notification.id,
                 )
             }
         } else {

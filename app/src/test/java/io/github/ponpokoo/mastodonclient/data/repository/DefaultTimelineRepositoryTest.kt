@@ -20,6 +20,24 @@ import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
     @Test
+    fun readsNotificationMarkerAsAnOpaqueStringAndAllowsMissingMarker() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """{"notifications":{"last_read_id":"notification-opaque-id"}}""",
+            ))
+            server.enqueue(MockResponse().setBody("{}"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+
+            assertEquals("notification-opaque-id", repository.getNotificationMarker(session).getOrThrow())
+            assertNull(repository.getNotificationMarker(session).getOrThrow())
+            repeat(2) {
+                assertEquals("notifications", server.takeRequest().requestUrl?.queryParameter("timeline[]"))
+            }
+        }
+    }
+
+    @Test
     fun preservesLockedAccountsAndFollowRequestRelationships() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(

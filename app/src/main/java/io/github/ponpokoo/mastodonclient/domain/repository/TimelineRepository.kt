@@ -99,6 +99,8 @@ interface TimelineRepository {
     suspend fun saveNotificationMarker(session: AccountSession, lastReadId: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("通知の既読保存は未対応です"))
 
+    suspend fun getNotificationMarker(session: AccountSession): Result<String?> = Result.success(null)
+
     suspend fun search(session: AccountSession, query: String): Result<SearchResults> =
         Result.failure(UnsupportedOperationException("検索は未対応です"))
 

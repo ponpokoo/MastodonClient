@@ -28,21 +28,20 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.HowToReg
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Poll
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Campaign
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.HowToReg
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -101,6 +100,14 @@ internal enum class NotificationFilter(val label: String) {
     All("すべて"),
     Mentions("メンション"),
     Reactions("リアクション"),
+    ;
+
+    fun includes(notification: TimelineNotification): Boolean = when (this) {
+        All -> true
+        Mentions -> notification.type.equals("mention", ignoreCase = true) ||
+            notification.type.equals("reply", ignoreCase = true)
+        Reactions -> notification.type.contains("reaction", ignoreCase = true)
+    }
 }
 
 @Composable
@@ -201,6 +208,8 @@ internal fun NotificationsContent(
     listStates: List<LazyListState>,
     selectedFilter: NotificationFilter,
     onSelectFilter: (NotificationFilter) -> Unit,
+    newNoticeMessage: String?,
+    onNewNoticeClick: (() -> Unit)?,
 ) {
     check(listStates.size == NotificationFilter.entries.size)
     val filterPagerState = rememberPagerState(
@@ -254,23 +263,21 @@ internal fun NotificationsContent(
                         )
                     }
                 }
+                Box(Modifier.fillMaxWidth().weight(1f)) {
                 HorizontalPager(
                     state = filterPagerState,
-                    modifier = Modifier.fillMaxWidth().weight(1f).testTag("notification_filter_pager"),
+                    modifier = Modifier.fillMaxSize().testTag("notification_filter_pager"),
                     key = { NotificationFilter.entries[it] },
                 ) { page ->
                     val filter = NotificationFilter.entries[page]
-                    val filteredNotifications = state.notifications.filter { notification ->
-                        when (filter) {
-                            NotificationFilter.All -> true
-                            NotificationFilter.Mentions -> notification.type.equals("mention", ignoreCase = true) ||
-                                notification.type.equals("reply", ignoreCase = true)
-                            NotificationFilter.Reactions -> notification.type.contains("reaction", ignoreCase = true)
-                        }
-                    }
+                    val filteredNotifications = state.notifications.filter(filter::includes)
                     LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
                     if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
                     items(filteredNotifications, key = TimelineNotification::id) { notification ->
+                        Column(Modifier.fillMaxWidth().background(
+                            if (notification.id in state.highlightedNotificationIds) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface,
+                        )) {
                         val status = notification.status
                         val isReply = notification.type.equals("mention", ignoreCase = true) ||
                             notification.type.equals("reply", ignoreCase = true)
@@ -279,7 +286,7 @@ internal fun NotificationsContent(
                                 Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                NotificationTypeIcon(Icons.Outlined.ChatBubbleOutline, "返信", notification.type)
+                                NotificationTypeIcon(Icons.AutoMirrored.Filled.Reply, "返信", notification.type)
                                 Spacer(Modifier.width(8.dp))
                                 Text("返信", style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -315,6 +322,7 @@ internal fun NotificationsContent(
                             }
                         }
                         HorizontalDivider()
+                        }
                     }
                     if (state.isLoadingMoreNotifications) {
                         item {
@@ -339,6 +347,12 @@ internal fun NotificationsContent(
                         }
                     }
                     }
+                }
+                if (newNoticeMessage != null) {
+                    Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+                        TimelineNotice(newNoticeMessage, onNewNoticeClick)
+                    }
+                }
                 }
             }
         }
@@ -686,24 +700,28 @@ private fun NotificationHeader(
     onAccountClick: (String) -> Unit,
 ) {
     val (icon, action) = when (notification.type) {
-        "mention" -> Icons.Outlined.ChatBubbleOutline to "返信"
-        "reply" -> Icons.Outlined.AlternateEmail to "返信しました"
-        "reblog" -> Icons.Outlined.Repeat to "ブーストしました"
-        "favourite" -> Icons.Outlined.FavoriteBorder to "お気に入りしました"
-        "follow" -> Icons.Outlined.PersonAdd to "フォローしました"
-        "follow_request" -> Icons.Outlined.HowToReg to "フォローをリクエストしました"
-        "poll" -> Icons.Outlined.Poll to "アンケートが終了しました"
-        "status" -> Icons.Outlined.Campaign to "新しい投稿があります"
-        "update" -> Icons.Outlined.Edit to "投稿を編集しました"
-        "emoji_reaction", "reaction" -> Icons.Outlined.SentimentSatisfiedAlt to "リアクションしました"
-        else -> Icons.Outlined.NotificationsNone to "通知"
+        "mention" -> Icons.AutoMirrored.Filled.Reply to "返信"
+        "reply" -> Icons.AutoMirrored.Filled.Reply to "返信しました"
+        "reblog" -> Icons.Filled.Repeat to "ブーストしました"
+        "favourite" -> Icons.Filled.Star to "お気に入りしました"
+        "follow" -> Icons.Filled.PersonAdd to "フォローしました"
+        "follow_request" -> Icons.Filled.HowToReg to "フォローをリクエストしました"
+        "poll" -> Icons.Filled.Poll to "アンケートが終了しました"
+        "status" -> Icons.Filled.Campaign to "新しい投稿があります"
+        "update" -> Icons.Filled.Edit to "投稿を編集しました"
+        "emoji_reaction", "reaction" -> Icons.Filled.AutoAwesome to "リアクションしました"
+        else -> Icons.Filled.Notifications to "通知"
     }
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onAccountClick(notification.account.id) }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        NotificationTypeIcon(icon, action, notification.type)
+        if (notification.type == "emoji_reaction" || notification.type == "reaction") {
+            NotificationReactionIcon(notification)
+        } else {
+            NotificationTypeIcon(icon, action, notification.type)
+        }
         Spacer(Modifier.width(8.dp))
         AsyncImage(
             model = notification.account.avatarUrl,
@@ -798,7 +816,7 @@ private fun NotificationStatusQuote(
 private fun NotificationTypeIcon(icon: ImageVector, action: String, type: String) {
     val tint = when (type) {
         "mention", "reply" -> Color(0xFF2686C4)
-        "favourite" -> Color(0xFFE46487)
+        "favourite" -> Color(0xFFD4A017)
         else -> MaterialTheme.colorScheme.primary
     }
     Icon(
@@ -807,6 +825,30 @@ private fun NotificationTypeIcon(icon: ImageVector, action: String, type: String
         modifier = Modifier.size(20.dp).testTag("notification_type_icon"),
         tint = tint,
     )
+}
+
+@Composable
+private fun NotificationReactionIcon(notification: TimelineNotification) {
+    val reaction = notification.matchingReaction
+    val imageUrl = reaction?.imageUrl
+    var imageLoadFailed by remember(imageUrl) { mutableStateOf(false) }
+    when {
+        reaction == null || imageLoadFailed ->
+            NotificationTypeIcon(Icons.Filled.AutoAwesome, "リアクション", notification.type)
+        imageUrl != null -> AsyncImage(
+            model = imageUrl,
+            contentDescription = "${reaction.name}のリアクション",
+            onError = { imageLoadFailed = true },
+            modifier = Modifier.size(20.dp).testTag("notification_type_icon"),
+            contentScale = ContentScale.Fit,
+        )
+        else -> Box(
+            Modifier.size(20.dp).testTag("notification_type_icon"),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(reaction.name, fontSize = 18.sp, lineHeight = 20.sp, maxLines = 1)
+        }
+    }
 }
 
 @Composable

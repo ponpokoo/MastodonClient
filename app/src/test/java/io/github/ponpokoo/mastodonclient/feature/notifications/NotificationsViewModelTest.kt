@@ -75,7 +75,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
     }
 
-    @Test fun refreshReportsWhenNoNewNotificationWasAdded() = runTest(dispatcher) {
+    @Test fun initialLoadWithoutMarkerDoesNotTreatExistingNotificationsAsNew() = runTest(dispatcher) {
         val repository = ScreenRepositoryFake()
         val browsing = BrowsingSession().apply { activate(testAccount) }
         val viewModel = own(NotificationsViewModel(repository, browsing))
@@ -83,7 +83,8 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
+        assertFalse(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
+        assertEquals(0, viewModel.uiState.value.unreadNotifications)
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
@@ -155,7 +156,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertFalse(viewModel.uiState.value.notificationsEndReached)
     }
 
-    @Test fun refreshSupersedesPaginationAndSavesMarker() = runTest(dispatcher) {
+    @Test fun refreshSupersedesPaginationAndDoesNotResaveAnUnchangedMarker() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<NotificationPage>>()
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
@@ -166,6 +167,9 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         viewModel.loadNotifications()
         advanceUntilIdle()
+        assertTrue(repository.markers.isEmpty())
+        viewModel.onLatestNotificationsShown(setOf("notification"), allNotificationsShown = true)
+        advanceUntilIdle()
         viewModel.loadNextNotifications()
         advanceUntilIdle()
         viewModel.loadNotifications(force = true)
@@ -175,7 +179,9 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertNull(viewModel.uiState.value.notificationsError)
         assertFalse(viewModel.uiState.value.isLoadingMoreNotifications)
         assertEquals(listOf("notification"), viewModel.uiState.value.notifications.map { it.id })
-        assertEquals(listOf("one" to "notification", "one" to "notification"), repository.markers)
+        viewModel.onLatestNotificationsShown(setOf("notification"), allNotificationsShown = true)
+        advanceUntilIdle()
+        assertEquals(listOf("one" to "notification"), repository.markers)
     }
 
     @Test fun accountSwitchRejectsOldPageAndOldMarker() = runTest(dispatcher) {
@@ -191,6 +197,8 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         viewModel.loadNotifications()
         advanceUntilIdle()
         browsing.activate(secondAccount)
+        advanceUntilIdle()
+        viewModel.onLatestNotificationsShown(setOf("second"), allNotificationsShown = true)
         advanceUntilIdle()
         delayed.complete(Result.success(NotificationPage(listOf(testNotification("old")), null, true)))
         advanceUntilIdle()
@@ -209,7 +217,67 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertEquals(1, viewModel.uiState.value.unreadNotifications)
         viewModel.loadNotifications()
         advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.unreadNotifications)
+        assertTrue(repository.markers.isEmpty())
+        viewModel.onLatestNotificationsShown(setOf("notification"), allNotificationsShown = true)
+        advanceUntilIdle()
         assertEquals(0, viewModel.uiState.value.unreadNotifications)
         assertEquals(1, repository.markers.size)
+    }
+
+    @Test fun unreadNotificationIsAcknowledgedOnlyWhenTheNewestRowIsShown() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationMarker(session: AccountSession) = Result.success("old")
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                Result.success(NotificationPage(listOf(testNotification("new"), testNotification("old")), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(setOf("new"), viewModel.uiState.value.pendingNewNotificationIds)
+        assertTrue(repository.markers.isEmpty())
+
+        viewModel.onLatestNotificationsShown(setOf("old"), allNotificationsShown = true)
+        advanceUntilIdle()
+        assertEquals(1, viewModel.uiState.value.unreadNotifications)
+        assertTrue(repository.markers.isEmpty())
+
+        viewModel.onLatestNotificationsShown(setOf("new"), allNotificationsShown = true)
+        advanceUntilIdle()
+        assertEquals(0, viewModel.uiState.value.unreadNotifications)
+        assertEquals(1, viewModel.uiState.value.shownNewNotice?.count)
+        assertEquals(listOf("one" to "new"), repository.markers)
+    }
+
+    @Test fun failedRefreshPreservesUnreadAndHighlightUntilTheTabIsLeft() = runTest(dispatcher) {
+        var requests = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationMarker(session: AccountSession) = Result.success("old")
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                if (++requests == 1) Result.success(NotificationPage(
+                    listOf(testNotification("new"), testNotification("old")), null, true,
+                )) else Result.failure(IllegalStateException("offline"))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(setOf("new"), viewModel.uiState.value.highlightedNotificationIds)
+        viewModel.refreshNotifications()
+        advanceUntilIdle()
+        assertEquals(setOf("new"), viewModel.uiState.value.pendingNewNotificationIds)
+        assertEquals(setOf("new"), viewModel.uiState.value.highlightedNotificationIds)
+        viewModel.onLatestNotificationsShown(setOf("new"), allNotificationsShown = true)
+        advanceUntilIdle()
+        assertTrue(repository.markers.isEmpty())
+
+        viewModel.onNotificationsHidden()
+        assertTrue(viewModel.uiState.value.highlightedNotificationIds.isEmpty())
+        assertEquals(1, viewModel.uiState.value.unreadNotifications)
     }
 }

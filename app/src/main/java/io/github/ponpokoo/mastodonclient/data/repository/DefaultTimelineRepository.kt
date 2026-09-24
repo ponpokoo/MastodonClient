@@ -294,6 +294,11 @@ class DefaultTimelineRepository(
         Unit
     }
 
+    override suspend fun getNotificationMarker(session: AccountSession): Result<String?> = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken)
+            .getNotificationMarker().notifications?.lastReadId
+    }
+
     override suspend fun search(session: AccountSession, query: String): Result<SearchResults> = runCatching {
         require(query.isNotBlank()) { "検索語を入力してください" }
         apiClientFactory.create(session.instanceUrl, session.accessToken)
