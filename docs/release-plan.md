@@ -10,14 +10,17 @@
 | 項目 | v2.0.2 |
 | --- | --- |
 | 公開日 | 2026-09-26（日本時間） |
-| 対象コミット | `67f5ec9` |
+| 公開タグの対象コミット | `67f5ec9` |
 | 公開区分 | GitHub ReleaseのPre-release |
 | アプリ版番号 | versionName `2.0.2`、versionCode `8` |
 | 配布APK | `app-release.apk` |
-| 配布APKのSHA-256 | `324f857dbe6217e02a8cfea25804ec28d46e456806e68bfe0de00adaf77e33df` |
+| 配布APKのSHA-256 | `1dfdee06ba2c5d13888e201ae99a8abbbf47b17c4d1ec45d75890895af8dde3a` |
 
 [Nagisa 2.0.2のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.0.2)を
 リリースノートの正本とする。公開ページでPre-release設定と添付APKのSHA-256を確認済み。
+投稿詳細から戻る際の位置保持を修正したAPKに差し替え済み。誤ってv2.0.1へ添付した修正版APKは削除し、
+v2.0.1の元のAPK（SHA-256 `fed3fb797a9f11bdc810b3a9ef94ce84c205960b02fc8c39ea97a175d0ebcc20`）を復旧した。
+公開タグ`v2.0.2`は`67f5ec9`を指し、修正コードは`1d19a0d`に含まれる。
 
 ## v2.0.2の変更と確認記録
 
@@ -38,7 +41,8 @@
 
 - タイムラインの保存位置からの復元、「最新へ」、別アカウントへ保存位置を引き継がないことの回帰テストを追加した。
 - 2026-09-26にDebug単体テスト148件が成功（失敗・エラー・スキップなし）。署名付きReleaseビルドも成功。
-- 配布APKはapplication ID `io.github.ponpokoo.mastodonclient`、versionName `2.0.2`、versionCode `8`。APK Signature Scheme v2による署名を検証した。公開ページの添付APKのSHA-256も`324f857dbe6217e02a8cfea25804ec28d46e456806e68bfe0de00adaf77e33df`と一致した。
+- 配布APKはapplication ID `io.github.ponpokoo.mastodonclient`、versionName `2.0.2`、versionCode `8`。APK Signature Scheme v2による署名を検証し、公開ページの添付APKのSHA-256が`1dfdee06ba2c5d13888e201ae99a8abbbf47b17c4d1ec45d75890895af8dde3a`と一致した。
+- 投稿詳細から戻るとタイムラインが先頭へ移動する問題を`1d19a0d`で修正し、端末回帰テスト1件が成功。修正版APKはversionName `2.0.2`、versionCode `8`、APK Signature Scheme v2で署名済み。
 - 長時間バックグラウンド後のタイムライン復元と、投稿時の閲覧注意フラグの送信結果は利用者が実機で確認した。
 - 通知欄の小アイコンは、利用者が実機で表示を確認した。
 
@@ -57,9 +61,6 @@ UI・機能仕様に記録した改善事項も含め、範囲を決めるとき
 | Android通知 | 通知をタップしても1件しか消去されない問題を修正する | 追加で消去する範囲（同じアカウント／アプリ全体） |
 
 ### 品質・基盤候補
-
-- 非表示にした操作への代替導線、文字拡大時の折り返し、読み上げ・コントラストを実機で確認する。
-- ネットワーク変更直後のストリーミング制御を見直し、データセーバーや動きを減らす設定との連動を検討する。
 - Roomを使った永続タイムラインキャッシュを検討する。現状はメモリキャッシュのみ。
 
 ### 保留中の案
