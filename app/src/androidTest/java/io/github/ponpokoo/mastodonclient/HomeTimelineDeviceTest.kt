@@ -13,6 +13,8 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.semantics.SemanticsProperties
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,6 +41,41 @@ class HomeTimelineDeviceTest {
         }
         composeRule.onNodeWithContentDescription("投稿メニュー").performClick()
         composeRule.onNodeWithText("ブラウザで開く").assertExists()
+    }
+
+    @Test
+    fun returningFromStatusDetailPreservesTimelinePosition() {
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodesWithTag("instance_input").fetchSemanticsNodes().isNotEmpty()
+        }
+        val isAuthenticated = composeRule.onAllNodesWithTag("timeline_list")
+            .fetchSemanticsNodes()
+            .isNotEmpty()
+        assumeTrue("Device has no authenticated Mastodon session", isAuthenticated)
+
+        repeat(5) {
+            composeRule.onNodeWithTag("timeline_list").performTouchInput { swipeUp() }
+            composeRule.waitForIdle()
+        }
+        val scrollRange = composeRule.onNodeWithTag("timeline_list")
+            .fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assumeTrue("Timeline did not scroll", scrollRange.value() > 0f)
+
+        composeRule.onAllNodesWithTag("timeline_status")[0].performClick()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            composeRule.onAllNodesWithTag("status_detail").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.activityRule.scenario.onActivity { activity ->
+            activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag("timeline_list").fetchSemanticsNodes().isNotEmpty()
+        }
+
+        val restoredScrollRange = composeRule.onNodeWithTag("timeline_list")
+            .fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertTrue("Returning from detail reset the timeline to the top", restoredScrollRange.value() > 0f)
     }
 
     @Test

@@ -234,6 +234,10 @@ fun HomeTimelineScreen(
         reactionsNotificationsListState,
     )
     val profileListState = rememberLazyListState()
+    // NavHost can recreate this destination after a detail route is popped.
+    var hasObservedTimelineContext by rememberSaveable { mutableStateOf(false) }
+    var observedTimelineSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var observedTimelineFeed by rememberSaveable { mutableStateOf<String?>(null) }
     var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
     var menuStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
     var confirmation by remember(mainState.session?.sessionId) { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
@@ -255,7 +259,14 @@ fun HomeTimelineScreen(
         }
     }
     LaunchedEffect(mainState.session?.sessionId, state.selectedFeed) {
-        if (state.resumeAnchorId == null) timelineListState.scrollToItem(0)
+        val sessionId = mainState.session?.sessionId
+        val feed = state.selectedFeed.name
+        val contextChanged = hasObservedTimelineContext &&
+            (observedTimelineSessionId != sessionId || observedTimelineFeed != feed)
+        if (contextChanged && state.resumeAnchorId == null) timelineListState.scrollToItem(0)
+        observedTimelineSessionId = sessionId
+        observedTimelineFeed = feed
+        hasObservedTimelineContext = true
     }
     LaunchedEffect(state.resumeAnchorId, state.statuses) {
         val anchorId = state.resumeAnchorId ?: return@LaunchedEffect
