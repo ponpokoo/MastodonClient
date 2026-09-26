@@ -1,7 +1,13 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
@@ -32,26 +38,80 @@ data class TimelineUiState(
     val unseenStreamIds: Set<String> = emptySet(),
     val streamAutoScrollId: Long = 0,
     val streamAtTopCount: Int? = null,
+    val resumeAnchorId: String? = null,
+    val resumeOffset: Int = 0,
+    val isResumedWindow: Boolean = false,
 )
 
-class TimelineViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
+class TimelineViewModel(
+    private val timelineRepository: TimelineRepository,
+    browsing: BrowsingSession,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState = _uiState.asStateFlow()
     private var timelineJob: Job? = null
     private var followingTop = false
     private var streamSequence = 0L
+    private var resumeCursor: String? = null
+
+    class Factory(
+        private val timelineRepository: TimelineRepository,
+        private val browsing: BrowsingSession,
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+            TimelineViewModel(timelineRepository, browsing, extras.createSavedStateHandle()) as T
+    }
+
+    private data class SavedViewport(
+        val feed: TimelineFeed,
+        val anchorId: String,
+        val beforeAnchorId: String?,
+        val offset: Int,
+    )
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         followingTop = false
-        _uiState.value = TimelineUiState(isInitialLoading = snapshot.generation == 0L || snapshot.account != null)
-        if (snapshot.account != null) loadInitial()
+        if (snapshot.account == null && snapshot.generation > 0) clearSavedViewport()
+        val viewport = snapshot.account?.let { savedViewport(it.sessionId) }
+        resumeCursor = viewport?.beforeAnchorId ?: viewport?.anchorId
+        _uiState.value = TimelineUiState(
+            isInitialLoading = snapshot.generation == 0L || snapshot.account != null,
+            selectedFeed = viewport?.feed ?: TimelineFeed.Home,
+        )
+        if (snapshot.account != null) loadInitial(viewport)
     }
 
     fun refresh() {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         if (_uiState.value.isRefreshing || _uiState.value.isInitialLoading || _uiState.value.isLoadingMore) return
+        if (_uiState.value.isResumedWindow) {
+            val viewport = savedViewport(session.sessionId) ?: run {
+                goToLatest()
+                return
+            }
+            timelineJob = requestScope.launch {
+                _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+                loadViewportPage(snapshot, _uiState.value.selectedFeed, viewport).onSuccess { page ->
+                        val anchor = viewport.anchorId.takeIf { id -> page.statuses.any { it.timelineId == id } }
+                            ?: page.statuses.firstOrNull()?.timelineId
+                        resumeCursor = viewport.beforeAnchorId ?: viewport.anchorId
+                        _uiState.update { it.copy(
+                            statuses = page.statuses,
+                            isRefreshing = false,
+                            endReached = page.endReached,
+                            nextMaxId = page.nextMaxId,
+                            refreshNewStatusCount = null,
+                            resumeAnchorId = anchor,
+                            resumeOffset = if (anchor == viewport.anchorId) viewport.offset else 0,
+                        ) }
+                    }.onFailure { error -> showError(error, refreshing = true) }
+            }
+            return
+        }
         val idsAtStart = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
         timelineJob = requestScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
@@ -99,7 +159,10 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
     }
 
     fun retry() {
-        if (_uiState.value.statuses.isEmpty()) loadInitial() else loadNextPage()
+        if (_uiState.value.statuses.isEmpty()) {
+            val sessionId = currentSnapshot()?.account?.sessionId ?: return
+            loadInitial(savedViewport(sessionId))
+        } else loadNextPage()
     }
 
     fun selectFeed(feed: TimelineFeed) {
@@ -107,6 +170,8 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         val session = snapshot.account!!
         if (feed == _uiState.value.selectedFeed || _uiState.value.isInitialLoading) return
         timelineJob?.cancel()
+        clearSavedViewport()
+        resumeCursor = null
         timelineJob = requestScope.launch {
             _uiState.update {
                 it.copy(
@@ -121,6 +186,9 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
                     endReached = false,
                     nextMaxId = null,
                     errorMessage = null,
+                    resumeAnchorId = null,
+                    resumeOffset = 0,
+                    isResumedWindow = false,
                 )
             }
             timelineRepository.getTimeline(session, feed)
@@ -171,9 +239,61 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         _uiState.update { it.copy(announcementsVisible = false) }
     }
 
+    fun saveViewport(anchorId: String, beforeAnchorId: String?, offset: Int) {
+        val session = currentSnapshot()?.account ?: return
+        val state = _uiState.value
+        if (state.isInitialLoading || state.isRefreshing || state.resumeAnchorId != null ||
+            state.statuses.none { it.timelineId == anchorId }) return
+        savedStateHandle[VIEWPORT_SESSION] = session.sessionId
+        savedStateHandle[VIEWPORT_FEED] = state.selectedFeed.name
+        savedStateHandle[VIEWPORT_ANCHOR] = anchorId
+        val resolvedBeforeId = beforeAnchorId ?: if (state.isResumedWindow && resumeCursor != anchorId) resumeCursor else null
+        savedStateHandle[VIEWPORT_BEFORE] = resolvedBeforeId.orEmpty()
+        savedStateHandle[VIEWPORT_OFFSET] = offset.coerceAtLeast(0)
+        if (state.isResumedWindow) resumeCursor = resolvedBeforeId ?: anchorId
+    }
+
+    fun clearSavedViewport() {
+        savedStateHandle.remove<String>(VIEWPORT_SESSION)
+        savedStateHandle.remove<String>(VIEWPORT_FEED)
+        savedStateHandle.remove<String>(VIEWPORT_ANCHOR)
+        savedStateHandle.remove<String>(VIEWPORT_BEFORE)
+        savedStateHandle.remove<Int>(VIEWPORT_OFFSET)
+    }
+
+    fun consumeResumeAnchor() {
+        _uiState.update { it.copy(resumeAnchorId = null, resumeOffset = 0) }
+    }
+
+    fun goToLatest() {
+        val snapshot = currentSnapshot() ?: return
+        val state = _uiState.value
+        if (!state.isResumedWindow || state.isInitialLoading || state.isRefreshing) return
+        timelineJob?.cancel()
+        timelineJob = requestScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+            timelineRepository.getTimeline(snapshot.account!!, state.selectedFeed)
+                .forSession(snapshot).onSuccess { page ->
+                    resumeCursor = null
+                    clearSavedViewport()
+                    _uiState.update { it.copy(
+                        statuses = page.statuses,
+                        isRefreshing = false,
+                        endReached = page.endReached,
+                        nextMaxId = page.nextMaxId,
+                        isResumedWindow = false,
+                        resumeAnchorId = page.statuses.firstOrNull()?.timelineId,
+                        resumeOffset = 0,
+                        unseenStreamIds = emptySet(),
+                        refreshNewStatusCount = null,
+                    ) }
+                }.onFailure { error -> showError(error, refreshing = true) }
+        }
+    }
+
     fun updateViewport(atTopAndVisible: Boolean) {
-        followingTop = atTopAndVisible
-        if (atTopAndVisible) _uiState.update { it.copy(unseenStreamIds = emptySet()) }
+        followingTop = atTopAndVisible && !_uiState.value.isResumedWindow
+        if (followingTop) _uiState.update { it.copy(unseenStreamIds = emptySet()) }
     }
 
     fun consumeStreamNotice(id: Long) {
@@ -184,20 +304,78 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
         _uiState.update { it.copy(refreshNewStatusCount = null) }
     }
 
-    private fun loadInitial() {
+    private fun loadInitial(viewport: SavedViewport? = null) {
         val snapshot = currentSnapshot() ?: return
         val feed = _uiState.value.selectedFeed
         timelineJob?.cancel()
         _uiState.update { it.copy(isInitialLoading = true, errorMessage = null) }
         timelineJob = requestScope.launch {
-            timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot).fold(
-                onSuccess = { page -> _uiState.update { it.copy(
-                    statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::timelineId), isInitialLoading = false,
-                    endReached = page.endReached, nextMaxId = page.nextMaxId,
-                ) } },
+            val aroundAnchor = viewport != null
+            var result = if (viewport != null) loadViewportPage(snapshot, feed, viewport)
+                else timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot)
+            var restored = viewport
+            if (aroundAnchor && result.getOrNull()?.statuses?.isEmpty() == true) {
+                result = timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot)
+                restored = null
+                resumeCursor = null
+                clearSavedViewport()
+            }
+            result.fold(
+                onSuccess = { page ->
+                    val anchor = restored?.anchorId?.takeIf { id -> page.statuses.any { it.timelineId == id } }
+                        ?: if (aroundAnchor && restored != null) page.statuses.firstOrNull()?.timelineId else null
+                    _uiState.update { it.copy(
+                        statuses = page.statuses,
+                        isInitialLoading = false,
+                        endReached = page.endReached,
+                        nextMaxId = page.nextMaxId,
+                        resumeAnchorId = anchor,
+                        resumeOffset = if (anchor == restored?.anchorId) restored?.offset ?: 0 else 0,
+                        isResumedWindow = aroundAnchor && restored != null,
+                    ) }
+                },
                 onFailure = { showError(it, initial = true) },
             )
         }
+    }
+
+    private suspend fun loadViewportPage(
+        snapshot: BrowsingSession.Snapshot,
+        feed: TimelineFeed,
+        viewport: SavedViewport,
+    ): Result<TimelinePage> {
+        val session = snapshot.account!!
+        val cursor = viewport.beforeAnchorId ?: viewport.anchorId
+        val page = timelineRepository.getTimeline(session, feed, maxId = cursor, limit = 40).forSession(snapshot)
+        if (viewport.beforeAnchorId != null || page.isFailure) return page
+        val anchor = timelineRepository.getTimelineStatus(session, viewport.anchorId).forSession(snapshot).getOrNull()
+        return page.map { result ->
+            if (anchor == null) result else result.copy(
+                statuses = (listOf(anchor) + result.statuses).distinctBy(TimelineStatus::timelineId),
+            )
+        }
+    }
+
+    private fun savedViewport(sessionId: String): SavedViewport? {
+        if (savedStateHandle.get<String>(VIEWPORT_SESSION) != sessionId) return null
+        val feed = TimelineFeed.entries.firstOrNull {
+            it.name == savedStateHandle.get<String>(VIEWPORT_FEED)
+        } ?: return null
+        val anchorId = savedStateHandle.get<String>(VIEWPORT_ANCHOR)?.takeIf(String::isNotBlank) ?: return null
+        return SavedViewport(
+            feed = feed,
+            anchorId = anchorId,
+            beforeAnchorId = savedStateHandle.get<String>(VIEWPORT_BEFORE)?.takeIf(String::isNotBlank),
+            offset = savedStateHandle.get<Int>(VIEWPORT_OFFSET)?.coerceAtLeast(0) ?: 0,
+        )
+    }
+
+    private companion object {
+        const val VIEWPORT_SESSION = "timeline_viewport_session"
+        const val VIEWPORT_FEED = "timeline_viewport_feed"
+        const val VIEWPORT_ANCHOR = "timeline_viewport_anchor"
+        const val VIEWPORT_BEFORE = "timeline_viewport_before"
+        const val VIEWPORT_OFFSET = "timeline_viewport_offset"
     }
 
     override fun onChange(change: BrowsingSession.Change) {
@@ -214,6 +392,8 @@ class TimelineViewModel(private val timelineRepository: TimelineRepository, brow
                             })
                         } else if (exists) {
                             current.copy(statuses = current.statuses.map { if (it.timelineId == event.status.timelineId) event.status else it })
+                        } else if (current.isResumedWindow) {
+                            current.copy(unseenStreamIds = current.unseenStreamIds + event.status.timelineId)
                         } else {
                             current.copy(
                                 statuses = listOf(event.status) + current.statuses,

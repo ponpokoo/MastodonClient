@@ -379,6 +379,10 @@ class DefaultTimelineRepository(
         )
     }
 
+    override suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).getStatus(timelineId).toDomain()
+    }
+
     override suspend fun getHashtagTimeline(
         session: AccountSession,
         hashtag: String,

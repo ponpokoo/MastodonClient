@@ -375,7 +375,7 @@ class ComposePostViewModel(
                 quotedStatusId = activeQuoteStatusId.takeIf { state.quotingNative },
                 mediaIds = mediaIds,
                 spoilerText = state.spoilerText,
-                sensitive = state.sensitive,
+                sensitive = state.sensitive || state.spoilerText.isNotBlank(),
                 visibility = state.visibility.apiValue,
                 language = null,
                 pollOptions = state.pollOptions.map(String::trim).filter(String::isNotEmpty),

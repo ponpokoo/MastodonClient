@@ -30,6 +30,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 interface TimelineRepository {
     fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = null
 
+    suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> =
+        Result.failure(UnsupportedOperationException("投稿の取得は未対応です"))
+
     suspend fun getHomeTimeline(
         session: AccountSession,
         maxId: String? = null,

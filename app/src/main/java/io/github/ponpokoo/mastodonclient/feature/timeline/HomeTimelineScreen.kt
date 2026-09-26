@@ -247,6 +247,46 @@ fun HomeTimelineScreen(
     val destination = destinations[pagerState.currentPage]
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
+        mainState.session?.sessionId, state.isResumedWindow) {
+        if (mainState.preferencesLoaded && !mainState.preferences.keepPositionOnPullRefresh) {
+            viewModel.clearSavedViewport()
+            if (viewModel.uiState.value.isResumedWindow) viewModel.goToLatest()
+        }
+    }
+    LaunchedEffect(mainState.session?.sessionId, state.selectedFeed) {
+        if (state.resumeAnchorId == null) timelineListState.scrollToItem(0)
+    }
+    LaunchedEffect(state.resumeAnchorId, state.statuses) {
+        val anchorId = state.resumeAnchorId ?: return@LaunchedEffect
+        val index = state.statuses.indexOfFirst { it.timelineId == anchorId }
+        if (index >= 0) timelineListState.scrollToItem(index, state.resumeOffset)
+        else timelineListState.scrollToItem(0)
+        viewModel.consumeResumeAnchor()
+    }
+    LaunchedEffect(mainState.session?.sessionId, mainState.preferencesLoaded,
+        mainState.preferences.keepPositionOnPullRefresh, state.selectedFeed,
+        state.statuses, state.isInitialLoading, state.isRefreshing, state.resumeAnchorId) {
+        if (!mainState.preferencesLoaded || !mainState.preferences.keepPositionOnPullRefresh ||
+            mainState.session == null || state.isInitialLoading || state.isRefreshing ||
+            state.resumeAnchorId != null || state.statuses.isEmpty()) return@LaunchedEffect
+        snapshotFlow {
+            if (timelineListState.isScrollInProgress) null else {
+                val visibleId = timelineListState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String
+                val index = state.statuses.indexOfFirst { it.timelineId == visibleId }
+                if (index < 0) null else Triple(
+                    state.statuses[index].timelineId,
+                    state.statuses.getOrNull(index - 1)?.timelineId,
+                    timelineListState.firstVisibleItemScrollOffset,
+                )
+            }
+        }.distinctUntilChanged().collect { viewport ->
+            viewport?.let { (anchorId, beforeAnchorId, offset) ->
+                viewModel.saveViewport(anchorId, beforeAnchorId, offset)
+            }
+        }
+    }
+
     LaunchedEffect(notificationOpenRequest) {
         val request = notificationOpenRequest ?: return@LaunchedEffect
         if (!mainViewModel.switchAccountAndWait(request.sessionId)) {
@@ -439,7 +479,10 @@ fun HomeTimelineScreen(
                             scope.launch {
                                 if (pagerState.currentPage == page) {
                                     when (item) {
-                                        MainDestination.Home -> timelineListState.animateScrollToItem(0)
+                                        MainDestination.Home -> {
+                                            if (state.isResumedWindow) viewModel.goToLatest()
+                                            else timelineListState.animateScrollToItem(0)
+                                        }
                                         MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
                                         MainDestination.Profile -> profileListState.animateScrollToItem(0)
                                         MainDestination.Explore -> Unit
@@ -618,13 +661,16 @@ fun HomeTimelineScreen(
         }
     }
         val newPostMessage = when {
+            state.isResumedWindow -> "前回の位置を表示中・最新へ"
             state.unseenStreamIds.isNotEmpty() -> "新着 ${state.unseenStreamIds.size}件"
             state.streamAtTopCount != null -> "新着 ${state.streamAtTopCount}件"
             else -> refreshNotice
         }
         if (destination == MainDestination.Home && newPostMessage != null && snackbarHostState.currentSnackbarData == null) {
             Box(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp)) {
-                TimelineNotice(newPostMessage, onClick = if (state.unseenStreamIds.isNotEmpty()) {
+                TimelineNotice(newPostMessage, onClick = if (state.isResumedWindow) {
+                    { viewModel.goToLatest() }
+                } else if (state.unseenStreamIds.isNotEmpty()) {
                     { scope.launch { timelineListState.animateScrollToItem(0); viewModel.updateViewport(true) }; Unit }
                 } else null)
             }
@@ -1011,7 +1057,8 @@ private fun TimelineContent(
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
 ) {
-    LaunchedEffect(listState, state.statuses.size, state.nextMaxId) {
+    LaunchedEffect(listState, state.statuses.size, state.nextMaxId, state.resumeAnchorId) {
+        if (state.resumeAnchorId != null) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .distinctUntilChanged()
             .collect { lastVisibleIndex ->
@@ -1316,6 +1363,13 @@ internal fun StatusCard(
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
                 Spacer(Modifier.height(8.dp))
                 if (mediaRevealed) {
+                    if (status.sensitive) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { mediaRevealed = false }) {
+                                Text("閲覧注意に戻す")
+                            }
+                        }
+                    }
                     MediaGrid(
                         status.mediaAttachments,
                         onMediaClick,

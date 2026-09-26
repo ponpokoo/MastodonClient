@@ -398,9 +398,9 @@ fun AppNavigation(
             })
             SideEffect { mainViewModel.bindForegroundLifecycle(appLifecycle) }
             val browsing = mainViewModel.browsing
-            val timelineViewModel: TimelineViewModel = viewModel(factory = ScreenViewModelFactory {
-                TimelineViewModel(timelineRepository, browsing)
-            })
+            val timelineViewModel: TimelineViewModel = viewModel(
+                factory = TimelineViewModel.Factory(timelineRepository, browsing),
+            )
             val searchViewModel: SearchViewModel = viewModel(factory = ScreenViewModelFactory {
                 SearchViewModel(timelineRepository, browsing)
             })

@@ -25,6 +25,7 @@ data class MainSessionUiState(
     val session: AccountSession? = null,
     val sessions: List<AccountSession> = emptyList(),
     val preferences: AppPreferences = AppPreferences(),
+    val preferencesLoaded: Boolean = false,
     val requiresLogin: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -38,7 +39,7 @@ class MainSessionViewModel(
     private val systemNotifications: io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository? = null,
 ) : ViewModel() {
     val browsing = BrowsingSession()
-    private val mutableState = MutableStateFlow(MainSessionUiState())
+    private val mutableState = MutableStateFlow(MainSessionUiState(preferencesLoaded = preferencesStore == null))
     val uiState = mutableState.asStateFlow()
     private var restoreJob: Job? = null
     private var accountChangeJob: Job? = null
@@ -71,7 +72,7 @@ class MainSessionViewModel(
                     val firstPreferences = !preferencesReady
                     preferencesReady = true
                     val previous = mutableState.value.preferences
-                    mutableState.update { it.copy(preferences = preferences) }
+                    mutableState.update { it.copy(preferences = preferences, preferencesLoaded = true) }
                     val sessionId = mutableState.value.session?.sessionId
                     if (firstPreferences || previous.forAccount(sessionId).streaming != preferences.forAccount(sessionId).streaming ||
                         previous.pauseStreamingInBackground != preferences.pauseStreamingInBackground || previous.foregroundNotificationsEnabled != preferences.foregroundNotificationsEnabled

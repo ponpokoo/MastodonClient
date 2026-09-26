@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import androidx.lifecycle.SavedStateHandle
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -233,10 +234,63 @@ class TimelineViewModelTest {
         assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
         assertEquals(null, model.uiState.value.streamAtTopCount)
     }
+    @Test
+    fun savedViewportRestoresNearbyStatusesAndCanReturnToLatest() = runTest(dispatcher) {
+        val requestedMaxIds = mutableListOf<String?>()
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                requestedMaxIds += maxId
+                val statuses = if (maxId == "before") listOf(status("anchor"), status("older"))
+                    else listOf(status("latest"), status("anchor"), status("before"))
+                return Result.success(TimelinePage(statuses, null, true))
+            }
+        }
+        val savedState = SavedStateHandle()
+        val first = createTimeline(repository, FakeAuthRepository(SESSION), savedState)
+        advanceUntilIdle()
+        first.saveViewport("anchor", "before", 18)
+
+        val restored = createTimeline(repository, FakeAuthRepository(SESSION), savedState)
+        advanceUntilIdle()
+        assertEquals(listOf(null, "before"), requestedMaxIds)
+        assertEquals(listOf("anchor", "older"), restored.uiState.value.statuses.map { it.timelineId })
+        assertTrue(restored.uiState.value.isResumedWindow)
+        assertEquals("anchor", restored.uiState.value.resumeAnchorId)
+        assertEquals(18, restored.uiState.value.resumeOffset)
+
+        restored.consumeResumeAnchor()
+        restored.goToLatest()
+        advanceUntilIdle()
+        assertEquals(listOf(null, "before", null), requestedMaxIds)
+        assertFalse(restored.uiState.value.isResumedWindow)
+        assertEquals("latest", restored.uiState.value.resumeAnchorId)
+    }
+
+    @Test
+    fun savedViewportIsNotUsedForAnotherAccount() = runTest(dispatcher) {
+        val repository = FakeTimelineRepository()
+        val savedState = SavedStateHandle()
+        val first = createTimeline(repository, FakeAuthRepository(SESSION), savedState)
+        advanceUntilIdle()
+        first.saveViewport("first", null, 12)
+
+        val other = SESSION.copy(sessionId = "other", instanceUrl = "https://other.social")
+        val restored = createTimeline(repository, FakeAuthRepository(other), savedState)
+        advanceUntilIdle()
+
+        assertEquals(listOf(null, null), repository.requestedMaxIds)
+        assertFalse(restored.uiState.value.isResumedWindow)
+        assertEquals(null, restored.uiState.value.resumeAnchorId)
+    }
+
     private lateinit var mainViewModel: MainSessionViewModel
-    private fun createTimeline(repository: TimelineRepository, auth: AuthRepository): TimelineViewModel {
+    private fun createTimeline(
+        repository: TimelineRepository,
+        auth: AuthRepository,
+        savedState: SavedStateHandle = SavedStateHandle(),
+    ): TimelineViewModel {
         mainViewModel = MainSessionViewModel(auth, repository)
-        return TimelineViewModel(repository, mainViewModel.browsing)
+        return TimelineViewModel(repository, mainViewModel.browsing, savedState)
     }
 
     private class FakeTimelineRepository : TimelineRepository {

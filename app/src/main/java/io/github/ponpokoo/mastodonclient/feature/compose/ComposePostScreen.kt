@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -14,6 +15,8 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -31,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -45,6 +49,7 @@ import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Drafts
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Group
@@ -93,6 +98,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -436,43 +445,39 @@ fun ComposePostScreen(
                 }
             }
             if (cwEnabled) {
-                OutlinedTextField(
-                    value = state.spoilerText,
-                    onValueChange = viewModel::onSpoilerChanged,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    label = { Text("内容警告") },
-                    singleLine = true,
-                )
-            }
-            if (state.attachments.isNotEmpty()) {
-                Text(
-                    "添付メディア ${state.attachments.size}件",
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            state.attachments.chunked(2).forEach { rowAttachments ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                val cwInteractionSource = remember { MutableInteractionSource() }
+                val cwFocused by cwInteractionSource.collectIsFocusedAsState()
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(48.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        1.dp,
+                        if (cwFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    ),
                 ) {
-                    rowAttachments.forEach { attachment ->
-                        ComposerAttachmentTile(
-                            attachment = attachment,
-                            modifier = Modifier.weight(1f),
-                            onRemove = { viewModel.removeAttachment(attachment.uri) },
-                            onEditAlt = {
-                                altEditingUri = attachment.uri
-                                altEditorText = attachment.description
-                            },
-                        )
-                    }
-                    if (rowAttachments.size == 1) Spacer(Modifier.weight(1f))
+                    BasicTextField(
+                        value = state.spoilerText,
+                        onValueChange = viewModel::onSpoilerChanged,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        interactionSource = cwInteractionSource,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                            .semantics { contentDescription = "内容警告" },
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (state.spoilerText.isEmpty()) {
+                                    Text("内容警告", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                innerTextField()
+                            }
+                        },
+                    )
                 }
             }
             Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                Box(Modifier.fillMaxWidth().heightIn(min = 160.dp)) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 96.dp)) {
                     if (textFieldValue.text.isEmpty()) {
                         Text(
                             if (isReply) "返信を入力" else "いまどうしてる？",
@@ -488,7 +493,7 @@ fun ComposePostScreen(
                                 viewModel.onTextChanged(value.text)
                             }
                         },
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp)
                             .focusRequester(focusRequester).testTag("compose_text"),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
@@ -500,6 +505,65 @@ fun ComposePostScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            if (state.attachments.isNotEmpty()) {
+                val mediaSensitive = state.sensitive || state.spoilerText.isNotBlank()
+                val canChangeMediaSensitivity = state.spoilerText.isBlank() && !state.isLoading &&
+                    !state.isPosting && !state.isImportingMedia
+                Text(
+                    "添付メディア ${state.attachments.size}件",
+                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                state.attachments.chunked(2).forEach { rowAttachments ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowAttachments.forEach { attachment ->
+                            ComposerAttachmentTile(
+                                attachment = attachment,
+                                modifier = Modifier.weight(1f),
+                                onRemove = { viewModel.removeAttachment(attachment.uri) },
+                                onEditAlt = {
+                                    altEditingUri = attachment.uri
+                                    altEditorText = attachment.description
+                                },
+                            )
+                        }
+                        if (rowAttachments.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                        .toggleable(
+                            value = mediaSensitive,
+                            enabled = canChangeMediaSensitivity,
+                            role = Role.Switch,
+                            onValueChange = viewModel::setSensitive,
+                        )
+                        .testTag("compose_media_sensitive"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("メディアを閲覧注意にする")
+                        if (state.spoilerText.isNotBlank()) {
+                            Text(
+                                "内容警告により自動で設定されます",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = mediaSensitive,
+                        onCheckedChange = null,
+                        enabled = canChangeMediaSensitivity,
+                        modifier = Modifier.clearAndSetSemantics {},
+                    )
+                }
             }
 
             if (state.pollOptions.isNotEmpty()) {
@@ -756,7 +820,7 @@ private fun ComposerAttachmentTile(
                 AsyncImage(
                     model = attachment.uri,
                     contentDescription = attachment.description.ifBlank { "添付メディア" },
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1.35f).clip(RoundedCornerShape(8.dp)),
                     contentScale = ContentScale.Crop,
                 )
                 IconButton(
@@ -767,22 +831,28 @@ private fun ComposerAttachmentTile(
                     Icon(Icons.Outlined.Close, contentDescription = "添付を削除", tint = Color.White)
                 }
             }
-            Text(attachment.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelMedium)
-            if (bytes > 0L) Text(
-                Formatter.formatShortFileSize(context, bytes),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (attachment.description.isNotBlank()) Text(
-                attachment.description,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = onEditAlt, modifier = Modifier.fillMaxWidth()) {
-                Text(if (attachment.description.isBlank()) "ALTを追加" else "ALTを編集", maxLines = 1)
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        attachment.fileName + if (bytes > 0L) " · ${Formatter.formatShortFileSize(context, bytes)}" else "",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Text(
+                        attachment.description.takeIf(String::isNotBlank)?.let { "ALT: $it" } ?: "ALT未設定",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onEditAlt, modifier = Modifier.size(48.dp)) {
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = if (attachment.description.isBlank()) "ALTを追加" else "ALTを編集",
+                    )
+                }
             }
         }
     }
