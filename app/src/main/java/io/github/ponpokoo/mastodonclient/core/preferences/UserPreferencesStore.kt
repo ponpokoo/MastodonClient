@@ -100,6 +100,7 @@ data class ComposeDraft(
     val attachmentFileNames: Map<String, String> = emptyMap(),
     val attachmentMimeTypes: Map<String, String> = emptyMap(),
     val attachmentDescriptions: Map<String, String> = emptyMap(),
+    val attachmentMediaIds: Map<String, String> = emptyMap(),
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
     val pollMultiple: Boolean = false,
@@ -107,10 +108,11 @@ data class ComposeDraft(
 )
 
 class UserPreferencesStore(
-    context: Context,
+    private val dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
 ) {
-    private val dataStore = context.applicationContext.userPreferencesDataStore
+    constructor(context: Context, json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }) :
+        this(context.applicationContext.userPreferencesDataStore, json)
     private val composeBuffers = MutableStateFlow<Map<String, ComposeDraft>>(emptyMap())
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { stored ->

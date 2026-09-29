@@ -87,7 +87,11 @@ interface MastodonApi {
     ): MediaAttachmentDto
 
     @GET("api/v1/media/{id}")
-    suspend fun getMedia(@Path("id") id: String): MediaAttachmentDto
+    suspend fun getMedia(@Path("id") id: String): retrofit2.Response<okhttp3.ResponseBody>
+
+    @retrofit2.http.FormUrlEncoded
+    @retrofit2.http.PUT("api/v1/media/{id}")
+    suspend fun updateMediaDescription(@Path("id") id: String, @retrofit2.http.Field("description") description: String): MediaAttachmentDto
 
     @GET("api/v1/accounts/{id}")
     suspend fun getAccount(@Path("id") id: String): AccountDto

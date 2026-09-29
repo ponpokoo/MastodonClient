@@ -31,6 +31,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class ComposePostUiState(
     val sessions: List<AccountSession> = emptyList(),
@@ -75,6 +83,7 @@ class ComposePostViewModel(
     private val nativeQuote: Boolean = false,
     private val initialSharedText: String? = null,
     private val initialSharedMediaUri: String? = null,
+    private val logMediaFailure: (String) -> Unit = { android.util.Log.w("MediaUpload", it) },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ComposePostUiState())
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
@@ -84,6 +93,120 @@ class ComposePostViewModel(
     private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
     private var activeNativeQuote: Boolean = nativeQuote
     private var initialShareApplied = false
+    private val mediaJobs = mutableMapOf<String, Job>()
+    private val mediaMutex = Mutex()
+    private var mediaGeneration = 0
+
+    private fun stopMedia() {
+        mediaGeneration++
+        mediaJobs.values.forEach { it.cancel() }
+        mediaJobs.clear()
+    }
+
+    private fun scheduleAttachments() {
+        _uiState.value.attachments.forEach { scheduleMedia(it.uri) }
+    }
+
+    fun retryMedia(uri: String) {
+        if (_uiState.value.isPosting) return
+        scheduleMedia(uri, retry = true)
+    }
+
+    private fun scheduleMedia(uri: String, retry: Boolean = false) {
+        if (mediaJobs[uri]?.isActive == true) return
+        val session = _uiState.value.selectedSession ?: return
+        val initial = _uiState.value.attachments.find { it.uri == uri } ?: return
+        if (!retry && initial.transferState != MediaTransferState.Waiting) return
+        val generation = mediaGeneration
+        fun update(transform: (DraftAttachment) -> DraftAttachment) {
+            _uiState.update { state ->
+                if (generation != mediaGeneration || state.selectedSession?.sessionId != session.sessionId) state
+                else state.copy(attachments = state.attachments.map { if (it.uri == uri) transform(it) else it })
+            }
+        }
+        update { it.copy(transferState = MediaTransferState.Waiting, errorMessage = null, errorDetail = null) }
+        mediaJobs[uri] = viewModelScope.launch {
+            try {
+                if (!retry) withTimeoutOrNull(1_000) { uiState.first { it.isPosting } }
+                mediaMutex.withLock {
+                    currentCoroutineContext().ensureActive()
+                    var attachment = _uiState.value.attachments.find { it.uri == uri } ?: return@withLock
+                    var processingStarted = System.nanoTime()
+                    suspend fun check(id: String) = timelineRepository.checkMedia(session, id).getOrElse { error ->
+                        if ((error as? HttpException)?.code() == 422) {
+                            update { it.copy(mediaId = null, uploadedDescription = null) }
+                        }
+                        throw error
+                    }
+                    var media = attachment.mediaId?.let { id ->
+                        update { it.copy(transferState = MediaTransferState.Processing) }
+                        try { check(id) } catch (error: Exception) {
+                            if ((error as? HttpException)?.code() == 404) {
+                                update { it.copy(mediaId = null, uploadedDescription = null) }
+                                null
+                            } else throw error
+                        }
+                    }
+                    if (media == null) {
+                        val path = java.net.URI(attachment.uri).path ?: error("Missing file")
+                        update { it.copy(transferState = MediaTransferState.Uploading, progress = 0f) }
+                        media = timelineRepository.uploadMedia(session, MediaUpload(
+                            attachment.fileName, attachment.mimeType, path, attachment.description,
+                            onProgress = { progress -> update { it.copy(progress = progress) } },
+                        )).getOrThrow()
+                        currentCoroutineContext().ensureActive()
+                        update { it.copy(mediaId = media.id, uploadedDescription = media.description.orEmpty()) }
+                        processingStarted = System.nanoTime()
+                    }
+                    val id = media.id
+                    if (!media.ready) {
+                        update { it.copy(transferState = MediaTransferState.Processing, progress = null) }
+                        val remaining = (60_000 - (System.nanoTime() - processingStarted) / 1_000_000).coerceAtLeast(0)
+                        val ready = withTimeoutOrNull(remaining) {
+                            while (true) {
+                                delay(1_000)
+                                val checked = check(id)
+                                if (checked.ready) {
+                                    update { it.copy(uploadedDescription = checked.description.orEmpty()) }
+                                    break
+                                }
+                            }
+                            true
+                        } ?: false
+                        if (!ready) {
+                            update { it.copy(transferState = MediaTransferState.CheckAgain,
+                                errorMessage = "サーバーでの処理に時間がかかっています") }
+                            return@withLock
+                        }
+                    } else update { it.copy(uploadedDescription = media.description.orEmpty()) }
+                    while (true) {
+                        attachment = _uiState.value.attachments.find { it.uri == uri } ?: return@withLock
+                        if (attachment.description == attachment.uploadedDescription) break
+                        update { it.copy(transferState = MediaTransferState.UpdatingAlt) }
+                        timelineRepository.updateMediaDescription(session, id, attachment.description).getOrThrow()
+                        val sentDescription = attachment.description
+                        update { it.copy(uploadedDescription = sentDescription) }
+                    }
+                    update { it.copy(transferState = MediaTransferState.Ready, progress = null) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val code = (error as? HttpException)?.code()
+                val detail = code?.let { "HTTP $it" } ?: error.javaClass.simpleName
+                logMediaFailure(detail)
+                val message = when {
+                    error is java.io.InterruptedIOException -> "メディアの通信がタイムアウトしました"
+                    code == 401 || code == 403 -> "メディア操作の権限を確認してください"
+                    code == 422 -> "サーバーでメディアを処理できませんでした"
+                    code != null && code >= 500 -> "サーバーでエラーが発生しました"
+                    error is java.io.IOException -> "通信できませんでした。接続を確認してください"
+                    else -> "メディア操作に失敗しました"
+                }
+                update { it.copy(transferState = MediaTransferState.Failed, errorMessage = message, errorDetail = detail) }
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -182,19 +305,27 @@ class ComposePostViewModel(
         val state = _uiState.value
         val remaining = (state.configuration.maxMediaAttachments - state.attachments.size).coerceAtLeast(0)
         change { it.copy(attachments = (it.attachments + items.take(remaining)).distinctBy(DraftAttachment::uri)) }
+        scheduleAttachments()
     }
 
     fun removeAttachment(uri: String) {
+        if (_uiState.value.isPosting) return
+        mediaJobs.remove(uri)?.cancel()
         deleteDraftFile(uri)
         change {
             it.copy(attachments = it.attachments.filterNot { attachment -> attachment.uri == uri })
         }
     }
 
-    fun setAttachmentDescription(uri: String, description: String) = change { state ->
+    fun setAttachmentDescription(uri: String, description: String) {
+        if (_uiState.value.isPosting) return
+        change { state ->
         state.copy(attachments = state.attachments.map {
             if (it.uri == uri) it.copy(description = description.take(state.configuration.mediaDescriptionLimit)) else it
         })
+        }
+        val attachment = _uiState.value.attachments.find { it.uri == uri }
+        if (attachment?.transferState == MediaTransferState.Ready) scheduleMedia(uri, retry = true)
     }
 
     fun enablePoll() = change { state ->
@@ -245,9 +376,11 @@ class ComposePostViewModel(
     }
 
     fun restoreDraft(draft: ComposeDraft) {
+        if (_uiState.value.isPosting) return
         if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null || _uiState.value.isLoading) return
+        stopMedia()
         activeReplyToId = draft.replyToId
         activeQuoteStatusId = draft.quotedStatusId
         activeQuoteStatusUrl = draft.quotedStatusUrl
@@ -277,6 +410,7 @@ class ComposePostViewModel(
         draft.replyToId?.let { viewModelScope.launch { loadReplyTarget(session, it, insertMention = false) } }
             ?: _uiState.update { it.copy(replyToStatus = null) }
         draft.quotedStatusId?.let { viewModelScope.launch { loadQuoteTarget(session, it) } }
+        scheduleAttachments()
     }
 
     fun deleteDraft(draft: ComposeDraft) {
@@ -308,6 +442,7 @@ class ComposePostViewModel(
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        stopMedia()
         _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
             retainInput()
@@ -353,22 +488,14 @@ class ComposePostViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isPosting = true, errorMessage = null) }
             val session = state.selectedSession
-            val mediaIds = mutableListOf<String>()
-            for (attachment in state.attachments) {
-                val filePath = android.net.Uri.parse(attachment.uri).path
-                if (filePath.isNullOrBlank()) {
-                    _uiState.update { it.copy(isPosting = false, errorMessage = "添付ファイルを読み込めません") }
-                    return@launch
-                }
-                val uploaded = timelineRepository.uploadMedia(
-                    session,
-                    MediaUpload(attachment.fileName, attachment.mimeType, filePath, attachment.description),
-                ).getOrElse { error ->
-                    showPostError(error, "メディアをアップロードできませんでした")
-                    return@launch
-                }
-                mediaIds += uploaded.id
+            scheduleAttachments()
+            state.attachments.mapNotNull { mediaJobs[it.uri] }.forEach { it.join() }
+            val attachments = _uiState.value.attachments
+            if (attachments.any { it.transferState != MediaTransferState.Ready || it.mediaId == null }) {
+                _uiState.update { it.copy(isPosting = false) }
+                return@launch
             }
+            val mediaIds = attachments.mapNotNull { it.mediaId }
             val request = CreateStatusRequest(
                 text = state.text,
                 replyToId = activeReplyToId,
@@ -417,11 +544,13 @@ class ComposePostViewModel(
     }
 
     fun retainInputThen(onRetained: () -> Unit) {
+        stopMedia()
         retainInput()
         onRetained()
     }
     fun discardDraft() {
         if (waitForMediaImport()) return
+        stopMedia()
         val session = _uiState.value.selectedSession ?: return
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
@@ -433,6 +562,7 @@ class ComposePostViewModel(
     }
     fun discardDraftThen(onDiscarded: () -> Unit) {
         if (waitForMediaImport()) return
+        stopMedia()
         val session = _uiState.value.selectedSession ?: return onDiscarded()
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
@@ -461,6 +591,7 @@ class ComposePostViewModel(
                             ?: uri.substringAfterLast('/').ifBlank { "attachment" },
                         mimeType = draft?.attachmentMimeTypes?.get(uri) ?: "application/octet-stream",
                         description = draft?.attachmentDescriptions?.get(uri).orEmpty(),
+                        mediaId = draft?.attachmentMediaIds?.get(uri),
                     )
                 },
                 pollOptions = draft?.pollOptions ?: current.pollOptions,
@@ -471,6 +602,7 @@ class ComposePostViewModel(
                 isLoading = false,
             )
         }
+        scheduleAttachments()
     }
 
     private fun change(transform: (ComposePostUiState) -> ComposePostUiState) {
@@ -526,6 +658,7 @@ class ComposePostViewModel(
         attachmentFileNames = attachments.associate { it.uri to it.fileName },
         attachmentMimeTypes = attachments.associate { it.uri to it.mimeType },
         attachmentDescriptions = attachments.associate { it.uri to it.description },
+        attachmentMediaIds = attachments.mapNotNull { item -> item.mediaId?.let { item.uri to it } }.toMap(),
         pollOptions = pollOptions,
         pollExpiresInSeconds = pollExpiresInSeconds,
         pollMultiple = pollMultiple,
@@ -568,6 +701,7 @@ class ComposePostViewModel(
                 fileName = draft.attachmentFileNames[uri] ?: uri.substringAfterLast('/').ifBlank { "attachment" },
                 mimeType = draft.attachmentMimeTypes[uri] ?: "application/octet-stream",
                 description = draft.attachmentDescriptions[uri].orEmpty(),
+                mediaId = draft.attachmentMediaIds[uri],
             )
         },
         pollOptions = draft.pollOptions,
@@ -583,6 +717,7 @@ class ComposePostViewModel(
     }
 
     override fun onCleared() {
+        stopMedia()
         retainInput()
         super.onCleared()
     }

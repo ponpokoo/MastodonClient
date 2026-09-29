@@ -19,6 +19,7 @@ data class MediaUpload(
     val mimeType: String,
     val filePath: String,
     val description: String?,
+    val onProgress: (Float) -> Unit = {},
 )
 
 data class UploadedMedia(
@@ -26,6 +27,7 @@ data class UploadedMedia(
     val type: String,
     val previewUrl: String?,
     val description: String?,
+    val ready: Boolean = true,
 )
 
 data class CreateStatusRequest(

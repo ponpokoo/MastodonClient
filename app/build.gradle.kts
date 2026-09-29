@@ -38,8 +38,8 @@ android {
         applicationId = "io.github.ponpokoo.mastodonclient"
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
-        versionName = "2.0.2"
+        versionCode = 9
+        versionName = "2.1.0"
         buildConfigField("boolean", "FIREBASE_CONFIGURED", firebaseConfigured.toString())
         buildConfigField("String", "RELAY_URL", "\"${relayUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
 

@@ -120,6 +120,8 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLo
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.core.text.HtmlCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -526,6 +528,8 @@ fun ComposePostScreen(
                             ComposerAttachmentTile(
                                 attachment = attachment,
                                 modifier = Modifier.weight(1f),
+                                enabled = !state.isPosting && !state.isLoading,
+                                onRetry = { viewModel.retryMedia(attachment.uri) },
                                 onRemove = { viewModel.removeAttachment(attachment.uri) },
                                 onEditAlt = {
                                     altEditingUri = attachment.uri
@@ -809,9 +813,18 @@ fun ComposePostScreen(
 private fun ComposerAttachmentTile(
     attachment: DraftAttachment,
     modifier: Modifier = Modifier,
+    enabled: Boolean,
+    onRetry: () -> Unit,
     onRemove: () -> Unit,
     onEditAlt: () -> Unit,
 ) {
+    var showDetails by remember(attachment.uri) { mutableStateOf(false) }
+    if (showDetails) AlertDialog(
+        onDismissRequest = { showDetails = false },
+        title = { Text("メディアのエラー詳細") },
+        text = { Text(attachment.errorDetail ?: attachment.errorMessage.orEmpty()) },
+        confirmButton = { TextButton(onClick = { showDetails = false }) { Text("閉じる") } },
+    )
     val context = LocalContext.current
     val bytes = remember(attachment.uri) { Uri.parse(attachment.uri).path?.let(::File)?.length() ?: 0L }
     Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp) {
@@ -825,10 +838,40 @@ private fun ComposerAttachmentTile(
                 )
                 IconButton(
                     onClick = onRemove,
+                    enabled = enabled,
                     modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
                         .background(Color.Black.copy(alpha = 0.65f), CircleShape),
                 ) {
                     Icon(Icons.Outlined.Close, contentDescription = "添付を削除", tint = Color.White)
+                }
+            }
+            Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (attachment.transferState) {
+                    MediaTransferState.Waiting -> Text("送信待ち", style = MaterialTheme.typography.labelSmall)
+                    MediaTransferState.Uploading -> {
+                        val progress = attachment.progress
+                        if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        else LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                        Text(if (progress != null && progress >= 1f) "送信済み・応答待ち…"
+                            else "送信中 ${progress?.let { "${(it * 100).toInt()}%" }.orEmpty()}",
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    MediaTransferState.Processing, MediaTransferState.UpdatingAlt -> {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text(if (attachment.transferState == MediaTransferState.UpdatingAlt) "ALTを反映中…" else "サーバーで処理中…",
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                    MediaTransferState.Failed, MediaTransferState.CheckAgain -> {
+                        Text("⚠ ${attachment.errorMessage.orEmpty()}", color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            TextButton(onClick = onRetry, enabled = enabled) {
+                                Text(if (attachment.transferState == MediaTransferState.CheckAgain) "再確認" else "再試行")
+                            }
+                            if (attachment.errorDetail != null) TextButton(onClick = { showDetails = true }) { Text("詳細") }
+                        }
+                    }
+                    MediaTransferState.Ready -> Unit
                 }
             }
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -847,7 +890,7 @@ private fun ComposerAttachmentTile(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onEditAlt, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = onEditAlt, enabled = enabled, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Outlined.Edit,
                         contentDescription = if (attachment.description.isBlank()) "ALTを追加" else "ALTを編集",

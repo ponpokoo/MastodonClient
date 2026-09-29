@@ -5,4 +5,12 @@ data class DraftAttachment(
     val fileName: String,
     val mimeType: String,
     val description: String = "",
+    val mediaId: String? = null,
+    val uploadedDescription: String? = null,
+    val transferState: MediaTransferState = MediaTransferState.Waiting,
+    val progress: Float? = null,
+    val errorMessage: String? = null,
+    val errorDetail: String? = null,
 )
+
+enum class MediaTransferState { Waiting, Uploading, Processing, UpdatingAlt, Ready, Failed, CheckAgain }

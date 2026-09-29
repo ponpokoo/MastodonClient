@@ -20,6 +20,63 @@ import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
     @Test
+    fun mediaProcessingAcceptsEmpty206ThenReadyResponseWithoutReupload() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(206))
+            server.enqueue(MockResponse().setBody("""{"id":"opaque-media","type":"video","url":"https://example.test/video.mp4","description":"ALT"}"""))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            assertFalse(repository.checkMedia(session, "opaque-media").getOrThrow().ready)
+            val ready = repository.checkMedia(session, "opaque-media").getOrThrow()
+            assertTrue(ready.ready)
+            assertEquals("ALT", ready.description)
+            repeat(2) {
+                val request = server.takeRequest()
+                assertEquals("GET", request.method)
+                assertEquals("/api/v1/media/opaque-media", request.path)
+            }
+        }
+    }
+
+    @Test
+    fun mediaProcessingPreservesHttpFailureAndSupportsClearingAlt() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(422).setBody("""{"error":"processing failed"}"""))
+            server.enqueue(MockResponse().setBody("""{"id":"opaque-media","type":"image","url":"https://example.test/image.jpg","description":""}"""))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            val failure = repository.checkMedia(session, "opaque-media").exceptionOrNull()
+            assertEquals(422, (failure as retrofit2.HttpException).code())
+            repository.updateMediaDescription(session, "opaque-media", "").getOrThrow()
+            server.takeRequest()
+            val update = server.takeRequest()
+            assertEquals("PUT", update.method)
+            assertEquals("description=", update.body.readUtf8())
+        }
+    }
+
+    @Test
+    fun acceptedUploadReturnsIdAndProgressBeforeServerProcessingCompletes() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(202).setBody("""{"id":"pending-video","type":"video","url":null}"""))
+            val file = java.io.File.createTempFile("media-upload", ".mp4")
+            try {
+                file.writeBytes(ByteArray(32_768) { 7 })
+                val progress = mutableListOf<Float>()
+                val media = DefaultTimelineRepository(ApiClientFactory()).uploadMedia(testSession(server),
+                    io.github.ponpokoo.mastodonclient.domain.model.MediaUpload(
+                        "video.mp4", "video/mp4", file.absolutePath, null, { progress += it },
+                    )).getOrThrow()
+                assertEquals("pending-video", media.id)
+                assertFalse(media.ready)
+                assertEquals(1f, progress.last())
+                assertEquals(1, server.requestCount)
+                assertEquals("/api/v2/media", server.takeRequest().path)
+            } finally { file.delete() }
+        }
+    }
+
+    @Test
     fun readsNotificationMarkerAsAnOpaqueStringAndAllowsMissingMarker() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(

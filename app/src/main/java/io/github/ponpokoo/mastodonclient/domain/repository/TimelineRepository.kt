@@ -159,6 +159,12 @@ interface TimelineRepository {
     suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> =
         Result.failure(UnsupportedOperationException("メディアアップロードは未対応です"))
 
+    suspend fun checkMedia(session: AccountSession, id: String): Result<UploadedMedia> =
+        Result.failure(UnsupportedOperationException())
+
+    suspend fun updateMediaDescription(session: AccountSession, id: String, description: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException())
+
     suspend fun setFedibirdReaction(
         session: AccountSession,
         statusId: String,

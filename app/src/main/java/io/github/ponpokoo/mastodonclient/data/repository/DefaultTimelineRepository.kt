@@ -56,6 +56,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import okio.buffer
 
 class DefaultTimelineRepository(
     private val apiClientFactory: ApiClientFactory,
@@ -533,19 +534,61 @@ class DefaultTimelineRepository(
         }
     }
 
-    override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> = runCatching {
-        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        val body = File(upload.filePath).asRequestBody(upload.mimeType.toMediaType())
+    override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> = mediaResult {
+        val api = apiClientFactory.createForMedia(session.instanceUrl, session.accessToken)
+        val source = File(upload.filePath).asRequestBody(upload.mimeType.toMediaType())
+        val body = object : okhttp3.RequestBody() {
+            override fun contentType() = source.contentType()
+            override fun contentLength() = source.contentLength()
+            override fun writeTo(sink: okio.BufferedSink) {
+                var sent = 0L
+                var lastPercent = -1
+                val counter = object : okio.ForwardingSink(sink) {
+                    override fun write(source: okio.Buffer, byteCount: Long) {
+                        super.write(source, byteCount)
+                        sent += byteCount
+                        val progress = (sent.toFloat() / contentLength().coerceAtLeast(1)).coerceIn(0f, 1f)
+                        val percent = (progress * 100).toInt()
+                        if (percent != lastPercent) { lastPercent = percent; upload.onProgress(progress) }
+                    }
+                }
+                val buffered = counter.buffer()
+                source.writeTo(buffered)
+                buffered.flush()
+            }
+        }
         val file = MultipartBody.Part.createFormData("file", upload.fileName, body)
         val description = upload.description?.takeIf(String::isNotBlank)
             ?.toRequestBody("text/plain".toMediaType())
-        var media = api.uploadMedia(file, description)
-        for (attempt in 0 until 12) {
-            if (media.url != null) break
-            delay(500)
-            media = api.getMedia(media.id)
+        val media = api.uploadMedia(file, description)
+        UploadedMedia(media.id, media.type, media.previewUrl ?: media.url, media.description, !media.url.isNullOrBlank())
+    }
+
+    override suspend fun checkMedia(session: AccountSession, id: String): Result<UploadedMedia> = mediaResult {
+        val response = apiClientFactory.createForMedia(session.instanceUrl, session.accessToken).getMedia(id)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        if (response.code() == 206) {
+            response.body()?.close()
+            UploadedMedia(id, "", null, null, false)
         }
-        UploadedMedia(media.id, media.type, media.previewUrl ?: media.url, media.description)
+        else {
+            val body = response.body()?.use { it.string() } ?: error("Missing media response")
+            val media = json.decodeFromString<io.github.ponpokoo.mastodonclient.data.remote.dto.MediaAttachmentDto>(body)
+            UploadedMedia(media.id, media.type, media.previewUrl, media.description, !media.url.isNullOrBlank())
+        }
+    }
+
+    override suspend fun updateMediaDescription(session: AccountSession, id: String, description: String): Result<Unit> = mediaResult {
+        apiClientFactory.createForMedia(session.instanceUrl, session.accessToken).updateMediaDescription(id, description)
+        Unit
+    }
+
+    private suspend fun <T> mediaResult(block: suspend () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 
     override suspend fun setFedibirdReaction(

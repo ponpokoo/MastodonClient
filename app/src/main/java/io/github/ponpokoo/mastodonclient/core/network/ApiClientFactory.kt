@@ -17,6 +17,15 @@ class ApiClientFactory(
         explicitNulls = false
     },
 ) {
+    fun createForMedia(baseUrl: String, accessToken: String): MastodonApi = ApiClientFactory(
+        client.newBuilder()
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build(), json,
+    ).create(baseUrl, accessToken)
+
     // Bounded, in-memory only; credentials are part of the key to isolate sessions.
     private data class ClientKey(val baseUrl: String, val accessToken: String?)
     private val services = object : LinkedHashMap<ClientKey, MastodonApi>(8, 0.75f, true) {
