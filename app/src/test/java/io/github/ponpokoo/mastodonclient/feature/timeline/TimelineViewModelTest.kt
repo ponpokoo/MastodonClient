@@ -73,6 +73,34 @@ class TimelineViewModelTest {
     }
 
     @Test
+    fun refreshShowsOwnActivityWithoutCountingItAsNew() = runTest(dispatcher) {
+        val me = StatusAuthor("me", "Me", "me@example.social", "")
+        val other = StatusAuthor("other", "Other", "other@example.social", "")
+        var calls = 0
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                val statuses = if (++calls == 1) listOf(status("first")) else listOf(
+                    status("mine").copy(author = me),
+                    status("other-boost").copy(author = me, boostedBy = other),
+                    status("my-boost").copy(boostedBy = me),
+                    status("other"),
+                    status("first"),
+                )
+                return Result.success(TimelinePage(statuses, null, true))
+            }
+        }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+
+        model.refresh()
+        advanceUntilIdle()
+
+        assertEquals(2, model.uiState.value.refreshNewStatusCount)
+        assertEquals(listOf("mine", "other-boost", "my-boost", "other", "first"),
+            model.uiState.value.statuses.map { it.timelineId })
+    }
+
+    @Test
     fun accountSwitchIgnoresOldRefreshEvenWhenCancellationIsIgnored() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<TimelinePage>>()
         var calls = 0
@@ -203,6 +231,42 @@ class TimelineViewModelTest {
         assertEquals(2, model.uiState.value.streamAtTopCount)
         model.consumeStreamNotice(model.uiState.value.streamAutoScrollId)
         assertEquals(null, model.uiState.value.streamAtTopCount)
+    }
+
+    @Test
+    fun ownStreamActivityAppearsWithoutIncreasingNewCount() = runTest(dispatcher) {
+        val model = createTimeline(FakeTimelineRepository(), FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        val me = StatusAuthor("me", "Me", "me@example.social", "")
+        val other = StatusAuthor("other", "Other", "other@example.social", "")
+        suspend fun emit(post: TimelineStatus) {
+            mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+                io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change.Stream(
+                    io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.StatusAdded(post)))
+            advanceUntilIdle()
+        }
+
+        model.updateViewport(false)
+        emit(status("mine").copy(author = me))
+        emit(status("my-boost").copy(boostedBy = me))
+        assertEquals(listOf("my-boost", "mine", "first"), model.uiState.value.statuses.map { it.timelineId })
+        assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
+
+        emit(status("other-boost").copy(author = me, boostedBy = other))
+        assertEquals(setOf("other-boost"), model.uiState.value.unseenStreamIds)
+
+        model.updateViewport(true)
+        emit(status("mine-at-top").copy(author = me))
+        assertEquals("mine-at-top", model.uiState.value.statuses.first().timelineId)
+        assertEquals(null, model.uiState.value.streamAtTopCount)
+        val scrollRequest = model.uiState.value.streamAutoScrollId
+        assertTrue(scrollRequest > 0)
+        model.consumeStreamNotice(scrollRequest)
+        assertEquals(0L, model.uiState.value.streamAutoScrollId)
+
+        emit(status("other-at-top"))
+        emit(status("mine-again").copy(author = me))
+        assertEquals(1, model.uiState.value.streamAtTopCount)
     }
 
     @Test

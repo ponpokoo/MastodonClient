@@ -63,6 +63,18 @@ class SystemNotificationDataSource(private val context: android.content.Context)
     suspend fun showPush(session: AccountSession, notification: PushNotification, isCurrent: suspend () -> Boolean) =
         showContent(session, notification.id, notification.title, notification.body, notification.icon.orEmpty(), isCurrent)
 
+    suspend fun dismissForAccount(sessionId: String): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (sessionId.isBlank()) return@withContext
+        val manager = context.getSystemService(NotificationManager::class.java)
+        try {
+            manager.activeNotifications
+                .filter { it.notification.group == notificationGroup(sessionId) }
+                .forEach { manager.cancel(it.tag, it.id) }
+        } catch (_: SecurityException) {
+            // Notification access can change while opening the account.
+        }
+    }
+
     private suspend fun showContent(session: AccountSession, id: String, title: String, body: String, avatarUrl: String,
         isCurrent: suspend () -> Boolean,
     ): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -85,7 +97,7 @@ class SystemNotificationDataSource(private val context: android.content.Context)
                 .setCategory(NotificationCompat.CATEGORY_SOCIAL)
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(true)
-                .setGroup("mastodon_${session.sessionId}")
+                .setGroup(notificationGroup(session.sessionId))
                 .build()
 
         val posted = delivery.deliver(session.sessionId, id, isCurrent = { canPostNotifications() && isCurrent() }) {
@@ -149,6 +161,7 @@ class SystemNotificationDataSource(private val context: android.content.Context)
     ).toString().trim().take(MAX_BODY_LENGTH)
 
     private companion object {
+        fun notificationGroup(sessionId: String) = "mastodon_$sessionId"
         const val MAX_BODY_LENGTH = 240
         const val MAX_AVATAR_BYTES = 2 * 1024 * 1024
         const val AVATAR_ICON_SIZE = 128

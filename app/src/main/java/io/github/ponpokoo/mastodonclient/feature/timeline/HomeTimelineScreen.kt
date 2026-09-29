@@ -120,7 +120,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -308,6 +310,7 @@ fun HomeTimelineScreen(
         pagerState.scrollToPage(MainDestination.Notifications.ordinal)
         allNotificationsListState.scrollToItem(0)
         if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsVisible()
+        mainViewModel.dismissSystemNotificationsForActiveAccount(request.sessionId)
         onNotificationOpenHandled(request)
     }
 
@@ -371,7 +374,7 @@ fun HomeTimelineScreen(
         }
     }
     LaunchedEffect(state.streamAutoScrollId, isHomeVisible, mainState.session?.sessionId, state.selectedFeed) {
-        if (isHomeVisible && state.streamAutoScrollId > 0 && state.streamAtTopCount != null) {
+        if (isHomeVisible && state.streamAutoScrollId > 0) {
             val requestId = state.streamAutoScrollId
             timelineListState.scrollToItem(0)
             viewModel.updateViewport(true)
@@ -1807,7 +1810,7 @@ private fun StatusActionRow(
                     val canBoost = status.visibility.lowercase() !in setOf("private", "direct", "followers", "followers_only")
                     Box {
                         StatusActionButton(
-                            icon = Icons.Outlined.Repeat,
+                            icon = if (status.reblogged) BoldRepeatIcon else Icons.Outlined.Repeat,
                             label = if (canBoost) "ブースト（長押しで引用を選択）" else "この公開範囲ではブーストできません",
                             count = status.boostsCount,
                             preferences = preferences,
@@ -1856,6 +1859,46 @@ private fun StatusActionRow(
             }
         }
     }
+}
+
+private val BoldRepeatIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "BoldRepeat",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(7f, 5f)
+            horizontalLineTo(16.5f)
+            verticalLineTo(2.25f)
+            lineTo(21.75f, 6.75f)
+            lineTo(16.5f, 11.25f)
+            verticalLineTo(8.25f)
+            horizontalLineTo(7f)
+            curveTo(5.9f, 8.25f, 5.25f, 8.95f, 5.25f, 10f)
+            verticalLineTo(12.5f)
+            horizontalLineTo(2.25f)
+            verticalLineTo(10f)
+            curveTo(2.25f, 7.2f, 4.45f, 5f, 7f, 5f)
+            close()
+
+            moveTo(17f, 19f)
+            horizontalLineTo(7.5f)
+            verticalLineTo(21.75f)
+            lineTo(2.25f, 17.25f)
+            lineTo(7.5f, 12.75f)
+            verticalLineTo(15.75f)
+            horizontalLineTo(17f)
+            curveTo(18.1f, 15.75f, 18.75f, 15.05f, 18.75f, 14f)
+            verticalLineTo(11.5f)
+            horizontalLineTo(21.75f)
+            verticalLineTo(14f)
+            curveTo(21.75f, 16.8f, 19.55f, 19f, 17f, 19f)
+            close()
+        }
+    }.build()
 }
 
 @Composable

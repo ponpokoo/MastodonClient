@@ -13,4 +13,6 @@ class DefaultSystemNotificationRepository(private val local: SystemNotificationD
 
     override suspend fun show(session: AccountSession, notification: PushNotification, isCurrent: suspend () -> Boolean) =
         local.showPush(session, notification, isCurrent)
+
+    override suspend fun dismissForAccount(sessionId: String) = local.dismissForAccount(sessionId)
 }

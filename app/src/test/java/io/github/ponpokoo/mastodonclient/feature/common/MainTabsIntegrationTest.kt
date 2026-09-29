@@ -85,6 +85,34 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         assertEquals(testAccount.sessionId, main.uiState.value.session?.sessionId)
     }
 
+    @Test fun notificationDismissalOnlyUsesTheActiveAccount() = runTest(dispatcher) {
+        val dismissed = mutableListOf<String>()
+        val notifications = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
+            override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) = Unit
+            override suspend fun dismissForAccount(sessionId: String) { dismissed += sessionId }
+        }
+        val auth = object : AuthRepository {
+            override suspend fun restoreSession() = testAccount
+            override suspend fun getSessions() = listOf(testAccount, secondAccount)
+            override suspend fun switchSession(sessionId: String) =
+                listOf(testAccount, secondAccount).firstOrNull { it.sessionId == sessionId }
+            override suspend fun logout() = Unit
+            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.failure<String>(UnsupportedOperationException())
+            override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
+        }
+        val main = own(MainSessionViewModel(auth, ScreenRepositoryFake(), systemNotifications = notifications))
+        advanceUntilIdle()
+
+        main.dismissSystemNotificationsForActiveAccount(secondAccount.sessionId)
+        main.dismissSystemNotificationsForActiveAccount(testAccount.sessionId)
+        assertEquals(listOf(testAccount.sessionId), dismissed)
+
+        assertTrue(main.switchAccountAndWait(secondAccount.sessionId))
+        main.dismissSystemNotificationsForActiveAccount(testAccount.sessionId)
+        main.dismissSystemNotificationsForActiveAccount(secondAccount.sessionId)
+        assertEquals(listOf(testAccount.sessionId, secondAccount.sessionId), dismissed)
+    }
+
     @Test fun cancellationRollsBackAndReleasesPendingAction() = runTest(dispatcher) {
         val started = CompletableDeferred<Unit>()
         val repository = object : ScreenRepositoryFake() {
@@ -247,14 +275,17 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         val pending = CompletableDeferred<Unit>()
         val stale = CompletableDeferred<Unit>()
         val main = own(MainSessionViewModel(auth, repository,
-            systemNotifications = io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository { session, notification, valid ->
-                if (notification.id == "pending") {
-                    withContext(NonCancellable) { pending.await() }
+            systemNotifications = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
+                override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) {
+                    if (notification.id == "pending") {
+                        withContext(NonCancellable) { pending.await() }
+                    }
+                    if (notification.id == "stale") {
+                        withContext(NonCancellable) { stale.await() }
+                    }
+                    if (isCurrent()) delivered += "${session.sessionId}:${notification.id}"
                 }
-                if (notification.id == "stale") {
-                    withContext(NonCancellable) { stale.await() }
-                }
-                if (valid()) delivered += "${session.sessionId}:${notification.id}"
+                override suspend fun dismissForAccount(sessionId: String) = Unit
             },
         ))
         val notifications = own(NotificationsViewModel(repository, main.browsing))
@@ -300,9 +331,12 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         }
         var attempts = 0
         val main = own(MainSessionViewModel(auth, repository,
-            systemNotifications = io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository { _, _, _ ->
-                attempts++
-                error("notification unavailable")
+            systemNotifications = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
+                override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) {
+                    attempts++
+                    error("notification unavailable")
+                }
+                override suspend fun dismissForAccount(sessionId: String) = Unit
             },
         ))
         val notifications = own(NotificationsViewModel(repository, main.browsing))

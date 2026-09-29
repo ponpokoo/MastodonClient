@@ -117,6 +117,11 @@ class MainSessionViewModel(
         return uiState.value.session?.sessionId == sessionId
     }
 
+    suspend fun dismissSystemNotificationsForActiveAccount(sessionId: String) {
+        if (uiState.value.session?.sessionId != sessionId) return
+        runCatchingCancellable { systemNotifications?.dismissForAccount(sessionId) }
+    }
+
     fun logout() {
         if (accountChangeJob?.isActive == true) return
         restoreJob?.cancel()

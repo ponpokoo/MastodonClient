@@ -118,7 +118,9 @@ class TimelineViewModel(
             timelineRepository.getTimeline(session, _uiState.value.selectedFeed)
                 .forSession(snapshot).onSuccess { page ->
                     val existingIds = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
-                    val newCount = page.statuses.count { it.timelineId !in existingIds }
+                    val newCount = page.statuses.count {
+                        it.timelineId !in existingIds && !it.isActivityBy(session.accountId)
+                    }
                     _uiState.update {
                         it.copy(
                             statuses = (it.statuses.filter { status -> status.timelineId !in idsAtStart || status.timelineId in it.unseenStreamIds } + page.statuses)
@@ -297,7 +299,9 @@ class TimelineViewModel(
     }
 
     fun consumeStreamNotice(id: Long) {
-        _uiState.update { if (it.streamAutoScrollId == id) it.copy(streamAtTopCount = null) else it }
+        _uiState.update {
+            if (it.streamAutoScrollId == id) it.copy(streamAutoScrollId = 0, streamAtTopCount = null) else it
+        }
     }
 
     fun consumeRefreshResult() {
@@ -379,6 +383,7 @@ class TimelineViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        val accountId = currentSnapshot()?.account?.accountId
         _uiState.update { current ->
             when (change) {
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.map { it.withUpdatedActions(change.status) })
@@ -386,20 +391,29 @@ class TimelineViewModel(
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {
                     is TimelineStreamEvent.StatusAdded -> if (current.selectedFeed == TimelineFeed.Home) {
                         val exists = current.statuses.any { it.timelineId == event.status.timelineId }
+                        val isOwnActivity = event.status.isActivityBy(accountId)
                         if (event.isEdit) {
                             current.copy(statuses = current.statuses.map {
                                 if (it.statusId == event.status.statusId) event.status.copy(timelineId = it.timelineId, boostedBy = it.boostedBy) else it
                             })
                         } else if (exists) {
                             current.copy(statuses = current.statuses.map { if (it.timelineId == event.status.timelineId) event.status else it })
-                        } else if (current.isResumedWindow) {
+                        } else if (current.isResumedWindow && !isOwnActivity) {
                             current.copy(unseenStreamIds = current.unseenStreamIds + event.status.timelineId)
                         } else {
                             current.copy(
                                 statuses = listOf(event.status) + current.statuses,
-                                unseenStreamIds = if (followingTop) emptySet() else current.unseenStreamIds + event.status.timelineId,
+                                unseenStreamIds = when {
+                                    followingTop -> emptySet()
+                                    isOwnActivity -> current.unseenStreamIds
+                                    else -> current.unseenStreamIds + event.status.timelineId
+                                },
                                 streamAutoScrollId = if (followingTop) ++streamSequence else current.streamAutoScrollId,
-                                streamAtTopCount = if (followingTop) (current.streamAtTopCount ?: 0) + 1 else null,
+                                streamAtTopCount = when {
+                                    !followingTop -> null
+                                    isOwnActivity -> current.streamAtTopCount
+                                    else -> (current.streamAtTopCount ?: 0) + 1
+                                },
                             )
                         }
                     } else current
@@ -432,3 +446,6 @@ class TimelineViewModel(
     }
 
 }
+
+private fun TimelineStatus.isActivityBy(accountId: String?): Boolean =
+    accountId != null && (boostedBy ?: author).id == accountId
