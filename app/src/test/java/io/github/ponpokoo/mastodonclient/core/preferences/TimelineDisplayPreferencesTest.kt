@@ -26,6 +26,7 @@ class TimelineDisplayPreferencesTest {
         assertEquals(FontSizePreset.Large, preferences.timelineDisplay.fontSize)
         assertEquals(AvatarIconSize.Small, preferences.timelineDisplay.avatarIconSize)
         assertEquals(false, preferences.timelineDisplay.showCounts)
+        assertEquals(true, preferences.timelineDisplay.showReactions)
         assertEquals(ThemeMode.Dark, preferences.themeMode)
     }
 
@@ -41,5 +42,15 @@ class TimelineDisplayPreferencesTest {
         assertEquals(AvatarIconShape.Square, preferences.timelineDisplay.avatarIconShape)
         assertEquals(AvatarIconSize.Large, preferences.timelineDisplay.avatarIconSize)
         assertEquals(ThemeMode.Dark, preferences.themeMode)
+    }
+
+    @Test fun hiddenReactionsSurviveRecreationAndOtherSettingChanges() = runTest {
+        val dataStore = MemoryPreferences()
+        UserPreferencesStore(dataStore).setTimelineDisplay(TimelineDisplayPreferences(showReactions = false))
+        val restored = UserPreferencesStore(dataStore)
+        restored.setTimelineDisplay(restored.preferences.first().timelineDisplay.copy(showCounts = false))
+        val display = UserPreferencesStore(dataStore).preferences.first().timelineDisplay
+        assertEquals(false, display.showReactions)
+        assertEquals(false, display.showCounts)
     }
 }

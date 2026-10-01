@@ -63,6 +63,7 @@ data class TimelineDisplayPreferences(
     ),
     val hiddenActions: Set<StatusAction> = setOf(StatusAction.Bookmark),
     val showCounts: Boolean = true,
+    val showReactions: Boolean = true,
     val thumbnailSize: ThumbnailSize = ThumbnailSize.Compact,
 )
 

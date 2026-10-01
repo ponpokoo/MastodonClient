@@ -1179,6 +1179,7 @@ internal fun StatusCard(
     fullWidthContent: Boolean = false,
     onVotePoll: ((Set<Int>) -> Unit)? = null,
     afterActions: (@Composable () -> Unit)? = null,
+    authorAvatarResource: Int? = null,
 ) {
     var contentExpanded by rememberSaveable(status.statusId) {
         mutableStateOf(status.spoilerText.isBlank())
@@ -1227,7 +1228,7 @@ internal fun StatusCard(
         }
         Row(verticalAlignment = Alignment.Top) {
             AsyncImage(
-                model = status.author.avatarUrl,
+                model = authorAvatarResource ?: status.author.avatarUrl,
                 contentDescription = "${status.author.displayName}のプロフィール画像",
                 modifier = Modifier.size(avatarSize).clip(displayPreferences.avatarIconShape.toShape())
                     .testTag("status_author_avatar")
@@ -1411,7 +1412,7 @@ internal fun StatusCard(
                     )
                 }
             }
-            if (status.reactions.isNotEmpty()) {
+            if (displayPreferences.showReactions && status.reactions.isNotEmpty()) {
                 BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     val availableWidth = maxWidth
                     @OptIn(ExperimentalLayoutApi::class)

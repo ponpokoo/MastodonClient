@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import io.github.ponpokoo.mastodonclient.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
@@ -63,6 +65,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionListOpener
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 
@@ -147,6 +151,12 @@ internal fun SettingsPageContent(
                 item {
                     SwitchRow("反応数を表示", preferences.timelineDisplay.showCounts) {
                         updateDisplay(preferences.timelineDisplay.copy(showCounts = it))
+                    }
+                }
+                item {
+                    SwitchRow("リアクションを表示", preferences.timelineDisplay.showReactions,
+                        description = "対応するサーバーのみ") {
+                        updateDisplay(preferences.timelineDisplay.copy(showReactions = it))
                     }
                 }
                 item { Text("投稿下部アイコン", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
@@ -398,13 +408,24 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    description: String? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(label)
+            description?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
@@ -500,16 +521,22 @@ private fun Any?.displayLabel(): String = when (this) {
 }
 
 @Composable
-private fun TimelineDisplayPreview(preferences: AppPreferences) {
+internal fun TimelineDisplayPreview(preferences: AppPreferences) {
     Text("プレビュー", modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-    StatusCard(
-        status = previewStatus,
-        onStatusClick = null,
-        onUnavailableAction = {},
-        displayPreferences = preferences.timelineDisplay,
-        gifAutoplay = preferences.gifAutoplay,
-        videoAutoplay = preferences.videoAutoplay,
-    )
+    CompositionLocalProvider(
+        LocalFavouriteListOpener provides null,
+        LocalReactionListOpener provides null,
+    ) {
+        StatusCard(
+            status = previewStatus,
+            onStatusClick = null,
+            onUnavailableAction = {},
+            displayPreferences = preferences.timelineDisplay,
+            gifAutoplay = preferences.gifAutoplay,
+            videoAutoplay = preferences.videoAutoplay,
+            authorAvatarResource = R.drawable.nagisa_launcher_art,
+        )
+    }
 }
 
 private val previewStatus = TimelineStatus(
@@ -527,5 +554,8 @@ private val previewStatus = TimelineStatus(
     boostsCount = 3,
     favouritesCount = 5,
     supportsEmojiReactions = true,
+    reactions = listOf(io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction(
+        name = "👍", count = 2, reactedByMe = false, imageUrl = null, accountIds = emptySet(),
+    )),
     mediaAttachments = emptyList(),
 )

@@ -458,6 +458,43 @@ class DefaultTimelineRepositoryTest {
     }
 
     @Test
+    fun mapsReactionOriginalImagesWithStaticFallback() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """
+                [{
+                  "id":"42","created_at":"2026-09-08T00:00:00Z",
+                  "account":{"id":"author","username":"alice","acct":"alice","display_name":"Alice"},
+                  "content":"<p>Hello</p>",
+                  "emoji_reactions":[
+                    {"name":"animated","url":"https://example.com/emoji.gif","static_url":"https://example.com/emoji.png"},
+                    {"name":"missing-original","static_url":"https://example.com/fallback.png"},
+                    {"name":"blank-original","url":" ","static_url":"https://example.com/fallback.png"},
+                    {"name":"unicode"},
+                    {"name":"empty-images","url":"","static_url":" "}
+                  ]
+                }]
+                """.trimIndent(),
+            ))
+
+            val reactions = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server))
+                .getOrThrow().statuses.single().reactions
+
+            assertEquals(
+                listOf(
+                    "https://example.com/emoji.gif",
+                    "https://example.com/fallback.png",
+                    "https://example.com/fallback.png",
+                    null,
+                    null,
+                ),
+                reactions.map { it.imageUrl },
+            )
+        }
+    }
+
+    @Test
     fun loadsStatusDetailAndMapsApplicationAndFedibirdReactions() = runTest {
         MockWebServer().use { server ->
             server.dispatcher = object : Dispatcher() {

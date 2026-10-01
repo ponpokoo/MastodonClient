@@ -43,6 +43,29 @@ class StatusInteractionDeviceTest {
     @get:Rule val composeRule = createComposeRule()
 
     @Test
+    fun reactionVisibilityCanBeToggledWithoutHidingTheActionButton() {
+        val display = mutableStateOf(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences())
+        composeRule.setContent {
+            MaterialTheme {
+                StatusCard(
+                    status = status().copy(supportsEmojiReactions = true,
+                        reactions = listOf(EmojiReaction("👍", 2, false, null, emptySet()))),
+                    onStatusClick = null,
+                    onReact = {},
+                    onUnavailableAction = {},
+                    displayPreferences = display.value,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("displayed_reaction").assertExists()
+        composeRule.runOnIdle { display.value = display.value.copy(showReactions = false) }
+        composeRule.onNodeWithTag("displayed_reaction").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("リアクション").assertExists()
+        composeRule.runOnIdle { display.value = display.value.copy(showReactions = true) }
+        composeRule.onNodeWithTag("displayed_reaction").assertExists()
+    }
+
+    @Test
     fun longPressingFavouriteOpensFavouritedAccountsWithoutTogglingFavourite() {
         val favourites = AtomicInteger()
         val listedStatusId = AtomicReference<String?>(null)

@@ -711,7 +711,8 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 name = it.name,
                 count = it.count,
                 reactedByMe = it.me,
-                imageUrl = it.staticUrl ?: it.url,
+                imageUrl = it.url?.takeIf { url -> url.isNotBlank() }
+                    ?: it.staticUrl?.takeIf { url -> url.isNotBlank() },
                 accountIds = it.accountIds.toSet(),
                 domain = it.domain,
             )
