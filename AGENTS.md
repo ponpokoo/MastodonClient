@@ -6,6 +6,12 @@ This repository is a generic Android Mastodon client. It must not assume that th
 ## Required boundaries
 
 - UI -> ViewModel -> Use case/domain repository -> data repository -> remote/local data source.
+- Exception: simple UI preference reads and writes may access `UserPreferencesStore` directly
+  from Compose, using lifecycle-aware Flow collection and suspend store methods. Do not add
+  wrapper layers solely for these operations. Authentication, network requests, and multi-step
+  operations still go through ViewModels and domain repositories.
+- When changing authentication, account switching, or asynchronous processing, follow the session
+  isolation and cancellation policies in [`docs/project-setup.md`](docs/project-setup.md).
 - API DTOs never cross into UI code. Map DTOs to domain models first.
 - Mastodon IDs are always `String`; never parse them as numeric IDs.
 - Retrofit base URLs come from the selected account session. Never hard-code an instance.
@@ -23,16 +29,25 @@ This repository is a generic Android Mastodon client. It must not assume that th
 - Run affected tests first. Expand to the full suite for shared infrastructure changes, release
   candidates, or evidence of wider impact. Do not repeat successful checks without relevant changes.
 
-## MVP order
+## Push and Relay
 
-1. Instance discovery and URL normalization
-2. App registration, OAuth Authorization Code + PKCE, encrypted token storage
-3. Credential verification and account session
-4. Home/local/federated timelines and cursor pagination
-5. Status rendering and actions
-6. Composer, replies, media upload and ALT text
-7. Profile, notifications and search
-8. Streaming, Room cache and resilient error handling
+- Follow [`docs/relay-protocol.md`](docs/relay-protocol.md) for the registration contract,
+  [`docs/push-settings.md`](docs/push-settings.md) for subscription lifecycle,
+  [`docs/push-reception.md`](docs/push-reception.md) for reception and decryption, and
+  [`docs/firebase-android.md`](docs/firebase-android.md) for FCM integration.
+- Never send Mastodon access tokens, OAuth client secrets, Web Push private keys, or auth secrets
+  to Relay. Use separate Relay HTTP clients without Mastodon authentication interceptors.
+- Never log Relay management tokens, FCM registration tokens, Web Push private keys or auth secrets,
+  FCM service-account private keys, or delivery endpoint URLs.
+- The local mock and Workers Relay are separate implementations. Follow
+  [`relay/README.md`](relay/README.md) or [`relay/workers/README.md`](relay/workers/README.md)
+  for their delivery contracts, runtime setup, and tests. Run `npm test` in each affected Relay
+  directory; Relay-only changes do not require Android builds or Gradle tests.
+
+## Development priorities
+
+Follow [`docs/release-plan.md`](docs/release-plan.md) for current release scope and future development
+priorities. Distinguish planned candidates from implemented features.
 
 When an API detail is uncertain, verify it against the official Mastodon API documentation before
 implementing it.

@@ -16,6 +16,137 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    @Test fun streamReceivedDuringDiskReadIsPersistedEvenWhenNetworkRefreshFails() = runTest(dispatcher) {
+        val disk = CompletableDeferred<Result<CachedNotifications>>()
+        var saved = emptyList<TimelineNotification>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCachedNotifications(session: AccountSession) = disk.await()
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> = Result.failure(IllegalStateException("offline"))
+            override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> {
+                saved = notifications
+                return Result.success(Unit)
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.NotificationReceived(testNotification("live"))))
+        advanceUntilIdle()
+        disk.complete(Result.success(CachedNotifications(listOf(testNotification("live"), testNotification("old")))))
+        advanceUntilIdle()
+        assertEquals(listOf("live", "old"), saved.map { it.id })
+        assertEquals(saved, viewModel.uiState.value.notifications)
+        assertEquals(setOf("live"), viewModel.uiState.value.pendingNewNotificationIds)
+    }
+
+    @Test fun cachedNotificationsAreVisibleBeforeNetworkAndSurviveOfflineRefreshWithoutAcknowledgement() = runTest(dispatcher) {
+        val response = CompletableDeferred<Result<NotificationPage>>()
+        var cacheWrites = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCachedNotifications(session: AccountSession) =
+                Result.success(CachedNotifications(listOf(testNotification("cached")), "older"))
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = response.await()
+            override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> {
+                cacheWrites++
+                return Result.success(Unit)
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(listOf("cached"), viewModel.uiState.value.notifications.map { it.id })
+        assertTrue(viewModel.uiState.value.isLoadingNotifications)
+        viewModel.onLatestNotificationsShown(setOf("cached"), true)
+        advanceUntilIdle()
+        assertTrue(repository.markers.isEmpty())
+
+        response.complete(Result.failure(IllegalStateException("offline")))
+        advanceUntilIdle()
+        assertEquals(listOf("cached"), viewModel.uiState.value.notifications.map { it.id })
+        assertEquals("offline", viewModel.uiState.value.notificationsError)
+        viewModel.onLatestNotificationsShown(setOf("cached"), true)
+        advanceUntilIdle()
+        assertTrue(repository.markers.isEmpty())
+        assertEquals(0, cacheWrites)
+    }
+
+    @Test fun freshPageReplacesDiskHistoryKeepsLiveEventsAndPersistsPaginationAndDeletion() = runTest(dispatcher) {
+        val response = CompletableDeferred<Result<NotificationPage>>()
+        val saved = mutableListOf<List<TimelineNotification>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCachedNotifications(session: AccountSession) =
+                Result.success(CachedNotifications(listOf(testNotification("stale")), "read"))
+            override suspend fun getNotificationMarker(session: AccountSession): Result<String?> = Result.failure(IllegalStateException("marker offline"))
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                if (maxId == null) response.await() else Result.success(NotificationPage(listOf(testNotification("older")), "older", false))
+            override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> {
+                saved += notifications
+                return Result.success(Unit)
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(
+            TimelineStreamEvent.NotificationReceived(testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z")),
+        ))
+        advanceUntilIdle()
+        response.complete(Result.success(NotificationPage(listOf(testNotification("new"), testNotification("read")), "read", false)))
+        advanceUntilIdle()
+        assertEquals(listOf("live", "new", "read"), viewModel.uiState.value.notifications.map { it.id })
+        assertEquals(setOf("live", "new"), viewModel.uiState.value.pendingNewNotificationIds)
+        assertEquals(viewModel.uiState.value.notifications, saved.last())
+        viewModel.loadNextNotifications()
+        advanceUntilIdle()
+        assertEquals(listOf("live", "new", "read", "older"), saved.last().map { it.id })
+
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.StatusDeleted("post"))
+        advanceUntilIdle()
+        assertTrue(saved.last().all { it.status == null })
+    }
+
+    @Test fun delayedDiskReadCannotRestorePreviousAccount() = runTest(dispatcher) {
+        val disk = CompletableDeferred<Result<CachedNotifications>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCachedNotifications(session: AccountSession) =
+                if (session == testAccount) withContext(NonCancellable) { disk.await() }
+                else Result.success(CachedNotifications())
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                Result.success(NotificationPage(listOf(testNotification(session.sessionId)), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        browsing.activate(secondAccount)
+        advanceUntilIdle()
+        disk.complete(Result.success(CachedNotifications(listOf(testNotification("old-account")))))
+        advanceUntilIdle()
+        assertEquals(listOf("two"), viewModel.uiState.value.notifications.map { it.id })
+    }
+
+    @Test fun unavailableCacheDoesNotFailSuccessfulNetworkLoad() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCachedNotifications(session: AccountSession): Result<CachedNotifications> = Result.failure(IllegalStateException("disk"))
+            override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> = Result.failure(IllegalStateException("disk full"))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(listOf("notification"), viewModel.uiState.value.notifications.map { it.id })
+        assertNull(viewModel.uiState.value.notificationsError)
+        assertFalse(viewModel.uiState.value.isLoadingNotifications)
+    }
+
     @Test fun initialLoadOverlapsMarkerAndPageRequestsAndPreservesUnreadDetection() = runTest(dispatcher) {
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotificationMarker(session: AccountSession): Result<String?> {

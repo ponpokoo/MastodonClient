@@ -47,6 +47,9 @@ class NotificationsViewModel(
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState = _uiState.asStateFlow()
     private var notificationsJob: Job? = null
+    private var cacheWriteJob: Job? = null
+    private var cacheRestored = false
+    private var cachedMarkerId: String? = null
     private var requested = false
     private var hasLoaded = false
     private var nextRefreshResultId = 0L
@@ -57,6 +60,8 @@ class NotificationsViewModel(
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         _uiState.value = NotificationsUiState()
         hasLoaded = false
+        cacheRestored = false
+        cachedMarkerId = null
         lastSentMarkerId = null
         if (requested && snapshot.account != null) loadNotifications()
     }
@@ -81,10 +86,20 @@ class NotificationsViewModel(
         notificationsJob = requestScope.launch {
             // These independent requests must overlap instead of adding two network waits.
             val markerRequest = if (initialLoad) async {
-                timelineRepository.getNotificationMarker(session).forSession(snapshot).getOrNull()
+                timelineRepository.getNotificationMarker(session).forSession(snapshot)
             } else null
             val pageRequest = async { timelineRepository.getNotifications(session) }
-            val markerId = markerRequest?.await()
+            if (!cacheRestored) {
+                val cached = timelineRepository.getCachedNotifications(session).forSession(snapshot).getOrNull()
+                cachedMarkerId = cached?.lastReadId
+                cacheRestored = true
+                if (cached != null) _uiState.update { current -> current.copy(
+                    // Events received during the disk read take precedence over the stored snapshot.
+                    notifications = (current.notifications + cached.notifications).distinctBy(TimelineNotification::id),
+                ) }
+                if (_uiState.value.pendingNewNotificationIds.isNotEmpty()) persistNotifications(snapshot)
+            }
+            val markerId = markerRequest?.await()?.getOrElse { cachedMarkerId }
             pageRequest.await()
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
@@ -105,7 +120,11 @@ class NotificationsViewModel(
                             // Keep a streaming event that may have arrived while
                             // this REST refresh was in flight, and retain older
                             // pages already loaded below the refreshed first page.
-                            notifications = (page.notifications + current.notifications)
+                            // On startup, replace the disk snapshot with a fresh contiguous page.
+                            // Keeping an old disk tail could silently bridge an unfetched gap.
+                            notifications = (page.notifications + if (initialLoad) {
+                                current.notifications.filter { it.id in current.pendingNewNotificationIds }
+                            } else current.notifications)
                                 .distinctBy(TimelineNotification::id)
                                 .sortedByDescending(TimelineNotification::createdAt),
                             isLoadingNotifications = false,
@@ -119,6 +138,7 @@ class NotificationsViewModel(
                             refreshResult = refreshResult,
                         )
                     }
+                    persistNotifications(snapshot)
                 }
                 .onFailure { error ->
                     val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
@@ -210,6 +230,7 @@ class NotificationsViewModel(
                             notificationsEndReached = page.endReached || page.nextMaxId == current.notificationsNextMaxId,
                         )
                     }
+                    persistNotifications(snapshot)
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -224,6 +245,7 @@ class NotificationsViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        val previous = _uiState.value.notifications
         if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.NotificationReceived) {
             val notification = change.event.notification
             _uiState.update { current ->
@@ -248,6 +270,19 @@ class NotificationsViewModel(
                     }
                 })
             }) }
+        }
+        if (cacheRestored && previous != _uiState.value.notifications) {
+            currentSnapshot()?.let(::persistNotifications)
+        }
+    }
+
+    private fun persistNotifications(snapshot: BrowsingSession.Snapshot) {
+        val notifications = _uiState.value.notifications
+        // Supersede a queued snapshot, so slow disk writes cannot overwrite a newer state.
+        cacheWriteJob?.cancel()
+        cacheWriteJob = requestScope.launch {
+            timelineRepository.cacheNotifications(snapshot.account!!, notifications).forSession(snapshot)
+            // The network/UI result remains usable when cache storage is unavailable.
         }
     }
 }

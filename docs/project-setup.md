@@ -8,7 +8,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| 作業ツリーの版番号 | `2.1.0`（versionCode 9）。公開状況は [更新・リリース計画](release-plan.md) を参照 |
+| 作業ツリーの版番号 | `2.1.1`（versionCode 10）。公開状況は [更新・リリース計画](release-plan.md) を参照 |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -21,7 +21,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](firebase-android.md)を参照。
-Roomは依存のみで、Entity・DAOを使った永続タイムラインキャッシュは未実装。
+Roomは通知のみの永続キャッシュに使用する。ホーム・ローカル・連合の永続キャッシュは未実装。
 Hiltはカタログに定義があるが未導入で、依存は手動で組み立てる。
 
 ```text
@@ -33,6 +33,11 @@ domain/     モデル・Repository契約・セッション共有
 feature/    画面・ViewModel
 navigation/ 型付き画面遷移
 ```
+
+テーマ・表示などの単純な設定値の購読・保存は、Composeから`UserPreferencesStore`を直接利用してよい。
+Flowはライフサイクルに従って購読し、保存はStoreのsuspendメソッドを使う。
+このためだけにViewModelやRepositoryのラッパーを追加しない。
+認証・API通信・複数段階の処理は、引き続きViewModelとドメインRepositoryを経由する。
 
 ## 通信・認証・保存の境界
 
@@ -49,6 +54,13 @@ navigation/ 型付き画面遷移
   リリースでHTTP本文ログを有効にしない。メディアアップロードは`/api/v2/media`を使用する。
 - 投稿キャッシュはインスタンス・セッション・投稿IDで区別する上限付きメモリキャッシュ。
   設定・下書きの保存と、タイムラインの永続保存を混同しない。
+- 通知は`BrowsingDatabase`（Room）の通知テーブルに、セッション・インスタンス別で最新200件まで保存する。
+  投稿・通知元は通知のJSONに内包し、画像本体・認証情報は保存しない。既読位置は別テーブルに保持する。
+  保存は一覧スナップショットの置換と件数制限を同じトランザクションで行い、通信結果やStreaming・投稿操作の反映後に更新する。
+  DB読み書き・JSON処理はUIスレッド外で行う。ログアウト時は対象セッションを削除し、遅延書き込みは登録済みアカウントの確認で拒否する。
+  DBはバックアップ・端末移行から除外する。容量は件数で制限し、MB単位の固定上限は設けない。
+  将来のタイムラインDB化は同じDBへテーブル・DAOを追加し、`app/schemas`のスキーマを基準にマイグレーションする。
+  今回はRepository経由の表示キャッシュに留め、全画面の唯一のデータ源への移行や投稿・アカウントの共通テーブル化は行わない。
 - コルーチンのキャンセルを一般エラーとして握りつぶさない。メディア取り込みのファイルI/Oは背景処理に分離する。
 
 ## メイン画面の責務とライフサイクル

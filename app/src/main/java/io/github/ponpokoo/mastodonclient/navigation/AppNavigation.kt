@@ -113,8 +113,16 @@ fun AppNavigation(
     val scope = rememberCoroutineScope()
     val apiClientFactory = remember { ApiClientFactory() }
     val authStore = remember { SecureAuthStore(context) }
+    val notificationLocalDataSource = remember {
+        io.github.ponpokoo.mastodonclient.data.local.RoomNotificationLocalDataSource(
+            io.github.ponpokoo.mastodonclient.data.local.BrowsingDatabase.get(context),
+            isAccountPresent = { session -> authStore.getSessions().any {
+                it.sessionId == session.sessionId && it.instanceUrl.trimEnd('/') == session.instanceUrl.trimEnd('/')
+            } },
+        )
+    }
     val pushRuntime = remember { io.github.ponpokoo.mastodonclient.notification.PushRuntime.get(context) }
-    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control) }
+    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource) }
     val pushSettings: io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel = viewModel(
         factory = ScreenViewModelFactory { io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel(pushRuntime.control, authRepository) },
     )
@@ -185,6 +193,7 @@ fun AppNavigation(
         }
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
+        notificationLocalDataSource = notificationLocalDataSource,
         onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
     val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
     val reactionEmojiCache = remember { mutableMapOf<String, List<CustomEmoji>>() }

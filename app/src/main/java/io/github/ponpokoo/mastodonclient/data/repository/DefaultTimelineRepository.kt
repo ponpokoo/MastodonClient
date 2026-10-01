@@ -2,6 +2,8 @@ package io.github.ponpokoo.mastodonclient.data.repository
 
 import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
+import io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource
+import io.github.ponpokoo.mastodonclient.domain.model.CachedNotifications
 import io.github.ponpokoo.mastodonclient.data.remote.dto.AccountDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
@@ -63,6 +65,7 @@ class DefaultTimelineRepository(
     private val streamingDataSource: MastodonStreamingDataSource = MastodonStreamingDataSource(),
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
     private val onReactionSucceeded: suspend (AccountSession, String) -> Unit = { _, _ -> },
+    private val notificationLocalDataSource: NotificationLocalDataSource? = null,
 ) : TimelineRepository {
     private data class StatusCacheKey(val instanceUrl: String, val sessionId: String, val statusId: String)
     private fun cacheKey(session: AccountSession, statusId: String) =
@@ -293,18 +296,30 @@ class DefaultTimelineRepository(
         )
     }
 
+    override suspend fun getCachedNotifications(session: AccountSession): Result<CachedNotifications> = runCatching {
+        notificationLocalDataSource?.read(session) ?: CachedNotifications()
+    }
+
+    override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> = runCatching {
+        notificationLocalDataSource?.write(session, notifications)
+        Unit
+    }
+
     override suspend fun saveNotificationMarker(
         session: AccountSession,
         lastReadId: String,
     ): Result<Unit> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
             .saveNotificationMarker(lastReadId)
+        // Cache failures must not turn a successful remote write into a failed read acknowledgement.
+        runCatching { notificationLocalDataSource?.writeMarker(session, lastReadId) }
         Unit
     }
 
     override suspend fun getNotificationMarker(session: AccountSession): Result<String?> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getNotificationMarker().notifications?.lastReadId
+            .also { marker -> runCatching { notificationLocalDataSource?.writeMarker(session, marker) } }
     }
 
     override suspend fun search(session: AccountSession, query: String): Result<SearchResults> = runCatching {

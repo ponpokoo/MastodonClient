@@ -2,6 +2,7 @@ package io.github.ponpokoo.mastodonclient.domain.model
 
 import kotlinx.serialization.Serializable
 
+@Serializable
 data class TimelineStatus(
     val timelineId: String,
     val statusId: String,
@@ -33,6 +34,7 @@ data class TimelineStatus(
     val inReplyToAccountId: String? = null,
 )
 
+@Serializable
 data class StatusPoll(
     val id: String,
     val expiresAt: String?,
@@ -45,11 +47,13 @@ data class StatusPoll(
     val options: List<PollOption>,
 )
 
+@Serializable
 data class PollOption(
     val title: String,
     val votesCount: Long?,
 )
 
+@Serializable
 data class StatusMention(val accountId: String, val accountName: String, val url: String)
 
 fun TimelineStatus.replyToAccountName(): String? {
@@ -67,6 +71,7 @@ fun TimelineStatus.mentionedAccountIdFor(link: String): String? {
     }?.accountId
 }
 
+@Serializable
 data class PreviewCard(
     val url: String,
     val title: String,
@@ -77,6 +82,7 @@ data class PreviewCard(
     val aspectRatio: Float?,
 )
 
+@Serializable
 data class EmojiReaction(
     val name: String,
     val count: Long,
@@ -89,6 +95,7 @@ data class EmojiReaction(
         get() = if (domain.isNullOrBlank() || '@' in name) name else "$name@$domain"
 }
 
+@Serializable
 data class StatusAuthor(
     val id: String,
     val displayName: String,

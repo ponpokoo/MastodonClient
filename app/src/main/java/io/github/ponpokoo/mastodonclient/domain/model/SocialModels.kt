@@ -52,6 +52,7 @@ data class ProfileEditRequest(
     val headerFilePath: String? = null,
 )
 
+@kotlinx.serialization.Serializable
 data class TimelineNotification(
     val id: String,
     val type: String,
@@ -68,6 +69,12 @@ data class NotificationPage(
     val notifications: List<TimelineNotification>,
     val nextMaxId: String?,
     val endReached: Boolean,
+)
+
+/** A bounded display snapshot, not a complete or necessarily current server history. */
+data class CachedNotifications(
+    val notifications: List<TimelineNotification> = emptyList(),
+    val lastReadId: String? = null,
 )
 
 data class SearchTag(

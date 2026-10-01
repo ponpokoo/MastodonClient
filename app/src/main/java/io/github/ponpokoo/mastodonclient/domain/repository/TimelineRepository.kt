@@ -12,6 +12,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
+import io.github.ponpokoo.mastodonclient.domain.model.CachedNotifications
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -98,6 +99,12 @@ interface TimelineRepository {
         limit: Int = 80,
     ): Result<NotificationPage> =
         Result.failure(UnsupportedOperationException("通知は未対応です"))
+
+    suspend fun getCachedNotifications(session: AccountSession): Result<CachedNotifications> =
+        Result.success(CachedNotifications())
+
+    suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> =
+        Result.success(Unit)
 
     suspend fun saveNotificationMarker(session: AccountSession, lastReadId: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("通知の既読保存は未対応です"))
