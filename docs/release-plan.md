@@ -12,17 +12,16 @@ GitHub Release公開後に同じ欄を「公開済み」へ更新する。以前
 
 | 項目 | v2.1.1 |
 | --- | --- |
-| 状態 | 準備中（APK生成・自動テスト完了、未公開） |
+| 状態 | 公開済み（2026-10-01、日本時間） |
 | 比較元の公開版 | `v2.1.0`（`b91a7d9`） |
-| 公開タグの対象コミット | 今回のリリース準備コミット（注釈付きタグ`v2.1.1`の対象） |
-| 公開区分 | GitHub ReleaseのPre-releaseを予定 |
+| 公開タグの対象コミット | `79647b1` |
+| 公開区分 | GitHub ReleaseのPre-release |
 | アプリ版番号 | versionName `2.1.1`、versionCode `10` |
 | 配布APK | `app-release.apk`（署名付きReleaseビルド） |
 | 配布APKのSHA-256 | `f0290f0f4f6c99749f5d3547e2f7d272902832500958d927b25c1022260ff576` |
 
-[比較元のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.1.0)と
-現在の作業ツリーとの差分を基に、以下の変更を2.1.1の対象として整理する。
-投稿・表示・通知の改善と通知キャッシュ関連変更を含む。配布候補の確認結果は以下に記録する。
+[Nagisa 2.1.1のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.1.1)を
+リリースノートの正本とする。投稿・表示・通知の改善と通知キャッシュ関連変更を含む。
 
 ## v2.1.1の変更と確認記録
 
@@ -63,14 +62,14 @@ GitHub Release公開後に同じ欄を「公開済み」へ更新する。以前
 - 2026-10-01に`testDebugUnitTest`と`assembleRelease`を実行し、単体テスト192件が成功（失敗・エラー・スキップなし）。署名付きReleaseビルドも成功した。
 - 配布APKはapplication ID `io.github.ponpokoo.mastodonclient`、versionName `2.1.1`、versionCode `10`。APK Signature Scheme v2で署名を検証した。署名証明書は`CN=Nagisa Android Release, C=JP`、証明書SHA-256は`42a7a07e8fdd8fa16fe7360b6f45ad6c024daefe9727c9f7cc5dfaae378620c1`。APKのSHA-256は上表に記録した。
 - Pixel 10aエミュレーター（Android 17）で、アイコン設定、投稿言語・ハッシュタグ操作、会話の初期位置、プロフィール・通知のアイコン形状、Android通知消去、通知キャッシュの6クラス・計10件が成功した。`connectedDebugAndroidTest`ではアイコン設定1件を実行し、残り9件は同じビルド済みDebug／テストAPKを使って`adb shell am instrument`でクラスを指定して実行した。
-- 端末テストはテスト用データ・Repositoryを使った確認。実際のアカウントでの手動操作や、署名付きRelease APKそのものの端末インストール・操作確認は未実施。
+- 端末テストはテスト用データ・Repositoryを使った確認。配布候補の手動確認は、利用者から確認を終えて公開したとの報告を受け、完了として記録した。
+- 公開ページでPre-release設定、タグ`v2.1.1`の対象コミット`79647b1`、添付APKのSHA-256が上表の記録と一致することを確認した。
 
-### 既知の制約・リリース前の確認事項
+### 既知の制約
 
 - DB保存の対象は通知のみ。ホーム・ローカル・連合の永続保存と、表示データ全体をDB中心にする移行は次回以降の候補とする。
 - 通知の200件は端末保存の上限であり、オンラインで閲覧できる履歴の上限ではない。画像本体は通知DBへ保存しない。
-- [通知の端末保存](ui-guidelines.md#通知の端末保存試験導入)について、実際のアカウントで表示速度、保存容量、既読処理、更新失敗時の表示、アカウント切替・ログアウトを確認する。
-- 投稿言語・返信解除・投稿元切替、アイコン形状、会話詳細の初期位置、引っ張って更新の操作感を配布候補で確認する。
+- [通知の端末保存](ui-guidelines.md#通知の端末保存試験導入)は試験導入。表示速度・保存容量などの評価は、次回以降のDB化範囲を決める材料とする。
 
 ## 次回以降の候補
 
