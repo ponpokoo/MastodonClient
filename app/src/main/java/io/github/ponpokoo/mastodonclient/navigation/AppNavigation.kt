@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.graphics.drawable.ColorDrawable
@@ -261,11 +262,11 @@ fun AppNavigation(
             }
         }
     }
-    val openQuote: (TimelineStatus) -> Unit = { status ->
+    val openQuote: (TimelineStatus, QuoteMode) -> Unit = { status, mode ->
         navController.navigate(Route.ComposePost(
             quoteStatusId = status.statusId,
             quoteStatusUrl = status.url,
-            nativeQuote = status.quoteApproval in setOf("automatic", "manual"),
+            nativeQuote = mode == QuoteMode.Native,
         ))
     }
     val loadCustomReactionEmojis: suspend () -> Result<List<CustomEmoji>> = {

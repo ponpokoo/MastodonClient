@@ -47,7 +47,7 @@ class ProfileNotificationAvatarDeviceTest {
                 ProfileContent(
                     state = ProfileUiState(profile = UserProfile(author, "", "", 0, 0, 0, emptyList())),
                     padding = PaddingValues(), onRetry = {}, onRefresh = {}, onStatusClick = {},
-                    onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = {}, onFavourite = {},
+                    onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = { _, _ -> }, onFavourite = {},
                     onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> },
                     preferences = preferences.value, onAvatarClick = { avatarOpened = true },
                 )

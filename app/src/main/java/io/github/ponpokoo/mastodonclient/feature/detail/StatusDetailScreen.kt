@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -88,7 +89,7 @@ fun StatusDetailScreen(
     preferences: AppPreferences,
     onBack: () -> Unit,
     onReply: (String) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onEditStatus: (String) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
@@ -183,7 +184,7 @@ fun StatusDetailScreen(
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status.statusId) },
                         onBoost = viewModel::toggleReblog,
-                        onQuote = { onQuote(status) },
+                        onQuote = { mode -> onQuote(status, mode) },
                         onMoreClick = { menuStatus = it },
                         onFavourite = viewModel::toggleFavourite,
                         onVotePoll = viewModel::votePoll,

@@ -31,10 +31,10 @@ This repository is a generic Android Mastodon client. It must not assume that th
 
 ## Push and Relay
 
-- Follow [`docs/relay-protocol.md`](docs/relay-protocol.md) for the registration contract,
+- Follow [`docs/relay-protocol.md`](docs/relay-protocol.md) for the shared Relay wire contract,
   [`docs/push-settings.md`](docs/push-settings.md) for subscription lifecycle,
-  [`docs/push-reception.md`](docs/push-reception.md) for reception and decryption, and
-  [`docs/firebase-android.md`](docs/firebase-android.md) for FCM integration.
+  [`docs/push-reception.md`](docs/push-reception.md) for Android/Firebase setup, FCM integration,
+  reception, and decryption, and [`relay/workers/setup.md`](relay/workers/setup.md) for Workers deployment.
 - Never send Mastodon access tokens, OAuth client secrets, Web Push private keys, or auth secrets
   to Relay. Use separate Relay HTTP clients without Mastodon authentication interceptors.
 - Never log Relay management tokens, FCM registration tokens, Web Push private keys or auth secrets,

@@ -9,13 +9,13 @@ Mastodon → Worker → D1へ保存 → FCM → Nagisa
                       └ Cronで再送
 ```
 
-登録・トークン更新・解除・暗号文取得は[既存のAndroid契約](../../docs/relay-protocol.md)を維持する。
+登録・トークン更新・解除・暗号文取得は[共通通信契約](../../docs/relay-protocol.md)を維持する。
 従来の[Node.jsローカル模擬Relay](../README.md)とは別の実装で、state.jsonの移行はしない。
 公開環境では新しいRelay URLで購読を作り直す。
 
 ## ローカルでの確認
 
-Node.js 22以降（今回は24.19.0）を使う。npmもそのNode.jsと同じインストールのものを使う。
+Node.js 22以降を使う。2026-09-21の検証では24.19.0を使用した。npmもそのNode.jsと同じインストールのものを使う。
 
 ```powershell
 Set-Location relay/workers
@@ -41,18 +41,8 @@ Wrangler 4.135.0と、それが使用するMiniflare 5.20260918.0-alphaをlockfi
 
 ## Web画面での設定
 
-操作は利用者が行う。詳しい順番は[Workers配置手順](../../docs/relay-workers-setup.md)。
-
-| 項目 | 種類 | 値 |
-| --- | --- | --- |
-| `DB` | D1 binding | `0001_initial.sql`を適用したDB |
-| `RELAY_ENABLED` | Text | 準備中は`false`、最後に`true` |
-| `PUBLIC_ORIGIN` | Text | `https://nagisa-relay.自分のサブドメイン.workers.dev`（パスなし） |
-| `VAPID_PUBLIC_KEYS` | Text | 試すMastodonサーバーの公開鍵のJSON配列 |
-| `FCM_PROJECT_ID` | Text | Androidと同じFirebaseプロジェクトID |
-| `FCM_CLIENT_EMAIL` | Secret | FCM送信用サービスアカウントの`client_email` |
-| `FCM_PRIVATE_KEY` | Secret | 同アカウントの`private_key`（PEM） |
-| Cron Trigger | 毎分 | `* * * * *` |
+配置、D1初期化、変数・Secrets、Cron、運用確認と停止の手順は[配置・運用手順](setup.md)にまとめる。
+CloudflareとGoogleのWeb画面は利用者が操作する。
 
 秘密鍵の改行は実改行と文字列`\n`の両方を受け付ける。JSON全体を秘密鍵欄へ貼らない。
 `google-services.json`はAndroid用で、このサービスアカウント秘密鍵の代わりにはならない。
@@ -95,7 +85,8 @@ Wrangler 4.135.0と、それが使用するMiniflare 5.20260918.0-alphaをlockfi
 拒否する要求にもWorkers実行やD1の読み取りが生じる。
 一般向け公開前に登録の濫用防止、購読ごとの鍵制限、管理・削除方針、負荷を再検討する。
 
-CPU 10msはまだ公開環境で未計測。ネットワーク待ち時間ではなく、
+過去の利用者報告では公開WorkersのCPU時間と無料枠使用量を確認済みだが、具体的な計測値は記録していない。
+ネットワーク待ち時間ではなく、
 VAPID検証、OAuth用RSA署名、最大本文のBase64化、Cron処理を含むCPU使用時間を確認する。
 アクセストークンは有効期限内で同一isolateにキャッシュするが、cold startでは作り直す。
 Cronを1件にしても10ms以内が保証されるわけではない。
@@ -104,13 +95,22 @@ Cronを1件にしても10ms以内が保証されるわけではない。
 Web画面で作成した場合も、保存ログにリクエストURLを含めないよう確認する。
 CloudflareのMetrics、D1の件数だけを返すSQL、端末の表示で動作を確認する。
 
-## 検証範囲
+## 過去の検証記録
+
+以下は当時のコード・設定・確認範囲の記録。今回の文書整理ではテストを再実行していない。
+
+### 2026-09-21：Workersローカルテスト
 
 2026-09-21: 23件のローカルテスト成功。配布用バンドルのローカル生成、登録の競合・認証・墓標、
 署名拒否、旧暗号ヘッダー、TTL、暗号文取得、容量制限、D1リース、再送、
 トークン更新競合、FCMの認証・エラー分類を検証。
-Workers FreeのCPU上限、クラウド上のD1、実Mastodon→FCM→端末の配信は未検証。
+このローカルテストではWorkers FreeのCPU上限、クラウド上のD1、実Mastodon→FCM→端末の配信は未検証。
 Androidのコード・設定URLはこの追加では変更していない。
+
+### 2026-09-21～2026-09-23：公開環境への接続・実配信
+
+公開Relayの登録・解除、利用者による実配信と継続試験の記録は[Android側の過去の検証記録](../../docs/push-reception.md#過去の検証記録)を参照する。
+ローカルテストの結果とは区別し、公開環境の性能保証には用いない。
 
 参照: [D1 batch](https://developers.cloudflare.com/d1/worker-api/d1-database/)、
 [Cron](https://developers.cloudflare.com/workers/configuration/cron-triggers/)、

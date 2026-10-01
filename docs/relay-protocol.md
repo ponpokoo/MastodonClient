@@ -1,14 +1,11 @@
-# Nagisa Relay登録API v1（ローカル検証用）
+# Nagisa Relay共通通信契約 v1
 
-Android側の通信クライアントとMockWebServerテストを実装済み。
-Android側の鍵生成・購読状態の暗号化保存・再開処理も実装済み。
-[ローカルRelay](../relay/README.md)の登録・受付・永続キュー・模擬送信も実装済み。
-[設定・認証フロー](push-settings.md)にも接続済み。
-[Workers＋D1試験版](../relay/workers/README.md)に実FCM送信アダプターを追加した。
-公開Relayの設定・登録接続・実配信確認は完了。設定手順は[Workers配置](relay-workers-setup.md)、
-全体の検証状況は[更新・リリース計画](release-plan.md)を参照する。
-本書はRelay登録APIの契約を定義する。
-配送・暗号文取得のローカル契約は [Relay README](../relay/README.md#http契約) を参照する。
+Android、Node.jsローカル模擬Relay、Workers版Relayが使用する登録・解除・Push受付・暗号文取得・FCMエンベロープの契約を定義する。
+Mastodon購読の接続順序と再開・ログアウト処理は[購読管理](push-settings.md)を参照する。
+
+VAPID検証、保存方式、配送・再送、件数上限は実装ごとに異なる。
+[ローカルRelay](../relay/README.md)と[Workers版Relay](../relay/workers/README.md)の条件を混同しない。
+Workersの配置は[配置・運用手順](../relay/workers/setup.md)、Android受信は[Android接続と受信処理](push-reception.md)を参照する。
 
 ## 登録・FCMトークン更新
 
@@ -46,33 +43,43 @@ AndroidのRelay専用HTTPクライアントはMastodon認証Interceptorを共有
 削除時には配送endpointを無効化し、保持中の配送も停止する。
 IDは解除後に再利用せず、再有効化では新しい組を発行する。
 サーバー側では削除済み登録の墓標を保持するなど、遅延したPUTによる復活を防ぐ。
-ローカル版は墓標を無期限保持し、登録と合わせて1000件を上限とする。
-公開運用の保持期間と管理情報の削除方針は今後確定する。
+墓標の保持と登録件数の上限は各Relay実装のREADMEを参照する。一般公開時の保持期間と管理情報の削除方針は今後確定する。
 
-## Mastodonとの接続順序
+## Push受付と暗号文取得
 
-1. Web Push鍵とRelay登録用秘密値を端末に保存する。
-2. Relayへ登録し、配送endpointを保存する。
-3. 対象アカウントのインスタンスへWeb Push購読を登録する。
-4. 応答を保存して有効状態へ移行する。
+- `POST /push/{deliveryId}`: `TTL`、`Content-Encoding`とバイナリ本文を受け付け、保存後201。
+  未知・無効・解除済みendpointは410。受付は端末への配信完了を意味しない。
+- `GET /v1/registrations/{id}/messages/{messageId}`: 管理用Bearerで暗号文を取得。
+  他の登録・期限切れは404。何度取得しても期限までは同じ内容を返す。
 
-通信前に進捗を保存し、途中でプロセスが終了しても同じキーで再開できるようにする。
-MastodonのGETが404なら現在の購読なしとして扱うが、API非対応かどうかは別の判定が必要。
-401／403を購読なしと誤認して再登録を繰り返さない。
-POSTは既存購読を置き換えるため、取得・照合と明示的な有効化操作の上で使用する。
-`DefaultPushRegistrationRepository`は同じ要求の再呼び出しで保存済みの進捗から再開する。
-自動起動・時間を置いた再試行は未接続。別endpointの既存購読はエラーとし、無断で置換しない。
-同じendpointで通知設定を変更する場合のみ再登録する。
-保存済みのセッション認証情報のフィンガープリント・Relay識別子を照合し、不一致では通信しない。
-再認証時の旧購読の解除と移行は[設定・認証フロー](push-settings.md)で実装した。
+受け付けるContent-Encodingは`aes128gcm`と旧形式`aesgcm`。
+旧形式には`Encryption`と`Crypto-Key`が必要。Authorizationなど不要なヘッダーは配送しない。
+Locationは受付IDを示すだけで、配送レシート取得APIは未実装。
+本文は最大64 KiB、暗号化関連ヘッダーは各2 KiB。TTLは最大24時間に短縮する。
+TTL 0は保存・送信せず破棄し、期限切れは配送せず取得も拒否する。
+VAPIDの認証条件と保存・再送の挙動は各Relay実装のREADMEを参照する。
 
-解除は端末の状態を解除中に保存し、Relay → Mastodon → ローカル保存情報の順で行う。
-Mastodon側は保存済みendpointと一致する購読だけを削除する。
-解除に必要な認証情報を破棄する前に処理する必要があり、ログアウトへの接続は未実装。
-GET照合とPOST／DELETEの間の外部クライアントによる変更には、Mastodon APIに条件付き更新がないため
-原子的な保護を提供しない。アプリ内の処理は共通Mutexで直列化する。
+## FCMエンベロープ
 
-## 検証
+dataは全値Stringの独自エンベロープ：
+
+- 共通: `version=1`, `registrationId`, `messageId`, `transport`
+- 小さい通知: `transport=inline`, `encoding`, `headers`（JSON文字列）, `body`（Base64URL）
+- 大きい通知: `transport=fetch`。端末が登録済みRelayと管理用認証を使い上記GETで取得する。
+
+inlineのJSONが3500 bytesを超えるとfetchへ切り替える。FCMの4096 bytes上限に余裕を設ける設計で、
+fetch通知の送信成功後も暗号文をTTLまで保持する。実FCMの確認範囲は各文書の過去の検証記録を参照する。
+
+GETの取得応答は、`version`、`registrationId`、`messageId`、`encoding`、`headers`、`body`を持つJSON。
+各値はStringで、FCMのinline形式と同じ暗号文情報を返す。取得応答には`transport`を含めない。
+Androidは要求した登録ID・メッセージIDと取得応答を照合する。
+FCMへはdataメッセージだけを送り、notificationメッセージによる自動表示を使用しない。
+
+## 過去の検証記録
+
+以下は当時のコード・設定・確認範囲の記録。今回の文書整理ではテストを再実行していない。公開Relayへの接続・実配信は[Android側の過去の検証記録](push-reception.md#過去の検証記録)を参照する。
+
+### 2026-09-21：登録・購読契約とローカルRelay
 
 2026-09-21: PushSubscriptionProtocolTest 6件、RelayRegistrationProtocolTest 4件成功。
 Debug APKビルド成功。外部サービスへの通信、Relayサーバー実行、実機通知は未実施。

@@ -1,14 +1,14 @@
 # Workers Free＋D1へのNagisa Relay配置手順
 
 CloudflareとGoogleのWeb画面は利用者が操作する。
-コード・SQL・ローカルテストは[Workers版Relay](../relay/workers/README.md)に用意した。
+コード・SQL・ローカルテストは[Workers版Relay](README.md)に用意した。
 Queues、KV、独自ドメインの契約は不要。まず少数アカウントで試す。
 
 ## 1. D1を作る
 
 1. Cloudflare DashboardでD1を開き、`nagisa-relay`というデータベースを作る。
 2. 作成したD1のConsoleを開く。
-3. [0001_initial.sql](../relay/workers/migrations/0001_initial.sql)のSQLを実行する。
+3. [0001_initial.sql](migrations/0001_initial.sql)のSQLを実行する。
    一括実行できない画面ではセミコロンごとに実行する。
 4. `registrations`、`messages`、`daily_usage`テーブルが作られたことを確認する。
 
@@ -99,14 +99,10 @@ Mastodon 4.3以降では、ブラウザーで**利用するサーバー**の`/ap
 `configured`だけではDB接続、Googleの権限、実配信の成功までは確認できない。
 
 ここまで終わったら**Workerの公開URLだけ**を共有する。
-次にローカルの`local.properties`へ`nagisa.relayUrl=https://…workers.dev`を設定し、
+[Androidのビルド設定](../../docs/push-reception.md#ビルド設定)に従い、ローカルの`local.properties`へ`nagisa.relayUrl=https://…workers.dev`を設定し、
 Debug APKをビルドしてNagisa側の通知を有効化する。
 Mastodonから通知を発生させ、背景のNagisaに届くことを確認する。
 Firebase Consoleの「通知を作成」で送るnotificationメッセージは、この経路の検証には使わない。
-
-2026-09-21の接続確認: `nagisa-relay.ponta3921.workers.dev`をAndroidのローカル設定へ反映。
-初回に不足していた`daily_usage`を追加した後、エミュレーターからの登録・再登録・認証拒否・解除を確認した。
-実FCM送信とMastodonからの通知表示は、この登録テストでは確認していない。
 
 ## 確認する数字と停止方法
 
@@ -129,6 +125,17 @@ SELECT day, count FROM daily_usage ORDER BY day DESC;
 停止中は削除処理も止まるので、D1の保存データは残る。
 試験を終了してデータを消す場合は先にAndroidで通知を無効化して解除を完了する。
 同じURLのDBだけを空にすると墓標が失われるため、DBの初期化を通常の復旧手段にしない。
+
+## 過去の検証記録
+
+### 2026-09-21：配置後の登録接続
+
+2026-09-21の接続確認: `nagisa-relay.ponta3921.workers.dev`をAndroidのローカル設定へ反映。
+初回に不足していた`daily_usage`を追加した後、エミュレーターからの登録・再登録・認証拒否・解除を確認した。
+実FCM送信とMastodonからの通知表示は、この登録テストでは確認していない。
+
+これは登録接続テストの範囲。後の実配信と2026-09-23までの継続試験は[Android側の過去の検証記録](../../docs/push-reception.md#過去の検証記録)を参照する。
+今回の文書整理ではテストを再実行していない。
 
 参照: [Cloudflare DashboardでのWorker作成](https://developers.cloudflare.com/workers/get-started/dashboard/)、
 [D1](https://developers.cloudflare.com/d1/get-started/)、

@@ -24,6 +24,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.domain.model.StatusMention
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
@@ -228,14 +229,14 @@ class StatusInteractionDeviceTest {
     @Test
     fun longPressingBoostOffersQuoteWithoutBoosting() {
         val boosts = AtomicInteger()
-        val quotes = AtomicInteger()
+        val quoteMode = AtomicReference<QuoteMode?>(null)
         composeRule.setContent {
             MaterialTheme {
                 StatusCard(
                     status = status(),
                     onStatusClick = null,
                     onBoost = { boosts.incrementAndGet() },
-                    onQuote = { quotes.incrementAndGet() },
+                    onQuote = quoteMode::set,
                     onUnavailableAction = {},
                 )
             }
@@ -247,8 +248,56 @@ class StatusInteractionDeviceTest {
 
         composeRule.runOnIdle {
             assertEquals(0, boosts.get())
-            assertEquals(1, quotes.get())
+            assertEquals(QuoteMode.Native, quoteMode.get())
         }
+        composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("引用（リンク）").performClick()
+        composeRule.runOnIdle {
+            assertEquals(0, boosts.get())
+            assertEquals(QuoteMode.Link, quoteMode.get())
+        }
+    }
+
+    @Test
+    fun legacyServerOffersOnlyLinkQuote() {
+        val quoteMode = AtomicReference<QuoteMode?>(null)
+        composeRule.setContent {
+            MaterialTheme {
+                StatusCard(status = status().copy(quoteApproval = null), onStatusClick = null,
+                    onQuote = quoteMode::set, onUnavailableAction = {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("引用").assertDoesNotExist()
+        composeRule.onNodeWithText("引用（リンク）").performClick()
+        composeRule.runOnIdle { assertEquals(QuoteMode.Link, quoteMode.get()) }
+    }
+
+    @Test
+    fun nativeQuoteRespectsApprovalWhileLinkQuoteRemainsAvailable() {
+        val approval = mutableStateOf("manual")
+        val quoteMode = AtomicReference<QuoteMode?>(null)
+        composeRule.setContent {
+            MaterialTheme {
+                StatusCard(status = status().copy(quoteApproval = approval.value), onStatusClick = null,
+                    onQuote = quoteMode::set, onUnavailableAction = {})
+            }
+        }
+        composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("引用（承認申請）").performClick()
+        composeRule.runOnIdle {
+            assertEquals(QuoteMode.Native, quoteMode.get())
+            approval.value = "denied"
+            quoteMode.set(null)
+        }
+        composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
+            .performTouchInput { longClick() }
+        composeRule.onNodeWithText("引用").assertIsNotEnabled()
+        composeRule.onNodeWithText("引用（リンク）").performClick()
+        composeRule.runOnIdle { assertEquals(QuoteMode.Link, quoteMode.get()) }
     }
 
     @Test

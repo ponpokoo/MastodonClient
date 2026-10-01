@@ -91,8 +91,9 @@ class ComposePostViewModel(
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
     private var idempotencyKey = UUID.randomUUID().toString()
     private var activeReplyToId: String? = initialReplyToId
-    private var replyJob: Job? = null
-    private var replyGeneration = 0
+    private enum class ReferenceKind { Reply, Quote }
+    private val targetJobs = mutableMapOf<ReferenceKind, Job>()
+    private val targetGenerations = mutableMapOf<ReferenceKind, Int>()
     private var activeQuoteStatusId: String? = initialQuoteStatusId
     private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
     private var activeNativeQuote: Boolean = nativeQuote
@@ -233,7 +234,7 @@ class ComposePostViewModel(
             selected?.let { session ->
                 loadAccountData(session, restoreBuffer = editStatusId == null)
                 applyInitialShare()
-                activeQuoteStatusId?.let { quoteId -> loadQuoteTarget(session, quoteId) }
+                loadQuoteTarget(session)
                 editStatusId?.let { statusId ->
                     timelineRepository.getEditableStatus(session, statusId).fold(
                         onSuccess = { source -> _uiState.update { state -> state.copy(
@@ -260,6 +261,9 @@ class ComposePostViewModel(
         if (author != null && containsMention(state.text, author) && !containsMention(text, author)) {
             clearReply()
         }
+        activeQuoteStatusUrl?.takeIf { !activeNativeQuote }?.let { url ->
+            if (containsQuoteUrl(state.text, url) && !containsQuoteUrl(text, url)) clearQuote()
+        }
         change { it.copy(text = text) }
     }
 
@@ -267,12 +271,30 @@ class ComposePostViewModel(
         Regex("(?<![\\p{L}\\p{N}_@])@${Regex.escape(author.accountName)}(?![\\p{L}\\p{N}_@]|\\.[\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
             .containsMatchIn(text)
 
-    private fun clearReply() {
+    private fun containsQuoteUrl(text: String, url: String): Boolean = url.isNotBlank() &&
+        Regex("(?<![A-Za-z0-9_:/?=&%+~@.-])${Regex.escape(url)}(?![A-Za-z0-9_/?#=&%+~@-]|\\.[A-Za-z0-9])")
+            .containsMatchIn(text)
+
+    fun clearReply() = clearReference(ReferenceKind.Reply)
+
+    fun clearQuote() = clearReference(ReferenceKind.Quote)
+
+    private fun clearReference(kind: ReferenceKind) {
+        if (_uiState.value.isPosting || targetId(kind) == null) return
         _uiState.value.selectedSession?.let { preferencesStore.removeComposeBuffer(draftKey(it.sessionId)) }
-        replyGeneration++
-        replyJob?.cancel()
-        activeReplyToId = null
-        _uiState.update { it.copy(replyToId = null, replyToStatus = null, errorMessage = null) }
+        cancelTargetLoad(kind)
+        when (kind) {
+            ReferenceKind.Reply -> {
+                activeReplyToId = null
+                _uiState.update { it.copy(replyToId = null, replyToStatus = null, errorMessage = null) }
+            }
+            ReferenceKind.Quote -> {
+                activeQuoteStatusId = null
+                activeQuoteStatusUrl = null
+                activeNativeQuote = false
+                _uiState.update { it.copy(quoteStatusId = null, quoteToStatus = null, quotingNative = false, errorMessage = null) }
+            }
+        }
     }
 
     fun onSpoilerChanged(text: String) = change { it.copy(spoilerText = text) }
@@ -407,6 +429,7 @@ class ComposePostViewModel(
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null || _uiState.value.isLoading) return
         stopMedia()
+        ReferenceKind.entries.forEach(::cancelTargetLoad)
         activeReplyToId = draft.replyToId
         activeQuoteStatusId = draft.quotedStatusId
         activeQuoteStatusUrl = draft.quotedStatusUrl
@@ -436,7 +459,7 @@ class ComposePostViewModel(
             }
         }
         loadReplyTarget(session, insertMention = false)
-        draft.quotedStatusId?.let { viewModelScope.launch { loadQuoteTarget(session, it) } }
+        loadQuoteTarget(session)
         scheduleAttachments()
     }
 
@@ -469,6 +492,7 @@ class ComposePostViewModel(
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        ReferenceKind.entries.forEach(::cancelTargetLoad)
         val replyText = _uiState.value.text.takeIf { activeReplyToId != null }
         if (replyText != null) clearReply()
         stopMedia()
@@ -706,48 +730,63 @@ class ComposePostViewModel(
 
     private fun draftKey(sessionId: String): String {
         val base = "$sessionId:${activeReplyToId ?: "new"}:${editStatusId.orEmpty()}"
-        return activeQuoteStatusId?.let { "$base:quote-$it" } ?: base
+        return activeQuoteStatusId?.let {
+            "$base:quote-$it:${if (activeNativeQuote) "native" else "link"}"
+        } ?: base
     }
 
-    private suspend fun loadQuoteTarget(session: AccountSession, statusId: String) {
+    private fun loadQuoteTarget(session: AccountSession) {
+        if (activeQuoteStatusId == null) return
         if (!activeNativeQuote && _uiState.value.text.isBlank()) {
             _uiState.update { it.copy(text = activeQuoteStatusUrl.orEmpty()) }
         }
-        timelineRepository.getCachedStatus(session, statusId)?.let { cached ->
-            _uiState.update { it.copy(quoteToStatus = cached) }
-        } ?: timelineRepository.getStatusDetail(session, statusId).onSuccess { detail ->
-            _uiState.update { it.copy(quoteToStatus = detail.status) }
+        loadTarget(session, ReferenceKind.Quote) { status ->
+            _uiState.update { it.copy(quoteToStatus = status) }
         }
     }
 
     private fun loadReplyTarget(session: AccountSession, insertMention: Boolean) {
-        replyJob?.cancel()
-        val generation = ++replyGeneration
-        val statusId = activeReplyToId ?: return
         val originalText = _uiState.value.text
-        fun apply(status: TimelineStatus) {
-            if (generation != replyGeneration || activeReplyToId != statusId ||
-                _uiState.value.selectedSession?.sessionId != session.sessionId) return
+        loadTarget(session, ReferenceKind.Reply) { status ->
             if (containsMention(originalText, status.author) && !containsMention(_uiState.value.text, status.author)) {
                 clearReply()
-                return
+            } else {
+                _uiState.update { it.copy(replyToId = activeReplyToId, replyToStatus = status) }
+                if (insertMention && _uiState.value.text == originalText) insertMention(status.author)
             }
-            _uiState.update { it.copy(replyToId = statusId, replyToStatus = status) }
-            if (insertMention && _uiState.value.text == originalText) insertMention(status.author)
         }
+    }
+
+    private fun cancelTargetLoad(kind: ReferenceKind): Int {
+        val generation = (targetGenerations[kind] ?: 0) + 1
+        targetGenerations[kind] = generation
+        targetJobs.remove(kind)?.cancel()
+        return generation
+    }
+
+    private fun targetId(kind: ReferenceKind): String? = when (kind) {
+        ReferenceKind.Reply -> activeReplyToId
+        ReferenceKind.Quote -> activeQuoteStatusId
+    }
+
+    private fun loadTarget(session: AccountSession, kind: ReferenceKind, apply: (TimelineStatus) -> Unit) {
+        val generation = cancelTargetLoad(kind)
+        val statusId = targetId(kind) ?: return
+        fun isCurrent() = generation == targetGenerations[kind] && targetId(kind) == statusId &&
+            _uiState.value.selectedSession?.sessionId == session.sessionId
         timelineRepository.getCachedStatus(session, statusId)?.let {
-            apply(it)
+            if (isCurrent()) apply(it)
             return
         }
-        // Saved drafts or an evicted cache need only the target, not the conversation.
-        replyJob = viewModelScope.launch {
+        targetJobs[kind] = viewModelScope.launch {
+            // Both previews need only the target post, not its conversation.
             val result = timelineRepository.getTimelineStatus(session, statusId)
             currentCoroutineContext().ensureActive()
-            if (generation != replyGeneration || activeReplyToId != statusId ||
-                _uiState.value.selectedSession?.sessionId != session.sessionId) return@launch
-            result.onSuccess(::apply).onFailure { error ->
+            if (!isCurrent()) return@launch
+            result.onSuccess(apply).onFailure { error ->
                 if (error is CancellationException) throw error
-                _uiState.update { it.copy(errorMessage = error.message ?: "返信先を取得できませんでした") }
+                val fallback = if (kind == ReferenceKind.Reply) "返信先を取得できませんでした" else "引用元を取得できませんでした"
+                _uiState.update { it.copy(errorMessage = error.message ?: fallback) }
             }
         }
     }
@@ -781,6 +820,7 @@ class ComposePostViewModel(
 
     override fun onCleared() {
         stopMedia()
+        ReferenceKind.entries.forEach(::cancelTargetLoad)
         retainInput()
         super.onCleared()
     }

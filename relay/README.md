@@ -1,16 +1,16 @@
 # Nagisa Relay（ローカル開発版）
 
-Node.jsの標準機能のみで動く、Nagisa 2.0.0向けの通知中継実装。
+Node.jsの標準機能のみで動く、共通通信契約v1のローカル通知中継実装。
 登録・解除・暗号文受付・永続キュー・模擬FCM送信を検証する。
 実際のFCM送信とVAPID検証は未実装。
 Workers Free＋D1での実FCM送信用コードは、別実装の[Workers試験版](workers/README.md)を参照する。
-Android側の[受信・復号・表示](../docs/push-reception.md)は固定暗号文とエミュレーターで検証済み。
+Android側の受信・復号・表示と過去の検証記録は[Android接続と受信処理](../docs/push-reception.md)を参照する。
 **この版は127.0.0.1での開発用。本番公開できる完成版ではない。**
 
 ## 起動
 
 Node.js 20以降が必要。外部パッケージのインストールは不要。
-このリポジトリではNode.js 20.9.0で検証した。公開運用時にはサポート中のランタイムを選定する。
+2026-09-21の検証ではNode.js 20.9.0を使用した。公開運用時にはサポート中のランタイムを選定する。
 PowerShellでリポジトリのルートから実行する。
 
 ```powershell
@@ -53,21 +53,11 @@ node src/server.mjs
 
 ## HTTP契約
 
-登録APIは [共通契約](../docs/relay-protocol.md) に従う。
+登録・解除・Push受付・暗号文取得の形式は[共通契約](../docs/relay-protocol.md)に従う。
+未登録IDのDELETEも墓標を作って204を返す。遅れて届いたPUTは410、別の管理用秘密値は403を返す。
 
-- `PUT /v1/registrations/{id}`: 管理用Bearerと`{"fcmToken":"..."}`で登録・宛先更新。
-  初回201、同一登録200。endpointは更新しても変えない。
-- `DELETE /v1/registrations/{id}`: 管理用Bearerで解除。未登録も墓標を作って204。
-  遅れて届いたPUTは410。別の秘密値は403。
-- `POST /push/{deliveryId}`: `TTL`、`Content-Encoding`とバイナリ本文を受け付け、保存後201。
-  未知・無効・解除済みendpointは410。受付は端末への配信完了を意味しない。
-- `GET /v1/registrations/{id}/messages/{messageId}`: 管理用Bearerで暗号文を取得。
-  他の登録・期限切れは404。何度取得しても期限までは同じ内容を返す。
-
-受け付けるContent-Encodingは`aes128gcm`と旧形式`aesgcm`。
-旧形式には`Encryption`と`Crypto-Key`が必要。Authorizationなど不要なヘッダーは配送しない。
 VAPID署名・暗号文の完全性は検証しない。配送URLを知るローカルテストクライアントからの受付であり、
-標準Web Pushサービス全体の実装ではない。Locationは受付IDを示すだけで、配送レシート取得APIは未実装。
+標準Web Pushサービス全体の実装ではない。
 
 ## 配送・制限
 
@@ -83,16 +73,10 @@ VAPID署名・暗号文の完全性は検証しない。配送URLを知るロー
   解除前にすでに送信開始した通知は取り消せないので、端末側でも解除状態を確認する。
 
 模擬送信先は `send(token, data, {priority, ttlSeconds})` の境界を持つ。
-実FCM用アダプターは今後追加する。dataは全値Stringの独自エンベロープ：
-
-- 共通: `version=1`, `registrationId`, `messageId`, `transport`
-- 小さい通知: `transport=inline`, `encoding`, `headers`（JSON文字列）, `body`（Base64URL）
-- 大きい通知: `transport=fetch`。端末が登録済みRelayと管理用認証を使い上記GETで取得する。
-
-inlineのJSONが3500 bytesを超えるとfetchへ切り替える。FCMの4096 bytes上限に余裕を設ける設計で、
-実FCMのサイズ検証は未実施。fetch通知の送信成功後も暗号文をTTLまで保持する。
-Androidのfetch・復号処理と[FCM受信Service・WorkManager](../docs/firebase-android.md)は実装済み。
-このRelayは模擬FCM送信のため、実配信との接続はまだ行っていない。
+dataの形式、inline／fetchの切り替えと暗号文取得は[共通契約](../docs/relay-protocol.md#fcmエンベロープ)を参照する。
+このRelayは模擬FCM送信専用であり、実FCM用アダプターは未実装。
+実FCMのサイズ検証・実配信との接続は、このローカル版では行っていない。
+Androidのfetch・復号処理とFCM受信Service・WorkManagerは[Android接続と受信処理](../docs/push-reception.md)を参照する。
 
 ## 保存と運用上の境界
 
@@ -121,3 +105,10 @@ npm test
 
 参照: [Web PushのTTL](https://www.rfc-editor.org/rfc/rfc8030.html#section-5.2)、
 [FCMメッセージ仕様](https://firebase.google.com/docs/cloud-messaging/customize-messages/set-message-type)。
+
+## 過去の検証記録
+
+### 2026-09-21：ローカル模擬送信
+
+Node.jsテスト16件とlocalhostでのデモ実行の記録は[共通契約の過去の検証記録](../docs/relay-protocol.md#過去の検証記録)を参照する。
+模擬FCM送信の確認であり、実FCM配信の結果ではない。今回の文書整理ではテストを再実行していない。

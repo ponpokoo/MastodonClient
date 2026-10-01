@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
@@ -122,7 +123,7 @@ internal fun SearchContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
@@ -198,7 +199,7 @@ internal fun NotificationsContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit = {},
+    onQuote: (TimelineStatus, QuoteMode) -> Unit = { _, _ -> },
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -301,7 +302,7 @@ internal fun NotificationsContent(
                                 onOpenLink = onOpenLink,
                                 onReply = { onReply(status) },
                                 onBoost = { onBoost(status) },
-                                onQuote = { onQuote(status) },
+                                onQuote = { mode -> onQuote(status, mode) },
                                 onFavourite = { onFavourite(status) },
                                 onBookmark = { onBookmark(status) },
                                 onReact = { onReact(status, it) },
@@ -371,7 +372,7 @@ internal fun ProfileContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit = {},
     onReact: (TimelineStatus, String?) -> Unit,
@@ -629,7 +630,7 @@ private fun SocialStatus(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -663,7 +664,7 @@ private fun SocialStatus(
         onOpenLink = onOpenLink,
         onReply = { onReply(status) },
         onBoost = { onBoost(status) },
-        onQuote = { onQuote(status) },
+        onQuote = { mode -> onQuote(status, mode) },
         onFavourite = { onFavourite(status) },
         onBookmark = { onBookmark(status) },
         onReact = { onReact(status, it) },

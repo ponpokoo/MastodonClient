@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
@@ -43,7 +44,7 @@ fun AccountProfileScreen(
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,

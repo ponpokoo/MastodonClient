@@ -20,7 +20,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 単一の`app`モジュールを使用する。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
-FirebaseとRelayの設定は[Android接続手順](firebase-android.md)を参照。
+FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。
 Roomは通知のみの永続キャッシュに使用する。ホーム・ローカル・連合の永続キャッシュは未実装。
 Hiltはカタログに定義があるが未導入で、依存は手動で組み立てる。
 
@@ -38,6 +38,22 @@ navigation/ 型付き画面遷移
 Flowはライフサイクルに従って購読し、保存はStoreのsuspendメソッドを使う。
 このためだけにViewModelやRepositoryのラッパーを追加しない。
 認証・API通信・複数段階の処理は、引き続きViewModelとドメインRepositoryを経由する。
+
+### 通知関連文書
+
+| 内容 | 記載先 |
+| --- | --- |
+| 利用者向けの通知動作・設定・通知キャッシュ | [UI・機能仕様](ui-guidelines.md#設定と初期値) |
+| Push購読の登録・更新・解除・再認証・再開 | [通知設定と購読管理](push-settings.md) |
+| AndroidのFirebase設定・FCMトークン同期・受信・復号・表示 | [Android接続と受信処理](push-reception.md) |
+| Androidと両Relay実装の共通通信形式 | [Relay共通契約](relay-protocol.md) |
+| Node.jsローカル模擬Relayの起動・保存・制限・テスト | [ローカルRelay](../relay/README.md) |
+| Workers版Relayの開発・配送・保存・制限・テスト | [Workers版Relay](../relay/workers/README.md) |
+| Workersの公開配置・変数・Secrets・監視・停止 | [配置・運用手順](../relay/workers/setup.md) |
+
+各技術文書の末尾には、確認日・記録時点と確認範囲を示した過去の検証記録を残す。
+過去の結果を現在の作業ツリーや配布APKの確認結果として扱わない。
+リリース対象版に対して実施した確認結果は[更新・リリース計画](release-plan.md)に記録する。
 
 ## 通信・認証・保存の境界
 

@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.Context
 import android.content.ClipData
@@ -197,7 +198,7 @@ fun HomeTimelineScreen(
     onLoggedOut: () -> Unit,
     onStatusClick: (String) -> Unit,
     onCompose: (String?) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onOpenLink: (String) -> Unit,
     openLinksInApp: Boolean,
     onOpenLinksInAppChange: (Boolean) -> Unit,
@@ -394,7 +395,7 @@ fun HomeTimelineScreen(
         if (state.isRefreshing) {
             homeRefreshStarted = true
         } else if (homeRefreshStarted) {
-            if (scrollHomeAfterRefresh) timelineListState.animateScrollToItem(0)
+            if (scrollHomeAfterRefresh) timelineListState.animateToTimelineTop()
             homeRefreshStarted = false
             scrollHomeAfterRefresh = false
         }
@@ -491,7 +492,7 @@ fun HomeTimelineScreen(
                                     when (item) {
                                         MainDestination.Home -> {
                                             if (state.isResumedWindow) viewModel.goToLatest()
-                                            else timelineListState.animateScrollToItem(0)
+                                            else timelineListState.animateToTimelineTop()
                                         }
                                         MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
                                         MainDestination.Profile -> profileListState.animateScrollToItem(0)
@@ -681,7 +682,7 @@ fun HomeTimelineScreen(
                 TimelineNotice(newPostMessage, onClick = if (state.isResumedWindow) {
                     { viewModel.goToLatest() }
                 } else if (state.unseenStreamIds.isNotEmpty()) {
-                    { scope.launch { timelineListState.animateScrollToItem(0); viewModel.updateViewport(true) }; Unit }
+                    { scope.launch { timelineListState.animateToTimelineTop(); viewModel.updateViewport(true) }; Unit }
                 } else null)
             }
         }
@@ -1058,7 +1059,7 @@ private fun TimelineContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
@@ -1114,7 +1115,7 @@ private fun TimelineContent(
                         onOpenLink = onOpenLink,
                         onReply = { onReply(status) },
                         onBoost = { onBoost(status) },
-                        onQuote = { onQuote(status) },
+                        onQuote = { mode -> onQuote(status, mode) },
                         onFavourite = { onFavourite(status) },
                         onBookmark = { onBookmark(status) },
                         onReact = { emoji -> onReact(status, emoji) },
@@ -1165,7 +1166,7 @@ internal fun StatusCard(
     onOpenLink: (String) -> Unit = {},
     onReply: () -> Unit = {},
     onBoost: () -> Unit = {},
-    onQuote: (() -> Unit)? = null,
+    onQuote: ((QuoteMode) -> Unit)? = null,
     onFavourite: () -> Unit = {},
     onBookmark: () -> Unit = {},
     onReact: ((String?) -> Unit)? = null,
@@ -1786,7 +1787,7 @@ private fun StatusActionRow(
     status: TimelineStatus,
     onReply: () -> Unit,
     onBoost: () -> Unit,
-    onQuote: (() -> Unit)?,
+    onQuote: ((QuoteMode) -> Unit)?,
     onFavourite: () -> Unit,
     onFavouriteLongClick: (() -> Unit)? = null,
     onReaction: (() -> Unit)?,
@@ -1820,17 +1821,22 @@ private fun StatusActionRow(
                                 boostMenuExpanded = false
                                 onBoost()
                             })
+                            if (status.quoteApproval != null) {
+                                DropdownMenuItem(
+                                    text = { Text(if (status.quoteApproval == "manual") "引用（承認申請）" else "引用") },
+                                    enabled = onQuote != null && status.quoteApproval in setOf("automatic", "manual"),
+                                    onClick = {
+                                        boostMenuExpanded = false
+                                        onQuote?.invoke(QuoteMode.Native)
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text(when (status.quoteApproval) {
-                                    null -> "引用（リンク）"
-                                    "manual" -> "引用（承認申請）"
-                                    else -> "引用"
-                                }) },
-                                enabled = onQuote != null &&
-                                    status.quoteApproval !in setOf("denied", "unknown") && status.url != null,
+                                text = { Text("引用（リンク）") },
+                                enabled = onQuote != null && status.url != null,
                                 onClick = {
                                     boostMenuExpanded = false
-                                    onQuote?.invoke()
+                                    onQuote?.invoke(QuoteMode.Link)
                                 },
                             )
                         }

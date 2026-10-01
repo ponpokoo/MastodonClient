@@ -177,4 +177,21 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         assertNull(vm.uiState.value.replyToStatus)
         assertEquals("ordinary text", vm.uiState.value.text)
     }
+
+    @Test fun explicitlyClearingReplyDuringFetchKeepsMentionAndIgnoresLateResult() = runTest(dispatcher) {
+        val target = CompletableDeferred<Result<TimelineStatus>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getTimelineStatus(session: AccountSession, timelineId: String) =
+                withContext(NonCancellable) { target.await() }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        vm.onTextChanged("@alice@example.org hello")
+        vm.clearReply()
+        target.complete(Result.success(parent))
+        advanceUntilIdle()
+        assertEquals("@alice@example.org hello", vm.uiState.value.text)
+        assertNull(vm.uiState.value.replyToId)
+        assertNull(vm.uiState.value.replyToStatus)
+    }
 }

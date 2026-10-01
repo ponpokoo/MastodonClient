@@ -121,6 +121,7 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLo
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.core.text.HtmlCompat
@@ -360,69 +361,26 @@ fun ComposePostScreen(
             Modifier.fillMaxSize().padding(padding).verticalScroll(contentScrollState)
                 .padding(horizontal = 16.dp).testTag("compose_post"),
         ) {
-            state.replyToStatus?.let { reply ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                        AsyncImage(
-                            model = reply.author.avatarUrl,
-                            contentDescription = "${reply.author.displayName}のアイコン",
-                            modifier = Modifier.size(38.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "${reply.author.displayName}  @${reply.author.accountName} への返信",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                HtmlCompat.fromHtml(reply.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY)
-                                    .toString().trim(),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+            if (state.replyToId != null) {
+                ComposeReferencePreview(
+                    status = state.replyToStatus,
+                    title = state.replyToStatus?.author?.let { "${it.displayName}  @${it.accountName} への返信" }
+                        ?: "返信先の投稿",
+                    removeLabel = "返信を解除",
+                    enabled = !state.isPosting,
+                    onRemove = viewModel::clearReply,
+                )
             }
-            state.quoteToStatus?.let { quote ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                ) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                        AsyncImage(
-                            model = quote.author.avatarUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(38.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                if (state.quotingNative) "${quote.author.displayName} の投稿を引用"
-                                else "${quote.author.displayName} の投稿URLを引用",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                HtmlCompat.fromHtml(quote.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim(),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
+            if (state.quoteStatusId != null) {
+                ComposeReferencePreview(
+                    status = state.quoteToStatus,
+                    title = state.quoteToStatus?.author?.let {
+                        if (state.quotingNative) "${it.displayName} の投稿を引用" else "${it.displayName} の投稿URLを引用"
+                    } ?: "引用元の投稿",
+                    removeLabel = "引用を解除",
+                    enabled = !state.isPosting,
+                    onRemove = viewModel::clearQuote,
+                )
             }
             Row(
                 modifier = Modifier.fillMaxWidth().clickable {
@@ -947,6 +905,48 @@ private fun ComposerToolbarButton(
 ) {
     IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(42.dp)) {
         Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun ComposeReferencePreview(
+    status: TimelineStatus?,
+    title: String,
+    removeLabel: String,
+    enabled: Boolean,
+    onRemove: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            status?.let {
+                AsyncImage(
+                    model = it.author.avatarUrl,
+                    contentDescription = "${it.author.displayName}のアイコン",
+                    modifier = Modifier.size(38.dp).clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                status?.let {
+                    Text(
+                        HtmlCompat.fromHtml(it.contentHtml, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim(),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            IconButton(onClick = onRemove, enabled = enabled) {
+                Icon(Icons.Outlined.Close, contentDescription = removeLabel)
+            }
+        }
     }
 }
 

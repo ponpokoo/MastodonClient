@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -176,7 +177,7 @@ fun SavedTimelinesScreen(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onOpenLink: (String) -> Unit,
-    onQuote: (TimelineStatus) -> Unit,
+    onQuote: (TimelineStatus, QuoteMode) -> Unit,
 ) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     val listState = rememberLazyListState()
@@ -226,7 +227,7 @@ fun SavedTimelinesScreen(
                         onOpenLink = onOpenLink,
                         onBoost = { viewModel.toggleReblog(status) },
                         onFavourite = { viewModel.toggleFavourite(status) },
-                        onQuote = { onQuote(status) },
+                        onQuote = { mode -> onQuote(status, mode) },
                         onUnavailableAction = {},
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,
