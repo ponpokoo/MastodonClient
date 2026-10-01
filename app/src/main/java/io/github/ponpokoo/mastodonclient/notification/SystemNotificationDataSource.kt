@@ -75,6 +75,14 @@ class SystemNotificationDataSource(private val context: android.content.Context)
         }
     }
 
+    suspend fun dismissRead(sessionId: String, notificationIds: Set<String>): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (sessionId.isBlank() || notificationIds.isEmpty()) return@withContext
+        delivery.acknowledge(sessionId, notificationIds) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            notificationIds.forEach { manager.cancel("$sessionId:$it", 0) }
+        }
+    }
+
     private suspend fun showContent(session: AccountSession, id: String, title: String, body: String, avatarUrl: String,
         isCurrent: suspend () -> Boolean,
     ): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -114,18 +122,20 @@ class SystemNotificationDataSource(private val context: android.content.Context)
         // Post promptly, then enrich the same notification without alerting twice.
         val avatar = loadAvatarIcon(avatarUrl) ?: return@withContext
         if (!canPostNotifications() || !isCurrent()) return@withContext
-        val isStillVisible = try {
-            context.getSystemService(NotificationManager::class.java)
-                .activeNotifications
-                .any { it.tag == notificationTag && it.id == 0 }
-        } catch (_: SecurityException) {
-            false
-        }
-        if (!isStillVisible) return@withContext
-        try {
-            NotificationManagerCompat.from(context).notify(notificationTag, 0, buildNotification(avatar))
-        } catch (_: SecurityException) {
-            // The user can revoke notification permission while the avatar is loading.
+        delivery.updateVisibleNotification {
+            val isStillVisible = try {
+                context.getSystemService(NotificationManager::class.java)
+                    .activeNotifications
+                    .any { it.tag == notificationTag && it.id == 0 }
+            } catch (_: SecurityException) {
+                false
+            }
+            if (!isStillVisible) return@updateVisibleNotification
+            try {
+                NotificationManagerCompat.from(context).notify(notificationTag, 0, buildNotification(avatar))
+            } catch (_: SecurityException) {
+                // The user can revoke notification permission while the avatar is loading.
+            }
         }
     }
 

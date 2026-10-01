@@ -15,4 +15,5 @@ class DefaultSystemNotificationRepository(private val local: SystemNotificationD
         local.showPush(session, notification, isCurrent)
 
     override suspend fun dismissForAccount(sessionId: String) = local.dismissForAccount(sessionId)
+    override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) = local.dismissRead(sessionId, notificationIds)
 }

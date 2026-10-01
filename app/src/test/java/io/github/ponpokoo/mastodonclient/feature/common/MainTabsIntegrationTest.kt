@@ -90,6 +90,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         val notifications = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
             override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) = Unit
             override suspend fun dismissForAccount(sessionId: String) { dismissed += sessionId }
+            override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) = Unit
         }
         val auth = object : AuthRepository {
             override suspend fun restoreSession() = testAccount
@@ -286,6 +287,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
                     if (isCurrent()) delivered += "${session.sessionId}:${notification.id}"
                 }
                 override suspend fun dismissForAccount(sessionId: String) = Unit
+                override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) = Unit
             },
         ))
         val notifications = own(NotificationsViewModel(repository, main.browsing))
@@ -337,6 +339,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
                     error("notification unavailable")
                 }
                 override suspend fun dismissForAccount(sessionId: String) = Unit
+                override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) = Unit
             },
         ))
         val notifications = own(NotificationsViewModel(repository, main.browsing))

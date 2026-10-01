@@ -12,12 +12,19 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 private val Context.userPreferencesDataStore by preferencesDataStore(name = "user_preferences")
 
 @Serializable enum class FontSizePreset { Small, Standard, Large, ExtraLarge }
 @Serializable enum class LineSpacingPreset { Compact, Standard, Relaxed }
 @Serializable enum class AvatarIconSize { Small, Standard, Large }
+@Serializable enum class AvatarIconShape { Circle, Square }
 @Serializable enum class ActionIconSize { Small, Standard, Large }
 @Serializable enum class ThumbnailSize { Compact, Standard, Large }
 @Serializable enum class AutoplayPolicy { Always, WifiOnly, Never }
@@ -25,7 +32,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 @Serializable enum class ThemeMode { Light, Dark, System }
 @Serializable enum class StatusAction { Reply, Boost, Favourite, Reaction, Bookmark, Share }
 // Keep DeleteDraft as the serialized value so existing toolbar orders load; its UI action now clears only body text.
-@Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, SaveDraft, DeleteDraft }
+@Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, Language, Hashtag, SaveDraft, DeleteDraft }
 
 @Serializable
 enum class PostVisibility(val apiValue: String) {
@@ -44,6 +51,7 @@ data class TimelineDisplayPreferences(
     val fontSize: FontSizePreset = FontSizePreset.Standard,
     val lineSpacing: LineSpacingPreset = LineSpacingPreset.Standard,
     val avatarIconSize: AvatarIconSize = AvatarIconSize.Standard,
+    val avatarIconShape: AvatarIconShape = AvatarIconShape.Circle,
     val actionIconSize: ActionIconSize = ActionIconSize.Small,
     val actionOrder: List<StatusAction> = listOf(
         StatusAction.Reply,
@@ -96,6 +104,7 @@ data class ComposeDraft(
     val spoilerText: String = "",
     val visibility: PostVisibility = PostVisibility.Public,
     val sensitive: Boolean = false,
+    val language: String? = null,
     val attachmentUris: List<String> = emptyList(),
     val attachmentFileNames: Map<String, String> = emptyMap(),
     val attachmentMimeTypes: Map<String, String> = emptyMap(),
@@ -117,8 +126,11 @@ class UserPreferencesStore(
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { stored ->
         stored[APP_PREFERENCES]?.let { encoded ->
-            runCatching { json.decodeFromString<AppPreferences>(encoded) }.getOrNull()
+            runCatching { decodeAppPreferences(encoded) }.getOrNull()
         } ?: AppPreferences(openLinksInApp = stored[LEGACY_OPEN_LINKS_IN_APP] ?: true)
+    }.map { preferences ->
+        preferences.copy(composerActionOrder = preferences.composerActionOrder.distinct() +
+            ComposerAction.entries.filterNot(preferences.composerActionOrder::contains))
     }
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
@@ -236,11 +248,22 @@ class UserPreferencesStore(
     private suspend fun update(transform: (AppPreferences) -> AppPreferences) {
         dataStore.edit { stored ->
             val current = stored[APP_PREFERENCES]?.let {
-                runCatching { json.decodeFromString<AppPreferences>(it) }.getOrNull()
+                runCatching { decodeAppPreferences(it) }.getOrNull()
             } ?: AppPreferences(openLinksInApp = stored[LEGACY_OPEN_LINKS_IN_APP] ?: true)
             stored[APP_PREFERENCES] = json.encodeToString(transform(current))
             stored.remove(LEGACY_OPEN_LINKS_IN_APP)
         }
+    }
+
+    private fun decodeAppPreferences(encoded: String): AppPreferences {
+        val supportedActions = ComposerAction.entries.map { it.name }.toSet()
+        // Removed toolbar actions must not make the rest of the saved settings unreadable.
+        val settings = json.parseToJsonElement(encoded).jsonObject.mapValues { (key, value) ->
+            if (key == "composerActionOrder" || key == "hiddenComposerActions") {
+                JsonArray(value.jsonArray.filter { it.jsonPrimitive.content in supportedActions })
+            } else value
+        }
+        return json.decodeFromJsonElement<AppPreferences>(JsonObject(settings))
     }
 
     private companion object {

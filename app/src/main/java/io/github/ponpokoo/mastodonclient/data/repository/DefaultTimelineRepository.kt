@@ -76,6 +76,10 @@ class DefaultTimelineRepository(
 
     override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = statusCache[cacheKey(session, statusId)]
 
+    private fun cacheStatus(session: AccountSession, status: TimelineStatus): TimelineStatus = status.also {
+        statusCache[cacheKey(session, it.statusId)] = it
+    }
+
     override suspend fun getAnnouncements(session: AccountSession): Result<List<ServerAnnouncement>> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getAnnouncements()
@@ -106,6 +110,7 @@ class DefaultTimelineRepository(
         val account = accountRequest.await()
         val statuses = statusesRequest.await().map(StatusDto::toDomain)
         val pinned = pinnedRequest.await()
+        pinned.forEach { cacheStatus(session, it) }
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         UserProfile(
             author = account.toDomain(),
@@ -152,6 +157,7 @@ class DefaultTimelineRepository(
     override suspend fun getPinnedProfileStatuses(session: AccountSession, accountId: String): Result<List<TimelineStatus>> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getAccountStatuses(accountId, pinned = true).map(StatusDto::toDomain)
+            .onEach { cacheStatus(session, it) }
     }
 
     override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> = runCatching {
@@ -277,6 +283,7 @@ class DefaultTimelineRepository(
         val notifications = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getNotifications(maxId = maxId, limit = limit)
             .map(NotificationDto::toDomain)
+        notifications.mapNotNull(TimelineNotification::status).forEach { cacheStatus(session, it) }
         NotificationPage(
             notifications = notifications,
             nextMaxId = notifications.lastOrNull()?.id,
@@ -307,7 +314,7 @@ class DefaultTimelineRepository(
             .let { result ->
                 SearchResults(
                     accounts = result.accounts.map(AccountDto::toDomain),
-                    statuses = result.statuses.map(StatusDto::toDomain),
+                    statuses = result.statuses.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
                     hashtags = result.hashtags.map { SearchTag(it.name, it.url) },
                 )
             }
@@ -323,12 +330,16 @@ class DefaultTimelineRepository(
             streamingDataSource.observeUser(streamingUrl, session.accessToken).mapNotNull { message ->
                 when (message.event) {
                     "update", "status.update" -> runCatching {
-                        TimelineStreamEvent.StatusAdded(json.decodeFromString<StatusDto>(message.payload).toDomain(), isEdit = message.event == "status.update")
+                        TimelineStreamEvent.StatusAdded(cacheStatus(session, json.decodeFromString<StatusDto>(message.payload).toDomain()), isEdit = message.event == "status.update")
                     }.getOrNull()
-                    "delete" -> TimelineStreamEvent.StatusDeleted(message.payload.trim('"'))
+                    "delete" -> TimelineStreamEvent.StatusDeleted(message.payload.trim('"')).also {
+                        statusCache.remove(cacheKey(session, it.statusId))
+                    }
                     "notification" -> runCatching {
                         TimelineStreamEvent.NotificationReceived(
-                            json.decodeFromString<NotificationDto>(message.payload).toDomain(),
+                            json.decodeFromString<NotificationDto>(message.payload).toDomain().also {
+                                it.status?.let { status -> cacheStatus(session, status) }
+                            },
                         )
                     }.getOrNull()
                     else -> null
@@ -382,6 +393,7 @@ class DefaultTimelineRepository(
 
     override suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).getStatus(timelineId).toDomain()
+            .also { cacheStatus(session, it) }
     }
 
     override suspend fun getHashtagTimeline(
@@ -416,8 +428,8 @@ class DefaultTimelineRepository(
         statusCache[cacheKey(session, mappedStatus.statusId)] = mappedStatus
         StatusDetail(
             status = mappedStatus,
-            ancestors = context.ancestors.map(StatusDto::toDomain),
-            descendants = context.descendants.map(StatusDto::toDomain),
+            ancestors = context.ancestors.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
+            descendants = context.descendants.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
         )
     } }
 
@@ -475,6 +487,7 @@ class DefaultTimelineRepository(
             text = source.text,
             spoilerText = source.spoilerText,
             sensitive = status.sensitive,
+            language = status.language,
         )
     }
 

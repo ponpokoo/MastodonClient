@@ -162,15 +162,12 @@ import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconSize
+import io.github.ponpokoo.mastodonclient.feature.common.toShape
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
-import java.time.Duration
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -310,7 +307,6 @@ fun HomeTimelineScreen(
         pagerState.scrollToPage(MainDestination.Notifications.ordinal)
         allNotificationsListState.scrollToItem(0)
         if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsVisible()
-        mainViewModel.dismissSystemNotificationsForActiveAccount(request.sessionId)
         onNotificationOpenHandled(request)
     }
 
@@ -1232,7 +1228,7 @@ internal fun StatusCard(
             AsyncImage(
                 model = status.author.avatarUrl,
                 contentDescription = "${status.author.displayName}のプロフィール画像",
-                modifier = Modifier.size(avatarSize).clip(CircleShape)
+                modifier = Modifier.size(avatarSize).clip(displayPreferences.avatarIconShape.toShape())
                     .testTag("status_author_avatar")
                     .then(
                         if (onAuthorClick == null) Modifier else Modifier.clickable {
@@ -1993,20 +1989,6 @@ private fun CenteredMessage(
         content = content,
     )
 }
-
-private fun relativeTime(value: String): String = runCatching {
-    val instant = Instant.parse(value)
-    val duration = Duration.between(instant, Instant.now()).coerceAtLeast(Duration.ZERO)
-    when {
-        duration.seconds < 60 -> "今"
-        duration.toMinutes() < 60 -> "${duration.toMinutes()}分前"
-        duration.toHours() < 24 -> "${duration.toHours()}時間前"
-        duration.toDays() < 7 -> "${duration.toDays()}日前"
-        else -> DateTimeFormatter.ofPattern("M月d日")
-            .withZone(ZoneId.systemDefault())
-            .format(instant)
-    }
-}.getOrDefault("")
 
 private fun statusVisibility(visibility: String): Pair<ImageVector, String> = when (visibility) {
     "unlisted" -> Icons.Outlined.Group to "ひかえめな公開"

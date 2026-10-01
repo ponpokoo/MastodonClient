@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -46,6 +50,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -90,6 +97,11 @@ fun StatusDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val status = state.detail?.status
+    val conversationListState = rememberConversationListState(
+        status?.statusId,
+        state.detail?.ancestors?.size ?: 0,
+        !state.isLoading && state.errorMessage == null,
+    )
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var menuStatus by remember { mutableStateOf<TimelineStatus?>(null) }
@@ -139,6 +151,7 @@ fun StatusDetailScreen(
                 TextButton(onClick = viewModel::retry) { Text("再試行") }
             }
             else -> LazyColumn(
+                state = conversationListState,
                 modifier = Modifier.fillMaxSize().padding(padding).testTag("status_detail"),
             ) {
                 state.detail?.ancestors?.let { ancestors ->
@@ -161,7 +174,7 @@ fun StatusDetailScreen(
                         }
                     }
                 }
-                item {
+                item(key = "selected-${status.statusId}") {
                     StatusCard(
                         status = status,
                         onStatusClick = null,
@@ -279,6 +292,35 @@ fun StatusDetailScreen(
             },
         )
     }
+}
+
+/** Position once after the complete conversation arrives; preserve later browsing position. */
+@Composable
+internal fun rememberConversationListState(statusId: String?, ancestorCount: Int, ready: Boolean): LazyListState {
+    val listState = rememberLazyListState()
+    var positionedStatusId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(listState, statusId) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) positionedStatusId = statusId
+        }
+    }
+    LaunchedEffect(statusId, ready, positionedStatusId) {
+        if (statusId == null || !ready || positionedStatusId == statusId) return@LaunchedEffect
+        val index = ancestorCount + if (ancestorCount > 0) 1 else 0
+        val key = "selected-$statusId"
+        // First measure the selected row, including its media and metadata.
+        listState.scrollToItem(index)
+        val (item, layout) = snapshotFlow {
+            val layout = listState.layoutInfo
+            layout.visibleItemsInfo.firstOrNull { it.key == key }?.let { it to layout }
+        }.first { it != null }!!
+        val viewportHeight = layout.viewportEndOffset - layout.viewportStartOffset
+        // A row taller than the viewport starts at the top so its beginning stays readable.
+        val desiredTop = layout.viewportStartOffset + ((viewportHeight - item.size) / 2).coerceAtLeast(0)
+        listState.scrollBy((item.offset - desiredTop).toFloat())
+        positionedStatusId = statusId
+    }
+    return listState
 }
 
 @OptIn(ExperimentalLayoutApi::class)

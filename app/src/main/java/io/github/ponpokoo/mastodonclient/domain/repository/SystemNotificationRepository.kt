@@ -6,4 +6,5 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 interface SystemNotificationRepository {
     suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean)
     suspend fun dismissForAccount(sessionId: String)
+    suspend fun dismissRead(sessionId: String, notificationIds: Set<String>)
 }

@@ -7,6 +7,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NotificationDeliveryCoordinatorTest {
+    @Test fun readNotificationIsNotDeliveredLateAndOtherNotificationsAreUnaffected() = runTest {
+        val ledger = mutableMapOf<String, List<String>>()
+        val coordinator = NotificationDeliveryCoordinator({ ledger[it].orEmpty() }, { session, ids -> ledger[session] = ids })
+        var dismissed = false
+        coordinator.acknowledge("a", setOf("read")) { dismissed = true }
+        assertTrue(dismissed)
+        assertFalse(coordinator.deliver("a", "read", { true }) { error("Read notification must not reappear") })
+        assertTrue(coordinator.deliver("a", "unread", { true }) { true })
+        assertTrue(coordinator.deliver("b", "read", { true }) { true })
+    }
     @Test fun streamingPushAndPollingShareOneDeliveryAcrossCoordinatorInstances() = runTest {
         val ledger = mutableMapOf<String, List<String>>()
         fun coordinator() = NotificationDeliveryCoordinator({ ledger[it].orEmpty() }, { session, ids -> ledger[session] = ids })

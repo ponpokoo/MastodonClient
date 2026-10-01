@@ -108,6 +108,8 @@ internal fun ComposerAction.settingsIcon(): ImageVector = when (this) {
     ComposerAction.Emoji -> Icons.Outlined.SentimentSatisfiedAlt
     ComposerAction.ContentWarning -> Icons.Outlined.WarningAmber
     ComposerAction.Mention -> Icons.Outlined.AlternateEmail
+    ComposerAction.Language -> Icons.Outlined.Language
+    ComposerAction.Hashtag -> Icons.Outlined.Tag
     ComposerAction.SaveDraft -> Icons.Outlined.Drafts
     ComposerAction.DeleteDraft -> Icons.Outlined.DeleteOutline
 }

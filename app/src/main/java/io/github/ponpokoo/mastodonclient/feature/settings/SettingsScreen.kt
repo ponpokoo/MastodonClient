@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconSize
+import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
@@ -126,6 +127,11 @@ internal fun SettingsPageContent(
                 item {
                     ChoiceRow("ユーザーアイコンサイズ", preferences.timelineDisplay.avatarIconSize, AvatarIconSize.entries) {
                         updateDisplay(preferences.timelineDisplay.copy(avatarIconSize = it))
+                    }
+                }
+                item {
+                    ChoiceRow("ユーザーアイコンの形", preferences.timelineDisplay.avatarIconShape, AvatarIconShape.entries) {
+                        updateDisplay(preferences.timelineDisplay.copy(avatarIconShape = it))
                     }
                 }
                 item {
@@ -452,6 +458,8 @@ private fun ComposerAction.label() = when (this) {
     ComposerAction.Emoji -> "絵文字"
     ComposerAction.ContentWarning -> "内容警告（CW）"
     ComposerAction.Mention -> "メンション（@）"
+    ComposerAction.Language -> "投稿の言語"
+    ComposerAction.Hashtag -> "ハッシュタグ（#）"
     ComposerAction.SaveDraft -> "下書きに保存"
     ComposerAction.DeleteDraft -> "本文をクリア"
 }
@@ -467,6 +475,8 @@ private fun Any?.displayLabel(): String = when (this) {
     AvatarIconSize.Small -> "小"
     AvatarIconSize.Standard -> "標準"
     AvatarIconSize.Large -> "大"
+    AvatarIconShape.Circle -> "丸"
+    AvatarIconShape.Square -> "四角"
     ActionIconSize.Small -> "小"
     ActionIconSize.Standard -> "標準"
     ActionIconSize.Large -> "大"

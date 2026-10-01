@@ -47,6 +47,7 @@ data class ComposePostUiState(
     val spoilerText: String = "",
     val visibility: PostVisibility = PostVisibility.Public,
     val sensitive: Boolean = false,
+    val language: String? = null,
     val attachments: List<DraftAttachment> = emptyList(),
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
@@ -55,6 +56,7 @@ data class ComposePostUiState(
     val customEmojis: List<CustomEmoji> = emptyList(),
     val drafts: List<ComposeDraft> = emptyList(),
     val replyToStatus: TimelineStatus? = null,
+    val replyToId: String? = null,
     val quoteToStatus: TimelineStatus? = null,
     val quoteStatusId: String? = null,
     val quotingNative: Boolean = false,
@@ -85,10 +87,12 @@ class ComposePostViewModel(
     private val initialSharedMediaUri: String? = null,
     private val logMediaFailure: (String) -> Unit = { android.util.Log.w("MediaUpload", it) },
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(ComposePostUiState())
+    private val _uiState = MutableStateFlow(ComposePostUiState(replyToId = initialReplyToId))
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
     private var idempotencyKey = UUID.randomUUID().toString()
     private var activeReplyToId: String? = initialReplyToId
+    private var replyJob: Job? = null
+    private var replyGeneration = 0
     private var activeQuoteStatusId: String? = initialQuoteStatusId
     private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
     private var activeNativeQuote: Boolean = nativeQuote
@@ -230,13 +234,13 @@ class ComposePostViewModel(
                 loadAccountData(session, restoreBuffer = editStatusId == null)
                 applyInitialShare()
                 activeQuoteStatusId?.let { quoteId -> loadQuoteTarget(session, quoteId) }
-                initialReplyToId?.let { loadReplyTarget(session, it, insertMention = _uiState.value.text.isBlank()) }
                 editStatusId?.let { statusId ->
                     timelineRepository.getEditableStatus(session, statusId).fold(
                         onSuccess = { source -> _uiState.update { state -> state.copy(
                             text = source.text,
                             spoilerText = source.spoilerText,
                             sensitive = source.sensitive,
+                            language = source.language,
                             isLoading = false,
                         ) } },
                         onFailure = { error -> _uiState.update { it.copy(
@@ -250,12 +254,34 @@ class ComposePostViewModel(
     }
 
     fun onTextChanged(text: String) {
-        if (text.length <= _uiState.value.configuration.maxCharacters) change { it.copy(text = text) }
+        val state = _uiState.value
+        if (state.isPosting || text.length > state.configuration.maxCharacters) return
+        val author = state.replyToStatus?.author
+        if (author != null && containsMention(state.text, author) && !containsMention(text, author)) {
+            clearReply()
+        }
+        change { it.copy(text = text) }
+    }
+
+    private fun containsMention(text: String, author: StatusAuthor): Boolean =
+        Regex("(?<![\\p{L}\\p{N}_@])@${Regex.escape(author.accountName)}(?![\\p{L}\\p{N}_@]|\\.[\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+            .containsMatchIn(text)
+
+    private fun clearReply() {
+        _uiState.value.selectedSession?.let { preferencesStore.removeComposeBuffer(draftKey(it.sessionId)) }
+        replyGeneration++
+        replyJob?.cancel()
+        activeReplyToId = null
+        _uiState.update { it.copy(replyToId = null, replyToStatus = null, errorMessage = null) }
     }
 
     fun onSpoilerChanged(text: String) = change { it.copy(spoilerText = text) }
     fun setVisibility(value: PostVisibility) = change { it.copy(visibility = value) }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
+    fun setLanguage(value: String?) {
+        if (_uiState.value.isPosting || _uiState.value.isLoading) return
+        change { it.copy(language = value) }
+    }
 
     fun importMedia(uris: List<String>) {
         val state = _uiState.value
@@ -386,6 +412,8 @@ class ComposePostViewModel(
         activeQuoteStatusUrl = draft.quotedStatusUrl
         activeNativeQuote = draft.nativeQuote
         _uiState.update { state -> state.withDraft(draft).copy(
+            replyToId = activeReplyToId,
+            replyToStatus = null,
             drafts = state.drafts.filterNot { it.key == draft.key },
             quoteToStatus = null,
             quoteStatusId = draft.quotedStatusId,
@@ -407,8 +435,7 @@ class ComposePostViewModel(
                 ) }
             }
         }
-        draft.replyToId?.let { viewModelScope.launch { loadReplyTarget(session, it, insertMention = false) } }
-            ?: _uiState.update { it.copy(replyToStatus = null) }
+        loadReplyTarget(session, insertMention = false)
         draft.quotedStatusId?.let { viewModelScope.launch { loadQuoteTarget(session, it) } }
         scheduleAttachments()
     }
@@ -438,10 +465,12 @@ class ComposePostViewModel(
             _uiState.update { it.copy(actionMessage = "引用中は投稿元を切り替えられません") }
             return
         }
-        if (editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting) return
+        if (editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting || _uiState.value.isLoading) return
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        val replyText = _uiState.value.text.takeIf { activeReplyToId != null }
+        if (replyText != null) clearReply()
         stopMedia()
         _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
@@ -452,6 +481,7 @@ class ComposePostViewModel(
                 ComposePostUiState(
                     sessions = it.sessions,
                     selectedSession = selected,
+                    text = replyText.orEmpty(),
                     preferences = preferences,
                     visibility = preferences.forAccount(selected.sessionId).defaultVisibility,
                     drafts = preferencesStore.drafts.first().filter { draft -> draft.sessionId == selected.sessionId }
@@ -459,8 +489,7 @@ class ComposePostViewModel(
                     isLoading = true,
                 )
             }
-            loadAccountData(selected, restoreBuffer = true)
-            activeReplyToId?.let { loadReplyTarget(selected, it, insertMention = _uiState.value.text.isBlank()) }
+            loadAccountData(selected, restoreBuffer = replyText == null)
         }
     }
 
@@ -470,6 +499,10 @@ class ComposePostViewModel(
     fun post(skipAltReminder: Boolean = false) {
         val state = _uiState.value
         if (state.isPosting || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
+        if (activeReplyToId != null && state.replyToStatus == null) {
+            _uiState.update { it.copy(errorMessage = "返信先の読み込みが完了してから投稿してください") }
+            return
+        }
         if (state.text.isBlank() && state.attachments.isEmpty()) return
         if (state.quotingNative && (state.attachments.isNotEmpty() || state.pollOptions.isNotEmpty())) {
             _uiState.update { it.copy(errorMessage = "引用投稿にはメディアや投票を添付できません") }
@@ -504,7 +537,7 @@ class ComposePostViewModel(
                 spoilerText = state.spoilerText,
                 sensitive = state.sensitive || state.spoilerText.isNotBlank(),
                 visibility = state.visibility.apiValue,
-                language = null,
+                language = state.language,
                 pollOptions = state.pollOptions.map(String::trim).filter(String::isNotEmpty),
                 pollExpiresInSeconds = state.pollExpiresInSeconds.takeIf { state.pollOptions.isNotEmpty() },
                 pollMultiple = state.pollMultiple,
@@ -519,7 +552,7 @@ class ComposePostViewModel(
                         text = request.text,
                         spoilerText = request.spoilerText,
                         sensitive = request.sensitive,
-                        language = null,
+                        language = state.language,
                     ),
                 )
             }
@@ -576,11 +609,16 @@ class ComposePostViewModel(
 
     private suspend fun loadAccountData(session: AccountSession, restoreBuffer: Boolean) {
         val draft = if (restoreBuffer) preferencesStore.getComposeBuffer(draftKey(session.sessionId)) else null
+        if (draft != null) {
+            activeReplyToId = draft.replyToId
+            _uiState.update { it.withDraft(draft).copy(replyToId = activeReplyToId) }
+        }
+        loadReplyTarget(session, insertMention = draft == null && _uiState.value.text.isBlank())
         val configuration = timelineRepository.getComposerConfiguration(session).getOrDefault(ComposerConfiguration())
         val emojis = timelineRepository.getCustomEmojis(session).getOrDefault(emptyList())
         _uiState.update { current ->
             if (current.selectedSession?.sessionId != session.sessionId) current else current.copy(
-                text = draft?.text ?: current.text,
+                text = current.text,
                 spoilerText = draft?.spoilerText ?: current.spoilerText,
                 visibility = draft?.visibility ?: current.visibility,
                 sensitive = draft?.sensitive ?: current.sensitive,
@@ -654,6 +692,7 @@ class ComposePostViewModel(
         spoilerText = spoilerText,
         visibility = visibility,
         sensitive = sensitive,
+        language = language,
         attachmentUris = attachments.map(DraftAttachment::uri),
         attachmentFileNames = attachments.associate { it.uri to it.fileName },
         attachmentMimeTypes = attachments.associate { it.uri to it.mimeType },
@@ -681,12 +720,35 @@ class ComposePostViewModel(
         }
     }
 
-    private suspend fun loadReplyTarget(session: AccountSession, statusId: String, insertMention: Boolean) {
-        timelineRepository.getStatusDetail(session, statusId).onSuccess { detail ->
-            _uiState.update { it.copy(replyToStatus = detail.status) }
-            if (insertMention) insertMention(detail.status.author)
-        }.onFailure { error ->
-            _uiState.update { it.copy(errorMessage = error.message ?: "返信先を取得できませんでした") }
+    private fun loadReplyTarget(session: AccountSession, insertMention: Boolean) {
+        replyJob?.cancel()
+        val generation = ++replyGeneration
+        val statusId = activeReplyToId ?: return
+        val originalText = _uiState.value.text
+        fun apply(status: TimelineStatus) {
+            if (generation != replyGeneration || activeReplyToId != statusId ||
+                _uiState.value.selectedSession?.sessionId != session.sessionId) return
+            if (containsMention(originalText, status.author) && !containsMention(_uiState.value.text, status.author)) {
+                clearReply()
+                return
+            }
+            _uiState.update { it.copy(replyToId = statusId, replyToStatus = status) }
+            if (insertMention && _uiState.value.text == originalText) insertMention(status.author)
+        }
+        timelineRepository.getCachedStatus(session, statusId)?.let {
+            apply(it)
+            return
+        }
+        // Saved drafts or an evicted cache need only the target, not the conversation.
+        replyJob = viewModelScope.launch {
+            val result = timelineRepository.getTimelineStatus(session, statusId)
+            currentCoroutineContext().ensureActive()
+            if (generation != replyGeneration || activeReplyToId != statusId ||
+                _uiState.value.selectedSession?.sessionId != session.sessionId) return@launch
+            result.onSuccess(::apply).onFailure { error ->
+                if (error is CancellationException) throw error
+                _uiState.update { it.copy(errorMessage = error.message ?: "返信先を取得できませんでした") }
+            }
         }
     }
 
@@ -695,6 +757,7 @@ class ComposePostViewModel(
         spoilerText = draft.spoilerText,
         visibility = draft.visibility,
         sensitive = draft.sensitive,
+        language = draft.language,
         attachments = draft.attachmentUris.map { uri ->
             DraftAttachment(
                 uri = uri,

@@ -14,6 +14,7 @@ data class StatusDto(
     @SerialName("spoiler_text") val spoilerText: String = "",
     val sensitive: Boolean = false,
     val visibility: String = "public",
+    val language: String? = null,
     val url: String? = null,
     @SerialName("replies_count") val repliesCount: Long = 0,
     @SerialName("reblogs_count") val reblogsCount: Long = 0,

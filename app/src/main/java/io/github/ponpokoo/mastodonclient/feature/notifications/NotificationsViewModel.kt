@@ -7,6 +7,7 @@ import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -38,7 +39,11 @@ data class NotificationsRefreshResult(
     val hasNewNotifications: Boolean,
 )
 
-class NotificationsViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
+class NotificationsViewModel(
+    private val timelineRepository: TimelineRepository,
+    browsing: BrowsingSession,
+    private val systemNotifications: io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository? = null,
+) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState = _uiState.asStateFlow()
     private var notificationsJob: Job? = null
@@ -74,10 +79,13 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
             notificationsError = null, notificationsErrorIsPagination = false,
         ) }
         notificationsJob = requestScope.launch {
-            val markerId = if (initialLoad) {
+            // These independent requests must overlap instead of adding two network waits.
+            val markerRequest = if (initialLoad) async {
                 timelineRepository.getNotificationMarker(session).forSession(snapshot).getOrNull()
             } else null
-            timelineRepository.getNotifications(session)
+            val pageRequest = async { timelineRepository.getNotifications(session) }
+            val markerId = markerRequest?.await()
+            pageRequest.await()
                 .forSession(snapshot).onSuccess { page ->
                     hasLoaded = true
                     val fetchedNewIds = if (initialLoad) {
@@ -143,6 +151,16 @@ class NotificationsViewModel(private val timelineRepository: TimelineRepository,
         if (!state.isInitialPageLoaded || state.isLoadingNotifications ||
             (state.notificationsError != null && !state.notificationsErrorIsPagination)) return
         val acknowledged = state.pendingNewNotificationIds.intersect(shownIds)
+        val readIds = state.notifications.map { it.id }.filterTo(mutableSetOf()) { it in shownIds }
+        if (readIds.isNotEmpty()) requestScope.launch {
+            try {
+                systemNotifications?.dismissRead(snapshot.account!!.sessionId, readIds)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // OS notification dismissal must not prevent in-app read acknowledgement.
+            }
+        }
         if (acknowledged.isNotEmpty()) {
             _uiState.update { current -> current.copy(
                 pendingNewNotificationIds = current.pendingNewNotificationIds - acknowledged,

@@ -85,6 +85,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
+import io.github.ponpokoo.mastodonclient.feature.common.toShape
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import androidx.compose.material3.Button
@@ -311,7 +313,7 @@ internal fun NotificationsContent(
                                 videoAutoplay = preferences.videoAutoplay,
                             )
                         } else {
-                            NotificationHeader(notification, onAccountClick)
+                            NotificationHeader(notification, onAccountClick, preferences.timelineDisplay.avatarIconShape)
                             status?.let {
                                 NotificationStatusQuote(
                                     status = it,
@@ -407,6 +409,7 @@ internal fun ProfileContent(
     listState: LazyListState? = null,
 ) {
     val profile = state.profile
+    val avatarShape = preferences.timelineDisplay.avatarIconShape.toShape()
     val resolvedListState = listState ?: rememberLazyListState()
     LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab) {
         if (profile?.nextMaxId != null && !profile.endReached) {
@@ -449,9 +452,10 @@ internal fun ProfileContent(
                     AsyncImage(
                         model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
-                            .clip(CircleShape).clickable(onClick = onAvatarClick)
+                            .clip(avatarShape).clickable(onClick = onAvatarClick)
+                            .testTag("profile_avatar")
                             .background(MaterialTheme.colorScheme.surface)
-                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                            .border(2.dp, MaterialTheme.colorScheme.outlineVariant, avatarShape),
                         contentScale = ContentScale.Crop,
                     )
                     Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)) {
@@ -698,6 +702,7 @@ private fun AccountResult(account: StatusAuthor, onClick: (String) -> Unit) {
 private fun NotificationHeader(
     notification: TimelineNotification,
     onAccountClick: (String) -> Unit,
+    avatarIconShape: AvatarIconShape,
 ) {
     val (icon, action) = when (notification.type) {
         "mention" -> Icons.AutoMirrored.Filled.Reply to "返信"
@@ -726,7 +731,8 @@ private fun NotificationHeader(
         AsyncImage(
             model = notification.account.avatarUrl,
             contentDescription = null,
-            modifier = Modifier.size(34.dp).clip(CircleShape),
+            modifier = Modifier.size(34.dp).clip(avatarIconShape.toShape())
+                .testTag("notification_actor_avatar"),
             contentScale = ContentScale.Crop,
         )
         Spacer(Modifier.width(8.dp))
@@ -767,7 +773,7 @@ private fun NotificationStatusQuote(
                 AsyncImage(
                     model = status.author.avatarUrl,
                     contentDescription = "${status.author.displayName}のプロフィール画像",
-                    modifier = Modifier.size(28.dp).clip(CircleShape)
+                    modifier = Modifier.size(28.dp).clip(preferences.avatarIconShape.toShape())
                         .testTag("notification_status_author_avatar"),
                     contentScale = ContentScale.Crop,
                 )

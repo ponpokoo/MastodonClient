@@ -6,6 +6,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -14,6 +16,95 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    @Test fun initialLoadOverlapsMarkerAndPageRequestsAndPreservesUnreadDetection() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationMarker(session: AccountSession): Result<String?> {
+                delay(1_000)
+                return Result.success("old")
+            }
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                delay(1_000)
+                return Result.success(NotificationPage(listOf(testNotification("new"), testNotification("old")), null, true))
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+
+        val startedAt = currentTime
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+
+        assertEquals(1_000L, currentTime - startedAt)
+        assertEquals(listOf("new", "old"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
+        assertEquals(setOf("new"), viewModel.uiState.value.pendingNewNotificationIds)
+        assertFalse(viewModel.uiState.value.isLoadingNotifications)
+        assertTrue(repository.markers.isEmpty())
+    }
+
+    @Test fun failedInitialMarkerStillDisplaysNotificationsWithoutMarkingHistoryUnread() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationMarker(session: AccountSession): Result<String?> {
+                delay(1_000)
+                return Result.failure(IllegalStateException("marker unavailable"))
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+
+        assertEquals(listOf("notification"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
+        assertTrue(viewModel.uiState.value.pendingNewNotificationIds.isEmpty())
+        assertNull(viewModel.uiState.value.notificationsError)
+        assertFalse(viewModel.uiState.value.isLoadingNotifications)
+    }
+
+    @Test fun failedSystemDismissalDoesNotPreventReadMarker() = runTest(dispatcher) {
+        val system = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
+            override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) = Unit
+            override suspend fun dismissForAccount(sessionId: String) = Unit
+            override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) = error("OS unavailable")
+        }
+        val repository = ScreenRepositoryFake()
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing, system))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        viewModel.onLatestNotificationsShown(setOf("notification"), true)
+        advanceUntilIdle()
+        assertEquals(listOf(testAccount.sessionId to "notification"), repository.markers)
+    }
+    @Test fun readDismissalUsesLoadedFilterIdsAndAccountEvenWithoutUnreadMarker() = runTest(dispatcher) {
+        val dismissed = mutableListOf<Pair<String, Set<String>>>()
+        val system = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
+            override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) = Unit
+            override suspend fun dismissForAccount(sessionId: String) = error("Must not dismiss an entire account")
+            override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) { dismissed += sessionId to notificationIds }
+        }
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                Result.success(NotificationPage(listOf(testNotification("read"), testNotification("unread")), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(NotificationsViewModel(repository, browsing, system))
+        advanceUntilIdle()
+        viewModel.onLatestNotificationsShown(setOf("read"), false)
+        advanceUntilIdle()
+        assertTrue(dismissed.isEmpty())
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertTrue(dismissed.isEmpty())
+        viewModel.onLatestNotificationsShown(setOf("read", "unknown"), false)
+        advanceUntilIdle()
+        assertEquals(listOf(testAccount.sessionId to setOf("read")), dismissed)
+        browsing.activate(secondAccount)
+        viewModel.onLatestNotificationsShown(setOf("read"), false)
+        advanceUntilIdle()
+        assertEquals(1, dismissed.size)
+    }
     @Test fun automaticRefreshDoesNotShowPullRefreshIndicator() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<NotificationPage>>()
         val repository = object : ScreenRepositoryFake() {

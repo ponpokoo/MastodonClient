@@ -405,7 +405,11 @@ fun AppNavigation(
                 SearchViewModel(timelineRepository, browsing)
             })
             val notificationsViewModel: NotificationsViewModel = viewModel(factory = ScreenViewModelFactory {
-                NotificationsViewModel(timelineRepository, browsing)
+                NotificationsViewModel(timelineRepository, browsing,
+                    io.github.ponpokoo.mastodonclient.data.repository.DefaultSystemNotificationRepository(
+                        io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSource(context),
+                    ),
+                )
             })
             val profileViewModel: OwnProfileViewModel = viewModel(factory = ScreenViewModelFactory {
                 OwnProfileViewModel(timelineRepository, browsing)
@@ -520,7 +524,6 @@ fun AppNavigation(
             )
             ComposePostScreen(
                 viewModel = composeViewModel,
-                isReply = route.replyToId != null,
                 isEditing = route.editStatusId != null,
                 onClose = { navController.popBackStack() },
                 onPosted = { navController.popBackStack() },

@@ -20,6 +20,21 @@ import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
     @Test
+    fun editableStatusPreservesLanguageAndAllowsServersToOmitIt() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            for (language in listOf("en", null)) {
+                server.enqueue(MockResponse().setBody("""{"id":"post","text":"hello","spoiler_text":""}"""))
+                val statusJson = basicStatusJson("post").dropLast(1) +
+                    (language?.let { ",\"language\":\"$it\"}" } ?: "}")
+                server.enqueue(MockResponse().setBody(statusJson))
+                assertEquals(language, repository.getEditableStatus(session, "post").getOrThrow().language)
+            }
+        }
+    }
+
+    @Test
     fun mediaProcessingAcceptsEmpty206ThenReadyResponseWithoutReupload() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(206))
@@ -327,6 +342,8 @@ class DefaultTimelineRepositoryTest {
             assertEquals("n1", notificationPage.nextMaxId)
             assertFalse(notificationPage.endReached)
             assertEquals("found", results.statuses.single().statusId)
+            assertEquals(notifications.single().status, repository.getCachedStatus(session, "mentioned"))
+            assertEquals(results.statuses.single(), repository.getCachedStatus(session, "found"))
             assertEquals("android", results.hashtags.single().name)
             assertEquals("/api/v1/notifications?limit=80", server.takeRequest().path)
             assertEquals("/api/v2/search?q=android&limit=20&resolve=false", server.takeRequest().path)

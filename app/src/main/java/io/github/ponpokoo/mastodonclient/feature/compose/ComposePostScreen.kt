@@ -105,6 +105,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -130,12 +131,12 @@ import kotlinx.coroutines.launch
 @Composable
 fun ComposePostScreen(
     viewModel: ComposePostViewModel,
-    isReply: Boolean,
     isEditing: Boolean = false,
     onClose: () -> Unit,
     onPosted: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isReply = state.replyToId != null
     val context = LocalContext.current
     var accountDialogOpen by remember { mutableStateOf(false) }
     var visibilityMenuOpen by remember { mutableStateOf(false) }
@@ -143,6 +144,7 @@ fun ComposePostScreen(
     var focusAfterEmoji by remember { mutableStateOf(false) }
     var draftSheetOpen by remember { mutableStateOf(false) }
     var mentionSheetOpen by remember { mutableStateOf(false) }
+    var languageDialogOpen by remember { mutableStateOf(false) }
     var altEditingUri by remember { mutableStateOf<String?>(null) }
     var altEditorText by remember { mutableStateOf("") }
     var draftToDelete by remember { mutableStateOf<io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft?>(null) }
@@ -156,6 +158,12 @@ fun ComposePostScreen(
     var screenHeightPx by remember { mutableStateOf(0) }
     val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
     var textFieldValue by remember { mutableStateOf(TextFieldValue()) }
+    fun applyToolbarEdit(value: TextFieldValue) {
+        viewModel.onTextChanged(value.text)
+        if (viewModel.uiState.value.text == value.text) textFieldValue = value
+        focusRequester.requestFocus()
+        keyboardController?.show()
+    }
     val hasContent = state.text.isNotBlank() || state.spoilerText.isNotBlank() ||
         state.attachments.isNotEmpty() || state.pollOptions.any(String::isNotBlank)
 
@@ -306,6 +314,22 @@ fun ComposePostScreen(
                                     "下書きに保存",
                                     enabled = hasContent && !isEditing && !state.isImportingMedia && !state.isLoading,
                                 ) { viewModel.saveDraft() }
+                                ComposerAction.Language -> ComposerToolbarButton(
+                                    Icons.Outlined.Language,
+                                    "投稿の言語：${state.language ?: "デフォルト"}",
+                                    enabled = !state.isPosting && !state.isLoading,
+                                ) {
+                                    keyboardController?.hide()
+                                    languageDialogOpen = true
+                                }
+                                ComposerAction.Hashtag -> IconButton(
+                                    onClick = { applyToolbarEdit(insertHashtag(textFieldValue)) },
+                                    enabled = !state.isPosting && !state.isLoading &&
+                                        state.text.length < state.configuration.maxCharacters,
+                                    modifier = Modifier.size(42.dp).semantics {
+                                        contentDescription = "ハッシュタグを挿入"
+                                    },
+                                ) { Text("#", style = MaterialTheme.typography.titleLarge) }
                                 ComposerAction.DeleteDraft -> ComposerToolbarButton(
                                     Icons.Outlined.DeleteOutline,
                                     "本文をクリア",
@@ -673,6 +697,19 @@ fun ComposePostScreen(
             }
         }
     }
+    }
+
+    if (languageDialogOpen) {
+        PostLanguageDialog(
+            selected = state.language,
+            onSelect = {
+                viewModel.setLanguage(it)
+                languageDialogOpen = false
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            },
+            onDismiss = { languageDialogOpen = false },
+        )
     }
 
     if (mentionSheetOpen) {
