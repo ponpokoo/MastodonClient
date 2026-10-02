@@ -5,6 +5,9 @@ import io.github.ponpokoo.mastodonclient.core.security.AuthStore
 import io.github.ponpokoo.mastodonclient.core.security.PendingOAuth
 import io.github.ponpokoo.mastodonclient.core.security.RegisteredApplication
 import io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource
+import io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource
+import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.CachedNotifications
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
@@ -18,6 +21,7 @@ class NotificationCacheLogoutTest {
             val account = AccountSession("one", "https://one.example", "me", "me", "Me", "", "unused")
             val store = MemoryAuth(account)
             var deleted: String? = null
+            var homeDeleted: String? = null
             val cache = object : NotificationLocalDataSource {
                 override suspend fun read(session: AccountSession) = CachedNotifications()
                 override suspend fun write(session: AccountSession, notifications: List<TimelineNotification>) = Unit
@@ -28,9 +32,20 @@ class NotificationCacheLogoutTest {
                     if (diskFailure) error("disk unavailable")
                 }
             }
-            val repository = DefaultAuthRepository(ApiClientFactory(), store, notificationLocalDataSource = cache)
+            val home = object : HomeTimelineLocalDataSource {
+                override suspend fun readPage(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): TimelinePage? = null
+                override suspend fun writePage(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<BrowsingSession.Change>) = Unit
+                override suspend fun applyChange(session: AccountSession, change: BrowsingSession.Change) = Unit
+                override suspend fun deleteAccount(sessionId: String) {
+                    assertNull(store.getSession())
+                    homeDeleted = sessionId
+                    if (diskFailure) error("home disk unavailable")
+                }
+            }
+            val repository = DefaultAuthRepository(ApiClientFactory(), store, notificationLocalDataSource = cache, homeTimelineLocalDataSource = home)
             repository.logout()
             assertEquals("one", deleted)
+            assertEquals("one", homeDeleted)
             assertNull(repository.restoreSession())
         }
     }

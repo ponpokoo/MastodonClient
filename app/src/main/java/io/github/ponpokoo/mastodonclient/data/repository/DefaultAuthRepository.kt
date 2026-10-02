@@ -16,6 +16,7 @@ class DefaultAuthRepository(
     private val authStore: AuthStore,
     private val pushLifecycle: io.github.ponpokoo.mastodonclient.domain.repository.PushAuthLifecycle? = null,
     private val notificationLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource? = null,
+    private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
 ) : AuthRepository {
     override suspend fun createAuthorizationUrl(instanceUrl: String): Result<String> = authorizationUrl(instanceUrl, SCOPES)
 
@@ -129,6 +130,7 @@ class DefaultAuthRepository(
             // A disk failure must not cause MainSessionViewModel to restore a logged-out account.
             // Late cache reads/writes also verify that the account is still registered.
             runCatching { notificationLocalDataSource?.deleteAccount(session.sessionId) }
+            runCatching { homeTimelineLocalDataSource?.deleteAccount(session.sessionId) }
         }
         if (authStore.getPending()?.reauthorizeSessionId == session.sessionId) authStore.clearPending()
     }

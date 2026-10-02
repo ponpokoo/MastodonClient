@@ -12,6 +12,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -345,6 +347,232 @@ class TimelineViewModelTest {
         assertEquals(listOf(null, null), repository.requestedMaxIds)
         assertFalse(restored.uiState.value.isResumedWindow)
         assertEquals(null, restored.uiState.value.resumeAnchorId)
+    }
+
+    @Test fun cachedHomeAppearsBeforeSingleNetworkRequestAndGetsFreshCounts() = runTest(dispatcher) {
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        val repository = CachedHomeRepository()
+        repository.network = { _, _ -> pending.await() }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        assertEquals(listOf("cached"), model.uiState.value.statuses.map { it.timelineId })
+        assertFalse(model.uiState.value.isInitialLoading)
+        assertTrue(model.uiState.value.isHomeSyncing)
+        assertEquals(listOf(null to 20), repository.requests)
+        pending.complete(Result.success(TimelinePage(listOf(status("cached").copy(favouritesCount = 9)), "cached", false)))
+        advanceUntilIdle()
+        assertEquals(9L, model.uiState.value.statuses.single().favouritesCount)
+        assertFalse(model.uiState.value.isShowingSavedStatuses)
+        assertEquals(1, repository.writes.size)
+    }
+
+    @Test fun offlineHomePagesUseCacheAndStopAtCacheBoundaryWithoutTimeoutOrRepeatedRequests() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        repository.online = false
+        repository.pages["cached"] = TimelinePage(listOf(status("older")), "older", false)
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.loadNextPage()
+        advanceUntilIdle()
+        assertEquals(listOf("cached", "older"), model.uiState.value.statuses.map { it.timelineId })
+        repeat(3) { model.loadNextPage(); advanceUntilIdle() }
+        assertTrue(repository.requests.isEmpty())
+        assertEquals(null, model.uiState.value.errorMessage)
+        assertFalse(model.uiState.value.endReached)
+        assertTrue(model.uiState.value.isShowingSavedStatuses)
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(1, repository.requests.size)
+        assertEquals("timeout", model.uiState.value.errorMessage)
+    }
+
+    @Test fun automaticFailureKeepsCachedHomeButEmptyCacheShowsRetryError() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        assertEquals("cached", model.uiState.value.statuses.single().timelineId)
+        assertEquals(null, model.uiState.value.errorMessage)
+        assertTrue(model.uiState.value.isShowingSavedStatuses)
+        repository.pages.clear()
+        val emptyModel = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        assertEquals("timeout", emptyModel.uiState.value.errorMessage)
+        assertFalse(emptyModel.uiState.value.isInitialLoading)
+    }
+
+    @Test fun cachedNextPageRevalidatesSameCursorAndReplacesCountsWithoutDuplicates() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        repository.pages["cached"] = TimelinePage(listOf(status("older")), "older", false)
+        repository.network = { cursor, _ -> if (cursor == null) Result.failure(java.io.IOException("timeout")) else pending.await() }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.loadNextPage()
+        advanceUntilIdle()
+        assertEquals(listOf("cached", "older"), model.uiState.value.statuses.map { it.timelineId })
+        pending.complete(Result.success(TimelinePage(listOf(status("older").copy(favouritesCount = 7)), "older", false)))
+        advanceUntilIdle()
+        assertEquals(listOf(null to 20, "cached" to 20), repository.requests)
+        assertEquals(7L, model.uiState.value.statuses.last().favouritesCount)
+        assertFalse(model.uiState.value.endReached)
+    }
+
+    @Test fun pendingRevalidationCannotUndoActionDeletionOrStreamingArrival() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        repository.pages[null] = TimelinePage(listOf(status("cached"), status("deleted")), "deleted", false)
+        repository.network = { _, _ -> pending.await() }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        val votedPoll = io.github.ponpokoo.mastodonclient.domain.model.StatusPoll("poll", null, false, false, 1, 1, true, setOf(0),
+            listOf(io.github.ponpokoo.mastodonclient.domain.model.PollOption("yes", 1)))
+        for (change in listOf(
+            BrowsingSession.Change.StatusUpdated(status("cached").copy(favourited = true, favouritesCount = 1, poll = votedPoll)),
+            BrowsingSession.Change.StatusDeleted("deleted"),
+            BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("live"))),
+        )) mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value, change)
+        advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("cached"), status("deleted")), "deleted", false)))
+        advanceUntilIdle()
+        assertEquals(listOf("live", "cached"), model.uiState.value.statuses.map { it.timelineId })
+        assertTrue(model.uiState.value.statuses.last().favourited)
+        assertEquals(votedPoll, model.uiState.value.statuses.last().poll)
+        assertEquals(3, repository.changes.size)
+        assertEquals(3, repository.writeChanges.single().size)
+    }
+
+    @Test fun switchingToPublicFeedDoesNotReadWriteOrApplyLateHomeResponse() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        repository.network = { _, _ -> withContext(NonCancellable) { pending.await() } }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.selectFeed(TimelineFeed.Local)
+        advanceUntilIdle()
+        model.selectFeed(TimelineFeed.Federated)
+        advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("late")), null, true)))
+        advanceUntilIdle()
+        assertEquals(TimelineFeed.Federated, model.uiState.value.selectedFeed)
+        assertEquals("Federated", model.uiState.value.statuses.single().timelineId)
+        assertEquals(1, repository.cacheReads)
+        assertTrue(repository.writes.isEmpty())
+        assertFalse(model.uiState.value.isShowingSavedStatuses)
+    }
+
+    @Test fun savedHomeViewportAndOffsetRestoreOfflineFromCache() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        repository.online = false
+        val saved = SavedStateHandle(mapOf(
+            "timeline_viewport_session" to SESSION.sessionId, "timeline_viewport_feed" to "Home",
+            "timeline_viewport_anchor" to "anchor", "timeline_viewport_before" to "before", "timeline_viewport_offset" to 17,
+        ))
+        repository.pages["before"] = TimelinePage(listOf(status("anchor"), status("older")), "older", false)
+        val model = createTimeline(repository, FakeAuthRepository(SESSION), saved)
+        advanceUntilIdle()
+        assertEquals("anchor", model.uiState.value.resumeAnchorId)
+        assertEquals(17, model.uiState.value.resumeOffset)
+        assertTrue(model.uiState.value.isResumedWindow)
+        assertTrue(repository.requests.isEmpty())
+    }
+
+    @Test fun homeRevalidationDoesNotRestoreConsumedAnchorAfterReaderScrolls() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        repository.network = { _, _ -> pending.await() }
+        repository.pages["before"] = TimelinePage(listOf(status("anchor"), status("older")), "older", false)
+        val saved = SavedStateHandle(mapOf(
+            "timeline_viewport_session" to SESSION.sessionId, "timeline_viewport_feed" to "Home",
+            "timeline_viewport_anchor" to "anchor", "timeline_viewport_before" to "before", "timeline_viewport_offset" to 17,
+        ))
+        val model = createTimeline(repository, FakeAuthRepository(SESSION), saved)
+        advanceUntilIdle()
+        model.consumeResumeAnchor()
+        model.saveViewport("older", "anchor", 33)
+        pending.complete(Result.success(TimelinePage(listOf(status("anchor"), status("older")), "older", false)))
+        advanceUntilIdle()
+        assertEquals(null, model.uiState.value.resumeAnchorId)
+        assertEquals(0, model.uiState.value.resumeOffset)
+        assertEquals("older", saved.get<String>("timeline_viewport_anchor"))
+        assertEquals(33, saved.get<Int>("timeline_viewport_offset"))
+    }
+
+    @Test fun offlineViewportOutsideCacheFallsBackToSavedLatestHome() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        repository.online = false
+        val saved = SavedStateHandle(mapOf(
+            "timeline_viewport_session" to SESSION.sessionId, "timeline_viewport_feed" to "Home",
+            "timeline_viewport_anchor" to "outside", "timeline_viewport_before" to "missing", "timeline_viewport_offset" to 17,
+        ))
+        val model = createTimeline(repository, FakeAuthRepository(SESSION), saved)
+        advanceUntilIdle()
+        assertEquals("cached", model.uiState.value.statuses.single().timelineId)
+        assertFalse(model.uiState.value.isResumedWindow)
+        assertEquals(null, model.uiState.value.errorMessage)
+        assertTrue(model.uiState.value.isShowingSavedStatuses)
+        assertTrue(repository.requests.isEmpty())
+    }
+
+    @Test fun cacheReadAndWriteFailuresDoNotPreventNetworkDisplay() = runTest(dispatcher) {
+        val repository = object : TimelineRepository {
+            override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = Result.failure(java.io.IOException("disk"))
+            override suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<BrowsingSession.Change>): Result<Unit> = Result.failure(java.io.IOException("disk"))
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) = Result.success(TimelinePage(listOf(status("network")), null, true))
+        }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        assertEquals("network", model.uiState.value.statuses.single().timelineId)
+        assertEquals(null, model.uiState.value.errorMessage)
+        assertFalse(model.uiState.value.isHomeSyncing)
+    }
+
+    @Test fun nextPageRevalidationStillUpdatesCachedRowsWhenCursorIsDeletedDuringRequest() = runTest(dispatcher) {
+        val repository = CachedHomeRepository()
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        repository.pages["cached"] = TimelinePage(listOf(status("older")), "older", false)
+        repository.network = { cursor, _ -> if (cursor == null) Result.failure(java.io.IOException("timeout")) else pending.await() }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.loadNextPage()
+        advanceUntilIdle()
+        mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value, BrowsingSession.Change.StatusDeleted("cached"))
+        advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("older").copy(favouritesCount = 7)), "older", false)))
+        advanceUntilIdle()
+        assertEquals(listOf("older"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals(7L, model.uiState.value.statuses.single().favouritesCount)
+    }
+
+    private class CachedHomeRepository : TimelineRepository {
+        val pages = mutableMapOf<String?, TimelinePage>(null to TimelinePage(listOf(status("cached")), "cached", false))
+        val requests = mutableListOf<Pair<String?, Int>>()
+        val writes = mutableListOf<TimelinePage>()
+        val writeChanges = mutableListOf<List<BrowsingSession.Change>>()
+        val changes = mutableListOf<BrowsingSession.Change>()
+        var cacheReads = 0
+        var online = true
+        var network: suspend (String?, Int) -> Result<TimelinePage> = { _, _ -> Result.failure(java.io.IOException("timeout")) }
+        override fun isNetworkAvailable() = online
+        override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> {
+            cacheReads++
+            return Result.success(pages[maxId])
+        }
+        override suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<BrowsingSession.Change>): Result<Unit> {
+            writes += page
+            writeChanges += changes
+            return Result.success(Unit)
+        }
+        override suspend fun updateHomeTimelineCache(session: AccountSession, change: BrowsingSession.Change): Result<Unit> {
+            changes += change
+            return Result.success(Unit)
+        }
+        override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+            requests += maxId to limit
+            return network(maxId, limit)
+        }
+        override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int): Result<TimelinePage> =
+            if (feed == TimelineFeed.Home) getHomeTimeline(session, maxId, limit)
+            else Result.success(TimelinePage(listOf(status(feed.name)), null, true))
     }
 
     private lateinit var mainViewModel: MainSessionViewModel

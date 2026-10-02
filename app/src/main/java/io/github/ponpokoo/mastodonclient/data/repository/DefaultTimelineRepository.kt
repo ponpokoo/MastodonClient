@@ -66,7 +66,21 @@ class DefaultTimelineRepository(
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
     private val onReactionSucceeded: suspend (AccountSession, String) -> Unit = { _, _ -> },
     private val notificationLocalDataSource: NotificationLocalDataSource? = null,
+    private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
+    private val networkAvailable: () -> Boolean = { true },
 ) : TimelineRepository {
+    override fun isNetworkAvailable() = networkAvailable()
+    override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = runCatching {
+        homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)?.also { page -> page.statuses.forEach { cacheStatus(session, it) } }
+    }
+    override suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change>): Result<Unit> = runCatching {
+        homeTimelineLocalDataSource?.writePage(session, maxId, page, changes)
+        Unit
+    }
+    override suspend fun updateHomeTimelineCache(session: AccountSession, change: io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change): Result<Unit> = runCatching {
+        homeTimelineLocalDataSource?.applyChange(session, change)
+        Unit
+    }
     private data class StatusCacheKey(val instanceUrl: String, val sessionId: String, val statusId: String)
     private fun cacheKey(session: AccountSession, statusId: String) =
         StatusCacheKey(session.instanceUrl.trimEnd('/'), session.sessionId, statusId)
@@ -377,7 +391,8 @@ class DefaultTimelineRepository(
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
-            endReached = response.size < limit,
+            // Instances may return fewer than the requested limit before the history ends.
+            endReached = response.isEmpty(),
         )
     }
 
@@ -757,10 +772,22 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 previewUrl = it.previewUrl,
                 description = it.description,
                 sensitive = displayed.sensitive,
+                aspectRatio = it.meta?.let { meta ->
+                    mediaAspectRatio(meta.original?.width, meta.original?.height, meta.original?.aspect)
+                        ?: mediaAspectRatio(meta.width, meta.height, meta.aspect)
+                        ?: mediaAspectRatio(meta.small?.width, meta.small?.height, meta.small?.aspect)
+                },
             )
         },
     )
 }
+
+private fun mediaAspectRatio(width: Int?, height: Int?, aspect: Float?): Float? =
+    if (width != null && height != null && width > 0 && height > 0) {
+        width.toFloat() / height
+    } else {
+        aspect?.takeIf { it.isFinite() && it > 0f }
+    }
 
 private fun io.github.ponpokoo.mastodonclient.data.remote.dto.PollDto.toDomain() =
     io.github.ponpokoo.mastodonclient.domain.model.StatusPoll(

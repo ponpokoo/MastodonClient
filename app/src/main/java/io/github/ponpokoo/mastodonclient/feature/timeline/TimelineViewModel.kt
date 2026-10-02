@@ -12,7 +12,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
+import io.github.ponpokoo.mastodonclient.domain.session.applyHomeChange
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +41,8 @@ data class TimelineUiState(
     val resumeAnchorId: String? = null,
     val resumeOffset: Int = 0,
     val isResumedWindow: Boolean = false,
+    val isHomeSyncing: Boolean = false,
+    val isShowingSavedStatuses: Boolean = false,
 )
 
 class TimelineViewModel(
@@ -54,6 +56,8 @@ class TimelineViewModel(
     private var followingTop = false
     private var streamSequence = 0L
     private var resumeCursor: String? = null
+    private var homeChangesDuringRequest: MutableList<BrowsingSession.Change>? = null
+    private var blockedAutomaticCursor: String? = null
 
     class Factory(
         private val timelineRepository: TimelineRepository,
@@ -73,6 +77,7 @@ class TimelineViewModel(
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        blockedAutomaticCursor = null
         followingTop = false
         if (snapshot.account == null && snapshot.generation > 0) clearSavedViewport()
         val viewport = snapshot.account?.let { savedViewport(it.sessionId) }
@@ -87,7 +92,7 @@ class TimelineViewModel(
     fun refresh() {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
-        if (_uiState.value.isRefreshing || _uiState.value.isInitialLoading || _uiState.value.isLoadingMore) return
+        if (_uiState.value.isRefreshing || _uiState.value.isInitialLoading || _uiState.value.isLoadingMore || _uiState.value.isHomeSyncing) return
         if (_uiState.value.isResumedWindow) {
             val viewport = savedViewport(session.sessionId) ?: run {
                 goToLatest()
@@ -115,7 +120,7 @@ class TimelineViewModel(
         val idsAtStart = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
         timelineJob = requestScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
-            timelineRepository.getTimeline(session, _uiState.value.selectedFeed)
+            requestTimeline(snapshot, _uiState.value.selectedFeed)
                 .forSession(snapshot).onSuccess { page ->
                     val existingIds = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
                     val newCount = page.statuses.count {
@@ -137,18 +142,28 @@ class TimelineViewModel(
     }
 
     fun loadNextPage() {
+        loadNextPage(manual = false)
+    }
+
+    private fun loadNextPage(manual: Boolean) {
         val state = _uiState.value
         val snapshot = currentSnapshot() ?: return
-        val session = snapshot.account!!
         val cursor = state.nextMaxId ?: return
-        if (state.isInitialLoading || state.isRefreshing || state.isLoadingMore || state.endReached) return
+        if (!manual && state.selectedFeed == TimelineFeed.Home && cursor == blockedAutomaticCursor) return
+        if (state.isInitialLoading || state.isRefreshing || state.isLoadingMore || state.isHomeSyncing || state.endReached) return
         timelineJob = requestScope.launch {
+            var provisionalIds = emptySet<String>()
             _uiState.update { it.copy(isLoadingMore = true, errorMessage = null) }
-            timelineRepository.getTimeline(session, state.selectedFeed, maxId = cursor)
+            requestTimeline(snapshot, state.selectedFeed, maxId = cursor, automatic = !manual, onCached = { page ->
+                provisionalIds = page.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
+                _uiState.update { current -> current.copy(
+                    statuses = (current.statuses + page.statuses).distinctBy(TimelineStatus::timelineId),
+                ) }
+            })
                 .forSession(snapshot).onSuccess { page ->
                     _uiState.update { current ->
                         current.copy(
-                            statuses = (current.statuses + page.statuses)
+                            statuses = (current.statuses.filterNot { it.timelineId in provisionalIds } + page.statuses)
                                 .distinctBy(TimelineStatus::timelineId),
                             isLoadingMore = false,
                             endReached = page.endReached || page.nextMaxId == current.nextMaxId,
@@ -156,7 +171,10 @@ class TimelineViewModel(
                         )
                     }
                 }
-                .onFailure { error -> showError(error, loadingMore = true) }
+                .onFailure { error ->
+                    if (!manual && state.selectedFeed == TimelineFeed.Home) blockedAutomaticCursor = cursor
+                    showError(error, loadingMore = true, automatic = !manual)
+                }
         }
     }
 
@@ -164,48 +182,37 @@ class TimelineViewModel(
         if (_uiState.value.statuses.isEmpty()) {
             val sessionId = currentSnapshot()?.account?.sessionId ?: return
             loadInitial(savedViewport(sessionId))
-        } else loadNextPage()
+        } else loadNextPage(manual = true)
     }
 
     fun selectFeed(feed: TimelineFeed) {
-        val snapshot = currentSnapshot() ?: return
-        val session = snapshot.account!!
+        currentSnapshot() ?: return
         if (feed == _uiState.value.selectedFeed || _uiState.value.isInitialLoading) return
         timelineJob?.cancel()
+        blockedAutomaticCursor = null
         clearSavedViewport()
         resumeCursor = null
-        timelineJob = requestScope.launch {
-            _uiState.update {
-                it.copy(
-                    selectedFeed = feed,
-                    unseenStreamIds = emptySet(),
-                    streamAutoScrollId = 0,
-                    streamAtTopCount = null,
-                    statuses = emptyList(),
-                    isInitialLoading = true,
-                    isLoadingMore = false,
-                    isRefreshing = false,
-                    endReached = false,
-                    nextMaxId = null,
-                    errorMessage = null,
-                    resumeAnchorId = null,
-                    resumeOffset = 0,
-                    isResumedWindow = false,
-                )
-            }
-            timelineRepository.getTimeline(session, feed)
-                .forSession(snapshot).onSuccess { page ->
-                    _uiState.update {
-                        it.copy(
-                            statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::timelineId),
-                            isInitialLoading = false,
-                            endReached = page.endReached,
-                            nextMaxId = page.nextMaxId,
-                        )
-                    }
-                }
-                .onFailure { error -> showError(error, initial = true) }
+        _uiState.update {
+            it.copy(
+                selectedFeed = feed,
+                unseenStreamIds = emptySet(),
+                streamAutoScrollId = 0,
+                streamAtTopCount = null,
+                statuses = emptyList(),
+                isInitialLoading = true,
+                isLoadingMore = false,
+                isRefreshing = false,
+                endReached = false,
+                nextMaxId = null,
+                errorMessage = null,
+                resumeAnchorId = null,
+                resumeOffset = 0,
+                isResumedWindow = false,
+                isHomeSyncing = false,
+                isShowingSavedStatuses = false,
+            )
         }
+        loadInitial()
     }
 
     fun showAnnouncements() {
@@ -270,11 +277,11 @@ class TimelineViewModel(
     fun goToLatest() {
         val snapshot = currentSnapshot() ?: return
         val state = _uiState.value
-        if (!state.isResumedWindow || state.isInitialLoading || state.isRefreshing) return
+        if (!state.isResumedWindow || state.isInitialLoading || state.isRefreshing || state.isHomeSyncing) return
         timelineJob?.cancel()
         timelineJob = requestScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
-            timelineRepository.getTimeline(snapshot.account!!, state.selectedFeed)
+            requestTimeline(snapshot, state.selectedFeed)
                 .forSession(snapshot).onSuccess { page ->
                     resumeCursor = null
                     clearSavedViewport()
@@ -315,11 +322,34 @@ class TimelineViewModel(
         _uiState.update { it.copy(isInitialLoading = true, errorMessage = null) }
         timelineJob = requestScope.launch {
             val aroundAnchor = viewport != null
-            var result = if (viewport != null) loadViewportPage(snapshot, feed, viewport)
-                else timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot)
+            var displayedCache = false
+            fun displayCached(page: TimelinePage) {
+                displayedCache = true
+                _uiState.update { it.copy(
+                    statuses = page.statuses,
+                    isInitialLoading = false,
+                    endReached = page.endReached,
+                    nextMaxId = page.nextMaxId,
+                    resumeAnchorId = viewport?.anchorId?.takeIf { id -> page.statuses.any { it.timelineId == id } },
+                    resumeOffset = viewport?.offset ?: 0,
+                    isResumedWindow = viewport != null,
+                ) }
+            }
+            var result = if (viewport != null) loadViewportPage(snapshot, feed, viewport, automatic = true, onCached = ::displayCached)
+                else requestTimeline(snapshot, feed, automatic = true, onCached = ::displayCached)
             var restored = viewport
+            if (aroundAnchor && result.isFailure && feed == TimelineFeed.Home) {
+                val fallback = timelineRepository.getCachedHomeTimeline(snapshot.account!!).forSession(snapshot).getOrNull()
+                if (fallback != null && fallback.statuses.isNotEmpty()) {
+                    result = Result.success(fallback)
+                    restored = null
+                    resumeCursor = null
+                    clearSavedViewport()
+                    _uiState.update { it.copy(isShowingSavedStatuses = true) }
+                }
+            }
             if (aroundAnchor && result.getOrNull()?.statuses?.isEmpty() == true) {
-                result = timelineRepository.getTimeline(snapshot.account!!, feed).forSession(snapshot)
+                result = requestTimeline(snapshot, feed, automatic = true, onCached = ::displayCached)
                 restored = null
                 resumeCursor = null
                 clearSavedViewport()
@@ -333,12 +363,14 @@ class TimelineViewModel(
                         isInitialLoading = false,
                         endReached = page.endReached,
                         nextMaxId = page.nextMaxId,
-                        resumeAnchorId = anchor,
-                        resumeOffset = if (anchor == restored?.anchorId) restored?.offset ?: 0 else 0,
+                        // LazyColumn keeps stable keys while revalidating cached rows. Do not
+                        // scroll back to the startup anchor after the reader has moved.
+                        resumeAnchorId = if (displayedCache) it.resumeAnchorId?.takeIf { id -> page.statuses.any { row -> row.timelineId == id } } else anchor,
+                        resumeOffset = if (displayedCache) it.resumeOffset else if (anchor == restored?.anchorId) restored?.offset ?: 0 else 0,
                         isResumedWindow = aroundAnchor && restored != null,
                     ) }
                 },
-                onFailure = { showError(it, initial = true) },
+                onFailure = { showError(it, initial = true, automatic = true) },
             )
         }
     }
@@ -347,16 +379,73 @@ class TimelineViewModel(
         snapshot: BrowsingSession.Snapshot,
         feed: TimelineFeed,
         viewport: SavedViewport,
+        automatic: Boolean = false,
+        onCached: (TimelinePage) -> Unit = {},
     ): Result<TimelinePage> {
         val session = snapshot.account!!
         val cursor = viewport.beforeAnchorId ?: viewport.anchorId
-        val page = timelineRepository.getTimeline(session, feed, maxId = cursor, limit = 40).forSession(snapshot)
+        val page = requestTimeline(snapshot, feed, maxId = cursor, limit = if (feed == TimelineFeed.Home) 20 else 40,
+            automatic = automatic, anchorId = viewport.anchorId, onCached = onCached)
         if (viewport.beforeAnchorId != null || page.isFailure) return page
+        if (page.getOrNull()?.statuses?.any { it.timelineId == viewport.anchorId } == true) return page
         val anchor = timelineRepository.getTimelineStatus(session, viewport.anchorId).forSession(snapshot).getOrNull()
         return page.map { result ->
             if (anchor == null) result else result.copy(
                 statuses = (listOf(anchor) + result.statuses).distinctBy(TimelineStatus::timelineId),
             )
+        }
+    }
+
+    private suspend fun requestTimeline(
+        snapshot: BrowsingSession.Snapshot,
+        feed: TimelineFeed,
+        maxId: String? = null,
+        limit: Int = 20,
+        automatic: Boolean = false,
+        anchorId: String? = null,
+        onCached: (TimelinePage) -> Unit = {},
+    ): Result<TimelinePage> {
+        val session = snapshot.account!!
+        if (feed != TimelineFeed.Home) return timelineRepository.getTimeline(session, feed, maxId, limit).forSession(snapshot)
+        val changes = mutableListOf<BrowsingSession.Change>()
+        homeChangesDuringRequest = changes
+        _uiState.update { it.copy(isHomeSyncing = true) }
+        try {
+            val cached = if (automatic) timelineRepository.getCachedHomeTimeline(session, maxId, limit, anchorId)
+                .forSession(snapshot).getOrNull() else null
+            if (cached != null) {
+                _uiState.update { it.copy(isShowingSavedStatuses = true) }
+                onCached(cached.copy(statuses = changes.fold(cached.statuses) { rows, change -> rows.applyHomeChange(change, includeNew = maxId == null) }))
+            }
+            if (automatic && !timelineRepository.isNetworkAvailable()) {
+                _uiState.update { it.copy(isShowingSavedStatuses = it.statuses.isNotEmpty()) }
+                return cached?.let { Result.success(it) }
+                    ?: Result.failure(java.io.IOException("通信できません。接続後に再試行してください。"))
+            }
+            val result = timelineRepository.getTimeline(session, feed, maxId, limit).forSession(snapshot)
+            if (result.isSuccess) {
+                blockedAutomaticCursor = null
+                val page = result.getOrThrow()
+                // Merge the response and in-flight changes in one serialized transaction.
+                // Later events queue after this write; an older replay cannot undo them.
+                timelineRepository.cacheHomeTimeline(session, maxId, page, changes.toList()).forSession(snapshot)
+                _uiState.update { it.copy(isShowingSavedStatuses = false) }
+                return Result.success(page.copy(statuses = changes.fold(page.statuses) { rows, change ->
+                    rows.applyHomeChange(change, includeNew = maxId == null)
+                }))
+            }
+            if (automatic && cached != null) return Result.success(cached.copy(statuses = changes.fold(cached.statuses) { rows, change ->
+                rows.applyHomeChange(change, includeNew = maxId == null)
+            }))
+            return result
+        } finally {
+            if (homeChangesDuringRequest === changes) {
+                homeChangesDuringRequest = null
+                // A cancelled request for a previous feed must not touch its replacement.
+                if (snapshot == currentSnapshot() && _uiState.value.selectedFeed == feed) {
+                    _uiState.update { it.copy(isHomeSyncing = false) }
+                }
+            }
         }
     }
 
@@ -383,10 +472,14 @@ class TimelineViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        homeChangesDuringRequest?.add(change)
+        if (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived) currentSnapshot()?.let { snapshot -> requestScope.launch {
+            timelineRepository.updateHomeTimelineCache(snapshot.account!!, change).forSession(snapshot)
+        } }
         val accountId = currentSnapshot()?.account?.accountId
         _uiState.update { current ->
             when (change) {
-                is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.map { it.withUpdatedActions(change.status) })
+                is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.applyHomeChange(change))
                 is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {
                     is TimelineStreamEvent.StatusAdded -> if (current.selectedFeed == TimelineFeed.Home) {
@@ -394,7 +487,7 @@ class TimelineViewModel(
                         val isOwnActivity = event.status.isActivityBy(accountId)
                         if (event.isEdit) {
                             current.copy(statuses = current.statuses.map {
-                                if (it.statusId == event.status.statusId) event.status.copy(timelineId = it.timelineId, boostedBy = it.boostedBy) else it
+                                if (it.statusId == event.status.statusId) event.status.copy(timelineId = it.timelineId, boostedBy = it.boostedBy, createdAt = it.createdAt) else it
                             })
                         } else if (exists) {
                             current.copy(statuses = current.statuses.map { if (it.timelineId == event.status.timelineId) event.status else it })
@@ -429,6 +522,7 @@ class TimelineViewModel(
         initial: Boolean = false,
         refreshing: Boolean = false,
         loadingMore: Boolean = false,
+        automatic: Boolean = false,
     ) {
         val message = when ((error as? HttpException)?.code()) {
             401 -> "ログインの有効期限が切れました。ログインし直してください。"
@@ -440,7 +534,8 @@ class TimelineViewModel(
                 isInitialLoading = if (initial) false else it.isInitialLoading,
                 isRefreshing = if (refreshing) false else it.isRefreshing,
                 isLoadingMore = if (loadingMore) false else it.isLoadingMore,
-                errorMessage = message,
+                errorMessage = if (automatic && it.selectedFeed == TimelineFeed.Home && it.statuses.isNotEmpty()) null else message,
+                isShowingSavedStatuses = it.isShowingSavedStatuses || (automatic && it.selectedFeed == TimelineFeed.Home && it.statuses.isNotEmpty()),
             )
         }
     }

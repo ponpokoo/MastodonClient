@@ -3,6 +3,7 @@ package io.github.ponpokoo.mastodonclient.navigation
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.ActivityNotFoundException
+import android.widget.Toast
 import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -69,7 +70,7 @@ import io.github.ponpokoo.mastodonclient.feature.detail.StatusAccountsDialog
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostScreen
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
 import io.github.ponpokoo.mastodonclient.feature.compose.IncomingShareBus
-import io.github.ponpokoo.mastodonclient.feature.web.InAppWebScreen
+import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
@@ -123,7 +124,16 @@ fun AppNavigation(
         )
     }
     val pushRuntime = remember { io.github.ponpokoo.mastodonclient.notification.PushRuntime.get(context) }
-    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource) }
+    val homeTimelineLocalDataSource = remember {
+        io.github.ponpokoo.mastodonclient.data.local.RoomHomeTimelineLocalDataSource(
+            io.github.ponpokoo.mastodonclient.data.local.BrowsingDatabase.get(context),
+            isAccountPresent = { session -> authStore.getSessions().any {
+                it.sessionId == session.sessionId && it.instanceUrl.trimEnd('/') == session.instanceUrl.trimEnd('/')
+            } },
+        )
+    }
+    val networkAvailability = remember { io.github.ponpokoo.mastodonclient.data.local.NetworkAvailability(context) }
+    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource, homeTimelineLocalDataSource) }
     val pushSettings: io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel = viewModel(
         factory = ScreenViewModelFactory { io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel(pushRuntime.control, authRepository) },
     )
@@ -146,6 +156,7 @@ fun AppNavigation(
     }
     val authorizationUrl by pushSettings.authorizationUrl.collectAsStateWithLifecycle()
     val browserContext = LocalContext.current
+    val webLinkLauncher = remember(browserContext) { WebLinkLauncher(browserContext) }
     LaunchedEffect(authorizationUrl) {
         authorizationUrl?.let { url ->
             try {
@@ -195,6 +206,8 @@ fun AppNavigation(
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
         notificationLocalDataSource = notificationLocalDataSource,
+        homeTimelineLocalDataSource = homeTimelineLocalDataSource,
+        networkAvailable = networkAvailability::isAvailable,
         onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
     val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
     val reactionEmojiCache = remember { mutableMapOf<String, List<CustomEmoji>>() }
@@ -242,13 +255,10 @@ fun AppNavigation(
                 }
             } else if (tagIndex >= 0 && !hashtag.isNullOrBlank()) {
                 navController.navigate(Route.HashtagTimeline(hashtag)) { launchSingleTop = true }
-            } else if (uri.scheme == "http") {
-                // Keep the app-wide cleartext policy strict; HTTP-only links use the browser.
-                context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } else if (openLinksInApp) {
-                navController.navigate(Route.WebPage(url)) { launchSingleTop = true }
             } else {
-                context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                if (!webLinkLauncher.open(uri, inApp = openLinksInApp)) {
+                    Toast.makeText(browserContext, "リンクを開けるブラウザーが見つかりません", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -565,9 +575,15 @@ fun AppNavigation(
                 onLogout = pushSettings::logout,
             )
         }
+        // Older versions may restore a WebView entry. Replace it with a browser tab once.
         composable<Route.WebPage> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.WebPage>()
-            InAppWebScreen(route.url, onBack = { navController.popBackStack() })
+            LaunchedEffect(backStackEntry.id) {
+                navController.popBackStack()
+                if (!webLinkLauncher.open(route.url.toUri(), inApp = true)) {
+                    Toast.makeText(browserContext, "リンクを開けるブラウザーが見つかりません", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
         composable<Route.AccountProfile> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.AccountProfile>()

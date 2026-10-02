@@ -8,7 +8,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| 作業ツリーの版番号 | `2.1.2`（versionCode 11）。対象版・確認結果は [更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| 作業ツリーの版番号 | `2.2.0`（versionCode 12）。対象版・確認結果は [更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -21,7 +21,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。
-Roomは通知のみの永続キャッシュに使用する。ホーム・ローカル・連合の永続キャッシュは未実装。
+Roomは通知とホームの永続キャッシュに使用する。ローカル・連合は通信取得とメモリ上の状態管理を使う。
 Hiltはカタログに定義があるが未導入で、依存は手動で組み立てる。
 
 ```text
@@ -75,7 +75,12 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
   保存は一覧スナップショットの置換と件数制限を同じトランザクションで行い、通信結果やStreaming・投稿操作の反映後に更新する。
   DB読み書き・JSON処理はUIスレッド外で行う。ログアウト時は対象セッションを削除し、遅延書き込みは登録済みアカウントの確認で拒否する。
   DBはバックアップ・端末移行から除外する。容量は件数で制限し、MB単位の固定上限は設けない。
-  将来のタイムラインDB化は同じDBへテーブル・DAOを追加し、`app/schemas`のスキーマを基準にマイグレーションする。
+  ホームは同じDBの専用テーブルへ、セッション・インスタンス別に最大500行を保存する。ブーストはタイムライン行IDで区別し、サーバーの順序を保持する。
+  初回・追加取得は20件。DBを先に表示し、通常の通信取得1回で同じページを更新する。閲覧位置の復元も保存済み範囲を優先する。
+  保存済み末尾と取得ページの末尾が重なる場合だけ履歴を接続し、未取得区間を飛ばさない。保存上限をサーバー履歴の末尾として扱わない。
+  通信できないことが分かる場合は自動通信を省く。保存済み表示中の自動取得失敗は静かに扱い、手動更新・保存なしの失敗は再試行可能なエラーにする。
+  投稿操作・Streamingの編集、追加、削除もDBへ反映する。通信中の変更を応答へ反映し直し、古い反応状態へ戻さない。
+  スキーマv2への移行は通知を保持する。今後の拡張も`app/schemas`のスキーマを基準にマイグレーションする。
   今回はRepository経由の表示キャッシュに留め、全画面の唯一のデータ源への移行や投稿・アカウントの共通テーブル化は行わない。
 - コルーチンのキャンセルを一般エラーとして握りつぶさない。メディア取り込みのファイルI/Oは背景処理に分離する。
 
@@ -179,6 +184,37 @@ Debug版とRelease版は署名が異なるため、同じapplication IDのまま
 
 テストのために投稿・フォロー・通報などを行う場合は、利用するアカウントと操作範囲を明確にする。
 認証情報を含むログや画面を共有しない。
+
+### Custom Tabsの確認
+
+リンク閲覧はCustom Tabsを使用する。起動処理・設定オフ・未対応ブラウザー・起動失敗・不正URLは
+`WebLinkLauncherDeviceTest`で確認する。実際のChromeから外部アプリへ移動する経路は
+`CustomTabsBrowserDeviceTest`で確認し、起動Intentの検査だけでブラウザー動作を確認済みとしない。
+後者はChromeとYouTubeがインストールされたエミュレーター用で、Mastodonのアカウントは不要。
+
+`tools/web-browser-fixture.mjs`をNode.jsで起動したまま、別のターミナルから実行する。
+以下のAPKは事前に`:app:assembleDebug :app:assembleDebugAndroidTest`で生成する。
+
+```powershell
+node tools/web-browser-fixture.mjs
+```
+
+```powershell
+adb -s emulator-5554 reverse tcp:8765 tcp:8765
+adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5554 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5554 shell am instrument -w -e class io.github.ponpokoo.mastodonclient.WebLinkLauncherDeviceTest,io.github.ponpokoo.mastodonclient.CustomTabsBrowserDeviceTest -e webTestBaseUrl http://127.0.0.1:8765 io.github.ponpokoo.mastodonclient.test/androidx.test.runner.AndroidJUnitRunner
+adb -s emulator-5554 reverse --remove tcp:8765
+```
+
+検証ページはHTTPのループバック接続であり、アプリの平文通信設定は変更しない。
+外部アプリの自動起動可否はブラウザーの判断に従う。起動直後のJavaScriptによる遷移でも
+ブラウザーが外部起動を許可する場合があり、Nagisa側で一律に禁止する仕様ではない。
+
+実機では通常の投稿リンクからCustom Tabsを開き、ページ移動と戻る操作、閉じた後の
+元の画面・スクロール位置、ページ内のアプリ起動リンク、未導入アプリのフォールバック、
+設定オフの場合の外部表示を確認する。端末・Android版・ブラウザー名／版・対象URLと結果を記録する。
+ブラウザーのCookie・サイトログイン状態はMastodonのアカウント切替とは別に管理される。
 
 ## 文書の維持
 

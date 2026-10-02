@@ -29,6 +29,11 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository {
+    fun isNetworkAvailable(): Boolean = true
+    suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String? = null, limit: Int = 20, anchorId: String? = null): Result<TimelinePage?> = Result.success(null)
+    suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change> = emptyList()): Result<Unit> = Result.success(Unit)
+    suspend fun updateHomeTimelineCache(session: AccountSession, change: io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change): Result<Unit> = Result.success(Unit)
+
     fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = null
 
     suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> =

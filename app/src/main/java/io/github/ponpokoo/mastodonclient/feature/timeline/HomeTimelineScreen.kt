@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -109,6 +108,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -494,7 +494,7 @@ fun HomeTimelineScreen(
                                             if (state.isResumedWindow) viewModel.goToLatest()
                                             else timelineListState.animateToTimelineTop()
                                         }
-                                        MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateScrollToItem(0)
+                                        MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
                                         MainDestination.Profile -> profileListState.animateScrollToItem(0)
                                         MainDestination.Explore -> Unit
                                     }
@@ -619,7 +619,7 @@ fun HomeTimelineScreen(
                     onNewNoticeClick = if (notificationsState.pendingNewNotificationIds.isNotEmpty()) {
                         {
                             notificationFilter = NotificationFilter.All
-                            scope.launch { allNotificationsListState.scrollToItem(0) }
+                            scope.launch { allNotificationsListState.animateToTimelineTop() }
                             Unit
                         }
                     } else null,
@@ -1068,12 +1068,14 @@ private fun TimelineContent(
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
 ) {
-    LaunchedEffect(listState, state.statuses.size, state.nextMaxId, state.resumeAnchorId) {
+    LaunchedEffect(listState, state.statuses.size, state.nextMaxId, state.resumeAnchorId, state.isHomeSyncing) {
         if (state.resumeAnchorId != null) return@LaunchedEffect
+        if (state.isHomeSyncing) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .distinctUntilChanged()
             .collect { lastVisibleIndex ->
-                if (lastVisibleIndex != null && lastVisibleIndex >= state.statuses.lastIndex - 3) {
+                val remaining = if (state.selectedFeed == TimelineFeed.Home) 5 else 3
+                if (lastVisibleIndex != null && lastVisibleIndex >= state.statuses.lastIndex - remaining) {
                     onLoadMore()
                 }
             }
@@ -1146,6 +1148,14 @@ private fun TimelineContent(
                         ) {
                             TextButton(onClick = onRetry) { Text("続きを再試行") }
                         }
+                    }
+                }
+                if (state.isShowingSavedStatuses) {
+                    item(key = "home_cache_notice") {
+                        Text("保存済みのタイムラインを表示しています",
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1626,70 +1636,80 @@ private fun MediaGrid(
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
 ) {
     val context = LocalContext.current
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        attachments.take(4).chunked(2).forEach { rowItems ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                rowItems.forEach { media ->
-                    Box(
-                        modifier = Modifier.weight(1f)
-                            .aspectRatio(
-                                if (attachments.size == 1) {
-                                    when (thumbnailSize) {
-                                        ThumbnailSize.Compact -> 2.1f
-                                        ThumbnailSize.Standard -> 1.6f
-                                        ThumbnailSize.Large -> 1.2f
-                                    }
+    val maxHeight = when (thumbnailSize) {
+        ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
+        ThumbnailSize.Standard -> 280.dp
+        ThumbnailSize.Large -> if (attachments.size == 1) 400.dp else 340.dp
+    }
+    val displayedAttachments = attachments.take(4)
+    val imageKeys = displayedAttachments.map { Triple(it.id, it.url, it.previewUrl) }
+    var loadedAspectRatios by remember(imageKeys) { mutableStateOf<Map<String, Float>>(emptyMap()) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val rowMaxWidth = maxWidth
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            displayedAttachments.chunked(2).forEach { rowItems ->
+                val frames = fittedThumbnailRowSizes(
+                    aspectRatios = rowItems.map { loadedAspectRatios[it.id] ?: it.aspectRatio },
+                    maxWidth = rowMaxWidth,
+                    maxHeight = maxHeight,
+                    gap = 8.dp,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
+                ) {
+                    rowItems.forEachIndexed { index, media ->
+                        key(media.id, media.url, media.previewUrl) {
+                            val imageUrl = if (media.type == "image") {
+                                media.url ?: media.previewUrl
+                            } else {
+                                media.previewUrl ?: media.url
+                            }
+                            val onDimensionsKnown: (Int, Int) -> Unit = { width, height ->
+                                if (width > 0 && height > 0) {
+                                    loadedAspectRatios = loadedAspectRatios + (media.id to width.toFloat() / height)
+                                }
+                            }
+                            Box(
+                                modifier = Modifier.size(frames[index])
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .testTag("media_attachment")
+                                    .then(
+                                        if (onMediaClick == null || media.url == null) Modifier else {
+                                            Modifier.clickable { onMediaClick(attachments, attachments.indexOf(media)) }
+                                        },
+                                    )
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val autoplay = when (media.type) {
+                                    "gifv" -> shouldAutoplay(context, gifAutoplay)
+                                    "video" -> shouldAutoplay(context, videoAutoplay)
+                                    else -> false
+                                }
+                                if (autoplay && media.url != null) {
+                                    InlineVideo(media.url, loop = media.type == "gifv", onDimensionsKnown = onDimensionsKnown)
                                 } else {
-                                    when (thumbnailSize) {
-                                        ThumbnailSize.Compact -> 1.45f
-                                        ThumbnailSize.Standard -> 1f
-                                        ThumbnailSize.Large -> 0.8f
-                                    }
-                                },
-                            )
-                            .clip(RoundedCornerShape(8.dp))
-                            .testTag("media_attachment")
-                            .then(
-                                if (onMediaClick == null || media.url == null) Modifier else {
-                                    Modifier.clickable { onMediaClick(attachments, attachments.indexOf(media)) }
-                                },
-                            )
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val autoplay = when (media.type) {
-                            "gifv" -> shouldAutoplay(context, gifAutoplay)
-                            "video" -> shouldAutoplay(context, videoAutoplay)
-                            else -> false
-                        }
-                        if (autoplay && media.url != null) {
-                            InlineVideo(media.url, loop = media.type == "gifv")
-                        } else {
-                            AsyncImage(
-                                model = if (media.type == "image") {
-                                    media.url ?: media.previewUrl
-                                } else {
-                                    media.previewUrl ?: media.url
-                                },
-                                contentDescription = media.description ?: "添付メディア",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
-                        if (!autoplay && (media.type == "video" || media.type == "gifv")) {
-                            Icon(
-                                Icons.Outlined.PlayCircle,
-                                contentDescription = "動画",
-                                modifier = Modifier.size(48.dp),
-                                tint = androidx.compose.ui.graphics.Color.White,
-                            )
+                                    AsyncImage(
+                                        model = imageUrl,
+                                        contentDescription = media.description ?: "添付メディア",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Fit,
+                                        onSuccess = { onDimensionsKnown(it.result.image.width, it.result.image.height) },
+                                    )
+                                }
+                                if (!autoplay && (media.type == "video" || media.type == "gifv")) {
+                                    Icon(
+                                        Icons.Outlined.PlayCircle,
+                                        contentDescription = "動画",
+                                        modifier = Modifier.size(48.dp),
+                                        tint = androidx.compose.ui.graphics.Color.White,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-                if (rowItems.size == 1 && attachments.size > 1) Spacer(Modifier.weight(1f))
             }
         }
     }
@@ -1708,23 +1728,29 @@ private fun PreviewCardView(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             card.imageUrl?.let { imageUrl ->
+                var loadedAspectRatio by remember(imageUrl) { mutableStateOf<Float?>(null) }
+                val maxWidth = when (thumbnailSize) {
+                    ThumbnailSize.Compact -> 72.dp
+                    ThumbnailSize.Standard -> 96.dp
+                    ThumbnailSize.Large -> 128.dp
+                }
+                val maxHeight = when (thumbnailSize) {
+                    ThumbnailSize.Compact -> 68.dp
+                    ThumbnailSize.Standard -> 88.dp
+                    ThumbnailSize.Large -> 108.dp
+                }
+                val frame = fittedThumbnailSize(loadedAspectRatio ?: card.aspectRatio, maxWidth, maxHeight)
                 AsyncImage(
                     model = imageUrl,
                     contentDescription = null,
-                    modifier = Modifier.width(
-                        when (thumbnailSize) {
-                            ThumbnailSize.Compact -> 72.dp
-                            ThumbnailSize.Standard -> 96.dp
-                            ThumbnailSize.Large -> 128.dp
-                        },
-                    ).height(
-                        when (thumbnailSize) {
-                            ThumbnailSize.Compact -> 68.dp
-                            ThumbnailSize.Standard -> 88.dp
-                            ThumbnailSize.Large -> 108.dp
-                        },
-                    ),
-                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(frame).testTag("preview_card_image"),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = {
+                        val image = it.result.image
+                        if (image.width > 0 && image.height > 0) {
+                            loadedAspectRatio = image.width.toFloat() / image.height
+                        }
+                    },
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -1752,7 +1778,7 @@ private fun PreviewCardView(
 }
 
 @Composable
-private fun InlineVideo(url: String, loop: Boolean) {
+private fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, Int) -> Unit) {
     var videoView by remember { mutableStateOf<VideoView?>(null) }
     DisposableEffect(url) {
         onDispose { videoView?.stopPlayback() }
@@ -1762,6 +1788,7 @@ private fun InlineVideo(url: String, loop: Boolean) {
             VideoView(context).also { view ->
                 view.setVideoURI(Uri.parse(url))
                 view.setOnPreparedListener { player ->
+                    onDimensionsKnown(player.videoWidth, player.videoHeight)
                     player.isLooping = loop
                     player.setVolume(0f, 0f)
                     view.start()

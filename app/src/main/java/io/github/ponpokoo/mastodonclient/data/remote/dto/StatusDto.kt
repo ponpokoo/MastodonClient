@@ -109,6 +109,23 @@ data class MediaAttachmentDto(
     val url: String? = null,
     @SerialName("preview_url") val previewUrl: String? = null,
     val description: String? = null,
+    val meta: MediaMetadataDto? = null,
+)
+
+@Serializable
+data class MediaMetadataDto(
+    val original: MediaDimensionsDto? = null,
+    val small: MediaDimensionsDto? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val aspect: Float? = null,
+)
+
+@Serializable
+data class MediaDimensionsDto(
+    val width: Int? = null,
+    val height: Int? = null,
+    val aspect: Float? = null,
 )
 
 @Serializable

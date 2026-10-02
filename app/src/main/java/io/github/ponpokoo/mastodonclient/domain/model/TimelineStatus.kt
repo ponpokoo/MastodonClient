@@ -113,6 +113,7 @@ data class MediaAttachment(
     val previewUrl: String?,
     val description: String?,
     val sensitive: Boolean = false,
+    val aspectRatio: Float? = null,
 )
 
 data class TimelinePage(

@@ -19,6 +19,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    @Test fun homeShortPagesKeepPagingUntilServerReturnsEmpty() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("[${basicStatusJson("opaque-home-row")}]"))
+            server.enqueue(MockResponse().setBody("[]"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            val first = repository.getHomeTimeline(session, limit = 20).getOrThrow()
+            assertFalse(first.endReached)
+            assertEquals("opaque-home-row", first.nextMaxId)
+            val last = repository.getHomeTimeline(session, maxId = first.nextMaxId).getOrThrow()
+            assertTrue(last.endReached)
+            assertTrue(last.statuses.isEmpty())
+        }
+    }
+
     @Test
     fun editableStatusPreservesLanguageAndAllowsServersToOmitIt() = runTest {
         MockWebServer().use { server ->
@@ -629,6 +644,29 @@ class DefaultTimelineRepositoryTest {
     }
 
     @Test
+    fun mapsOptionalMediaDimensionsAcrossServerMetadataFormats() = runTest {
+        val cases = listOf(
+            """{"original":{"width":120,"height":600},"small":{"width":100,"height":100}}""" to 0.2f,
+            """{"width":1280,"height":720,"duration":5}""" to (1280f / 720),
+            """{"original":{"aspect":1.5}}""" to 1.5f,
+            """{"original":{"width":0,"height":-1,"aspect":0},"small":{"width":400,"height":200}}""" to 2f,
+            """{"original":{"width":0,"height":0,"aspect":-1}}""" to null,
+            "null" to null,
+        )
+        MockWebServer().use { server ->
+            for ((meta, expectedRatio) in cases) {
+                server.enqueue(MockResponse().setBody(
+                    """[${basicStatusJson("post").dropLast(1)},"media_attachments":[{"id":"image","type":"image","meta":$meta},{"id":"legacy","type":"image"}]}]""",
+                ))
+                val media = DefaultTimelineRepository(ApiClientFactory())
+                    .getHomeTimeline(testSession(server)).getOrThrow().statuses.single().mediaAttachments
+                assertEquals(expectedRatio, media.first().aspectRatio)
+                assertNull(media.last().aspectRatio)
+            }
+        }
+    }
+
+    @Test
     fun mapsPreviewCardAndDistinguishesUnsupportedReactions() = runTest {
         MockWebServer().use { server ->
             server.enqueue(
@@ -645,6 +683,7 @@ class DefaultTimelineRepositoryTest {
                 .getOrThrow()
 
             assertEquals("Example", page.statuses.single().previewCard?.title)
+            assertEquals(1200f / 630, page.statuses.single().previewCard?.aspectRatio)
             assertFalse(page.statuses.single().supportsEmojiReactions)
         }
     }
