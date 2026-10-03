@@ -12,11 +12,11 @@ class IncomingShareBusTest {
             action = Intent.ACTION_SEND,
             mimeType = "text/plain",
             text = "  https://example.com/article  ",
-            streamUri = null,
+            streamUris = emptyList(),
         )
 
         assertEquals("https://example.com/article", share?.text)
-        assertNull(share?.imageUri)
+        assertEquals(emptyList<String>(), share?.mediaUris)
     }
 
     @Test fun acceptsContentImageAndOptionalCaption() {
@@ -24,17 +24,31 @@ class IncomingShareBusTest {
             action = Intent.ACTION_SEND,
             mimeType = "image/png",
             text = "caption",
-            streamUri = "content://gallery/image/42",
+            streamUris = listOf("content://gallery/image/42"),
         )
 
         assertNotNull(share)
         assertEquals("caption", share?.text)
-        assertEquals("content://gallery/image/42", share?.imageUri)
+        assertEquals(listOf("content://gallery/image/42"), share?.mediaUris)
     }
 
     @Test fun rejectsUnsupportedOrUnsafeShares() {
-        assertNull(parseIncomingShare("android.intent.action.VIEW", "text/plain", "text", null))
-        assertNull(parseIncomingShare(Intent.ACTION_SEND, "application/pdf", "caption", "content://files/42"))
-        assertNull(parseIncomingShare(Intent.ACTION_SEND, "image/png", null, "file:///private/image.png"))
+        assertNull(parseIncomingShare("android.intent.action.VIEW", "text/plain", "text", emptyList()))
+        assertNull(parseIncomingShare(Intent.ACTION_SEND, "image/png", null, listOf("file:///private/image.png")))
+    }
+
+    @Test fun acceptsVideoAudioAndBroadTypesForPerUriValidation() {
+        listOf("video/mp4", "audio/mpeg", "audio/*", "*/*", null).forEach { type ->
+            val share = parseIncomingShare(Intent.ACTION_SEND, type, null, listOf("content://files/media"))
+            assertEquals(listOf("content://files/media"), share?.mediaUris)
+        }
+    }
+
+    @Test fun normalizesMultipleUrisPreservingOrderAndRejectingUnsafeUris() {
+        val share = parseIncomingShare(Intent.ACTION_SEND_MULTIPLE, "*/*", "caption", listOf(
+            "content://files/first", "content://files/second", "content://files/first", "file:///private/third",
+        ))
+        assertEquals(listOf("content://files/first", "content://files/second"), share?.mediaUris)
+        assertEquals("caption", share?.text)
     }
 }

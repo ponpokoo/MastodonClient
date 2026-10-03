@@ -225,16 +225,13 @@ fun AppNavigation(
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val incomingShare by IncomingShareBus.share.collectAsStateWithLifecycle()
+    val composerModels = remember { mutableMapOf<String, ComposePostViewModel>() }
     LaunchedEffect(incomingShare, startupRoute, currentBackStackEntry?.destination?.route) {
         val shared = incomingShare ?: return@LaunchedEffect
         if (startupRoute == null || authRepository.restoreSession() == null) return@LaunchedEffect
-        navController.navigate(
-            Route.ComposePost(
-                sharedText = shared.text,
-                sharedImageUri = shared.imageUri,
-                shareRequestId = shared.requestId,
-            ),
-        ) { launchSingleTop = true }
+        val navigate = { navController.openSharedComposer(shared) }
+        val currentComposer = navController.currentBackStackEntry?.id?.let(composerModels::get)
+        if (currentComposer == null) navigate() else currentComposer.retainInputThen(navigate)
         IncomingShareBus.consume(shared.requestId)
     }
     val openLink: (String) -> Unit = { url ->
@@ -539,9 +536,13 @@ fun AppNavigation(
                     quoteStatusUrl = route.quoteStatusUrl,
                     nativeQuote = route.nativeQuote,
                     initialSharedText = route.sharedText,
-                    initialSharedMediaUri = route.sharedImageUri,
+                    initialSharedMediaUris = (route.sharedMediaUris + listOfNotNull(route.sharedImageUri)).distinct(),
                 ),
             )
+            androidx.compose.runtime.DisposableEffect(backStackEntry.id, composeViewModel) {
+                composerModels[backStackEntry.id] = composeViewModel
+                onDispose { composerModels.remove(backStackEntry.id) }
+            }
             ComposePostScreen(
                 viewModel = composeViewModel,
                 isEditing = route.editStatusId != null,

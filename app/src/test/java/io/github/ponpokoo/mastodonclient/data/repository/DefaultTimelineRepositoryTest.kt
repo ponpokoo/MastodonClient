@@ -8,6 +8,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
 import io.github.ponpokoo.mastodonclient.domain.model.replyToAccountName
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.Dispatcher
@@ -19,6 +21,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    @Test fun audioAttachmentsPreserveTypeAndOriginalUrlWithoutPreviewOrMimeFiltering() = runTest {
+        MockWebServer().use { server ->
+            val media = """"media_attachments":[
+                {"id":"mp3","type":"audio","url":"https://cdn.example/source.mp3","preview_url":"https://cdn.example/cover.png","mime_type":"audio/mpeg","meta":{"duration":12}},
+                {"id":"wav","type":"audio","url":"https://cdn.example/source.wav","preview_url":null,"mime_type":"audio/wav"},
+                {"id":"pending","type":"audio","url":null,"preview_url":"https://cdn.example/cover.png"}
+            ]"""
+            val status = basicStatusJson("audio-post")
+                .replace("\"acct\":\"alice\"", "\"acct\":\"alice\",\"avatar\":\"https://example.org/author.png\"")
+            server.enqueue(MockResponse().setBody("[" + status.dropLast(1) + ",$media}]"))
+            val attachments = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server)).getOrThrow().statuses.single().mediaAttachments
+            assertEquals(listOf("audio", "audio", "audio"), attachments.map { it.type })
+            assertEquals(listOf("https://cdn.example/source.mp3", "https://cdn.example/source.wav", null), attachments.map { it.url })
+            assertEquals(listOf("https://cdn.example/cover.png", null, "https://cdn.example/cover.png"), attachments.map { it.previewUrl })
+            assertTrue(attachments.all { it.authorAvatarUrl == "https://example.org/author.png" })
+        }
+    }
     @Test fun homeShortPagesKeepPagingUntilServerReturnsEmpty() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("[${basicStatusJson("opaque-home-row")}]"))
@@ -639,6 +659,7 @@ class DefaultTimelineRepositoryTest {
             assertEquals(800, limits.maxCharacters)
             assertEquals(6, limits.maxMediaAttachments)
             assertEquals(1200, limits.mediaDescriptionLimit)
+            assertEquals(setOf("image/png"), limits.supportedMimeTypes)
             assertEquals("party", emoji.shortcode)
         }
     }
@@ -663,6 +684,51 @@ class DefaultTimelineRepositoryTest {
                 assertEquals(expectedRatio, media.first().aspectRatio)
                 assertNull(media.last().aspectRatio)
             }
+        }
+    }
+
+    @Test fun composerCapabilitiesAreCachedPerInstanceWithExpiryAndConcurrentReuse() = runTest {
+        MockWebServer().use { first ->
+            MockWebServer().use { second ->
+                val png = """{"configuration":{"media_attachments":{"supported_mime_types":["image/png"]}}}"""
+                val audio = """{"configuration":{"media_attachments":{"supported_mime_types":["audio/mpeg"]}}}"""
+                first.enqueue(MockResponse().setBody(png))
+                first.enqueue(MockResponse().setBody(audio))
+                second.enqueue(MockResponse().setBody(audio))
+                var now = 0L
+                val repository = DefaultTimelineRepository(ApiClientFactory(), configurationClock = { now })
+                val a = testSession(first)
+                val results = (1..3).map { async { repository.getComposerConfiguration(a).getOrThrow() } }.awaitAll()
+                assertTrue(results.all { it.supportedMimeTypes == setOf("image/png") })
+                assertEquals(1, first.requestCount)
+                assertEquals(setOf("audio/mpeg"), repository.getComposerConfiguration(testSession(second)).getOrThrow().supportedMimeTypes)
+                assertEquals(setOf("image/png"), repository.getComposerConfiguration(a.copy(sessionId = "another-account")).getOrThrow().supportedMimeTypes)
+                now = 300_000L
+                assertEquals(setOf("audio/mpeg"), repository.getComposerConfiguration(a).getOrThrow().supportedMimeTypes)
+                assertEquals(2, first.requestCount)
+                assertNull(first.takeRequest().getHeader("Authorization"))
+            }
+        }
+    }
+
+    @Test fun composerCapabilitiesFallBackOn404AndDoNotCacheFailuresOrMissingLists() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setResponseCode(404))
+            server.enqueue(MockResponse().setBody("""{"configuration":{"statuses":{"max_media_attachments":2}}}"""))
+            server.enqueue(MockResponse().setBody("""{"configuration":{"media_attachments":{"supported_mime_types":[]}}}"""))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            assertTrue(repository.getComposerConfiguration(session).isFailure)
+            val missing = repository.getComposerConfiguration(session).getOrThrow()
+            assertEquals(2, missing.maxMediaAttachments)
+            assertNull(missing.supportedMimeTypes)
+            assertEquals(emptySet<String>(), repository.getComposerConfiguration(session).getOrThrow().supportedMimeTypes)
+            assertEquals(emptySet<String>(), repository.getComposerConfiguration(session).getOrThrow().supportedMimeTypes)
+            assertEquals(4, server.requestCount)
+            assertEquals("/api/v2/instance", server.takeRequest().path)
+            assertEquals("/api/v2/instance", server.takeRequest().path)
+            assertEquals("/api/v1/instance", server.takeRequest().path)
         }
     }
 

@@ -59,6 +59,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 import okio.buffer
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
+import io.github.ponpokoo.mastodonclient.domain.model.MediaValidator
 
 class DefaultTimelineRepository(
     private val apiClientFactory: ApiClientFactory,
@@ -68,7 +72,13 @@ class DefaultTimelineRepository(
     private val notificationLocalDataSource: NotificationLocalDataSource? = null,
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
     private val networkAvailable: () -> Boolean = { true },
+    private val configurationClock: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : TimelineRepository {
+    private data class CachedConfiguration(val value: ComposerConfiguration, val fetchedAt: Long)
+    private val configurationMutex = Mutex()
+    private val configurations = object : LinkedHashMap<String, CachedConfiguration>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedConfiguration>?) = size > 8
+    }
     override fun isNetworkAvailable() = networkAvailable()
     override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = runCatching {
         homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)?.also { page -> page.statuses.forEach { cacheStatus(session, it) } }
@@ -561,14 +571,27 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getComposerConfiguration(session: AccountSession): Result<ComposerConfiguration> = runCatching {
-        val configuration = apiClientFactory.create(session.instanceUrl, session.accessToken)
-            .getInstance().configuration
-        ComposerConfiguration(
-            maxCharacters = configuration?.statuses?.maxCharacters ?: 500,
-            maxMediaAttachments = configuration?.statuses?.maxMediaAttachments ?: 4,
-            mediaDescriptionLimit = configuration?.mediaAttachments?.descriptionLimit ?: 1_500,
-            supportedMimeTypes = configuration?.mediaAttachments?.supportedMimeTypes.orEmpty().toSet(),
-        )
+        configurationMutex.withLock {
+            val key = session.instanceUrl.trimEnd('/')
+            configurations[key]?.takeIf { configurationClock() - it.fetchedAt < 5 * 60_000 }
+                ?.let { return@withLock it.value }
+            val api = apiClientFactory.create(session.instanceUrl)
+            val configuration = try { api.getInstance() } catch (error: HttpException) {
+                if (error.code() != 404) throw error
+                api.getLegacyInstance()
+            }.configuration
+            val result = ComposerConfiguration(
+                maxCharacters = configuration?.statuses?.maxCharacters ?: 500,
+                maxMediaAttachments = configuration?.statuses?.maxMediaAttachments
+                    ?: configuration?.mediaAttachments?.maxAttachments ?: 4,
+                mediaDescriptionLimit = configuration?.mediaAttachments?.descriptionLimit ?: 1_500,
+                supportedMimeTypes = configuration?.mediaAttachments?.supportedMimeTypes
+                    ?.mapNotNull(MediaValidator::normalizeMimeType)?.toSet(),
+            )
+            // Missing capabilities and failed requests must remain retryable.
+            if (result.supportedMimeTypes != null) configurations[key] = CachedConfiguration(result, configurationClock())
+            result
+        }
     }
 
     override suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> = runCatching {
@@ -772,6 +795,8 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 previewUrl = it.previewUrl,
                 description = it.description,
                 sensitive = displayed.sensitive,
+                authorAvatarUrl = displayed.account.avatar.takeIf { _ -> it.type == "audio" }
+                    ?.takeIf(String::isNotBlank),
                 aspectRatio = it.meta?.let { meta ->
                     mediaAspectRatio(meta.original?.width, meta.original?.height, meta.original?.aspect)
                         ?: mediaAspectRatio(meta.width, meta.height, meta.aspect)

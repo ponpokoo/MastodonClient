@@ -35,5 +35,5 @@ data class StatusConfigurationDto(
 data class MediaConfigurationDto(
     @SerialName("max_attachments") val maxAttachments: Int? = null,
     @SerialName("description_limit") val descriptionLimit: Int? = null,
-    @SerialName("supported_mime_types") val supportedMimeTypes: List<String> = emptyList(),
+    @SerialName("supported_mime_types") val supportedMimeTypes: List<String>? = null,
 )

@@ -40,7 +40,7 @@ class ComposeQuoteTest : ScreenViewModelTestBase() {
             override suspend fun getSessions() = listOf(testAccount, secondAccount)
             override suspend fun logout() = Unit
         }, preferences, {}, object : DraftMediaRepository {
-            override suspend fun importMedia(uris: List<String>) = Result.success(emptyList<DraftAttachment>())
+            override suspend fun importMedia(uris: List<String>) = Result.success(io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult())
         }, initialQuoteStatusId = quoted.statusId.takeIf { mode != null },
             initialQuoteStatusUrl = quoted.url.takeIf { mode != null }, nativeQuote = mode == QuoteMode.Native,
             logMediaFailure = {}),
@@ -65,6 +65,10 @@ class ComposeQuoteTest : ScreenViewModelTestBase() {
             vm.onTextChanged(text)
             vm.saveDraft()
             advanceUntilIdle()
+            assertEquals("", vm.uiState.value.text)
+            assertNull(vm.uiState.value.quoteStatusId)
+            assertNull(vm.uiState.value.quoteToStatus)
+            assertFalse(vm.uiState.value.quotingNative)
 
             val restored = model(repository, preferences)
             advanceUntilIdle()
@@ -104,6 +108,9 @@ class ComposeQuoteTest : ScreenViewModelTestBase() {
         val reopenedNative = model(repository, preferences, QuoteMode.Native)
         val reopenedLink = model(repository, preferences, QuoteMode.Link)
         advanceUntilIdle()
+        reopenedNative.restoreDraft(preferences.drafts.first().single { it.nativeQuote })
+        reopenedLink.restoreDraft(preferences.drafts.first().single { !it.nativeQuote })
+        advanceUntilIdle()
         assertEquals("native comment", reopenedNative.uiState.value.text)
         assertTrue(reopenedNative.uiState.value.quotingNative)
         assertEquals(linkText, reopenedLink.uiState.value.text)
@@ -136,6 +143,8 @@ class ComposeQuoteTest : ScreenViewModelTestBase() {
         assertNull(draft.quotedStatusId)
         assertNull(draft.quotedStatusUrl)
         assertFalse(draft.nativeQuote)
+        vm.restoreDraft(draft)
+        advanceUntilIdle()
         vm.post()
         advanceUntilIdle()
         assertNull(posts.single().quotedStatusId)

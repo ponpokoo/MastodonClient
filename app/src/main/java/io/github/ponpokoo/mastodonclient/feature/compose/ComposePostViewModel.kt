@@ -18,6 +18,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult
+import io.github.ponpokoo.mastodonclient.domain.model.MediaValidator
+import io.github.ponpokoo.mastodonclient.domain.model.MediaRejectionReason
+import io.github.ponpokoo.mastodonclient.domain.model.RejectedMedia
 import io.github.ponpokoo.mastodonclient.domain.repository.DraftMediaRepository
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,7 +69,9 @@ data class ComposePostUiState(
     val preferences: AppPreferences = AppPreferences(),
     val isLoading: Boolean = true,
     val isPosting: Boolean = false,
+    val isSavingDraft: Boolean = false,
     val isImportingMedia: Boolean = false,
+    val pendingSharedMediaCount: Int = 0,
     val posted: Boolean = false,
     val errorMessage: String? = null,
     val altReminderVisible: Boolean = false,
@@ -84,7 +90,7 @@ class ComposePostViewModel(
     private val initialQuoteStatusUrl: String? = null,
     private val nativeQuote: Boolean = false,
     private val initialSharedText: String? = null,
-    private val initialSharedMediaUri: String? = null,
+    private val initialSharedMediaUris: List<String> = emptyList(),
     private val logMediaFailure: (String) -> Unit = { android.util.Log.w("MediaUpload", it) },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ComposePostUiState(replyToId = initialReplyToId))
@@ -98,9 +104,11 @@ class ComposePostViewModel(
     private var activeQuoteStatusUrl: String? = initialQuoteStatusUrl
     private var activeNativeQuote: Boolean = nativeQuote
     private var initialShareApplied = false
+    private var pendingSharedMedia: MediaImportResult? = null
     private val mediaJobs = mutableMapOf<String, Job>()
     private val mediaMutex = Mutex()
     private var mediaGeneration = 0
+    private var restoredDraftKey: String? = null
 
     private fun stopMedia() {
         mediaGeneration++
@@ -109,15 +117,60 @@ class ComposePostViewModel(
     }
 
     private fun scheduleAttachments() {
-        _uiState.value.attachments.forEach { scheduleMedia(it.uri) }
+        val errors = attachmentValidationErrors()
+        _uiState.value.attachments.forEach { item ->
+            val error = errors[item.uri]
+            if (error != null) {
+                mediaJobs.remove(item.uri)?.cancel()
+                _uiState.update { state -> state.copy(attachments = state.attachments.map {
+                    if (it.uri == item.uri) it.copy(transferState = MediaTransferState.Failed,
+                        progress = null, errorMessage = error, errorDetail = null, validationError = true) else it
+                }) }
+            } else {
+                if (item.validationError) _uiState.update { state -> state.copy(
+                    attachments = state.attachments.map {
+                        if (it.uri == item.uri) it.copy(transferState = MediaTransferState.Waiting,
+                            errorMessage = null, errorDetail = null, validationError = false) else it
+                    },
+                ) }
+                scheduleMedia(item.uri)
+            }
+        }
+    }
+
+    private fun attachmentValidationErrors(): Map<String, String> {
+        val state = _uiState.value
+        val accepted = mutableListOf<DraftAttachment>()
+        return buildMap {
+            state.attachments.forEach { item ->
+                val result = MediaValidator.validate(listOf(item), accepted, state.configuration)
+                val error = when {
+                    state.quotingNative -> "引用投稿にはメディアを添付できません"
+                    state.pollOptions.isNotEmpty() -> "メディアと投票は同時に追加できません"
+                    else -> result.rejected.firstOrNull()?.let(::rejectionMessage)
+                }
+                if (error == null) accepted += result.attachments else put(item.uri, error)
+            }
+        }
     }
 
     fun retryMedia(uri: String) {
-        if (_uiState.value.isPosting) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting) return
+        if (_uiState.value.configuration.supportedMimeTypes == null) {
+            retryMediaConfiguration()
+            return
+        }
         scheduleMedia(uri, retry = true)
     }
 
     private fun scheduleMedia(uri: String, retry: Boolean = false) {
+        attachmentValidationErrors()[uri]?.let { error ->
+            _uiState.update { state -> state.copy(attachments = state.attachments.map {
+                if (it.uri == uri) it.copy(transferState = MediaTransferState.Failed,
+                    errorMessage = error, errorDetail = null, validationError = true) else it
+            }) }
+            return
+        }
         if (mediaJobs[uri]?.isActive == true) return
         val session = _uiState.value.selectedSession ?: return
         val initial = _uiState.value.attachments.find { it.uri == uri } ?: return
@@ -129,12 +182,18 @@ class ComposePostViewModel(
                 else state.copy(attachments = state.attachments.map { if (it.uri == uri) transform(it) else it })
             }
         }
-        update { it.copy(transferState = MediaTransferState.Waiting, errorMessage = null, errorDetail = null) }
+        update { it.copy(transferState = MediaTransferState.Waiting, errorMessage = null, errorDetail = null, validationError = false) }
         mediaJobs[uri] = viewModelScope.launch {
             try {
                 if (!retry) withTimeoutOrNull(1_000) { uiState.first { it.isPosting } }
                 mediaMutex.withLock {
                     currentCoroutineContext().ensureActive()
+                    if (generation != mediaGeneration || _uiState.value.selectedSession?.sessionId != session.sessionId) return@withLock
+                    attachmentValidationErrors()[uri]?.let { error ->
+                        update { it.copy(transferState = MediaTransferState.Failed,
+                            errorMessage = error, errorDetail = null, validationError = true) }
+                        return@withLock
+                    }
                     var attachment = _uiState.value.attachments.find { it.uri == uri } ?: return@withLock
                     var processingStarted = System.nanoTime()
                     suspend fun check(id: String) = timelineRepository.checkMedia(session, id).getOrElse { error ->
@@ -160,7 +219,7 @@ class ComposePostViewModel(
                             onProgress = { progress -> update { it.copy(progress = progress) } },
                         )).getOrThrow()
                         currentCoroutineContext().ensureActive()
-                        update { it.copy(mediaId = media.id, uploadedDescription = media.description.orEmpty()) }
+                        update { it.copy(mediaId = media.id, uploadedDescription = media.description.orEmpty(), serverType = media.type) }
                         processingStarted = System.nanoTime()
                     }
                     val id = media.id
@@ -172,7 +231,7 @@ class ComposePostViewModel(
                                 delay(1_000)
                                 val checked = check(id)
                                 if (checked.ready) {
-                                    update { it.copy(uploadedDescription = checked.description.orEmpty()) }
+                                    update { it.copy(uploadedDescription = checked.description.orEmpty(), serverType = checked.type) }
                                     break
                                 }
                             }
@@ -183,7 +242,12 @@ class ComposePostViewModel(
                                 errorMessage = "サーバーでの処理に時間がかかっています") }
                             return@withLock
                         }
-                    } else update { it.copy(uploadedDescription = media.description.orEmpty()) }
+                    } else update { it.copy(uploadedDescription = media.description.orEmpty(), serverType = media.type) }
+                    attachmentValidationErrors()[uri]?.let { error ->
+                        update { it.copy(transferState = MediaTransferState.Failed,
+                            errorMessage = error, errorDetail = null, validationError = true) }
+                        return@withLock
+                    }
                     while (true) {
                         attachment = _uiState.value.attachments.find { it.uri == uri } ?: return@withLock
                         if (attachment.description == attachment.uploadedDescription) break
@@ -232,8 +296,9 @@ class ComposePostViewModel(
                 )
             }
             selected?.let { session ->
-                loadAccountData(session, restoreBuffer = editStatusId == null)
+                loadAccountData(session, restoreBuffer = editStatusId == null, sharedMediaUris = initialSharedMediaUris)
                 applyInitialShare()
+                consumePendingShare()
                 loadQuoteTarget(session)
                 editStatusId?.let { statusId ->
                     timelineRepository.getEditableStatus(session, statusId).fold(
@@ -256,7 +321,7 @@ class ComposePostViewModel(
 
     fun onTextChanged(text: String) {
         val state = _uiState.value
-        if (state.isPosting || text.length > state.configuration.maxCharacters) return
+        if (state.isSavingDraft || state.isPosting || text.length > state.configuration.maxCharacters) return
         val author = state.replyToStatus?.author
         if (author != null && containsMention(state.text, author) && !containsMention(text, author)) {
             clearReply()
@@ -280,7 +345,7 @@ class ComposePostViewModel(
     fun clearQuote() = clearReference(ReferenceKind.Quote)
 
     private fun clearReference(kind: ReferenceKind) {
-        if (_uiState.value.isPosting || targetId(kind) == null) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting || targetId(kind) == null) return
         _uiState.value.selectedSession?.let { preferencesStore.removeComposeBuffer(draftKey(it.sessionId)) }
         cancelTargetLoad(kind)
         when (kind) {
@@ -301,26 +366,34 @@ class ComposePostViewModel(
     fun setVisibility(value: PostVisibility) = change { it.copy(visibility = value) }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
     fun setLanguage(value: String?) {
-        if (_uiState.value.isPosting || _uiState.value.isLoading) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting || _uiState.value.isLoading) return
         change { it.copy(language = value) }
     }
 
     fun importMedia(uris: List<String>) {
         val state = _uiState.value
-        if (state.isImportingMedia || state.isPosting || state.isLoading || state.selectedSession == null) return
-        val remaining = (state.configuration.maxMediaAttachments - state.attachments.size).coerceAtLeast(0)
-        if (remaining == 0 || uris.isEmpty()) return
-        if (state.pollOptions.isNotEmpty()) {
-            _uiState.update { it.copy(errorMessage = "メディアと投票は同時に追加できません") }
+        if (state.isSavingDraft || state.isImportingMedia || state.isPosting || state.isLoading || state.selectedSession == null) return
+        if (uris.isEmpty()) return
+        if (state.configuration.supportedMimeTypes == null) {
+            _uiState.update { it.copy(errorMessage = "サーバーの対応ファイル形式を確認できません。設定を再取得してください") }
             return
         }
+        if (state.pollOptions.isNotEmpty() || state.quotingNative) {
+            _uiState.update { it.copy(errorMessage = if (state.quotingNative)
+                "引用投稿にはメディアを添付できません" else "メディアと投票は同時に追加できません") }
+            return
+        }
+        val sessionId = state.selectedSession.sessionId
+        val generation = mediaGeneration
         _uiState.update { it.copy(isImportingMedia = true, errorMessage = null) }
         viewModelScope.launch {
             try {
-                draftMediaRepository.importMedia(uris.take(remaining)).fold(
-                    onSuccess = { addAttachments(it) },
-                    onFailure = { _uiState.update { it.copy(errorMessage = "添付ファイルを読み込めませんでした") } },
-                )
+                val imported = stageMedia(uris)
+                if (generation != mediaGeneration || _uiState.value.selectedSession?.sessionId != sessionId) {
+                    imported.attachments.forEach { deleteDraftFile(it.uri) }
+                    return@launch
+                }
+                addImportedMedia(imported)
             } finally {
                 _uiState.update { it.copy(isImportingMedia = false) }
             }
@@ -340,7 +413,62 @@ class ComposePostViewModel(
                 state.copy(text = merged.take(state.configuration.maxCharacters))
             }
         }
-        initialSharedMediaUri?.let { importMedia(listOf(it)) }
+    }
+
+    private suspend fun stageMedia(uris: List<String>): MediaImportResult {
+        val result = draftMediaRepository.importMedia(uris.distinct()).getOrElse { error ->
+            if (error is CancellationException) throw error
+            MediaImportResult(rejected = uris.distinct().map {
+                RejectedMedia("attachment", null, MediaRejectionReason.Unreadable)
+            })
+        }
+        try { currentCoroutineContext().ensureActive() } catch (error: CancellationException) {
+            result.attachments.forEach { deleteDraftFile(it.uri) }
+            throw error
+        }
+        return result
+    }
+
+    private fun consumePendingShare() {
+        val imported = pendingSharedMedia ?: return
+        if (_uiState.value.configuration.supportedMimeTypes == null && imported.attachments.isNotEmpty()) {
+            _uiState.update { it.copy(pendingSharedMediaCount = imported.attachments.size,
+                errorMessage = "共有ファイルを読み込みました。サーバー設定を再取得して添付してください") }
+            return
+        }
+        pendingSharedMedia = null
+        _uiState.update { it.copy(pendingSharedMediaCount = 0) }
+        addImportedMedia(imported)
+    }
+
+    private fun clearPendingShare() {
+        pendingSharedMedia?.attachments?.forEach { deleteDraftFile(it.uri) }
+        pendingSharedMedia = null
+        _uiState.update { it.copy(pendingSharedMediaCount = 0) }
+    }
+
+    fun discardPendingSharedMedia() {
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting || _uiState.value.isLoading || _uiState.value.isImportingMedia) return
+        clearPendingShare()
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun retryMediaConfiguration() {
+        val state = _uiState.value
+        val session = state.selectedSession ?: return
+        if (state.isSavingDraft || state.isPosting || state.isLoading || state.isImportingMedia) return
+        val generation = mediaGeneration
+        _uiState.update { it.copy(isLoading = true) }
+        viewModelScope.launch {
+            val configuration = timelineRepository.getComposerConfiguration(session).getOrDefault(ComposerConfiguration())
+            currentCoroutineContext().ensureActive()
+            if (generation != mediaGeneration || _uiState.value.selectedSession?.sessionId != session.sessionId) return@launch
+            _uiState.update { it.copy(configuration = configuration, isLoading = false,
+                errorMessage = if (configuration.supportedMimeTypes == null)
+                    "サーバーの対応ファイル形式を確認できません。添付は送信されません" else null) }
+            consumePendingShare()
+            scheduleAttachments()
+        }
     }
 
     private fun waitForMediaImport(): Boolean {
@@ -349,24 +477,52 @@ class ComposePostViewModel(
         return true
     }
 
-    private fun addAttachments(items: List<DraftAttachment>) {
+    private fun addImportedMedia(imported: MediaImportResult) {
         val state = _uiState.value
-        val remaining = (state.configuration.maxMediaAttachments - state.attachments.size).coerceAtLeast(0)
-        change { it.copy(attachments = (it.attachments + items.take(remaining)).distinctBy(DraftAttachment::uri)) }
+        if (state.pollOptions.isNotEmpty() || state.quotingNative) {
+            imported.attachments.forEach { deleteDraftFile(it.uri) }
+            _uiState.update { it.copy(errorMessage = if (state.quotingNative)
+                "引用投稿にはメディアを添付できません" else "メディアと投票は同時に追加できません") }
+            return
+        }
+        val result = MediaValidator.validate(imported.attachments, state.attachments, state.configuration)
+        val acceptedUris = result.attachments.map(DraftAttachment::uri).toSet()
+        imported.attachments.filterNot { it.uri in acceptedUris }.forEach { deleteDraftFile(it.uri) }
+        val rejected = imported.rejected + result.rejected
+        val message = if (rejected.isEmpty()) null else buildString {
+            append("${imported.attachments.size + imported.rejected.size}件中${result.attachments.size}件を添付しました。")
+            rejected.groupBy(::rejectionMessage).forEach { (reason, items) ->
+                append("\n${items.size}件：$reason\n${items.joinToString { it.fileName.take(80) }}")
+            }
+        }
+        _uiState.update { it.copy(attachments = (it.attachments + result.attachments).distinctBy(DraftAttachment::uri),
+            errorMessage = message, actionMessage = if (rejected.isNotEmpty() && result.attachments.isNotEmpty())
+                "${result.attachments.size}件を添付しました。${rejected.size}件は添付できませんでした" else it.actionMessage) }
         scheduleAttachments()
     }
 
+    private fun rejectionMessage(item: RejectedMedia): String = when (item.reason) {
+        MediaRejectionReason.UnknownType -> "ファイル形式を判別できません"
+        MediaRejectionReason.UnsupportedType -> "このファイル形式はサーバーでサポートされていません（${item.mimeType}）"
+        MediaRejectionReason.Unreadable -> "ファイルを読み込めません"
+        MediaRejectionReason.PermissionDenied -> "ファイルの読み取り権限がありません。もう一度共有してください"
+        MediaRejectionReason.TooManyAttachments -> "サーバーの添付上限を超えています"
+        MediaRejectionReason.IncompatibleCombination -> "動画・音声は他のメディアと同時に添付できません"
+        MediaRejectionReason.ConfigurationUnavailable -> "サーバーの対応ファイル形式を確認できません。設定を再取得してください"
+    }
+
     fun removeAttachment(uri: String) {
-        if (_uiState.value.isPosting) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting) return
         mediaJobs.remove(uri)?.cancel()
         deleteDraftFile(uri)
         change {
             it.copy(attachments = it.attachments.filterNot { attachment -> attachment.uri == uri })
         }
+        scheduleAttachments()
     }
 
     fun setAttachmentDescription(uri: String, description: String) {
-        if (_uiState.value.isPosting) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting) return
         change { state ->
         state.copy(attachments = state.attachments.map {
             if (it.uri == uri) it.copy(description = description.take(state.configuration.mediaDescriptionLimit)) else it
@@ -424,12 +580,13 @@ class ComposePostViewModel(
     }
 
     fun restoreDraft(draft: ComposeDraft) {
-        if (_uiState.value.isPosting) return
+        if (_uiState.value.isSavingDraft || _uiState.value.isPosting) return
         if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null || _uiState.value.isLoading) return
         stopMedia()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
+        restoredDraftKey = draft.key
         activeReplyToId = draft.replyToId
         activeQuoteStatusId = draft.quotedStatusId
         activeQuoteStatusUrl = draft.quotedStatusUrl
@@ -464,6 +621,7 @@ class ComposePostViewModel(
     }
 
     fun deleteDraft(draft: ComposeDraft) {
+        if (_uiState.value.isSavingDraft) return
         if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId) return
@@ -488,7 +646,7 @@ class ComposePostViewModel(
             _uiState.update { it.copy(actionMessage = "引用中は投稿元を切り替えられません") }
             return
         }
-        if (editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting || _uiState.value.isLoading) return
+        if (_uiState.value.isSavingDraft || editStatusId != null || _uiState.value.isImportingMedia || _uiState.value.isPosting || _uiState.value.isLoading) return
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
@@ -496,9 +654,11 @@ class ComposePostViewModel(
         val replyText = _uiState.value.text.takeIf { activeReplyToId != null }
         if (replyText != null) clearReply()
         stopMedia()
+        clearPendingShare()
         _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
             retainInput()
+            restoredDraftKey = null
             val selected = _uiState.value.sessions.firstOrNull { it.sessionId == sessionId } ?: return@launch
             val preferences = preferencesStore.preferences.first()
             _uiState.update {
@@ -522,12 +682,17 @@ class ComposePostViewModel(
 
     fun post(skipAltReminder: Boolean = false) {
         val state = _uiState.value
-        if (state.isPosting || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
+        if (state.isSavingDraft || state.isPosting || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
         if (activeReplyToId != null && state.replyToStatus == null) {
             _uiState.update { it.copy(errorMessage = "返信先の読み込みが完了してから投稿してください") }
             return
         }
         if (state.text.isBlank() && state.attachments.isEmpty()) return
+        if (attachmentValidationErrors().isNotEmpty() || pendingSharedMedia != null) {
+            scheduleAttachments()
+            _uiState.update { it.copy(errorMessage = "添付できないファイルがあります。設定の再取得または添付の削除を行ってください") }
+            return
+        }
         if (state.quotingNative && (state.attachments.isNotEmpty() || state.pollOptions.isNotEmpty())) {
             _uiState.update { it.copy(errorMessage = "引用投稿にはメディアや投票を添付できません") }
             return
@@ -548,6 +713,11 @@ class ComposePostViewModel(
             scheduleAttachments()
             state.attachments.mapNotNull { mediaJobs[it.uri] }.forEach { it.join() }
             val attachments = _uiState.value.attachments
+            if (attachmentValidationErrors().isNotEmpty()) {
+                scheduleAttachments()
+                _uiState.update { it.copy(isPosting = false) }
+                return@launch
+            }
             if (attachments.any { it.transferState != MediaTransferState.Ready || it.mediaId == null }) {
                 _uiState.update { it.copy(isPosting = false) }
                 return@launch
@@ -583,7 +753,7 @@ class ComposePostViewModel(
             result
                 .onSuccess {
                     idempotencyKey = UUID.randomUUID().toString()
-                    preferencesStore.deleteDraft(draftKey(session.sessionId))
+                    restoredDraftKey?.let { preferencesStore.deleteDraft(it) }
                     preferencesStore.removeComposeBuffer(draftKey(session.sessionId))
                     state.attachments.forEach { deleteDraftFile(it.uri) }
                     _uiState.update { it.copy(isPosting = false, posted = true) }
@@ -593,53 +763,105 @@ class ComposePostViewModel(
     }
 
     fun saveDraft() {
-        if (waitForMediaImport() || _uiState.value.isLoading) return
+        val state = _uiState.value
+        val session = state.selectedSession ?: return
+        if (waitForMediaImport() || state.isLoading || state.isPosting || state.isSavingDraft || state.posted) return
+        if (state.pendingSharedMediaCount > 0) {
+            _uiState.update { it.copy(errorMessage = "共有ファイルを添付または削除してから保存してください") }
+            return
+        }
+        if (state.text.isBlank() && state.spoilerText.isBlank() && state.attachments.isEmpty() &&
+            state.pollOptions.none(String::isNotBlank)) return
+        val bufferKey = draftKey(session.sessionId)
+        val draft = state.toDraft(session.sessionId).copy(key = restoredDraftKey ?: UUID.randomUUID().toString())
+        _uiState.update { it.copy(isSavingDraft = true, errorMessage = null, actionMessage = null) }
         viewModelScope.launch {
-            saveDraftNow()
-            _uiState.update { it.copy(actionMessage = "下書きに保存しました") }
+            try {
+                preferencesStore.saveDraft(draft)
+                currentCoroutineContext().ensureActive()
+                stopMedia()
+                ReferenceKind.entries.forEach(::cancelTargetLoad)
+                preferencesStore.removeComposeBuffer(bufferKey)
+                activeReplyToId = null
+                activeQuoteStatusId = null
+                activeQuoteStatusUrl = null
+                activeNativeQuote = false
+                restoredDraftKey = null
+                idempotencyKey = UUID.randomUUID().toString()
+                _uiState.update { current -> ComposePostUiState(
+                    sessions = current.sessions,
+                    selectedSession = session,
+                    preferences = current.preferences,
+                    visibility = current.preferences.forAccount(session.sessionId).defaultVisibility,
+                    configuration = current.configuration,
+                    customEmojis = current.customEmojis,
+                    drafts = (current.drafts.filterNot { it.key == draft.key } + draft)
+                        .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
+                    isLoading = false,
+                    actionMessage = "下書きに保存しました",
+                ) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _uiState.update { it.copy(errorMessage = "下書きを保存できませんでした。もう一度お試しください") }
+            } finally {
+                _uiState.update { it.copy(isSavingDraft = false) }
+            }
         }
     }
 
     fun retainInputThen(onRetained: () -> Unit) {
+        if (_uiState.value.isSavingDraft) return
         stopMedia()
         retainInput()
         onRetained()
     }
     fun discardDraft() {
+        if (_uiState.value.isSavingDraft) return
         if (waitForMediaImport()) return
         stopMedia()
         val session = _uiState.value.selectedSession ?: return
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
         viewModelScope.launch {
-            preferencesStore.deleteDraft(key)
+            restoredDraftKey?.let { preferencesStore.deleteDraft(it) }
             preferencesStore.removeComposeBuffer(key)
             attachments.forEach { deleteDraftFile(it.uri) }
         }
     }
     fun discardDraftThen(onDiscarded: () -> Unit) {
+        if (_uiState.value.isSavingDraft) return
         if (waitForMediaImport()) return
         stopMedia()
         val session = _uiState.value.selectedSession ?: return onDiscarded()
         val attachments = _uiState.value.attachments
         val key = draftKey(session.sessionId)
         viewModelScope.launch {
-            preferencesStore.deleteDraft(key)
+            restoredDraftKey?.let { preferencesStore.deleteDraft(it) }
             preferencesStore.removeComposeBuffer(key)
             attachments.forEach { deleteDraftFile(it.uri) }
             onDiscarded()
         }
     }
 
-    private suspend fun loadAccountData(session: AccountSession, restoreBuffer: Boolean) {
+    private suspend fun loadAccountData(session: AccountSession, restoreBuffer: Boolean, sharedMediaUris: List<String> = emptyList()) {
+        val generation = mediaGeneration
         val draft = if (restoreBuffer) preferencesStore.getComposeBuffer(draftKey(session.sessionId)) else null
         if (draft != null) {
             activeReplyToId = draft.replyToId
             _uiState.update { it.withDraft(draft).copy(replyToId = activeReplyToId) }
         }
+        // Restore existing input first, then copy shared files before any network waits.
+        if (sharedMediaUris.isNotEmpty()) {
+            _uiState.update { it.copy(isImportingMedia = true) }
+            try { pendingSharedMedia = stageMedia(sharedMediaUris) }
+            finally { _uiState.update { it.copy(isImportingMedia = false) } }
+        }
         loadReplyTarget(session, insertMention = draft == null && _uiState.value.text.isBlank())
         val configuration = timelineRepository.getComposerConfiguration(session).getOrDefault(ComposerConfiguration())
         val emojis = timelineRepository.getCustomEmojis(session).getOrDefault(emptyList())
+        currentCoroutineContext().ensureActive()
+        if (generation != mediaGeneration || _uiState.value.selectedSession?.sessionId != session.sessionId) return
         _uiState.update { current ->
             if (current.selectedSession?.sessionId != session.sessionId) current else current.copy(
                 text = current.text,
@@ -661,6 +883,8 @@ class ComposePostViewModel(
                 pollMultiple = draft?.pollMultiple ?: current.pollMultiple,
                 configuration = configuration,
                 customEmojis = emojis,
+                errorMessage = if (configuration.supportedMimeTypes == null && (current.attachments.isNotEmpty() || pendingSharedMedia != null))
+                    "サーバーの対応ファイル形式を確認できません。添付には設定の再取得が必要です" else current.errorMessage,
                 isLoading = false,
             )
         }
@@ -668,28 +892,8 @@ class ComposePostViewModel(
     }
 
     private fun change(transform: (ComposePostUiState) -> ComposePostUiState) {
+        if (_uiState.value.isSavingDraft) return
         _uiState.update { transform(it).copy(errorMessage = null) }
-    }
-
-    private suspend fun saveDraftNow() {
-        val state = _uiState.value
-        val session = state.selectedSession ?: return
-        if (state.posted) return
-        val hasContent = state.text.isNotBlank() || state.spoilerText.isNotBlank() ||
-            state.attachments.isNotEmpty() || state.pollOptions.any(String::isNotBlank)
-        if (!hasContent) {
-            preferencesStore.deleteDraft(draftKey(session.sessionId))
-            preferencesStore.removeComposeBuffer(draftKey(session.sessionId))
-            return
-        }
-        preferencesStore.saveDraft(state.toDraft(session.sessionId))
-        preferencesStore.removeComposeBuffer(draftKey(session.sessionId))
-        _uiState.update { current ->
-            current.copy(
-                drafts = preferencesStore.drafts.first().filter { it.sessionId == session.sessionId }
-                    .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
-            )
-        }
     }
 
     private fun retainInput() {
@@ -820,6 +1024,7 @@ class ComposePostViewModel(
 
     override fun onCleared() {
         stopMedia()
+        clearPendingShare()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
         retainInput()
         super.onCleared()
@@ -837,12 +1042,12 @@ class ComposePostViewModel(
         private val quoteStatusUrl: String? = null,
         private val nativeQuote: Boolean = false,
         private val initialSharedText: String? = null,
-        private val initialSharedMediaUri: String? = null,
+        private val initialSharedMediaUris: List<String> = emptyList(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             ComposePostViewModel(replyToId, editStatusId, timelineRepository, authRepository, preferencesStore,
                 deleteDraftFile, draftMediaRepository, quoteStatusId, quoteStatusUrl, nativeQuote,
-                initialSharedText, initialSharedMediaUri) as T
+                initialSharedText, initialSharedMediaUris) as T
     }
 }

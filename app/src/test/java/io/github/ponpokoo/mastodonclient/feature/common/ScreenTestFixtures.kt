@@ -38,6 +38,9 @@ fun testProfile() = UserProfile(testStatus().author, "", "", 1, 1, 1, listOf(tes
 fun testResults(id: String) = SearchResults(emptyList(), listOf(testStatus(id)), emptyList())
 
 open class ScreenRepositoryFake : TimelineRepository {
+    override suspend fun getComposerConfiguration(session: AccountSession) = Result.success(ComposerConfiguration(
+        supportedMimeTypes = setOf("image/jpeg", "image/png", "image/gif", "video/mp4", "audio/mpeg"),
+    ))
     val markers = mutableListOf<Pair<String, String>>()
     override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
         Result.success(TimelinePage(listOf(testStatus().copy(timelineId = "boost-wrapper")), "next", false))

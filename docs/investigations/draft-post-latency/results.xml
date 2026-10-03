@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.ponpokoo.mastodonclient.feature.compose.ComposeDraftLatencyInvestigationTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-03T08:45:42.008Z" hostname="NAGASHIMA" time="0.62">
+  <properties/>
+  <testcase name="ordinaryAndRestoredYouTubePostsHaveIdenticalWireBodiesAndHeadersExceptKey" classname="io.github.ponpokoo.mastodonclient.feature.compose.ComposeDraftLatencyInvestigationTest" time="0.596"/>
+  <testcase name="restoredTextPostWaitsForStorageBeforeSubmissionAndAfterApiSuccess" classname="io.github.ponpokoo.mastodonclient.feature.compose.ComposeDraftLatencyInvestigationTest" time="0.006"/>
+  <testcase name="saveThenRestoreInSameViewModelRotatesKeyAfterFailedAttempt" classname="io.github.ponpokoo.mastodonclient.feature.compose.ComposeDraftLatencyInvestigationTest" time="0.004"/>
+  <testcase name="failedPostThenUnrelatedDraftRestoreReusesKeyInSameViewModel" classname="io.github.ponpokoo.mastodonclient.feature.compose.ComposeDraftLatencyInvestigationTest" time="0.003"/>
+  <system-out><![CDATA[wire equality: scenario=default; status round trip exact; omitted fields verified; headers equal except key
+wire equality: scenario=configured; status round trip exact; omitted fields verified; headers equal except key
+wire equality: scenario=poll; status round trip exact; omitted fields verified; headers equal except key
+confirmed: restore storage gates submit; redundant draft deletion gates UI completion after API success
+confirmed: changed post after failed request retains the same in-memory idempotency key
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

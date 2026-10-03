@@ -128,6 +128,6 @@ class MainActivity : ComponentActivity() {
         OAuthCallbackBus.accept(intent?.data)
         if (intent?.data?.scheme == "io.github.ponpokoo.mastodonclient") intent.data = null
         IncomingShareBus.accept(intent)
-        if (intent?.action == Intent.ACTION_SEND) intent.action = null
+        if (intent?.action in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) intent?.action = null
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
@@ -207,10 +208,20 @@ fun ComposePostScreen(
     }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
-            val showJob = launch { snackbarHostState.showSnackbar(it) }
-            delay(1_500)
-            snackbarHostState.currentSnackbarData?.dismiss()
-            showJob.join()
+            if (it == "下書きに保存しました") {
+                cwEnabled = false
+                altEditingUri = null
+                if (snackbarHostState.showSnackbar(it, actionLabel = "下書きを見る") ==
+                    androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    keyboardController?.hide()
+                    draftSheetOpen = true
+                }
+            } else {
+                val showJob = launch { snackbarHostState.showSnackbar(it) }
+                delay(1_500)
+                snackbarHostState.currentSnackbarData?.dismiss()
+                showJob.join()
+            }
             viewModel.consumeActionMessage()
         }
     }
@@ -279,7 +290,7 @@ fun ComposePostScreen(
                                 ComposerAction.Media -> ComposerToolbarButton(
                                     icon = Icons.Outlined.AddPhotoAlternate,
                                     contentDescription = "画像または動画",
-                                    enabled = !state.isImportingMedia && !state.isPosting && !state.isLoading && state.pollOptions.isEmpty() &&
+                                    enabled = !state.isImportingMedia && !state.isPosting && !state.isSavingDraft && !state.isLoading && state.pollOptions.isEmpty() &&
                                         !state.quotingNative && state.attachments.size < state.configuration.maxMediaAttachments,
                                 ) { mediaPicker.launch(
                                     androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -313,19 +324,20 @@ fun ComposePostScreen(
                                 ComposerAction.SaveDraft -> ComposerToolbarButton(
                                     Icons.Outlined.Drafts,
                                     "下書きに保存",
-                                    enabled = hasContent && !isEditing && !state.isImportingMedia && !state.isLoading,
+                                    enabled = hasContent && !isEditing && !state.isImportingMedia && !state.isLoading &&
+                                        !state.isPosting && !state.isSavingDraft,
                                 ) { viewModel.saveDraft() }
                                 ComposerAction.Language -> ComposerToolbarButton(
                                     Icons.Outlined.Language,
                                     "投稿の言語：${state.language ?: "デフォルト"}",
-                                    enabled = !state.isPosting && !state.isLoading,
+                                    enabled = !state.isPosting && !state.isSavingDraft && !state.isLoading,
                                 ) {
                                     keyboardController?.hide()
                                     languageDialogOpen = true
                                 }
                                 ComposerAction.Hashtag -> IconButton(
                                     onClick = { applyToolbarEdit(insertHashtag(textFieldValue)) },
-                                    enabled = !state.isPosting && !state.isLoading &&
+                                    enabled = !state.isPosting && !state.isSavingDraft && !state.isLoading &&
                                         state.text.length < state.configuration.maxCharacters,
                                     modifier = Modifier.size(42.dp).semantics {
                                         contentDescription = "ハッシュタグを挿入"
@@ -334,7 +346,7 @@ fun ComposePostScreen(
                                 ComposerAction.DeleteDraft -> ComposerToolbarButton(
                                     Icons.Outlined.DeleteOutline,
                                     "本文をクリア",
-                                    enabled = state.text.isNotEmpty() && !state.isPosting && !state.isImportingMedia,
+                                    enabled = state.text.isNotEmpty() && !state.isPosting && !state.isSavingDraft && !state.isImportingMedia,
                                 ) { viewModel.onTextChanged("") }
                             }
                         }
@@ -342,7 +354,7 @@ fun ComposePostScreen(
                     Button(
                         onClick = viewModel::post,
                         enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) &&
-                            !state.isPosting && !state.isImportingMedia && !state.isLoading,
+                            !state.isPosting && !state.isSavingDraft && !state.isImportingMedia && !state.isLoading,
                         modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
                     ) {
                         if (state.isPosting || state.isImportingMedia) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -367,7 +379,7 @@ fun ComposePostScreen(
                     title = state.replyToStatus?.author?.let { "${it.displayName}  @${it.accountName} への返信" }
                         ?: "返信先の投稿",
                     removeLabel = "返信を解除",
-                    enabled = !state.isPosting,
+                    enabled = !state.isPosting && !state.isSavingDraft,
                     onRemove = viewModel::clearReply,
                 )
             }
@@ -378,7 +390,7 @@ fun ComposePostScreen(
                         if (state.quotingNative) "${it.displayName} の投稿を引用" else "${it.displayName} の投稿URLを引用"
                     } ?: "引用元の投稿",
                     removeLabel = "引用を解除",
-                    enabled = !state.isPosting,
+                    enabled = !state.isPosting && !state.isSavingDraft,
                     onRemove = viewModel::clearQuote,
                 )
             }
@@ -494,7 +506,7 @@ fun ComposePostScreen(
             if (state.attachments.isNotEmpty()) {
                 val mediaSensitive = state.sensitive || state.spoilerText.isNotBlank()
                 val canChangeMediaSensitivity = state.spoilerText.isBlank() && !state.isLoading &&
-                    !state.isPosting && !state.isImportingMedia
+                    !state.isPosting && !state.isSavingDraft && !state.isImportingMedia
                 Text(
                     "添付メディア ${state.attachments.size}件",
                     modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
@@ -510,7 +522,7 @@ fun ComposePostScreen(
                             ComposerAttachmentTile(
                                 attachment = attachment,
                                 modifier = Modifier.weight(1f),
-                                enabled = !state.isPosting && !state.isLoading,
+                                enabled = !state.isPosting && !state.isSavingDraft && !state.isLoading,
                                 onRetry = { viewModel.retryMedia(attachment.uri) },
                                 onRemove = { viewModel.removeAttachment(attachment.uri) },
                                 onEditAlt = {
@@ -578,6 +590,19 @@ fun ComposePostScreen(
             state.errorMessage?.let {
                 Text(it, modifier = Modifier.padding(vertical = 10.dp), color = MaterialTheme.colorScheme.error)
             }
+            if (state.configuration.supportedMimeTypes == null &&
+                (state.errorMessage != null || state.pendingSharedMediaCount > 0 || state.attachments.isNotEmpty())) {
+                TextButton(onClick = viewModel::retryMediaConfiguration,
+                    enabled = !state.isLoading && !state.isImportingMedia && !state.isPosting && !state.isSavingDraft) {
+                    Text("サーバー設定を再取得")
+                }
+            }
+            if (state.pendingSharedMediaCount > 0) {
+                TextButton(onClick = viewModel::discardPendingSharedMedia,
+                    enabled = !state.isLoading && !state.isImportingMedia && !state.isPosting && !state.isSavingDraft) {
+                    Text("共有添付を取り消す（${state.pendingSharedMediaCount}件）")
+                }
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -607,48 +632,28 @@ fun ComposePostScreen(
                         Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("下書き", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                        Text("下書き（${state.drafts.size}件）", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                         IconButton(onClick = { draftSheetOpen = false }) {
                             Icon(Icons.Outlined.Close, contentDescription = "閉じる")
                         }
                     }
-                    Text(
-                        "タップで呼び出し、長押しで削除",
-                        Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                     if (state.drafts.isEmpty()) {
                         Text("保存された下書きはありません", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
                         items(state.drafts, key = { it.key }) { draft ->
-                        Column(
-                            Modifier.fillMaxWidth().combinedClickable(
-                                onClick = {
+                        DraftListItem(
+                            draft = draft,
+                            session = state.sessions.find { it.sessionId == draft.sessionId },
+                            enabled = !state.isSavingDraft && !state.isLoading && !state.isPosting && !state.isImportingMedia,
+                            onRestore = {
                                     draftSheetOpen = false
                                     cwEnabled = draft.spoilerText.isNotBlank()
                                     viewModel.restoreDraft(draft)
                                     focusRequester.requestFocus()
                                     keyboardController?.show()
-                                },
-                                onLongClick = { draftToDelete = draft },
-                            ).padding(horizontal = 20.dp, vertical = 12.dp),
-                        ) {
-                            Text(
-                                draft.text.ifBlank { draft.spoilerText.ifBlank { "メディアまたはアンケートの下書き" } },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                buildString {
-                                    append(draft.visibility.label())
-                                    if (draft.replyToId != null) append(" · 返信")
-                                    if (draft.attachmentUris.isNotEmpty()) append(" · メディア${draft.attachmentUris.size}件")
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                            },
+                            onDelete = { draftToDelete = draft },
+                        )
                         HorizontalDivider()
                     }
                 }
@@ -825,12 +830,19 @@ private fun ComposerAttachmentTile(
     Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp) {
         Column(Modifier.padding(6.dp)) {
             Box {
-                AsyncImage(
-                    model = attachment.uri,
-                    contentDescription = attachment.description.ifBlank { "添付メディア" },
-                    modifier = Modifier.fillMaxWidth().aspectRatio(1.35f).clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop,
-                )
+                if (attachment.mimeType.startsWith("audio/")) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(1.35f).background(MaterialTheme.colorScheme.surfaceContainer),
+                        contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.AudioFile, contentDescription = "音声ファイル", modifier = Modifier.size(48.dp))
+                    }
+                } else {
+                    AsyncImage(
+                        model = attachment.uri,
+                        contentDescription = attachment.description.ifBlank { "添付メディア" },
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1.35f).clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
                 IconButton(
                     onClick = onRemove,
                     enabled = enabled,

@@ -44,7 +44,7 @@ class ComposerToolbarDeviceTest {
                 override suspend fun getSessions() = listOf(session)
                 override suspend fun logout() = Unit
             }, UserPreferencesStore(preferences), {}, object : DraftMediaRepository {
-                override suspend fun importMedia(uris: List<String>) = Result.success(emptyList<DraftAttachment>())
+                override suspend fun importMedia(uris: List<String>) = Result.success(io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult())
             })
         }
         try {

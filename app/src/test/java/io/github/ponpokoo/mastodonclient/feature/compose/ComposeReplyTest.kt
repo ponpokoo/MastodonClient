@@ -35,7 +35,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
             override suspend fun getSessions() = listOf(testAccount, secondAccount)
             override suspend fun logout() = Unit
         }, preferences, {}, object : DraftMediaRepository {
-            override suspend fun importMedia(uris: List<String>) = Result.success(emptyList<DraftAttachment>())
+            override suspend fun importMedia(uris: List<String>) = Result.success(io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult())
         }, logMediaFailure = {}),
     )
 

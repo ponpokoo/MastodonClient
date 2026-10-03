@@ -114,6 +114,8 @@ data class MediaAttachment(
     val description: String?,
     val sensitive: Boolean = false,
     val aspectRatio: Float? = null,
+    // Post context for audio artwork, also retained when opening the standalone viewer.
+    val authorAvatarUrl: String? = null,
 )
 
 data class TimelinePage(

@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 data class IncomingShare(
     val requestId: String,
     val text: String? = null,
-    val imageUri: String? = null,
+    val mediaUris: List<String> = emptyList(),
 )
 
 object IncomingShareBus {
@@ -19,14 +19,20 @@ object IncomingShareBus {
     val share = mutableShare.asStateFlow()
 
     fun accept(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND) return
-        val stream = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+        if (intent == null || intent.action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return
+        val streams = if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else {
+            listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+        }
+        val clipUris = intent.clipData?.let { clip ->
+            (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+        }.orEmpty()
         parseIncomingShare(
             action = intent.action,
             mimeType = intent.type,
             text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
-            streamUri = stream?.toString(),
+            streamUris = (streams + clipUris).map(Uri::toString),
         )?.let { mutableShare.value = it }
     }
 
@@ -39,21 +45,19 @@ internal fun parseIncomingShare(
     action: String?,
     mimeType: String?,
     text: String?,
-    streamUri: String?,
+    streamUris: List<String>,
 ): IncomingShare? {
-    if (action != Intent.ACTION_SEND) return null
+    if (action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return null
     val isTextShare = mimeType == "text/plain"
-    val isImageShare = mimeType?.startsWith("image/") == true
-    if (!isTextShare && !isImageShare) return null
     val normalizedText = text?.trim()?.take(MAX_SHARED_TEXT_LENGTH)?.takeIf(String::isNotEmpty)
-    val imageUri = streamUri?.takeIf {
-        isImageShare && runCatching { URI(it).scheme == "content" }.getOrDefault(false)
-    }
-    if (normalizedText == null && imageUri == null) return null
+    val mediaUris = streamUris.filter {
+        runCatching { URI(it).scheme == "content" }.getOrDefault(false)
+    }.distinct()
+    if (mediaUris.isEmpty() && (!isTextShare || normalizedText == null)) return null
     return IncomingShare(
         requestId = UUID.randomUUID().toString(),
         text = normalizedText,
-        imageUri = imageUri,
+        mediaUris = mediaUris,
     )
 }
 

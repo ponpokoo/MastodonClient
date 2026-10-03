@@ -8,8 +8,8 @@ import android.content.ClipboardManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
-import android.widget.VideoView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -131,7 +131,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -139,6 +138,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.feature.media.AudioPlayer
+import io.github.ponpokoo.mastodonclient.feature.media.InlineVideo
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.mentionedAccountIdFor
@@ -1398,6 +1399,7 @@ internal fun StatusCard(
                         displayPreferences.thumbnailSize,
                         gifAutoplay,
                         videoAutoplay,
+                        audioAuthorAvatarUrl = status.author.avatarUrl,
                     )
                 } else {
                     Surface(
@@ -1634,77 +1636,105 @@ private fun MediaGrid(
     thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
+    audioAuthorAvatarUrl: String? = null,
 ) {
     val context = LocalContext.current
     val maxHeight = when (thumbnailSize) {
         ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
         ThumbnailSize.Standard -> 280.dp
-        ThumbnailSize.Large -> if (attachments.size == 1) 400.dp else 340.dp
     }
     val displayedAttachments = attachments.take(4)
     val imageKeys = displayedAttachments.map { Triple(it.id, it.url, it.previewUrl) }
     var loadedAspectRatios by remember(imageKeys) { mutableStateOf<Map<String, Float>>(emptyMap()) }
+    val rows = buildList {
+        val visual = mutableListOf<MediaAttachment>()
+        fun flush() { addAll(visual.chunked(2)); visual.clear() }
+        displayedAttachments.forEach { media ->
+            if (media.type == "audio") { flush(); add(listOf(media)) } else visual.add(media)
+        }
+        flush()
+    }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val rowMaxWidth = maxWidth
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            displayedAttachments.chunked(2).forEach { rowItems ->
-                val frames = fittedThumbnailRowSizes(
-                    aspectRatios = rowItems.map { loadedAspectRatios[it.id] ?: it.aspectRatio },
-                    maxWidth = rowMaxWidth,
-                    maxHeight = maxHeight,
-                    gap = 8.dp,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
-                ) {
-                    rowItems.forEachIndexed { index, media ->
-                        key(media.id, media.url, media.previewUrl) {
-                            val imageUrl = if (media.type == "image") {
-                                media.url ?: media.previewUrl
-                            } else {
-                                media.previewUrl ?: media.url
-                            }
-                            val onDimensionsKnown: (Int, Int) -> Unit = { width, height ->
-                                if (width > 0 && height > 0) {
-                                    loadedAspectRatios = loadedAspectRatios + (media.id to width.toFloat() / height)
-                                }
-                            }
-                            Box(
-                                modifier = Modifier.size(frames[index])
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .testTag("media_attachment")
-                                    .then(
-                                        if (onMediaClick == null || media.url == null) Modifier else {
-                                            Modifier.clickable { onMediaClick(attachments, attachments.indexOf(media)) }
-                                        },
-                                    )
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                val autoplay = when (media.type) {
-                                    "gifv" -> shouldAutoplay(context, gifAutoplay)
-                                    "video" -> shouldAutoplay(context, videoAutoplay)
-                                    else -> false
-                                }
-                                if (autoplay && media.url != null) {
-                                    InlineVideo(media.url, loop = media.type == "gifv", onDimensionsKnown = onDimensionsKnown)
+            rows.forEach { rowItems ->
+                if (rowItems.singleOrNull()?.type == "audio") {
+                    val media = rowItems.single()
+                    key(media.id, media.url) {
+                        AudioPlayer(media, authorAvatarUrl = audioAuthorAvatarUrl ?: media.authorAvatarUrl)
+                    }
+                } else {
+                    val cropImageRow = thumbnailSize == ThumbnailSize.Standard && rowItems.all { it.type == "image" }
+                    val aspectRatios = rowItems.map { loadedAspectRatios[it.id] ?: it.aspectRatio }
+                    val frames = if (cropImageRow) {
+                        croppedThumbnailRowSizes(aspectRatios, rowMaxWidth, 400.dp, 8.dp)
+                    } else {
+                        fittedThumbnailRowSizes(
+                            aspectRatios = aspectRatios,
+                            maxWidth = rowMaxWidth,
+                            maxHeight = maxHeight,
+                            gap = 8.dp,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowItems.forEachIndexed { index, media ->
+                            key(media.id, media.url, media.previewUrl) {
+                                val imageUrl = if (media.type == "image") {
+                                    media.url ?: media.previewUrl
                                 } else {
-                                    AsyncImage(
-                                        model = imageUrl,
-                                        contentDescription = media.description ?: "添付メディア",
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Fit,
-                                        onSuccess = { onDimensionsKnown(it.result.image.width, it.result.image.height) },
-                                    )
+                                    media.previewUrl ?: media.url
                                 }
-                                if (!autoplay && (media.type == "video" || media.type == "gifv")) {
-                                    Icon(
-                                        Icons.Outlined.PlayCircle,
-                                        contentDescription = "動画",
-                                        modifier = Modifier.size(48.dp),
-                                        tint = androidx.compose.ui.graphics.Color.White,
-                                    )
+                                val onDimensionsKnown: (Int, Int) -> Unit = { width, height ->
+                                    if (width > 0 && height > 0) {
+                                        loadedAspectRatios = loadedAspectRatios + (media.id to width.toFloat() / height)
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier.size(frames[index])
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .testTag("media_attachment")
+                                        .then(
+                                            if (onMediaClick == null || media.url == null) Modifier else {
+                                                Modifier.clickable {
+                                                    // Older cached posts have no avatar context on attachments.
+                                                    val viewerMedia = attachments.map { item ->
+                                                        if (item.type == "audio") item.copy(authorAvatarUrl = audioAuthorAvatarUrl ?: item.authorAvatarUrl)
+                                                        else item
+                                                    }
+                                                    onMediaClick(viewerMedia, attachments.indexOf(media))
+                                                }
+                                            },
+                                        )
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    val autoplay = when (media.type) {
+                                        "gifv" -> shouldAutoplay(context, gifAutoplay)
+                                        "video" -> shouldAutoplay(context, videoAutoplay)
+                                        else -> false
+                                    }
+                                    if (autoplay && media.url != null) {
+                                        InlineVideo(media.url, loop = media.type == "gifv", onDimensionsKnown = onDimensionsKnown)
+                                    } else {
+                                        AsyncImage(
+                                            model = imageUrl,
+                                            contentDescription = media.description ?: "添付メディア",
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = if (cropImageRow) ContentScale.Crop else ContentScale.Fit,
+                                            onSuccess = { onDimensionsKnown(it.result.image.width, it.result.image.height) },
+                                        )
+                                    }
+                                    if (!autoplay && (media.type == "video" || media.type == "gifv")) {
+                                        Icon(
+                                            Icons.Outlined.PlayCircle,
+                                            contentDescription = "動画",
+                                            modifier = Modifier.size(48.dp),
+                                            tint = androidx.compose.ui.graphics.Color.White,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1723,21 +1753,23 @@ private fun PreviewCardView(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        tonalElevation = 1.dp,
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             card.imageUrl?.let { imageUrl ->
                 var loadedAspectRatio by remember(imageUrl) { mutableStateOf<Float?>(null) }
                 val maxWidth = when (thumbnailSize) {
                     ThumbnailSize.Compact -> 72.dp
                     ThumbnailSize.Standard -> 96.dp
-                    ThumbnailSize.Large -> 128.dp
                 }
                 val maxHeight = when (thumbnailSize) {
                     ThumbnailSize.Compact -> 68.dp
                     ThumbnailSize.Standard -> 88.dp
-                    ThumbnailSize.Large -> 108.dp
                 }
                 val frame = fittedThumbnailSize(loadedAspectRatio ?: card.aspectRatio, maxWidth, maxHeight)
                 AsyncImage(
@@ -1753,7 +1785,7 @@ private fun PreviewCardView(
                     },
                 )
             }
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Column(Modifier.weight(1f).padding(start = if (card.imageUrl != null) 10.dp else 0.dp)) {
                 if (card.byline.isNotBlank()) {
                     Text(card.byline, style = MaterialTheme.typography.labelSmall)
                 }
@@ -1775,29 +1807,6 @@ private fun PreviewCardView(
             }
         }
     }
-}
-
-@Composable
-private fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, Int) -> Unit) {
-    var videoView by remember { mutableStateOf<VideoView?>(null) }
-    DisposableEffect(url) {
-        onDispose { videoView?.stopPlayback() }
-    }
-    AndroidView(
-        factory = { context ->
-            VideoView(context).also { view ->
-                view.setVideoURI(Uri.parse(url))
-                view.setOnPreparedListener { player ->
-                    onDimensionsKnown(player.videoWidth, player.videoHeight)
-                    player.isLooping = loop
-                    player.setVolume(0f, 0f)
-                    view.start()
-                }
-                videoView = view
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-    )
 }
 
 private fun shouldAutoplay(context: Context, policy: AutoplayPolicy): Boolean = when (policy) {

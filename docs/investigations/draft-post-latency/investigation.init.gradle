@@ -1,0 +1,9 @@
+// Opt-in investigation source; does not change the normal application/test source sets.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.sourceSets.getByName('test').kotlin.srcDir(
+                new File(project.rootDir, 'docs/investigations/draft-post-latency/tests'))
+        }
+    }
+}

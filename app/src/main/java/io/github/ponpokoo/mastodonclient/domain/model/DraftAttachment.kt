@@ -11,6 +11,8 @@ data class DraftAttachment(
     val progress: Float? = null,
     val errorMessage: String? = null,
     val errorDetail: String? = null,
+    val serverType: String? = null,
+    val validationError: Boolean = false,
 )
 
 enum class MediaTransferState { Waiting, Uploading, Processing, UpdatingAlt, Ready, Failed, CheckAgain }

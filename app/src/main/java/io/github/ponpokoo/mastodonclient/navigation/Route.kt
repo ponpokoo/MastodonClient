@@ -24,6 +24,7 @@ sealed interface Route {
         val nativeQuote: Boolean = false,
         val sharedText: String? = null,
         val sharedImageUri: String? = null,
+        val sharedMediaUris: List<String> = emptyList(),
         val shareRequestId: String? = null,
     ) : Route
 

@@ -4,7 +4,7 @@ data class ComposerConfiguration(
     val maxCharacters: Int = 500,
     val maxMediaAttachments: Int = 4,
     val mediaDescriptionLimit: Int = 1_500,
-    val supportedMimeTypes: Set<String> = emptySet(),
+    val supportedMimeTypes: Set<String>? = null,
 )
 
 data class CustomEmoji(

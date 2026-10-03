@@ -503,7 +503,6 @@ private fun Any?.displayLabel(): String = when (this) {
     ActionIconSize.Large -> "大"
     ThumbnailSize.Compact -> "小"
     ThumbnailSize.Standard -> "標準"
-    ThumbnailSize.Large -> "大"
     AutoplayPolicy.Always -> "常に再生"
     AutoplayPolicy.WifiOnly -> "Wi-Fiのみ"
     AutoplayPolicy.Never -> "再生しない"

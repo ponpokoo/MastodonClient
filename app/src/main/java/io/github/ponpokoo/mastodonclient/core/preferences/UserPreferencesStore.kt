@@ -14,6 +14,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -26,7 +27,7 @@ private val Context.userPreferencesDataStore by preferencesDataStore(name = "use
 @Serializable enum class AvatarIconSize { Small, Standard, Large }
 @Serializable enum class AvatarIconShape { Circle, Square }
 @Serializable enum class ActionIconSize { Small, Standard, Large }
-@Serializable enum class ThumbnailSize { Compact, Standard, Large }
+@Serializable enum class ThumbnailSize { Compact, Standard }
 @Serializable enum class AutoplayPolicy { Always, WifiOnly, Never }
 @Serializable enum class StreamingPolicy { On, WifiOnly, Off }
 @Serializable enum class ThemeMode { Light, Dark, System }
@@ -64,7 +65,7 @@ data class TimelineDisplayPreferences(
     val hiddenActions: Set<StatusAction> = setOf(StatusAction.Bookmark),
     val showCounts: Boolean = true,
     val showReactions: Boolean = true,
-    val thumbnailSize: ThumbnailSize = ThumbnailSize.Compact,
+    val thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
 )
 
 @Serializable
@@ -260,9 +261,18 @@ class UserPreferencesStore(
         val supportedActions = ComposerAction.entries.map { it.name }.toSet()
         // Removed toolbar actions must not make the rest of the saved settings unreadable.
         val settings = json.parseToJsonElement(encoded).jsonObject.mapValues { (key, value) ->
-            if (key == "composerActionOrder" || key == "hiddenComposerActions") {
-                JsonArray(value.jsonArray.filter { it.jsonPrimitive.content in supportedActions })
-            } else value
+            when (key) {
+                "composerActionOrder", "hiddenComposerActions" ->
+                    JsonArray(value.jsonArray.filter { it.jsonPrimitive.content in supportedActions })
+                "timelineDisplay" -> {
+                    // The removed Large preset now uses Standard without resetting other preferences.
+                    val display = value.jsonObject
+                    if (display["thumbnailSize"]?.jsonPrimitive?.content == "Large") {
+                        JsonObject(display + ("thumbnailSize" to JsonPrimitive(ThumbnailSize.Standard.name)))
+                    } else value
+                }
+                else -> value
+            }
         }
         return json.decodeFromJsonElement<AppPreferences>(JsonObject(settings))
     }

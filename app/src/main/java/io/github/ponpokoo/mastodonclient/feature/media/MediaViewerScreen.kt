@@ -4,8 +4,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
 import android.widget.Toast
-import android.widget.MediaController
-import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
@@ -42,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -56,7 +55,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsAnimationControlListenerCompat
@@ -67,6 +65,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -149,8 +148,10 @@ fun MediaViewerScreen(
             },
         )
     }
-    LaunchedEffect(pagerState.currentPage, barsRequestPending) {
-        if (!barsRequestPending && media[pagerState.currentPage].type in setOf("video", "gifv")) {
+    LaunchedEffect(pagerState.currentPage) {
+        if (media[pagerState.currentPage].type in setOf("video", "gifv")) {
+            // Reset on page entry, not when a hide/show system-bar request finishes.
+            snapshotFlow { barsRequestPending }.first { !it }
             setControlsVisible(true)
         }
     }
@@ -245,9 +246,16 @@ fun MediaViewerScreen(
                 beyondViewportPageCount = 1,
             ) { page ->
                 val item = media[page]
-                if (item.type == "video" || item.type == "gifv") {
+                if (item.type == "audio") {
                     LaunchedEffect(page) { pageScales[page] = 1f }
-                    VideoViewer(item.url ?: item.previewUrl.orEmpty(), loop = item.type == "gifv")
+                    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                        AudioPlayer(item, active = page == pagerState.currentPage)
+                    }
+                } else if (item.type == "video" || item.type == "gifv") {
+                    LaunchedEffect(page) { pageScales[page] = 1f }
+                    VideoPlayer(item.url, loop = item.type == "gifv", active = page == pagerState.currentPage,
+                        controlsVisible = controlsVisible && page == pagerState.currentPage,
+                        onTap = { setControlsVisible(!controlsVisible) })
                 } else {
                     ZoomableImage(
                         url = item.url ?: item.previewUrl.orEmpty(),
@@ -292,10 +300,15 @@ fun MediaViewerScreen(
                 }
 
                 if (media.size > 1) {
+                    val playbackPage = media[pagerState.currentPage].type in setOf("audio", "video", "gifv")
                     Text(
                         text = "${pagerState.currentPage + 1} / ${media.size}",
                         color = Color.White,
-                        modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp),
+                        modifier = if (playbackPage) {
+                            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp)
+                        } else {
+                            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)
+                        },
                     )
                 }
             }
@@ -411,31 +424,6 @@ private fun ZoomableImage(
             contentScale = ContentScale.Fit,
         )
     }
-}
-
-@Composable
-private fun VideoViewer(url: String, loop: Boolean) {
-    var videoView by remember(url) { mutableStateOf<VideoView?>(null) }
-    DisposableEffect(url) {
-        onDispose { videoView?.stopPlayback() }
-    }
-    AndroidView(
-        factory = { context ->
-            VideoView(context).also { view ->
-                val controls = MediaController(context)
-                controls.setAnchorView(view)
-                view.setMediaController(controls)
-                view.setVideoURI(Uri.parse(url))
-                view.setOnPreparedListener { player ->
-                    player.isLooping = loop
-                    view.start()
-                    controls.show()
-                }
-                videoView = view
-            }
-        },
-        modifier = Modifier.fillMaxSize(),
-    )
 }
 
 private const val PAN_SPEED_MULTIPLIER = 2.25f

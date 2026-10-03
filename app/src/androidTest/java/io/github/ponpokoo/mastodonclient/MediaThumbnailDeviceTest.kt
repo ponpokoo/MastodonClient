@@ -4,17 +4,24 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
@@ -39,16 +46,20 @@ class MediaThumbnailDeviceTest {
     @After fun cleanup() { files.forEach { it.delete() } }
 
     @Test
-    fun tallImageWithoutMetadataShowsBothEndsAndResizesWhenImageChanges() {
+    fun standardSingleImageCropsPortraitAndFitsLandscapeWithoutMetadata() {
         val portrait = image(120, 600)
         val landscape = image(600, 120)
         val media = mutableStateOf(attachment(portrait))
         val size = mutableStateOf(ThumbnailSize.Compact)
+        val opened = AtomicReference<Pair<List<MediaAttachment>, Int>>()
         rule.setContent {
             MaterialTheme {
                 Box(Modifier.width(360.dp)) {
-                    StatusCard(status(listOf(media.value)), onStatusClick = null, onUnavailableAction = {},
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                    StatusCard(status(listOf(media.value)).copy(previewCard = PreviewCard(
+                        "https://example.com", "Width reference", "", "link", "", null, null)),
+                        onStatusClick = null, onUnavailableAction = {},
+                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value),
+                        onMediaClick = { items, index -> opened.set(items to index) })
                 }
             }
         }
@@ -59,13 +70,65 @@ class MediaThumbnailDeviceTest {
         rule.runOnIdle { size.value = ThumbnailSize.Standard }
         val standardBounds = node.fetchSemanticsNode().boundsInRoot
         assertTrue(standardBounds.height > compactHeight)
-        assertTrue(standardBounds.width < 360 * rule.density.density)
-        assertEquals(0.2f, standardBounds.width / standardBounds.height, 0.02f)
-        assertEndsVisible(node)
+        val cardBounds = rule.onNodeWithText("Width reference").fetchSemanticsNode().boundsInRoot
+        assertEquals(cardBounds.left, standardBounds.left, 1f)
+        assertEquals(cardBounds.right, standardBounds.right, 1f)
+        assertEquals(400 * rule.density.density, standardBounds.height, 1f)
+        assertCenterCropped(node)
+        node.performClick()
+        assertEquals(listOf(media.value), opened.get().first)
+        assertEquals(0, opened.get().second)
 
         rule.runOnIdle { media.value = attachment(landscape) }
         waitForRatio(node, 5f)
         assertEndsVisible(node)
+        assertTrue(node.fetchSemanticsNode().boundsInRoot.height < standardBounds.height)
+    }
+
+    @Test
+    fun standardSingleImageWidthFollowsPostWidthAndDetailLayout() {
+        val portrait = attachment(image(120, 600))
+        val width = mutableStateOf(360.dp)
+        val detail = mutableStateOf(false)
+        val opened = AtomicReference<Pair<List<MediaAttachment>, Int>>()
+        rule.setContent {
+            MaterialTheme {
+                Column(Modifier.width(width.value).fillMaxHeight()
+                    .verticalScroll(rememberScrollState())) {
+                    StatusCard(
+                        status(listOf(portrait)).copy(previewCard = PreviewCard(
+                            "https://example.com", "Width reference", "", "link", "", null, null)),
+                        onStatusClick = null,
+                        onUnavailableAction = {},
+                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard),
+                        fullWidthContent = detail.value,
+                        onMediaClick = { items, index -> opened.set(items to index) },
+                    )
+                }
+            }
+        }
+        val node = rule.onNodeWithTag("media_attachment")
+        assertCenterCropped(node)
+        fun assertMatchesCardWidth() {
+            val mediaBounds = node.getUnclippedBoundsInRoot()
+            val cardBounds = rule.onNodeWithText("Width reference").getUnclippedBoundsInRoot()
+            assertEquals(cardBounds.left.value, mediaBounds.left.value, 1f)
+            assertEquals(cardBounds.right.value, mediaBounds.right.value, 1f)
+            assertEquals(400f, (mediaBounds.bottom - mediaBounds.top).value, 1f)
+        }
+        assertMatchesCardWidth()
+        val originalBounds = node.getUnclippedBoundsInRoot()
+        val originalWidth = originalBounds.right - originalBounds.left
+        node.performClick()
+        assertEquals(listOf(portrait), opened.get().first)
+        assertEquals(0, opened.get().second)
+
+        rule.runOnIdle { width.value = 240.dp }
+        assertMatchesCardWidth()
+        val narrowBounds = node.getUnclippedBoundsInRoot()
+        assertTrue(narrowBounds.right - narrowBounds.left < originalWidth)
+        rule.runOnIdle { detail.value = true }
+        assertMatchesCardWidth()
     }
 
     @Test
@@ -76,7 +139,9 @@ class MediaThumbnailDeviceTest {
         rule.setContent {
             MaterialTheme {
                 Box(Modifier.width(width.value)) {
-                    StatusCard(status(media), onStatusClick = null, onUnavailableAction = {},
+                    StatusCard(status(media).copy(previewCard = PreviewCard(
+                        "https://example.com", "Width reference", "", "link", "", null, null)),
+                        onStatusClick = null, onUnavailableAction = {},
                         displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
                 }
             }
@@ -94,6 +159,9 @@ class MediaThumbnailDeviceTest {
         assertEquals(standardBounds.height, secondBounds.height, 1f)
         val gap = secondBounds.left - standardBounds.right
         assertTrue("Screenshots should be adjacent", gap > 0 && gap < standardBounds.width / 4)
+        val cardBounds = rule.onNodeWithText("Width reference").fetchSemanticsNode().boundsInRoot
+        assertEquals(cardBounds.left, standardBounds.left, 1f)
+        assertEquals(cardBounds.right, secondBounds.right, 1f)
 
         rule.runOnIdle { width.value = 240.dp }
         val narrowFirst = nodes[0].fetchSemanticsNode().boundsInRoot
@@ -106,6 +174,53 @@ class MediaThumbnailDeviceTest {
             waitForRatio(nodes[index], 180f / 420)
             assertEndsVisible(nodes[index])
         }
+    }
+
+    @Test
+    fun standardTallImageRowsFillPostWidthAndKeepViewerOrder() {
+        val originals = List(4) { attachment(image(120, 600)) }
+        val media = mutableStateOf(originals)
+        val opened = AtomicReference<Pair<List<MediaAttachment>, Int>>()
+        rule.setContent {
+            MaterialTheme {
+                Column(Modifier.width(360.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    StatusCard(status(media.value).copy(previewCard = PreviewCard(
+                        "https://example.com", "Width reference", "", "link", "", null, null)),
+                        onStatusClick = null, onUnavailableAction = {},
+                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard),
+                        onMediaClick = { items, index -> opened.set(items to index) })
+                }
+            }
+        }
+        val nodes = rule.onAllNodesWithTag("media_attachment")
+        repeat(4) { index ->
+            nodes[index].performScrollTo()
+            assertCenterCropped(nodes[index])
+        }
+        val card = rule.onNodeWithText("Width reference").getUnclippedBoundsInRoot()
+        repeat(2) { row ->
+            val first = nodes[row * 2].getUnclippedBoundsInRoot()
+            val second = nodes[row * 2 + 1].getUnclippedBoundsInRoot()
+            assertEquals(card.left.value, first.left.value, 1f)
+            assertEquals(card.right.value, second.right.value, 1f)
+            assertEquals(first.top.value, second.top.value, 1f)
+            assertEquals(first.bottom.value, second.bottom.value, 1f)
+            assertEquals(400f, (first.bottom - first.top).value, 1f)
+            assertTrue(second.left > first.right)
+        }
+        nodes[3].performClick()
+        assertEquals(originals, opened.get().first)
+        assertEquals(3, opened.get().second)
+
+        rule.runOnIdle { media.value = originals.take(3) }
+        nodes[2].performScrollTo()
+        assertCenterCropped(nodes[2])
+        val last = nodes[2].getUnclippedBoundsInRoot()
+        assertEquals(card.left.value, last.left.value, 1f)
+        assertEquals(card.right.value, last.right.value, 1f)
+        nodes[2].performClick()
+        assertEquals(originals.take(3), opened.get().first)
+        assertEquals(2, opened.get().second)
     }
 
     @Test
@@ -163,8 +278,8 @@ class MediaThumbnailDeviceTest {
         try {
             rule.waitUntil(10_000) {
                 val bounds = node.fetchSemanticsNode().boundsInRoot
-                // Downsampled bitmap dimensions and layout pixels both round to integers.
-                val tolerance = maxOf(2f, expected, expected * bounds.height * 0.02f)
+                // Bitmap downsampling and layout rounding contribute independent errors.
+                val tolerance = maxOf(2f, expected * bounds.height * 0.02f + 1f + expected)
                 kotlin.math.abs(bounds.width - expected * bounds.height) <= tolerance
             }
         } catch (failure: Throwable) {
@@ -178,6 +293,16 @@ class MediaThumbnailDeviceTest {
             val top = pixels[pixels.width / 2, pixels.height / 10]
             val bottom = pixels[pixels.width / 2, pixels.height * 9 / 10]
             top.red > 0.9f && top.green < 0.1f && bottom.green > 0.9f && bottom.red < 0.1f
+        }
+    }
+
+    private fun assertCenterCropped(node: SemanticsNodeInteraction) {
+        rule.waitUntil(10_000) {
+            val pixels = node.captureToImage().toPixelMap()
+            listOf(pixels[pixels.width / 2, pixels.height / 10],
+                pixels[pixels.width / 2, pixels.height * 9 / 10]).all {
+                it.blue > 0.9f && it.red < 0.1f && it.green < 0.1f
+            }
         }
     }
 
