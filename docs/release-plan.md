@@ -13,17 +13,18 @@
 | --- | --- |
 | 公開状況 | [GitHub Releaseを参照](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.3.0)。リンクの記載だけでは公開を意味しない |
 | 比較元の公開版 | `v2.2.0`（`49cb96f`） |
-| 公開タグの対象コミット | 注釈付きタグ`v2.3.0`の参照先（今回のリリース準備コミット） |
+| 公開タグの対象コミット | `7b8a23f`。APK差し替え時も注釈付きタグ`v2.3.0`は維持 |
+| 差し替えAPKのソース | 下記「APK差し替え記録」を含む修正コミット（`main`）。タグの対象コミットより後のコード |
 | アプリ版番号 | versionName `2.3.0`、versionCode `14` |
 | 配布APK | `app-release.apk`（署名付きReleaseビルド、`app/build/outputs/apk/release/`） |
-| 配布APKのSHA-256 | `eb39a6dd21455f9b68c064622554f57ff19dcea417fd12f908ca76ab851747a1` |
+| 配布APKのSHA-256 | `8b8926468240cb44ba27efedfda55b75acdb4d1413a50f803c203d19ca66b7fa` |
 
 公開リリースノートも上表のGitHub Releaseを正本とする。
 実機確認用の内部版`2.2.1`／`13`から公開版`2.3.0`／`14`へ更新する。
 
 ## v2.3.0の変更と確認記録
 
-比較元は公開版`v2.2.0`。比較元から今回のリリース準備コミットまでの変更を対象とする。
+比較元は公開版`v2.2.0`。比較元から`v2.3.0`のリリース準備コミット、および下記APK差し替えの修正コミットまでの変更を対象とする。
 2.2.0に含まれるホームのDB保存やCustom Tabsへの切替は、新規変更として再掲しない。
 
 ### 今回の変更内容
@@ -57,6 +58,19 @@
 - 2026-10-03に`:app:testDebugUnitTest :app:assembleRelease --offline`が成功した。単体テスト241件が成功し、失敗・エラー・スキップは0件。Releaseビルドのlint確認も成功した。
 - `aapt dump badging`でapplication ID `io.github.ponpokoo.mastodonclient`、versionName `2.3.0`、versionCode `14`を確認した。`apksigner verify --verbose --print-certs`でAPK Signature Scheme v2の署名を検証した。証明書SHA-256は`42a7a07e8fdd8fa16fe7360b6f45ad6c024daefe9727c9f7cc5dfaae378620c1`で従来の配布鍵と一致する。APKのSHA-256は上表に記録した。
 - GitHub Releaseは既存版と同じPre-release区分で作成する。
+
+### APK差し替え記録
+
+2026-10-03に、ユーザーから変更内容のpushと2.3.0 APKの差し替えを依頼された。
+指定に従いversionName `2.3.0`／versionCode `14`、公開タグ`v2.3.0`は維持する。
+配布APKはタグの`7b8a23f`より後の修正コミットから生成する。GitHub Release本文にもソースコミットを記録する。
+
+- URL共有時にページのアイコン・プレビュー画像が添付される問題を修正した。テキスト共有の`ClipData`を添付候補へ加えず、`EXTRA_STREAM`で明示された添付とメディア共有の`ClipData`は保持する。
+- 下書き保存完了の通知を2秒で消すようにした。表示中は「下書きを見る」から一覧を開ける。
+- 修正時に`IncomingShareBusTest`8件、Debug・テストAPKのビルド、Android 17エミュレーターで`UrlShareReceptionDeviceTest`2件が成功した。URLとプレビューの分離、明示添付の保持、空本文とプレビューだけの拒否、メディア共有とURI重複除去を確認した。端末テストは合成Intentによる確認で、実機ブラウザーからの共有操作は未確認。
+- 差し替え候補の`:app:testDebugUnitTest :app:assembleRelease --offline`が成功した。単体テスト244件が成功し、失敗・エラー・スキップは0件。Releaseのlint確認も成功した。
+- APK内の版番号`2.3.0`／`14`とAPK Signature Scheme v2の署名を確認した。証明書SHA-256は`42a7a07e8fdd8fa16fe7360b6f45ad6c024daefe9727c9f7cc5dfaae378620c1`で従来の配布鍵と一致する。新しいAPKのSHA-256は上表へ記録した。
+- 差し替え前のAPK SHA-256は`eb39a6dd21455f9b68c064622554f57ff19dcea417fd12f908ca76ab851747a1`。差し替え前のAPKとRelease情報をGit管理外の`app/build/`へ保存した。
 
 ### 既知の制約
 

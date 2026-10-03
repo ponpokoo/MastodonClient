@@ -32,7 +32,8 @@ object IncomingShareBus {
             action = intent.action,
             mimeType = intent.type,
             text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
-            streamUris = (streams + clipUris).map(Uri::toString),
+            streamUris = streams.map(Uri::toString),
+            clipUris = clipUris.map(Uri::toString),
         )?.let { mutableShare.value = it }
     }
 
@@ -46,11 +47,13 @@ internal fun parseIncomingShare(
     mimeType: String?,
     text: String?,
     streamUris: List<String>,
+    clipUris: List<String> = emptyList(),
 ): IncomingShare? {
     if (action !in setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) return null
-    val isTextShare = mimeType == "text/plain"
+    val isTextShare = mimeType?.substringBefore(';')?.trim()?.equals("text/plain", ignoreCase = true) == true
     val normalizedText = text?.trim()?.take(MAX_SHARED_TEXT_LENGTH)?.takeIf(String::isNotEmpty)
-    val mediaUris = streamUris.filter {
+    // Text shares can carry a Sharesheet preview in ClipData; only EXTRA_STREAM is an attachment.
+    val mediaUris = (streamUris + if (isTextShare) emptyList() else clipUris).filter {
         runCatching { URI(it).scheme == "content" }.getOrDefault(false)
     }.distinct()
     if (mediaUris.isEmpty() && (!isTextShare || normalizedText == null)) return null

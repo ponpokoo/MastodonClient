@@ -211,10 +211,21 @@ fun ComposePostScreen(
             if (it == "下書きに保存しました") {
                 cwEnabled = false
                 altEditingUri = null
-                if (snackbarHostState.showSnackbar(it, actionLabel = "下書きを見る") ==
-                    androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                    keyboardController?.hide()
-                    draftSheetOpen = true
+                val dismissJob = launch {
+                    delay(2_000)
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                }
+                try {
+                    if (snackbarHostState.showSnackbar(
+                            it,
+                            actionLabel = "下書きを見る",
+                            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
+                        ) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                        keyboardController?.hide()
+                        draftSheetOpen = true
+                    }
+                } finally {
+                    dismissJob.cancel()
                 }
             } else {
                 val showJob = launch { snackbarHostState.showSnackbar(it) }
