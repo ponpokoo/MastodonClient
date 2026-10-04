@@ -44,7 +44,7 @@ sealed interface Route {
     ) : Route
 
     @Serializable
-    data class HashtagTimeline(val hashtag: String) : Route
+    data class HashtagTimeline(val hashtag: String, val fromTrend: Boolean = false) : Route
 
     @Serializable
     data object Lists : Route

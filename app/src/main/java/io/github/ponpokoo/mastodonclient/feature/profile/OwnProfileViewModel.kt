@@ -23,16 +23,19 @@ data class ProfileUiState(
     val editMessage: String? = null,
     val profileSelectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     val isLoadingMoreProfile: Boolean = false,
+    val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
 )
 
 class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.asStateFlow()
     private var profileJob: Job? = null
+    private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
     private var requested = false
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        tabJobs.clear()
         _uiState.value = ProfileUiState()
         if (requested && snapshot.account != null) loadProfile()
     }
@@ -46,24 +49,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             _uiState.update { it.copy(isLoadingProfile = true, profileError = null) }
             timelineRepository.getProfileHeader(session)
                 .forSession(snapshot).onSuccess { profile ->
-                    _uiState.update { it.copy(profile = profile, isLoadingProfile = false, isLoadingMoreProfile = true) }
-                    timelineRepository.getProfileStatuses(session, profile.author.id, ProfileStatusTab.Posts)
-                        .forSession(snapshot).onSuccess { page ->
-                            _uiState.update { state -> state.copy(
-                                profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
-                                    endReached = page.endReached),
-                                isLoadingMoreProfile = false,
-                            ) }
-                        }.onFailure { error ->
-                            _uiState.update { it.copy(isLoadingMoreProfile = false,
-                                profileError = error.message ?: "投稿を取得できませんでした") }
-                        }
-                    timelineRepository.getPinnedProfileStatuses(session, profile.author.id)
-                        .forSession(snapshot).onSuccess { pinned ->
-                            _uiState.update { state -> state.copy(
-                                profile = state.profile?.copy(pinnedStatuses = pinned),
-                            ) }
-                        }
+                    _uiState.update { it.copy(profile = profile, isLoadingProfile = false) }
+                    loadTab(ProfileStatusTab.Posts, initialPosts = true)
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -74,45 +61,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     }
 
     fun refreshProfile() {
-        val current = _uiState.value
-        val snapshot = currentSnapshot() ?: return
-        val session = snapshot.account!!
-        val existingProfile = current.profile ?: return loadProfile()
-        if (current.isLoadingProfile || current.isRefreshingProfile) return
-        profileJob?.cancel()
-        profileJob = requestScope.launch {
-            _uiState.update { it.copy(isRefreshingProfile = true, isLoadingMoreProfile = false, profileError = null) }
-            val refreshedProfile = timelineRepository.getProfileHeader(session, existingProfile.author.id)
-                .forSession(snapshot).getOrElse { error ->
-                    _uiState.update {
-                        it.copy(
-                            isRefreshingProfile = false,
-                            profileError = error.message ?: "プロフィールを更新できませんでした",
-                        )
-                    }
-                    return@launch
-                }
-            _uiState.update { state -> state.copy(profile = refreshedProfile.copy(
-                statuses = existingProfile.statuses, pinnedStatuses = existingProfile.pinnedStatuses,
-                nextMaxId = existingProfile.nextMaxId, endReached = existingProfile.endReached,
-            )) }
-            val selectedTab = _uiState.value.profileSelectedTab
-            timelineRepository.getProfileStatuses(session, refreshedProfile.author.id, selectedTab)
-                .forSession(snapshot).fold(
-                    onSuccess = { page -> _uiState.update { state -> state.copy(
-                        profile = state.profile?.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
-                            endReached = page.endReached), isRefreshingProfile = false,
-                    ) } },
-                    onFailure = { error -> _uiState.update { it.copy(isRefreshingProfile = false,
-                        profileError = error.message ?: "プロフィールを更新できませんでした") } },
-                )
-            if (selectedTab == ProfileStatusTab.Posts) {
-                timelineRepository.getPinnedProfileStatuses(session, refreshedProfile.author.id)
-                    .forSession(snapshot).onSuccess { pinned -> _uiState.update { state -> state.copy(
-                        profile = state.profile?.copy(pinnedStatuses = pinned),
-                    ) } }
-            }
-        }
+        if (_uiState.value.profile == null) return loadProfile()
+        loadTab(_uiState.value.profileSelectedTab, refresh = true)
     }
 
     fun updateProfile(request: ProfileEditRequest) {
@@ -143,50 +93,73 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     fun clearEditMessage() = _uiState.update { it.copy(editMessage = null) }
 
     fun selectProfileTab(tab: ProfileStatusTab) {
-        val snapshot = currentSnapshot() ?: return
-        val session = snapshot.account!!
-        val profile = _uiState.value.profile ?: return
+        currentSnapshot() ?: return
+        if (_uiState.value.profile == null) return
         if (_uiState.value.profileSelectedTab == tab) return
-        profileJob?.cancel()
-        _uiState.update { it.copy(profileSelectedTab = tab, isLoadingProfile = true, isRefreshingProfile = false, isLoadingMoreProfile = false, profileError = null) }
-        profileJob = requestScope.launch {
-            timelineRepository.getProfileStatuses(session, profile.author.id, tab).forSession(snapshot).fold(
-                onSuccess = { page ->
-                    _uiState.update { state -> state.copy(
-                        profile = state.profile?.copy(
-                            statuses = page.statuses, nextMaxId = page.nextMaxId, endReached = page.endReached,
-                        ),
-                        isLoadingProfile = false,
-                    ) }
-                },
-                onFailure = { error -> _uiState.update { it.copy(isLoadingProfile = false, profileError = error.message) } },
-            )
-        }
+        _uiState.update { it.copy(profileSelectedTab = tab).withTabs(it.profileTabs) }
+        loadTab(tab)
     }
+
+    fun prepareProfileTab(tab: ProfileStatusTab) = loadTab(tab)
 
     fun loadMoreProfile() {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         val state = _uiState.value
         val profile = state.profile ?: return
-        val cursor = profile.nextMaxId ?: return
-        if (state.isLoadingProfile || state.isRefreshingProfile || state.isLoadingMoreProfile || profile.endReached) return
-        _uiState.update { it.copy(isLoadingMoreProfile = true) }
-        profileJob = requestScope.launch {
-            timelineRepository.getProfileStatuses(session, profile.author.id, state.profileSelectedTab, cursor)
+        val tab = state.profileSelectedTab
+        val cached = state.profileTabs[tab] ?: return
+        val cursor = cached.nextMaxId ?: return
+        if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached) return
+        updateTab(tab) { it.copy(isLoadingMore = true, error = null) }
+        tabJobs[tab] = requestScope.launch {
+            timelineRepository.getProfileStatuses(session, profile.author.id, tab, cursor)
                 .forSession(snapshot).fold(
                     onSuccess = { page ->
-                        _uiState.update { current -> current.copy(
-                            profile = current.profile?.let { existing -> existing.copy(
-                                statuses = (existing.statuses + page.statuses).distinctBy(TimelineStatus::statusId),
-                                nextMaxId = page.nextMaxId,
-                                endReached = page.endReached || page.nextMaxId == cursor,
-                            ) },
-                            isLoadingMoreProfile = false,
-                        ) }
+                        updateTab(tab) { it.copy(statuses = (it.statuses + page.statuses).distinctBy(TimelineStatus::statusId),
+                            nextMaxId = page.nextMaxId, endReached = page.endReached || page.nextMaxId == cursor,
+                            isLoadingMore = false) }
                     },
-                    onFailure = { error -> _uiState.update { it.copy(isLoadingMoreProfile = false, profileError = error.message) } },
+                    onFailure = { error -> updateTab(tab) { it.copy(isLoadingMore = false, error = error.message) } },
                 )
+        }
+    }
+
+    private fun updateTab(tab: ProfileStatusTab, update: (ProfileTabUiState) -> ProfileTabUiState) {
+        _uiState.update { it.withTabs(it.profileTabs + (tab to update(it.profileTabs[tab] ?: ProfileTabUiState()))) }
+    }
+
+    private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
+        val snapshot = currentSnapshot() ?: return
+        val session = snapshot.account!!
+        val profile = _uiState.value.profile ?: return
+        val cached = _uiState.value.profileTabs[tab] ?: ProfileTabUiState()
+        if (cached.isLoading || cached.isRefreshing || (!refresh && (cached.isLoaded || cached.isLoadingMore))) return
+        tabJobs[tab]?.cancel()
+        updateTab(tab) { it.copy(isLoading = !refresh && !initialPosts,
+            isLoadingMore = initialPosts, isRefreshing = refresh, error = null) }
+        tabJobs[tab] = requestScope.launch {
+            if (refresh) {
+                val header = timelineRepository.getProfileHeader(session, profile.author.id).forSession(snapshot)
+                    .getOrElse { error ->
+                        updateTab(tab) { it.copy(isRefreshing = false, error = error.message ?: "プロフィールを更新できませんでした") }
+                        return@launch
+                    }
+                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()))
+                    .withTabs(state.profileTabs) }
+            }
+            timelineRepository.getProfileStatuses(session, profile.author.id, tab).forSession(snapshot).fold(
+                onSuccess = { page -> updateTab(tab) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
+                    endReached = page.endReached, isLoaded = true, isLoading = false,
+                    isLoadingMore = false, isRefreshing = false) } },
+                onFailure = { error -> updateTab(tab) { it.copy(isLoading = false, isLoadingMore = false,
+                    isRefreshing = false, error = error.message ?: "投稿を取得できませんでした") } },
+            )
+            if (tab == ProfileStatusTab.Posts) {
+                timelineRepository.getPinnedProfileStatuses(session, profile.author.id).forSession(snapshot).onSuccess { pinned ->
+                    _uiState.update { it.copy(profile = it.profile?.copy(pinnedStatuses = pinned)) }
+                }
+            }
         }
     }
 
@@ -210,6 +183,10 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                     }.map { if (updated != null) it.withUpdatedActions(updated) else it }
                 },
             )
-        }) }
+        }).withTabs(state.profileTabs.mapValues { (_, tab) -> tab.copy(statuses = tab.statuses
+            .filterNot { it.statusId == deleted }.map { status ->
+                val updated = (change as? BrowsingSession.Change.StatusUpdated)?.status
+                if (updated != null) status.withUpdatedActions(updated) else status
+            }) }) }
     }
 }

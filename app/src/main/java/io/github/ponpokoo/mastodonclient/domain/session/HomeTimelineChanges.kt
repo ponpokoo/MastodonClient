@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 
 /** Keep each boost row's identity and chronology when changing the underlying status. */
 fun List<TimelineStatus>.applyHomeChange(change: BrowsingSession.Change, includeNew: Boolean = false): List<TimelineStatus> = when (change) {
+    is BrowsingSession.Change.TagUpdated -> this
     is BrowsingSession.Change.StatusUpdated -> map {
         if (it.statusId == change.status.statusId) it.withUpdatedActions(change.status).copy(poll = change.status.poll ?: it.poll) else it
     }

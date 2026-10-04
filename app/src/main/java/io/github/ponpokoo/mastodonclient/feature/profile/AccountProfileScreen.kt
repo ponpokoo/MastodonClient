@@ -69,7 +69,9 @@ fun AccountProfileScreen(
     var profileListOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val profile = state.profile
-    val profileListState = rememberLazyListState()
+    val profileListStates = List(ProfileStatusTab.entries.size) { rememberLazyListState() }
+    val profileHeaderListState = rememberLazyListState()
+    val profileListState = profileListStates[state.selectedTab.ordinal]
     var scrollAfterRefresh by remember { mutableStateOf(false) }
     var refreshStarted by remember { mutableStateOf(false) }
 
@@ -89,7 +91,10 @@ fun AccountProfileScreen(
         if (state.isRefreshing) {
             refreshStarted = true
         } else if (refreshStarted) {
-            if (scrollAfterRefresh) profileListState.animateScrollToItem(0)
+            if (scrollAfterRefresh) {
+                profileListState.animateScrollToItem(0)
+                profileHeaderListState.animateScrollToItem(0)
+            }
             refreshStarted = false
             scrollAfterRefresh = false
         }
@@ -115,6 +120,7 @@ fun AccountProfileScreen(
                 isLoadingProfile = state.isLoading,
                 isRefreshingProfile = state.isRefreshing,
                 profileError = state.errorMessage,
+                profileTabs = state.profileTabs,
             ),
             padding = padding,
             onRetry = viewModel::retry,
@@ -130,6 +136,7 @@ fun AccountProfileScreen(
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
             preferences = preferences,
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
+            onPrepareTab = viewModel::prepareTab,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像")), 0) } },
@@ -164,7 +171,8 @@ fun AccountProfileScreen(
             isProfileMuted = state.relationship?.muting == true,
             isProfileBlocked = state.relationship?.blocking == true,
             onMoreClick = { statusMenu = it },
-            listState = profileListState,
+            listStates = profileListStates,
+            headerListState = profileHeaderListState,
         )
     }
 

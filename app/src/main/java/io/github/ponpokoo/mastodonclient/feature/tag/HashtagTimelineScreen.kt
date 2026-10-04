@@ -13,25 +13,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -55,9 +52,10 @@ fun HashtagTimelineScreen(
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
+    fromTrend: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    val listState = key(state.sessionKey) { rememberLazyListState() }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
@@ -65,6 +63,9 @@ fun HashtagTimelineScreen(
             viewModel.consumeActionMessage()
         }
     }
+    LaunchedEffect(state.subscriptionError) { state.subscriptionError?.let {
+        if (snackbarHostState.showSnackbar(it, actionLabel = "再試行") == SnackbarResult.ActionPerformed) viewModel.retrySubscription()
+    } }
     LaunchedEffect(listState, state.statuses.size, state.nextMaxId) {
         if (state.nextMaxId != null && !state.endReached) {
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
@@ -76,14 +77,8 @@ fun HashtagTimelineScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("#$hashtag") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
-                    }
-                },
-            )
+            key(state.sessionKey) { HashtagHeader(hashtag, fromTrend, state.tag?.following, state.isChangingSubscription,
+                onBack, viewModel::toggleSubscription, viewModel::retrySubscription) }
         },
     ) { padding ->
         when {

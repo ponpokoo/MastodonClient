@@ -23,7 +23,16 @@ data class SearchResultDto(
 data class TagDto(
     val name: String,
     val url: String,
+    val history: List<TagHistoryDto>? = null,
+    val following: Boolean? = null,
 )
+
+@Serializable
+data class ExploreLinkDto(val url: String, val title: String = "", val description: String = "",
+    @SerialName("provider_name") val providerName: String = "", val image: String? = null)
+
+@Serializable
+data class TagHistoryDto(val day: String, val accounts: String? = null)
 
 @Serializable
 data class MarkerResponseDto(

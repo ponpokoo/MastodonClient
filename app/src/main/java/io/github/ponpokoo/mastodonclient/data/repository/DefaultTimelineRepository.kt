@@ -20,6 +20,12 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.SearchResults
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTag
+import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
+import io.github.ponpokoo.mastodonclient.domain.model.SearchPage
+import io.github.ponpokoo.mastodonclient.domain.model.SearchException
+import io.github.ponpokoo.mastodonclient.domain.model.ExploreFeed
+import io.github.ponpokoo.mastodonclient.domain.model.ExplorePage
+import io.github.ponpokoo.mastodonclient.domain.model.ExploreNews
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
@@ -346,18 +352,71 @@ class DefaultTimelineRepository(
             .also { marker -> runCatching { notificationLocalDataSource?.writeMarker(session, marker) } }
     }
 
-    override suspend fun search(session: AccountSession, query: String): Result<SearchResults> = runCatching {
+    override suspend fun search(
+        session: AccountSession,
+        query: String,
+        target: SearchTarget,
+        offset: Int,
+        limit: Int,
+    ): Result<SearchPage> = runCatching {
         require(query.isNotBlank()) { "検索語を入力してください" }
-        apiClientFactory.create(session.instanceUrl, session.accessToken)
-            .search(query.trim())
+        require(offset >= 0 && limit in 1..40)
+        apiClientFactory.createForSearch(session.instanceUrl, session.accessToken)
+            .search(query.trim(), target.apiType(), limit, offset)
             .let { result ->
-                SearchResults(
-                    accounts = result.accounts.map(AccountDto::toDomain),
-                    statuses = result.statuses.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
-                    hashtags = result.hashtags.map { SearchTag(it.name, it.url) },
+                val results = SearchResults(
+                    accounts = if (target == SearchTarget.Accounts) result.accounts.map(AccountDto::toDomain) else emptyList(),
+                    statuses = if (target == SearchTarget.Posts) result.statuses.map(StatusDto::toDomain).onEach { cacheStatus(session, it) } else emptyList(),
+                    hashtags = if (target == SearchTarget.Hashtags) result.hashtags.map { it.toSearchTag() } else emptyList(),
                 )
+                val count = results.count(target)
+                // Short pages are possible on older servers; stop only when a page is empty.
+                SearchPage(results, if (count == 0) null else offset + count, count == 0)
             }
+    }.fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { Result.failure(SearchException(it.toSearchFailure(), it)) },
+    )
+
+    override suspend fun getExplore(session: AccountSession, feed: ExploreFeed, cursor: String?, limit: Int): Result<ExplorePage> = exploreRequest {
+        require(limit in 1..20)
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        if (feed == ExploreFeed.Followed) {
+            val response = api.getFollowedTags(limit, cursor)
+            if (!response.isSuccessful) throw HttpException(response)
+            ExplorePage(tags = response.body().orEmpty().map { it.toSearchTag().copy(following = true) },
+                nextCursor = nextAccountListCursor(response.headers()["Link"]))
+        } else {
+            val offset = cursor?.toIntOrNull() ?: 0
+            require(offset >= 0)
+            val page = when (feed) {
+                ExploreFeed.Posts -> ExplorePage(statuses = api.getTrendingStatuses(limit, offset).map { cacheStatus(session, it.toDomain()) })
+                ExploreFeed.Hashtags -> ExplorePage(tags = api.getTrendingTags(limit, offset).map { it.toSearchTag() })
+                ExploreFeed.News -> ExplorePage(news = api.getTrendingLinks(limit, offset).map {
+                    ExploreNews(it.url, it.title, it.description, it.providerName, it.image?.takeIf(String::isNotBlank))
+                })
+                ExploreFeed.Followed -> error("Handled above")
+            }
+            page.copy(nextCursor = if (page.count() == 0) null else (offset + page.count()).toString())
+        }
     }
+
+    override suspend fun getTag(session: AccountSession, name: String): Result<SearchTag> = exploreRequest {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).getTag(name).toSearchTag()
+    }
+
+    override suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<SearchTag> = exploreRequest {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        (if (following) api.followTag(name) else api.unfollowTag(name)).toSearchTag().copy(following = following)
+    }
+
+    private suspend fun <T> exploreRequest(block: suspend () -> T): Result<T> = runCatching { block() }.fold(
+        onSuccess = { Result.success(it) },
+        onFailure = { error -> Result.failure(
+            if (error is HttpException && error.code() in setOf(404, 405, 501)) UnsupportedOperationException("探索APIは未対応です", error)
+            else SearchException(error.toSearchFailure(), error),
+        ) },
+    )
 
     override fun observeUserStream(session: AccountSession): Flow<TimelineStreamEvent> = flow {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)

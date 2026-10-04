@@ -17,6 +17,18 @@ class ApiClientFactory(
         explicitNulls = false
     },
 ) {
+    private val searchFactory by lazy {
+        ApiClientFactory(
+            client.newBuilder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .callTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+                .build(), json,
+        )
+    }
+
+    fun createForSearch(baseUrl: String, accessToken: String): MastodonApi =
+        searchFactory.create(baseUrl, accessToken)
+
     fun createForMedia(baseUrl: String, accessToken: String): MastodonApi = ApiClientFactory(
         client.newBuilder()
             .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)

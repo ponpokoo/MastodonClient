@@ -7,6 +7,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ApiClientFactoryTest {
+    @Test fun searchWaitsForSlowResponseWithoutExtendingOtherRequests() = runTest {
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(MockResponse().setHeadersDelay(200, java.util.concurrent.TimeUnit.MILLISECONDS).setBody("{}")) }
+            val base = okhttp3.OkHttpClient.Builder().readTimeout(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .callTimeout(75, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+            val factory = ApiClientFactory(base)
+            val url = server.url("/").toString()
+            factory.createForSearch(url, "account-a").search("hello", "statuses")
+            val normalFailure = runCatching { factory.create(url, "account-b").getInstance() }.exceptionOrNull()
+            org.junit.Assert.assertTrue(normalFailure is java.io.InterruptedIOException)
+            assertEquals("Bearer account-a", server.takeRequest().getHeader("Authorization"))
+            assertEquals("Bearer account-b", server.takeRequest().getHeader("Authorization"))
+        }
+    }
+
     @Test
     fun reusedClientsKeepAccountAuthorizationIsolated() = runTest {
         MockWebServer().use { server ->

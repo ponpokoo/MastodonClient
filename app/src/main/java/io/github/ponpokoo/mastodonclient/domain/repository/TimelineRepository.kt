@@ -7,7 +7,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
-import io.github.ponpokoo.mastodonclient.domain.model.SearchResults
+import io.github.ponpokoo.mastodonclient.domain.model.SearchPage
+import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
@@ -29,6 +30,16 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository {
+    suspend fun getExplore(session: AccountSession, feed: io.github.ponpokoo.mastodonclient.domain.model.ExploreFeed,
+        cursor: String? = null, limit: Int = 20): Result<io.github.ponpokoo.mastodonclient.domain.model.ExplorePage> =
+        Result.failure(UnsupportedOperationException("探索は未対応です"))
+
+    suspend fun getTag(session: AccountSession, name: String): Result<io.github.ponpokoo.mastodonclient.domain.model.SearchTag> =
+        Result.failure(UnsupportedOperationException("ハッシュタグ購読は未対応です"))
+
+    suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<io.github.ponpokoo.mastodonclient.domain.model.SearchTag> =
+        Result.failure(UnsupportedOperationException("ハッシュタグ購読は未対応です"))
+
     fun isNetworkAvailable(): Boolean = true
     suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String? = null, limit: Int = 20, anchorId: String? = null): Result<TimelinePage?> = Result.success(null)
     suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change> = emptyList()): Result<Unit> = Result.success(Unit)
@@ -116,7 +127,13 @@ interface TimelineRepository {
 
     suspend fun getNotificationMarker(session: AccountSession): Result<String?> = Result.success(null)
 
-    suspend fun search(session: AccountSession, query: String): Result<SearchResults> =
+    suspend fun search(
+        session: AccountSession,
+        query: String,
+        target: SearchTarget = SearchTarget.Posts,
+        offset: Int = 0,
+        limit: Int = 20,
+    ): Result<SearchPage> =
         Result.failure(UnsupportedOperationException("検索は未対応です"))
 
     fun observeUserStream(session: AccountSession): Flow<TimelineStreamEvent> = emptyFlow()

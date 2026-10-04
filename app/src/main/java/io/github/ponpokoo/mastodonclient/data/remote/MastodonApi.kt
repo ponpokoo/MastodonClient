@@ -35,6 +35,27 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.ListDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusSourceDto
 
 interface MastodonApi {
+    @GET("api/v1/trends/statuses")
+    suspend fun getTrendingStatuses(@Query("limit") limit: Int = 20, @Query("offset") offset: Int = 0): List<StatusDto>
+
+    @GET("api/v1/trends/tags")
+    suspend fun getTrendingTags(@Query("limit") limit: Int = 20, @Query("offset") offset: Int = 0): List<io.github.ponpokoo.mastodonclient.data.remote.dto.TagDto>
+
+    @GET("api/v1/trends/links")
+    suspend fun getTrendingLinks(@Query("limit") limit: Int = 20, @Query("offset") offset: Int = 0): List<io.github.ponpokoo.mastodonclient.data.remote.dto.ExploreLinkDto>
+
+    @GET("api/v1/followed_tags")
+    suspend fun getFollowedTags(@Query("limit") limit: Int = 20, @Query("max_id") maxId: String? = null): retrofit2.Response<List<io.github.ponpokoo.mastodonclient.data.remote.dto.TagDto>>
+
+    @GET("api/v1/tags/{name}")
+    suspend fun getTag(@Path("name") name: String): io.github.ponpokoo.mastodonclient.data.remote.dto.TagDto
+
+    @POST("api/v1/tags/{name}/follow")
+    suspend fun followTag(@Path("name") name: String): io.github.ponpokoo.mastodonclient.data.remote.dto.TagDto
+
+    @POST("api/v1/tags/{name}/unfollow")
+    suspend fun unfollowTag(@Path("name") name: String): io.github.ponpokoo.mastodonclient.data.remote.dto.TagDto
+
     @GET("api/v1/push/subscription")
     suspend fun getPushSubscription(): io.github.ponpokoo.mastodonclient.data.remote.dto.PushSubscriptionDto
 
@@ -203,7 +224,9 @@ interface MastodonApi {
     @GET("api/v2/search")
     suspend fun search(
         @Query("q") query: String,
+        @Query("type") type: String,
         @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
         @Query("resolve") resolve: Boolean = false,
     ): SearchResultDto
 

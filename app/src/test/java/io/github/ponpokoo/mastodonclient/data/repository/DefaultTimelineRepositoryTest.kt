@@ -371,7 +371,7 @@ class DefaultTimelineRepositoryTest {
 
             val notificationPage = repository.getNotifications(session).getOrThrow()
             val notifications = notificationPage.notifications
-            val results = repository.search(session, "android").getOrThrow()
+            val results = repository.search(session, "android").getOrThrow().results
 
             assertEquals("mention", notifications.single().type)
             assertEquals("n1", notificationPage.nextMaxId)
@@ -379,9 +379,10 @@ class DefaultTimelineRepositoryTest {
             assertEquals("found", results.statuses.single().statusId)
             assertEquals(notifications.single().status, repository.getCachedStatus(session, "mentioned"))
             assertEquals(results.statuses.single(), repository.getCachedStatus(session, "found"))
-            assertEquals("android", results.hashtags.single().name)
+            assertTrue(results.hashtags.isEmpty())
+            assertTrue(results.accounts.isEmpty())
             assertEquals("/api/v1/notifications?limit=80", server.takeRequest().path)
-            assertEquals("/api/v2/search?q=android&limit=20&resolve=false", server.takeRequest().path)
+            assertEquals("/api/v2/search?q=android&type=statuses&limit=20&offset=0&resolve=false", server.takeRequest().path)
         }
     }
 

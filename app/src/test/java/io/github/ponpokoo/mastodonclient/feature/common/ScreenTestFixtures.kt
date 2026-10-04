@@ -44,7 +44,8 @@ open class ScreenRepositoryFake : TimelineRepository {
     val markers = mutableListOf<Pair<String, String>>()
     override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
         Result.success(TimelinePage(listOf(testStatus().copy(timelineId = "boost-wrapper")), "next", false))
-    override suspend fun search(session: AccountSession, query: String) = Result.success(testResults(query))
+    override suspend fun search(session: AccountSession, query: String, target: SearchTarget, offset: Int, limit: Int) =
+        Result.success(SearchPage(testResults(query), null, true))
     override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
         Result.success(NotificationPage(listOf(testNotification()), "next", false))
     override suspend fun saveNotificationMarker(session: AccountSession, lastReadId: String): Result<Unit> {

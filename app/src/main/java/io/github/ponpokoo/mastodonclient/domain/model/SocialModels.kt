@@ -80,13 +80,29 @@ data class CachedNotifications(
 data class SearchTag(
     val name: String,
     val url: String,
+    val postingAccounts: Long? = null,
+    val following: Boolean? = null,
 )
+
+enum class SearchTarget { Posts, Accounts, Hashtags }
 
 data class SearchResults(
     val accounts: List<StatusAuthor>,
     val statuses: List<TimelineStatus>,
     val hashtags: List<SearchTag>,
-)
+) {
+    fun count(target: SearchTarget): Int = when (target) {
+        SearchTarget.Posts -> statuses.size
+        SearchTarget.Accounts -> accounts.size
+        SearchTarget.Hashtags -> hashtags.size
+    }
+}
+
+data class SearchPage(val results: SearchResults, val nextOffset: Int?, val endReached: Boolean)
+
+enum class SearchFailure { Timeout, Connection, Authentication, RateLimited, Server, Rejected, Unknown }
+
+class SearchException(val failure: SearchFailure, cause: Throwable) : Exception(cause)
 
 sealed interface TimelineStreamEvent {
     data class StatusAdded(val status: TimelineStatus, val isEdit: Boolean = false) : TimelineStreamEvent

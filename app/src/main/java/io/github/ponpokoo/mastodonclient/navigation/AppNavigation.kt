@@ -462,6 +462,7 @@ fun AppNavigation(
                 onQuote = openQuote,
                 onOpenLink = openLink,
                 openLinksInApp = openLinksInApp,
+                onOpenTag = { name, trend -> navController.navigate(Route.HashtagTimeline(name, trend)) { launchSingleTop = true } },
                 onOpenLinksInAppChange = { enabled ->
                     scope.launch { preferences.setOpenLinksInApp(enabled) }
                 },
@@ -634,16 +635,19 @@ fun AppNavigation(
         }
         composable<Route.HashtagTimeline> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.HashtagTimeline>()
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
+            val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
             val hashtagViewModel: HashtagTimelineViewModel = viewModel(
                 factory = HashtagTimelineViewModel.Factory(
                     route.hashtag,
                     timelineRepository,
-                    authRepository,
+                    mainModel.browsing,
                     statusActionManager,
                 ),
             )
             HashtagTimelineScreen(
                 hashtag = route.hashtag,
+                fromTrend = route.fromTrend,
                 viewModel = hashtagViewModel,
                 preferences = appPreferences,
                 onBack = { navController.popBackStack() },

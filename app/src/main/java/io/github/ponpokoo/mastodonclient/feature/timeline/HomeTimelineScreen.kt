@@ -110,6 +110,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -138,6 +139,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.feature.media.AudioPlayer
 import io.github.ponpokoo.mastodonclient.feature.media.InlineVideo
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -212,20 +214,25 @@ fun HomeTimelineScreen(
     onOpenLists: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenFavourites: () -> Unit,
+    onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
     val searchState by searchViewModel.uiState.collectAsStateWithLifecycle()
+    var exploreScrollToTopRequest by remember(mainState.session?.sessionId) { mutableLongStateOf(0L) }
+    val exploreState by searchViewModel.exploreState.collectAsStateWithLifecycle()
     val notificationsState by notificationsViewModel.uiState.collectAsStateWithLifecycle()
     val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
     val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(exploreState.actionMessage) {
+        exploreState.actionMessage?.let { snackbarHostState.showSnackbar(it); searchViewModel.consumeExploreMessage() }
+    }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val destinations = MainDestination.entries
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
-    val searchListState = rememberLazyListState()
     val allNotificationsListState = rememberLazyListState()
     val mentionsNotificationsListState = rememberLazyListState()
     val reactionsNotificationsListState = rememberLazyListState()
@@ -234,7 +241,9 @@ fun HomeTimelineScreen(
         mentionsNotificationsListState,
         reactionsNotificationsListState,
     )
-    val profileListState = rememberLazyListState()
+    val profileListStates = List(ProfileStatusTab.entries.size) { rememberLazyListState() }
+    val profileHeaderListState = rememberLazyListState()
+    val profileListState = profileListStates[profileState.profileSelectedTab.ordinal]
     // NavHost can recreate this destination after a detail route is popped.
     var hasObservedTimelineContext by rememberSaveable { mutableStateOf(false) }
     var observedTimelineSessionId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -416,7 +425,10 @@ fun HomeTimelineScreen(
         if (profileState.isRefreshingProfile) {
             profileRefreshStarted = true
         } else if (profileRefreshStarted) {
-            if (scrollProfileAfterRefresh) profileListState.animateScrollToItem(0)
+            if (scrollProfileAfterRefresh) {
+                profileListState.animateScrollToItem(0)
+                profileHeaderListState.animateScrollToItem(0)
+            }
             profileRefreshStarted = false
             scrollProfileAfterRefresh = false
         }
@@ -476,7 +488,7 @@ fun HomeTimelineScreen(
                     onAccountSelected = mainViewModel::switchAccount,
                     onSettings = onSettings,
                 )
-            } else {
+            } else if (destination != MainDestination.Explore) {
                 TopAppBar(title = { Text(destination.label) })
             }
         },
@@ -496,8 +508,11 @@ fun HomeTimelineScreen(
                                             else timelineListState.animateToTimelineTop()
                                         }
                                         MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
-                                        MainDestination.Profile -> profileListState.animateScrollToItem(0)
-                                        MainDestination.Explore -> Unit
+                                        MainDestination.Profile -> {
+                                            profileListState.animateScrollToItem(0)
+                                            profileHeaderListState.animateScrollToItem(0)
+                                        }
+                                        MainDestination.Explore -> exploreScrollToTopRequest++
                                     }
                                 } else {
                                     pagerState.scrollToPage(page)
@@ -570,9 +585,25 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Explore -> SearchContent(
                     state = searchState,
+                    scrollToTopRequest = exploreScrollToTopRequest,
+                    exploreState = exploreState,
+                    onSelectExploreFeed = searchViewModel::selectExploreFeed,
+                    onEnsureExploreLoaded = searchViewModel::ensureExploreLoaded,
+                    onRefreshExplore = searchViewModel::refreshExplore,
+                    onLoadMoreExplore = searchViewModel::loadMoreExplore,
+                    onRetryExplore = searchViewModel::retryExplore,
+                    onUnfollowTag = { searchViewModel.setTagFollowing(it, false) },
+                    onOpenTag = onOpenTag,
+                    isVisible = destination == MainDestination.Explore,
                     padding = padding,
                     onQueryChanged = searchViewModel::onQueryChanged,
                     onSearch = searchViewModel::search,
+                    onEnterSearch = searchViewModel::enterSearch,
+                    onBack = { searchViewModel.returnToExplore() },
+                    onClear = { searchViewModel.returnToExplore(clear = true) },
+                    onSelectTarget = searchViewModel::selectTarget,
+                    onLoadMore = searchViewModel::loadMore,
+                    onRetry = searchViewModel::retry,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
@@ -585,7 +616,6 @@ fun HomeTimelineScreen(
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
-                    listState = searchListState,
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
@@ -650,6 +680,7 @@ fun HomeTimelineScreen(
                     selectedTab = profileState.profileSelectedTab,
                     isLoadingMore = profileState.isLoadingMoreProfile,
                     onSelectTab = profileViewModel::selectProfileTab,
+                    onPrepareTab = profileViewModel::prepareProfileTab,
                     onLoadMore = profileViewModel::loadMoreProfile,
                     onFollowers = { profileState.profile?.author?.id?.let(onFollowers) },
                     onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
@@ -667,7 +698,8 @@ fun HomeTimelineScreen(
                     onOpenLists = onOpenLists,
                     onOpenBookmarks = onOpenBookmarks,
                     onOpenFavourites = onOpenFavourites,
-                    listState = profileListState,
+                    listStates = profileListStates,
+                    headerListState = profileHeaderListState,
                 )
             }
         }
@@ -1641,7 +1673,7 @@ private fun MediaGrid(
     val context = LocalContext.current
     val maxHeight = when (thumbnailSize) {
         ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
-        ThumbnailSize.Standard -> 280.dp
+        ThumbnailSize.Standard -> null
     }
     val displayedAttachments = attachments.take(4)
     val imageKeys = displayedAttachments.map { Triple(it.id, it.url, it.previewUrl) }

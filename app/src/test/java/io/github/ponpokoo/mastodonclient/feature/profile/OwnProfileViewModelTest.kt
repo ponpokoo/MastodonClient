@@ -14,6 +14,120 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OwnProfileViewModelTest : ScreenViewModelTestBase() {
+    @Test fun cachedTabsReflectStatusUpdatesAndDeletion() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+                maxId: String?) = Result.success(TimelinePage(listOf(testStatus()), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.StatusUpdated(testStatus().copy(favourited = true)))
+        advanceUntilIdle()
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        assertTrue(viewModel.uiState.value.profile!!.statuses.single().favourited)
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.StatusDeleted("post"))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.profileTabs.values.all { it.statuses.isEmpty() })
+    }
+
+    @Test fun preparingTabStartsBeforeSelectionAndDoesNotRefetchOnReturn() = runTest(dispatcher) {
+        val replies = CompletableDeferred<Result<TimelinePage>>()
+        val calls = mutableListOf<ProfileStatusTab>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+                maxId: String?): Result<TimelinePage> {
+                calls += tab
+                return if (tab == ProfileStatusTab.Replies) replies.await()
+                    else super.getProfileStatuses(session, accountId, tab, maxId)
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        assertEquals(ProfileStatusTab.Posts, viewModel.uiState.value.profileSelectedTab)
+        assertTrue(viewModel.uiState.value.profileTabs.getValue(ProfileStatusTab.Replies).isLoading)
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        replies.complete(Result.success(TimelinePage(listOf(testStatus("reply")), null, true)))
+        advanceUntilIdle()
+        viewModel.selectProfileTab(ProfileStatusTab.Posts)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        assertEquals(listOf(ProfileStatusTab.Posts, ProfileStatusTab.Replies), calls)
+        assertEquals(listOf("reply"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertFalse(viewModel.uiState.value.isLoadingProfile)
+    }
+
+    @Test fun tabCacheRetainsPaginationAndRefreshReplacesOnlySelectedTab() = runTest(dispatcher) {
+        val calls = mutableListOf<Pair<ProfileStatusTab, String?>>()
+        var refreshed = false
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+                maxId: String?): Result<TimelinePage> {
+                calls += tab to maxId
+                return Result.success(when {
+                    tab == ProfileStatusTab.Replies -> TimelinePage(listOf(testStatus("reply")), null, true)
+                    maxId != null -> TimelinePage(listOf(testStatus("older")), "older-cursor", false)
+                    refreshed -> TimelinePage(listOf(testStatus("fresh")), null, true)
+                    else -> TimelinePage(listOf(testStatus()), "next", false)
+                })
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        viewModel.loadMoreProfile()
+        advanceUntilIdle()
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        viewModel.selectProfileTab(ProfileStatusTab.Posts)
+        assertEquals(listOf("post", "older"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals("older-cursor", viewModel.uiState.value.profile!!.nextMaxId)
+        refreshed = true
+        viewModel.refreshProfile()
+        advanceUntilIdle()
+        assertEquals(listOf("fresh"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        assertEquals(listOf("reply"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals(4, calls.size)
+    }
+
+    @Test fun sessionChangeDiscardsAllCachedTabs() = runTest(dispatcher) {
+        val oldReplies = CompletableDeferred<Result<TimelinePage>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+                maxId: String?) = if (session == testAccount && tab == ProfileStatusTab.Replies) {
+                    withContext(NonCancellable) { oldReplies.await() }
+                } else Result.success(TimelinePage(listOf(testStatus("${session.sessionId}-${tab.name}")), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
+        advanceUntilIdle()
+        browsing.activate(secondAccount)
+        advanceUntilIdle()
+        oldReplies.complete(Result.success(TimelinePage(listOf(testStatus("old reply")), null, true)))
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.profileTabs.containsKey(ProfileStatusTab.Replies))
+        assertEquals(listOf("two-Posts"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+    }
+
     @Test fun profileHeaderAppearsBeforeStatusesFinishLoading() = runTest(dispatcher) {
         val delayedStatuses = CompletableDeferred<Result<TimelinePage>>()
         val repository = object : ScreenRepositoryFake() {
@@ -55,6 +169,9 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         viewModel.selectProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isLoadingProfile)
+        assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+        assertNull(viewModel.uiState.value.profile!!.nextMaxId)
         viewModel.selectProfileTab(ProfileStatusTab.Media)
         advanceUntilIdle()
         oldPage.complete(Result.success(TimelinePage(listOf(testStatus("old page")), null, true)))

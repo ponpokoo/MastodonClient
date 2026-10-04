@@ -1,16 +1,17 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
-import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,29 +54,33 @@ import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -91,6 +96,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
 import io.github.ponpokoo.mastodonclient.feature.common.toShape
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
+import io.github.ponpokoo.mastodonclient.feature.profile.withTab
 import androidx.compose.material3.Button
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
@@ -111,82 +117,6 @@ internal enum class NotificationFilter(val label: String) {
         Mentions -> notification.type.equals("mention", ignoreCase = true) ||
             notification.type.equals("reply", ignoreCase = true)
         Reactions -> notification.type.contains("reaction", ignoreCase = true)
-    }
-}
-
-@Composable
-internal fun SearchContent(
-    state: SearchUiState,
-    padding: PaddingValues,
-    onQueryChanged: (String) -> Unit,
-    onSearch: () -> Unit,
-    onStatusClick: (String) -> Unit,
-    onOpenLink: (String) -> Unit,
-    onReply: (TimelineStatus) -> Unit,
-    onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus, QuoteMode) -> Unit,
-    onFavourite: (TimelineStatus) -> Unit,
-    onBookmark: (TimelineStatus) -> Unit = {},
-    onReact: (TimelineStatus, String?) -> Unit,
-    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
-    onAccountClick: (String) -> Unit,
-    onMediaClick: (List<MediaAttachment>, Int) -> Unit,
-    preferences: AppPreferences = AppPreferences(),
-    listState: LazyListState? = null,
-) {
-    val resolvedListState = listState ?: rememberLazyListState()
-    Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
-        OutlinedTextField(
-            value = state.searchQuery,
-            onValueChange = onQueryChanged,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            placeholder = { Text("アカウント、投稿、ハッシュタグを検索") },
-            singleLine = true,
-            trailingIcon = {
-                IconButton(onClick = onSearch, enabled = state.searchQuery.isNotBlank()) {
-                    Icon(Icons.Outlined.Search, contentDescription = "検索")
-                }
-            },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-        )
-        when {
-            state.isSearching -> LoadingContent("検索しています")
-            state.searchError != null -> MessageContent(state.searchError)
-            state.searchResults == null -> MessageContent("検索語を入力してください")
-            else -> {
-                val results = state.searchResults
-                LazyColumn(Modifier.fillMaxSize(), state = resolvedListState) {
-                    if (results.accounts.isNotEmpty()) {
-                        item { SectionTitle("アカウント") }
-                        items(results.accounts, key = StatusAuthor::id) { AccountResult(it, onAccountClick) }
-                    }
-                    if (results.hashtags.isNotEmpty()) {
-                        item { SectionTitle("ハッシュタグ") }
-                        items(results.hashtags, key = { it.url }) { tag ->
-                            Text(
-                                "#${tag.name}",
-                                modifier = Modifier.fillMaxWidth().clickable { onOpenLink(tag.url) }
-                                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    if (results.statuses.isNotEmpty()) {
-                        item { SectionTitle("投稿") }
-                        items(results.statuses, key = { it.timelineId }) { status ->
-                            SocialStatus(
-                                status, onStatusClick, onOpenLink, onReply,
-                                onBoost, onQuote, onFavourite, onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
-                            )
-                        }
-                    }
-                    if (results.accounts.isEmpty() && results.hashtags.isEmpty() && results.statuses.isEmpty()) {
-                        item { MessageContent("検索結果はありません") }
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -364,6 +294,7 @@ internal fun NotificationsContent(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun ProfileContent(
     state: ProfileUiState,
     padding: PaddingValues,
@@ -386,6 +317,7 @@ internal fun ProfileContent(
     selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     isLoadingMore: Boolean = false,
     onSelectTab: (ProfileStatusTab) -> Unit = {},
+    onPrepareTab: (ProfileStatusTab) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onFollowers: () -> Unit = {},
     onFollowing: () -> Unit = {},
@@ -408,13 +340,52 @@ internal fun ProfileContent(
     onReportProfile: (() -> Unit)? = null,
     isProfileMuted: Boolean = false,
     isProfileBlocked: Boolean = false,
-    listState: LazyListState? = null,
+    listStates: List<LazyListState>? = null,
+    headerListState: LazyListState? = null,
 ) {
     val profile = state.profile
     val avatarShape = preferences.timelineDisplay.avatarIconShape.toShape()
-    val resolvedListState = listState ?: rememberLazyListState()
-    LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab) {
-        if (profile?.nextMaxId != null && !profile.endReached) {
+    val resolvedListStates = listStates ?: List(ProfileStatusTab.entries.size) { rememberLazyListState() }
+    check(resolvedListStates.size == ProfileStatusTab.entries.size)
+    val resolvedListState = resolvedListStates[selectedTab.ordinal]
+    val resolvedHeaderListState = headerListState ?: rememberLazyListState()
+    val headerScrollConnection = remember(resolvedHeaderListState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Scroll the shared header away before scrolling the selected post list.
+                if (available.y >= 0f) return Offset.Zero
+                return Offset(0f, -resolvedHeaderListState.dispatchRawDelta(-available.y))
+            }
+        }
+    }
+    val density = LocalDensity.current
+    var tabRowHeight by remember { mutableStateOf(48.dp) }
+    val tabPagerState = key(profile?.url, profile?.author?.id) {
+        rememberPagerState(initialPage = selectedTab.ordinal, pageCount = { ProfileStatusTab.entries.size })
+    }
+    val latestSelectedTab by rememberUpdatedState(selectedTab)
+    val latestOnSelectTab by rememberUpdatedState(onSelectTab)
+    val latestOnPrepareTab by rememberUpdatedState(onPrepareTab)
+    LaunchedEffect(selectedTab, tabPagerState) {
+        if (tabPagerState.currentPage != selectedTab.ordinal) {
+            tabPagerState.animateScrollToPage(selectedTab.ordinal)
+        }
+    }
+    LaunchedEffect(tabPagerState) {
+        snapshotFlow { tabPagerState.settledPage }.distinctUntilChanged().collect { page ->
+            val tab = ProfileStatusTab.entries[page]
+            if (tab != latestSelectedTab) latestOnSelectTab(tab)
+        }
+    }
+    LaunchedEffect(tabPagerState, profile?.author?.id) {
+        snapshotFlow { tabPagerState.targetPage }.distinctUntilChanged().collect { page ->
+            latestOnPrepareTab(ProfileStatusTab.entries[page])
+        }
+    }
+    LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab,
+        state.isLoadingProfile, state.isRefreshingProfile, isLoadingMore) {
+        if (!state.isLoadingProfile && !state.isRefreshingProfile && !isLoadingMore &&
+            profile?.nextMaxId != null && !profile.endReached) {
             snapshotFlow { resolvedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
                 .distinctUntilChanged().collect { lastVisible ->
                     if (lastVisible != null && lastVisible >= resolvedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
@@ -439,11 +410,14 @@ internal fun ProfileContent(
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),
         ) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+            val pagerHeight = (maxHeight - tabRowHeight).coerceAtLeast(0.dp)
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                state = resolvedListState,
+                state = resolvedHeaderListState,
             ) {
-            item {
+            item(key = "profile_header") {
+                Column(Modifier.fillMaxWidth().testTag("profile_header")) {
                 Box(Modifier.fillMaxWidth().height(184.dp)) {
                     AsyncImage(
                         model = profile.headerUrl, contentDescription = "ヘッダー画像",
@@ -596,37 +570,63 @@ internal fun ProfileContent(
                     }
                 }
                 HorizontalDivider()
+                }
             }
-            item {
-                SecondaryTabRow(selectedTabIndex = selectedTab.ordinal) {
+            stickyHeader(key = "profile_tabs") {
+                SecondaryTabRow(selectedTabIndex = tabPagerState.currentPage,
+                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
-                        Tab(selected = selectedTab.ordinal == index, onClick = { onSelectTab(ProfileStatusTab.entries[index]) }, text = { Text(label) })
+                        Tab(modifier = Modifier.testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
+                            selected = tabPagerState.currentPage == index,
+                            onClick = { onSelectTab(ProfileStatusTab.entries[index]) }, text = { Text(label) })
                     }
                 }
             }
-            val statuses = if (selectedTab == ProfileStatusTab.Posts) {
-                (profile.pinnedStatuses + profile.statuses).distinctBy { it.statusId }
+            item(key = "profile_posts") {
+            HorizontalPager(
+                state = tabPagerState,
+                modifier = Modifier.fillMaxWidth().height(pagerHeight)
+                    .nestedScroll(headerScrollConnection).testTag("profile_status_pager"),
+                key = { ProfileStatusTab.entries[it] },
+            ) { page ->
+            val pageTab = ProfileStatusTab.entries[page]
+            val isSelectedPage = pageTab == selectedTab
+            val pageState = state.profileTabs[pageTab]
+            val pageProfile = if (pageState != null) profile.withTab(pageState) else if (isSelectedPage) profile else null
+            LazyColumn(Modifier.fillMaxSize(), state = resolvedListStates[page]) {
+            val statuses = if (pageProfile == null) {
+                emptyList()
+            } else if (pageTab == ProfileStatusTab.Posts) {
+                (pageProfile.pinnedStatuses + pageProfile.statuses).distinctBy { it.statusId }
             } else {
-                profile.statuses
+                pageProfile.statuses
             }
-            val pinnedStatusIds = profile.pinnedStatuses.mapTo(mutableSetOf()) { it.statusId }
+            val pinnedStatusIds = pageProfile?.pinnedStatuses?.mapTo(mutableSetOf()) { it.statusId }.orEmpty()
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
                     onBoost, onQuote, onFavourite, onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
                     onMoreClick = onMoreClick,
-                    isPinned = selectedTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
+                    isPinned = pageTab == ProfileStatusTab.Posts && status.statusId in pinnedStatusIds,
                 )
             }
-                if (isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-                else if (!profile.endReached) item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
+                if (pageProfile == null || pageState?.isLoading == true || pageState?.isLoadingMore == true ||
+                    (pageState == null && isSelectedPage && (state.isLoadingProfile || isLoadingMore))) {
+                    item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+                } else if (isSelectedPage && !profile.endReached) {
+                    item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
+                }
+            }
+            }
+            }
+            }
             }
         }
     }
 }
 
 @Composable
-private fun SocialStatus(
+internal fun SocialStatus(
     status: TimelineStatus,
     onStatusClick: (String) -> Unit,
     onOpenLink: (String) -> Unit,
@@ -681,7 +681,7 @@ private fun SocialStatus(
 }
 
 @Composable
-private fun AccountResult(account: StatusAuthor, onClick: (String) -> Unit) {
+internal fun AccountResult(account: StatusAuthor, onClick: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onClick(account.id) }
             .padding(horizontal = 20.dp, vertical = 10.dp),
@@ -901,7 +901,7 @@ private fun SectionTitle(title: String) {
 }
 
 @Composable
-private fun LoadingContent(label: String, modifier: Modifier = Modifier) {
+internal fun LoadingContent(label: String, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator()
@@ -912,7 +912,7 @@ private fun LoadingContent(label: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MessageContent(message: String) {
+internal fun MessageContent(message: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

@@ -472,6 +472,7 @@ class TimelineViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.TagUpdated) return
         homeChangesDuringRequest?.add(change)
         if (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived) currentSnapshot()?.let { snapshot -> requestScope.launch {
             timelineRepository.updateHomeTimelineCache(snapshot.account!!, change).forSession(snapshot)
@@ -479,6 +480,7 @@ class TimelineViewModel(
         val accountId = currentSnapshot()?.account?.accountId
         _uiState.update { current ->
             when (change) {
+                is BrowsingSession.Change.TagUpdated -> current
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.applyHomeChange(change))
                 is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {

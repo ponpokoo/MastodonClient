@@ -58,8 +58,8 @@ internal fun VideoPlayer(url: String?, loop: Boolean, active: Boolean,
                     // Empty space and disabled buttons inside the control band must not hide it.
                     detectTapGestures { }
                 }, color = Color.Black.copy(alpha = 0.8f), contentColor = Color.White) {
-                Box(Modifier.padding(horizontal = 8.dp, vertical = if (landscape) 0.dp else 8.dp)) {
-                    MediaPlaybackControls(playback, label = "動画", compact = landscape)
+                Box(Modifier.padding(horizontal = 8.dp)) {
+                    MediaPlaybackControls(playback, label = "動画", compact = true)
                 }
             }
         }

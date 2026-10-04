@@ -13,6 +13,7 @@ class BrowsingSession {
     data class Snapshot(val account: AccountSession? = null, val generation: Long = 0)
     data class Event(val snapshot: Snapshot, val change: Change)
     sealed interface Change {
+        data class TagUpdated(val tag: io.github.ponpokoo.mastodonclient.domain.model.SearchTag) : Change
         data class Stream(val event: TimelineStreamEvent) : Change
         data class StatusUpdated(val status: TimelineStatus) : Change
         data class StatusDeleted(val statusId: String) : Change
