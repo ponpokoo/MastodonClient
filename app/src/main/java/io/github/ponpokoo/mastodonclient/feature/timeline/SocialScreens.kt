@@ -458,8 +458,12 @@ internal fun ProfileContent(
                             OutlinedIconButton(
                                 onClick = { profileMenuExpanded = true },
                                 modifier = Modifier.size(48.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                             ) {
-                                Icon(Icons.Outlined.MoreVert, contentDescription = "プロフィールのその他メニュー")
+                                Icon(
+                                    Icons.Outlined.MoreVert,
+                                    contentDescription = "プロフィールのその他メニュー",
+                                )
                             }
                         DropdownMenu(
                             expanded = profileMenuExpanded,
