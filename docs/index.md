@@ -23,6 +23,7 @@
 | [ローカル模擬Relay](../relay/README.md) | ローカルの起動・保存・模擬配送・テストを確認する |
 | [Workers版Relay](../relay/workers/README.md) | Workers版の開発・配送・保存・制限・テストを確認する |
 | [Workers配置・運用手順](../relay/workers/setup.md) | 公開配置、変数・Secrets、監視、停止の手順を確認する |
+| [Relay本運用への移行手順](relay-production.md) | 配置先未定の段階から、必要な実装変更、環境選定、検証、購読移行、監視・復旧、開始条件を確認する |
 
 ## 調査記録
 
@@ -30,6 +31,8 @@
 | --- | --- |
 | [音声添付の調査・修正記録](audio-playback.md) | 音声表示・再生の修正経緯と当時の検証範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
+| [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
+| [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 公開APIの観測、MastodonとMisskeyの認証・通知・リアクションAPIの違い、連合と直接ログインの範囲を確認する |
 | [プロフィール文の改行](investigations/profile-note-line-breaks.md) | Unicodeの行区切りによる表示不具合、HTML変換の確認結果、U+2028の対応を確認する |
 | [プロフィールの固定投稿](investigations/profile-pinned-status-position.md) | 固定投稿の追加時に先頭表示が外れる原因と、先頭表示・閲覧位置を維持する修正を確認する |
 | [画像付き固定投稿のスクロール](investigations/profile-pinned-scroll-report.md) | 固定投稿4件の速度別テスト、ヘッダー境界での惰性停止の修正、実機での解決確認を確認する |

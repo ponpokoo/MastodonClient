@@ -3,6 +3,9 @@
 Mastodon Web Pushを受け、暗号文をFCM HTTP v1のdataメッセージでNagisaへ中継する。
 本文の復号はAndroid側で行う。実行時の外部npm依存、Queues、KV、常駐サーバーは不要。
 
+配置先を未定とした本運用の準備・実装変更・検証・移行は[本運用への移行手順](../../docs/relay-production.md)を参照する。
+同手順の変更は計画であり、この試験版に実装済みとは扱わない。
+
 ```text
 Mastodon → Worker → D1へ保存 → FCM → Nagisa
                       ↑        |

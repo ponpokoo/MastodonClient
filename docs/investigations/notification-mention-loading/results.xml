@@ -1,0 +1,76 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuites><testsuite name="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-05T16:29:55.324Z" hostname="MacBook-Neo.local" time="0.032">
+  <properties />
+  <testcase name="completedPageWaitsForPendingMarkerBeforeBeingDisplayed" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" time="0.014" />
+  <testcase name="malformedUnrelatedNotificationFailsTheWholeMixedPage" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" time="0.008" />
+  <testcase name="cachedMentionDisappearsWhenFreshMixedPageDoesNotContainItAndReturnsAfterPaging" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" time="0.007" />
+  <testcase name="returningToNotificationsDoesNotCatchUpWithoutStreamButForegroundReturnDoes" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" time="0.003" />
+  <system-out />
+  <system-err />
+</testsuite><testsuite name="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" tests="36" skipped="0" failures="0" errors="0" timestamp="2026-10-05T16:29:54.755Z" hostname="MacBook-Neo.local" time="0.522">
+  <properties />
+  <testcase name="mapsStatusAndAuthorEmojisFromTimelineResponse" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.277" />
+  <testcase name="postsCompleteComposerRequest" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.011" />
+  <testcase name="readsNotificationMarkerAsAnOpaqueStringAndAllowsMissingMarker" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.006" />
+  <testcase name="readsComposerLimitsAndCustomEmoji" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="mapsMentionAccountIdAndQuoteApproval" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.006" />
+  <testcase name="readsReactionAccountsFromPlainAndGroupedResponses" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.017" />
+  <testcase name="emptyNotificationPageEndsPagination" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.004" />
+  <testcase name="favouritesAndAddsFedibirdReactionUsingExpectedEndpoints" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.007" />
+  <testcase name="reusesRemoteReactionWithItsServerDomain" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.007" />
+  <testcase name="cachedStatusesAreIsolatedByAccountAndInstance" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.005" />
+  <testcase name="mapsReactionOriginalImagesWithStaticFallback" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.003" />
+  <testcase name="preservesLockedAccountsAndFollowRequestRelationships" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.006" />
+  <testcase name="mapsOptionalMediaDimensionsAcrossServerMetadataFormats" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.016" />
+  <testcase name="audioAttachmentsPreserveTypeAndOriginalUrlWithoutPreviewOrMimeFiltering" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.003" />
+  <testcase name="postsReplyWithIdempotencyKey" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.003" />
+  <testcase name="followsUseLinkCursorInsteadOfLastAccountId" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.009" />
+  <testcase name="mediaProcessingAcceptsEmpty206ThenReadyResponseWithoutReupload" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.007" />
+  <testcase name="pinsAndUnpinsUsingExpectedEndpoints" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.005" />
+  <testcase name="postsNativeQuoteWithoutTurningItIntoAReply" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.003" />
+  <testcase name="loadsServerAnnouncements" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="mediaProcessingPreservesHttpFailureAndSupportsClearingAlt" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.005" />
+  <testcase name="loadsLocalAndFederatedTimelinesWithPublicEndpoint" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="loadsHashtagTimelineWithTagEndpoint" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.003" />
+  <testcase name="composerCapabilitiesFallBackOn404AndDoNotCacheFailuresOrMissingLists" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.006" />
+  <testcase name="composerCapabilitiesAreCachedPerInstanceWithExpiryAndConcurrentReuse" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="homeShortPagesKeepPagingUntilServerReturnsEmpty" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.005" />
+  <testcase name="mapsPreviewCardAndDistinguishesUnsupportedReactions" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.004" />
+  <testcase name="editableStatusPreservesLanguageAndAllowsServersToOmitIt" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.007" />
+  <testcase name="acceptedUploadReturnsIdAndProgressBeforeServerProcessingCompletes" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.01" />
+  <testcase name="loadsOwnProfileAndStatuses" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="recordsOnlySuccessfulNewReactions" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.008" />
+  <testcase name="loadsNotificationsAndSearchResults" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.006" />
+  <testcase name="loadsAuthenticatedPageAndMapsBoostedStatus" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.004" />
+  <testcase name="loadsStatusDetailAndMapsApplicationAndFedibirdReactions" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.005" />
+  <testcase name="loadsListsAndSelectedListTimeline" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.004" />
+  <testcase name="statusCacheEvictsOldEntries" classname="io.github.ponpokoo.mastodonclient.data.repository.DefaultTimelineRepositoryTest" time="0.014" />
+  <system-out />
+  <system-err />
+</testsuite><testsuite name="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-10-05T16:29:55.357Z" hostname="MacBook-Neo.local" time="0.042">
+  <properties />
+  <testcase name="foregroundReturnAndSystemNotificationOpenRefreshOnlyAfterTheListIsRequested" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.003" />
+  <testcase name="cachedNotificationsAreVisibleBeforeNetworkAndSurviveOfflineRefreshWithoutAcknowledgement" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="duplicateStreamEventDoesNotIncreaseUnreadTwiceOrPreventInitialFetch" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="automaticRefreshDoesNotShowPullRefreshIndicator" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="failedInitialFetchCanRetryWhenTheTabIsOpenedAgain" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="failedSystemDismissalDoesNotPreventReadMarker" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="delayedDiskReadCannotRestorePreviousAccount" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.003" />
+  <testcase name="returningToTheTabKeepsLoadedListAndStreamedNotificationsWithoutFetching" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="initialLoadWithoutMarkerDoesNotTreatExistingNotificationsAsNew" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="unavailableCacheDoesNotFailSuccessfulNetworkLoad" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="streamReceivedDuringDiskReadIsPersistedEvenWhenNetworkRefreshFails" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.003" />
+  <testcase name="freshPageReplacesDiskHistoryKeepsLiveEventsAndPersistsPaginationAndDeletion" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="readDismissalUsesLoadedFilterIdsAndAccountEvenWithoutUnreadMarker" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="refreshSupersedesPaginationAndDoesNotResaveAnUnchangedMarker" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="accountSwitchRejectsOldPageAndOldMarker" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="refreshKeepsStreamNotificationReceivedWhileRequestIsInFlight" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="unreadNotificationIsAcknowledgedOnlyWhenTheNewestRowIsShown" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="manualRefreshShowsPullRefreshIndicatorUntilRequestCompletes" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="shortNotificationPageStillLoadsOlderHistory" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="initialLoadOverlapsMarkerAndPageRequestsAndPreservesUnreadDetection" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <testcase name="failedInitialMarkerStillDisplaysNotificationsWithoutMarkingHistoryUnread" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.001" />
+  <testcase name="failedRefreshPreservesUnreadAndHighlightUntilTheTabIsLeft" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModelTest" time="0.002" />
+  <system-out />
+  <system-err />
+</testsuite></testsuites>

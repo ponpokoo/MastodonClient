@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-10-05T16:35:29.122Z" hostname="MacBook-Neo.local" time="0.114">
+  <properties/>
+  <testcase name="nonReactionHistoryKeepsPagingUntilTheEntireHistoryReturnsEmpty" classname="io.github.ponpokoo.mastodonclient.feature.notifications.NotificationMentionLoadingInvestigationTest" time="0.111"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

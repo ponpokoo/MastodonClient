@@ -1,0 +1,9 @@
+// Explicitly enabled investigation tests; excluded from normal test source sets.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.sourceSets.getByName('test').kotlin.srcDir(
+                new File(project.rootDir, 'docs/investigations/notification-mention-loading/tests'))
+        }
+    }
+}

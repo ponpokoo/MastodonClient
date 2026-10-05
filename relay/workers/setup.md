@@ -4,6 +4,9 @@ CloudflareとGoogleのWeb画面は利用者が操作する。
 コード・SQL・ローカルテストは[Workers版Relay](README.md)に用意した。
 Queues、KV、独自ドメインの契約は不要。まず少数アカウントで試す。
 
+本書はWorkers試験環境の配置手順。本運用向けの配置先選定・実装変更・移行・復旧は
+[本運用への移行手順](../../docs/relay-production.md)を参照する。
+
 ## 1. D1を作る
 
 1. Cloudflare DashboardでD1を開き、`nagisa-relay`というデータベースを作る。
