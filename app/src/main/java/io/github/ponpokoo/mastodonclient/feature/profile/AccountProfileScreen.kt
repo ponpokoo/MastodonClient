@@ -138,7 +138,6 @@ fun AccountProfileScreen(
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
             preferences = preferences,
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
-            onPrepareTab = viewModel::prepareTab,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像")), 0) } },

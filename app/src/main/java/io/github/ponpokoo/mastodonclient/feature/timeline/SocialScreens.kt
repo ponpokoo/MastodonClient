@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,7 +61,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +91,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
+import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
 import io.github.ponpokoo.mastodonclient.feature.common.toShape
@@ -151,24 +150,17 @@ internal fun NotificationsContent(
     // Keep new rows close to the quoted post's surface instead of using a full accent fill.
     val highlightedBackground = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
         .compositeOver(MaterialTheme.colorScheme.surface)
-    val filterPagerState = rememberPagerState(
-        initialPage = selectedFilter.ordinal,
-        pageCount = { NotificationFilter.entries.size },
-    )
-    LaunchedEffect(selectedFilter) {
-        if (filterPagerState.currentPage != selectedFilter.ordinal) {
-            filterPagerState.animateScrollToPage(selectedFilter.ordinal)
-        }
+    val filterTabs = rememberSwipeTabs(selectedFilter.ordinal, NotificationFilter.entries.size) {
+        onSelectFilter(NotificationFilter.entries[it])
     }
-    LaunchedEffect(filterPagerState.currentPage) {
-        NotificationFilter.entries.getOrNull(filterPagerState.currentPage)?.let { filter ->
-            if (filter != selectedFilter) onSelectFilter(filter)
-        }
-    }
+    val filterPagerState = filterTabs.pagerState
     val selectedListState = listStates[selectedFilter.ordinal]
     LaunchedEffect(selectedListState, state.notifications.size, state.notificationsNextMaxId, selectedFilter) {
         if (state.notificationsNextMaxId != null && !state.notificationsEndReached) {
-            snapshotFlow { selectedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            snapshotFlow {
+                if (filterTabs.isMoving || filterPagerState.settledPage != selectedFilter.ordinal) null
+                else selectedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            }
                 .distinctUntilChanged().collect { lastVisible ->
                     if (lastVisible != null && lastVisible >= selectedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
                 }
@@ -192,12 +184,12 @@ internal fun NotificationsContent(
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
             Column(Modifier.fillMaxSize()) {
-                SecondaryTabRow(selectedTabIndex = selectedFilter.ordinal) {
+                SecondaryTabRow(selectedTabIndex = filterTabs.selectedPage) {
                     NotificationFilter.entries.forEach { filter ->
                         Tab(
                             modifier = Modifier.testTag("notification_filter_${filter.name.lowercase()}"),
-                            selected = selectedFilter == filter,
-                            onClick = { onSelectFilter(filter) },
+                            selected = filterTabs.selectedPage == filter.ordinal,
+                            onClick = { filterTabs.selectPage(filter.ordinal) },
                             text = { Text(filter.label) },
                         )
                     }
@@ -322,7 +314,6 @@ internal fun ProfileContent(
     selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     isLoadingMore: Boolean = false,
     onSelectTab: (ProfileStatusTab) -> Unit = {},
-    onPrepareTab: (ProfileStatusTab) -> Unit = {},
     onLoadMore: () -> Unit = {},
     onFollowers: () -> Unit = {},
     onFollowing: () -> Unit = {},
@@ -369,33 +360,32 @@ internal fun ProfileContent(
     }
     val density = LocalDensity.current
     var tabRowHeight by remember { mutableStateOf(48.dp) }
-    val tabPagerState = key(profile?.url, profile?.author?.id) {
-        rememberPagerState(initialPage = selectedTab.ordinal, pageCount = { ProfileStatusTab.entries.size })
-    }
-    val latestSelectedTab by rememberUpdatedState(selectedTab)
-    val latestOnSelectTab by rememberUpdatedState(onSelectTab)
-    val latestOnPrepareTab by rememberUpdatedState(onPrepareTab)
-    LaunchedEffect(selectedTab, tabPagerState) {
-        if (tabPagerState.currentPage != selectedTab.ordinal) {
-            tabPagerState.animateScrollToPage(selectedTab.ordinal)
+    val profileTabs = key(profile?.url, profile?.author?.id) {
+        rememberSwipeTabs(selectedTab.ordinal, ProfileStatusTab.entries.size) {
+            onSelectTab(ProfileStatusTab.entries[it])
         }
     }
-    LaunchedEffect(tabPagerState) {
-        snapshotFlow { tabPagerState.settledPage }.distinctUntilChanged().collect { page ->
-            val tab = ProfileStatusTab.entries[page]
-            if (tab != latestSelectedTab) latestOnSelectTab(tab)
-        }
-    }
-    LaunchedEffect(tabPagerState, profile?.author?.id) {
-        snapshotFlow { tabPagerState.targetPage }.distinctUntilChanged().collect { page ->
-            latestOnPrepareTab(ProfileStatusTab.entries[page])
+    val tabPagerState = profileTabs.pagerState
+    val postsScrollConnection = remember(resolvedHeaderListState, resolvedListState, profileTabs) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                // A gesture starting on the header belongs to the outer list. Keep its
+                // drag/fling running by consuming the remainder in the selected post list.
+                // Child-owned gestures already scroll posts through their own scroll scope.
+                if (available.y >= 0f || !resolvedHeaderListState.isScrollInProgress ||
+                    resolvedListState.isScrollInProgress || profileTabs.isMoving) return Offset.Zero
+                return Offset(0f, -resolvedListState.dispatchRawDelta(-available.y))
+            }
         }
     }
     LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab,
         state.isLoadingProfile, state.isRefreshingProfile, isLoadingMore) {
         if (!state.isLoadingProfile && !state.isRefreshingProfile && !isLoadingMore &&
             profile?.nextMaxId != null && !profile.endReached) {
-            snapshotFlow { resolvedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            snapshotFlow {
+                if (profileTabs.isMoving || tabPagerState.settledPage != selectedTab.ordinal) null
+                else resolvedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            }
                 .distinctUntilChanged().collect { lastVisible ->
                     if (lastVisible != null && lastVisible >= resolvedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
                 }
@@ -422,7 +412,7 @@ internal fun ProfileContent(
             BoxWithConstraints(Modifier.fillMaxSize()) {
             val pagerHeight = (maxHeight - tabRowHeight).coerceAtLeast(0.dp)
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().nestedScroll(postsScrollConnection),
                 state = resolvedHeaderListState,
             ) {
             item(key = "profile_header") {
@@ -595,12 +585,12 @@ internal fun ProfileContent(
                 }
             }
             stickyHeader(key = "profile_tabs") {
-                SecondaryTabRow(selectedTabIndex = tabPagerState.currentPage,
+                SecondaryTabRow(selectedTabIndex = profileTabs.selectedPage,
                     modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
                         Tab(modifier = Modifier.testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
-                            selected = tabPagerState.currentPage == index,
-                            onClick = { onSelectTab(ProfileStatusTab.entries[index]) }, text = { Text(label) })
+                            selected = profileTabs.selectedPage == index,
+                            onClick = { profileTabs.selectPage(index) }, text = { Text(label) })
                     }
                 }
             }
@@ -615,7 +605,19 @@ internal fun ProfileContent(
             val isSelectedPage = pageTab == selectedTab
             val pageState = state.profileTabs[pageTab]
             val pageProfile = if (pageState != null) profile.withTab(pageState) else if (isSelectedPage) profile else null
-            LazyColumn(Modifier.fillMaxSize(), state = resolvedListStates[page]) {
+            val postListState = resolvedListStates[page]
+            val pinnedStatusIds = pageProfile?.pinnedStatuses?.map { it.statusId }.orEmpty()
+            if (pageTab == ProfileStatusTab.Posts) {
+                // Capture the position before LazyColumn preserves the old first item's key.
+                val wasAtTop = remember(postListState, pinnedStatusIds) {
+                    postListState.firstVisibleItemIndex == 0 &&
+                        postListState.firstVisibleItemScrollOffset == 0 && !postListState.isScrollInProgress
+                }
+                LaunchedEffect(postListState, pinnedStatusIds) {
+                    if (pinnedStatusIds.isNotEmpty() && wasAtTop) postListState.requestScrollToItem(0)
+                }
+            }
+            LazyColumn(Modifier.fillMaxSize(), state = postListState) {
             val statuses = if (pageProfile == null) {
                 emptyList()
             } else if (pageTab == ProfileStatusTab.Posts) {
@@ -623,7 +625,6 @@ internal fun ProfileContent(
             } else {
                 pageProfile.statuses
             }
-            val pinnedStatusIds = pageProfile?.pinnedStatuses?.mapTo(mutableSetOf()) { it.statusId }.orEmpty()
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,

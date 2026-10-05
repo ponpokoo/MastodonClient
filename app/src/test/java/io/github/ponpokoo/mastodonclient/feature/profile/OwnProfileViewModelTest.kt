@@ -14,6 +14,81 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OwnProfileViewModelTest : ScreenViewModelTestBase() {
+    @Test fun postsAndPinsAppearTogetherRegardlessOfWhichRequestFinishesFirst() = runTest(dispatcher) {
+        for (pinsFirst in listOf(false, true)) {
+            val repository = ProfileLoadingRepositoryFake()
+            val browsing = BrowsingSession().apply { activate(testAccount) }
+            val viewModel = own(OwnProfileViewModel(repository, browsing))
+            advanceUntilIdle()
+            viewModel.loadProfile()
+            advanceUntilIdle()
+            assertTrue(repository.postsRequested && repository.pinsRequested)
+            val page = Result.success(TimelinePage(listOf(testStatus("normal")), "next", false))
+            val pins = Result.success(listOf(testStatus("pinned")))
+            if (pinsFirst) repository.pinned.complete(pins) else repository.posts.complete(page)
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+            assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
+            assertTrue(viewModel.uiState.value.isLoadingMoreProfile)
+            viewModel.loadMoreProfile()
+            if (pinsFirst) repository.posts.complete(page) else repository.pinned.complete(pins)
+            advanceUntilIdle()
+            assertEquals(listOf("normal"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+            assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
+            assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
+        }
+    }
+
+    @Test fun pinFailureShowsPostsAndKeepsPreviousPinsOnRefresh() = runTest(dispatcher) {
+        val repository = ProfileLoadingRepositoryFake().apply {
+            posts.complete(Result.success(TimelinePage(listOf(testStatus()), null, true)))
+            pinned.complete(Result.failure(IllegalStateException("pins unavailable")))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        assertEquals(listOf("post"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
+        assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
+        repository.pinned = CompletableDeferred(Result.success(listOf(testStatus("pinned"))))
+        viewModel.refreshProfile()
+        advanceUntilIdle()
+        repository.posts = CompletableDeferred(Result.success(TimelinePage(listOf(testStatus("fresh")), null, true)))
+        repository.pinned = CompletableDeferred(Result.failure(IllegalStateException("pins unavailable")))
+        viewModel.refreshProfile()
+        advanceUntilIdle()
+        assertEquals(listOf("fresh"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
+        assertFalse(viewModel.uiState.value.isRefreshingProfile)
+    }
+
+    @Test fun sessionChangeRejectsPostsWaitingForAnOldPinRequest() = runTest(dispatcher) {
+        val repository = object : ProfileLoadingRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?) = if (session == testAccount) {
+                super.getProfileStatuses(session, accountId, tab, maxId)
+            } else Result.success(TimelinePage(listOf(testStatus("new post")), null, true))
+            override suspend fun getPinnedProfileStatuses(session: AccountSession, accountId: String) =
+                if (session == testAccount) withContext(NonCancellable) {
+                    super.getPinnedProfileStatuses(session, accountId)
+                } else Result.success(listOf(testStatus("new pin")))
+        }
+        repository.posts.complete(Result.success(TimelinePage(listOf(testStatus("old post")), null, true)))
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        viewModel.loadProfile()
+        advanceUntilIdle()
+        browsing.activate(secondAccount)
+        advanceUntilIdle()
+        repository.pinned.complete(Result.success(listOf(testStatus("old pin"))))
+        advanceUntilIdle()
+        assertEquals(listOf("new post"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals(listOf("new pin"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
+    }
+
     @Test fun cachedTabsReflectStatusUpdatesAndDeletion() = runTest(dispatcher) {
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,

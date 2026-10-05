@@ -107,7 +107,9 @@ class ProfileNotificationAvatarDeviceTest {
             pixels[pixels.width / 2, pixels.height / 2] == Color.Red
         }
         val pixels = node.captureToImage().toPixelMap()
-        val corner = pixels[pixels.width / 10, pixels.height / 10]
-        if (square) assertEquals(Color.Red, corner) else assertNotEquals(Color.Red, corner)
+        val corner = pixels[0, 0]
+        assertNotEquals(Color.Red, corner)
+        val shoulder = pixels[pixels.width * 3 / 20, pixels.height / 10]
+        if (square) assertEquals(Color.Red, shoulder) else assertNotEquals(Color.Red, shoulder)
     }
 }

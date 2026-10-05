@@ -29,17 +29,16 @@ import org.junit.Test
 class ProfileTabSwipeDeviceTest {
     @get:Rule val rule = createComposeRule()
     private val selections = mutableListOf<ProfileStatusTab>()
-    private val preparedTabs = mutableListOf<ProfileStatusTab>()
     private lateinit var listStates: List<LazyListState>
     private lateinit var headerListState: LazyListState
 
-    @Test fun draggingPreparesDestinationAndUpdatesTabBeforeRelease() {
+    @Test fun draggingUpdatesTabButSelectsDestinationOnlyAfterRelease() {
         showProfile()
         rule.onNodeWithTag("profile_status_pager").performTouchInput {
             down(Offset(width * 0.9f, center.y))
             moveTo(Offset(width * 0.1f, center.y), delayMillis = 400)
         }
-        rule.waitUntil(5_000) { ProfileStatusTab.Replies in preparedTabs }
+        rule.waitForIdle()
         tab(ProfileStatusTab.Replies).assertIsSelected()
         rule.runOnIdle { assertTrue(selections.isEmpty()) }
         rule.onNodeWithTag("profile_status_pager").performTouchInput { up() }
@@ -128,7 +127,6 @@ class ProfileTabSwipeDeviceTest {
                     onFavourite = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> },
                     selectedTab = selected.value, listStates = listStates, headerListState = headerListState,
                     onSelectTab = { selections += it; selected.value = it },
-                    onPrepareTab = { preparedTabs += it },
                 )
             }
         }

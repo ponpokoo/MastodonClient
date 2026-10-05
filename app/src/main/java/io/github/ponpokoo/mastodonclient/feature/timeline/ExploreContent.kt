@@ -6,7 +6,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,10 +19,10 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
+import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreTabState
 import io.github.ponpokoo.mastodonclient.feature.tag.TagSubscriptionButton
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Unit,
@@ -33,7 +32,10 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     onFindTags: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
     modifier: Modifier = Modifier) {
-    val pager = key(state.sessionKey) { rememberPagerState(initialPage = state.selectedFeed.ordinal, pageCount = { ExploreFeed.entries.size }) }
+    val tabs = key(state.sessionKey) {
+        rememberSwipeTabs(state.selectedFeed.ordinal, ExploreFeed.entries.size) { onSelect(ExploreFeed.entries[it]) }
+    }
+    val pager = tabs.pagerState
     val lists = ExploreFeed.entries.map { key(state.sessionKey, it) { rememberLazyListState() } }
     var handledScrollRequest by remember(state.sessionKey) { mutableLongStateOf(scrollToTopRequest) }
     LaunchedEffect(scrollToTopRequest) {
@@ -42,21 +44,11 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
             lists[state.selectedFeed.ordinal].animateToTimelineTop()
         }
     }
-    val selected by rememberUpdatedState(state.selectedFeed)
-    val select by rememberUpdatedState(onSelect)
     var confirm by remember(state.sessionKey) { mutableStateOf<SearchTag?>(null) }
-    LaunchedEffect(state.selectedFeed, pager) {
-        if (pager.currentPage != state.selectedFeed.ordinal) pager.animateScrollToPage(state.selectedFeed.ordinal)
-    }
-    LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect {
-            if (ExploreFeed.entries[it] != selected) select(ExploreFeed.entries[it])
-        }
-    }
     Column(modifier) {
-        SecondaryTabRow(selectedTabIndex = state.selectedFeed.ordinal) {
+        SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
             ExploreFeed.entries.forEach { feed ->
-                Tab(selected = feed == state.selectedFeed, onClick = { onSelect(feed) },
+                Tab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
                     modifier = Modifier.testTag("explore_tab_${feed.name.lowercase()}")) {
                     Text(feed.label(), modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
                         style = MaterialTheme.typography.labelMedium, maxLines = 1)
@@ -66,9 +58,9 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
         HorizontalPager(pager, key = { ExploreFeed.entries[it] }, modifier = Modifier.fillMaxWidth().weight(1f).testTag("explore_pager")) { index ->
             val feed = ExploreFeed.entries[index]
             val tab = state.tabs[feed] ?: ExploreTabState()
-            AppPullToRefreshBox(isRefreshing = tab.loading, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
+            AppPullToRefreshBox(isRefreshing = tab.loading && tab.page != null, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize(), state = lists[index]) {
-                    if (tab.loading && tab.page == null) item { LoadingContent("読み込んでいます") }
+                    if (tab.page == null && tab.error == null) item { LoadingContent("読み込んでいます") }
                     tab.page?.let { page ->
                         items(page.statuses, key = { it.timelineId }) { post(it) }
                         items(page.tags, key = { it.name.lowercase(java.util.Locale.ROOT) }) { tag ->

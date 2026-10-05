@@ -57,7 +57,7 @@ internal fun htmlToAnnotatedString(html: String, linkColor: Color): AnnotatedStr
     val key = TextCacheKey(html, linkColor)
     parsedTextCache.get(key)?.let { return it }
     val spanned = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_LEGACY) as Spanned
-    return AnnotatedString.Builder(spanned.toString().trim()).apply {
+    return AnnotatedString.Builder(spanned.toString().trim().replace('\u2028', '\n')).apply {
         spanned.getSpans(0, spanned.length, URLSpan::class.java).forEach { span ->
             val start = spanned.getSpanStart(span).coerceAtMost(length)
             val end = spanned.getSpanEnd(span).coerceAtMost(length)

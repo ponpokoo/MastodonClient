@@ -1,0 +1,9 @@
+// Opt-in device investigation; normal application and test source sets are unchanged.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.sourceSets.getByName('androidTest').kotlin.srcDir(
+                new File(project.rootDir, 'docs/investigations/profile-pinned-scroll/tests'))
+        }
+    }
+}

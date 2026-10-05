@@ -13,6 +13,7 @@
 | 0003 | [Relayでの暗号文中継とAndroidでの復号](0003-push-relay-responsibilities.md) | accepted |
 | 0004 | [ミュート・ブロック成功後の共有非表示状態とキャッシュ除去](0004-account-moderation-invalidation.md) | accepted |
 | 0005 | [管理アカウントの隔離とローカルワードミュート](0005-moderation-management-word-mutes.md) | accepted |
+| 0006 | [スワイプの選択表示とデータ取得の分離](0006-shared-swipe-tabs.md) | accepted |
 
 ## 記録方法
 

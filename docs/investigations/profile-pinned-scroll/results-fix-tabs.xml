@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="4" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-10-05T11:29:34" hostname="localhost">
+  <testsuite name="io.github.ponpokoo.mastodonclient.ProfileTabSwipeDeviceTest" tests="4" failures="0" errors="0" skipped="0" time="15.694" timestamp="2026-10-05T11:29:34" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="swipesSelectAdjacentTabsAndStopAtBothEnds" classname="io.github.ponpokoo.mastodonclient.ProfileTabSwipeDeviceTest" time="5.763" />
+    <testcase name="draggingUpdatesTabButSelectsDestinationOnlyAfterRelease" classname="io.github.ponpokoo.mastodonclient.ProfileTabSwipeDeviceTest" time="2.633" />
+    <testcase name="swipingBackRestoresThePostsScrollPosition" classname="io.github.ponpokoo.mastodonclient.ProfileTabSwipeDeviceTest" time="4.700" />
+    <testcase name="tappingDistantTabMovesPagerWithoutSelectingIntermediateTab" classname="io.github.ponpokoo.mastodonclient.ProfileTabSwipeDeviceTest" time="2.598" />
+  </testsuite>
+</testsuites>

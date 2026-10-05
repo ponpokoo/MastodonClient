@@ -13,6 +13,8 @@ import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -130,8 +132,12 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         }
     }
 
-    private fun updateTab(tab: ProfileStatusTab, update: (ProfileTabUiState) -> ProfileTabUiState) {
-        _uiState.update { it.withTabs(it.profileTabs + (tab to update(it.profileTabs[tab] ?: ProfileTabUiState()))) }
+    private fun updateTab(tab: ProfileStatusTab, pinnedStatuses: List<TimelineStatus>? = null,
+        update: (ProfileTabUiState) -> ProfileTabUiState) {
+        _uiState.update { state ->
+            val updated = if (pinnedStatuses != null) state.copy(profile = state.profile?.copy(pinnedStatuses = pinnedStatuses)) else state
+            updated.withTabs(state.profileTabs + (tab to update(state.profileTabs[tab] ?: ProfileTabUiState())))
+        }
     }
 
     private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
@@ -153,18 +159,22 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                 _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()))
                     .withTabs(state.profileTabs) }
             }
-            timelineRepository.getProfileStatuses(session, profile.author.id, tab).forSession(snapshot).fold(
-                onSuccess = { page -> updateTab(tab) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
+            val (result, pinnedResult) = coroutineScope {
+                val posts = async { timelineRepository.getProfileStatuses(session, profile.author.id, tab) }
+                val pinned = if (tab == ProfileStatusTab.Posts) {
+                    async { timelineRepository.getPinnedProfileStatuses(session, profile.author.id) }
+                } else null
+                posts.await() to pinned?.await()
+            }
+            result.forSession(snapshot)
+            val pinnedStatuses = pinnedResult?.forSession(snapshot)?.getOrNull()
+            result.fold(
+                onSuccess = { page -> updateTab(tab, pinnedStatuses) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
                     endReached = page.endReached, isLoaded = true, isLoading = false,
                     isLoadingMore = false, isRefreshing = false) } },
-                onFailure = { error -> updateTab(tab) { it.copy(isLoading = false, isLoadingMore = false,
+                onFailure = { error -> updateTab(tab, pinnedStatuses) { it.copy(isLoading = false, isLoadingMore = false,
                     isRefreshing = false, error = error.message ?: "投稿を取得できませんでした") } },
             )
-            if (tab == ProfileStatusTab.Posts) {
-                timelineRepository.getPinnedProfileStatuses(session, profile.author.id).forSession(snapshot).onSuccess { pinned ->
-                    _uiState.update { it.copy(profile = it.profile?.copy(pinnedStatuses = pinned)) }
-                }
-            }
         }
     }
 

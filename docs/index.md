@@ -30,3 +30,6 @@
 | --- | --- |
 | [音声添付の調査・修正記録](audio-playback.md) | 音声表示・再生の修正経緯と当時の検証範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
+| [プロフィール文の改行](investigations/profile-note-line-breaks.md) | Unicodeの行区切りによる表示不具合、HTML変換の確認結果、U+2028の対応を確認する |
+| [プロフィールの固定投稿](investigations/profile-pinned-status-position.md) | 固定投稿の追加時に先頭表示が外れる原因と、先頭表示・閲覧位置を維持する修正を確認する |
+| [画像付き固定投稿のスクロール](investigations/profile-pinned-scroll-report.md) | 固定投稿4件の速度別テスト、ヘッダー境界での惰性停止の修正、実機での解決確認を確認する |

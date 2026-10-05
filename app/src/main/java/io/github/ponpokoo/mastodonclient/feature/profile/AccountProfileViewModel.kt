@@ -10,6 +10,8 @@ import io.github.ponpokoo.mastodonclient.domain.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
@@ -117,8 +119,12 @@ class AccountProfileViewModel(
         }
     }
 
-    private fun updateTab(tab: ProfileStatusTab, update: (ProfileTabUiState) -> ProfileTabUiState) {
-        _uiState.update { it.withTabs(it.profileTabs + (tab to update(it.profileTabs[tab] ?: ProfileTabUiState()))) }
+    private fun updateTab(tab: ProfileStatusTab, pinnedStatuses: List<TimelineStatus>? = null,
+        update: (ProfileTabUiState) -> ProfileTabUiState) {
+        _uiState.update { state ->
+            val updated = if (pinnedStatuses != null) state.copy(profile = state.profile?.copy(pinnedStatuses = pinnedStatuses)) else state
+            updated.withTabs(state.profileTabs + (tab to update(state.profileTabs[tab] ?: ProfileTabUiState())))
+        }
     }
 
     private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
@@ -141,19 +147,21 @@ class AccountProfileViewModel(
                 _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()))
                     .withTabs(state.profileTabs) }
             }
-            val result = timelineRepository.getProfileStatuses(current, accountId, tab)
+            val (result, pinnedResult) = coroutineScope {
+                val posts = async { timelineRepository.getProfileStatuses(current, accountId, tab) }
+                val pinned = if (tab == ProfileStatusTab.Posts) {
+                    async { timelineRepository.getPinnedProfileStatuses(current, accountId) }
+                } else null
+                posts.await() to pinned?.await()
+            }
             currentCoroutineContext().ensureActive()
+            val pinnedStatuses = pinnedResult?.getOrNull()
             result.fold(
-                { page -> updateTab(tab) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
+                { page -> updateTab(tab, pinnedStatuses) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
                     endReached = page.endReached, isLoaded = true, isLoading = false, isLoadingMore = false, isRefreshing = false) } },
-                { error -> updateTab(tab) { it.copy(isLoading = false, isLoadingMore = false, isRefreshing = false,
+                { error -> updateTab(tab, pinnedStatuses) { it.copy(isLoading = false, isLoadingMore = false, isRefreshing = false,
                     error = error.message ?: "投稿を取得できませんでした") } },
             )
-            if (tab == ProfileStatusTab.Posts) {
-                val pinned = timelineRepository.getPinnedProfileStatuses(current, accountId)
-                currentCoroutineContext().ensureActive()
-                pinned.onSuccess { statuses -> _uiState.update { it.copy(profile = it.profile?.copy(pinnedStatuses = statuses)) } }
-            }
         }
     }
 

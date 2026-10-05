@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SecondaryTabRow
@@ -28,8 +27,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -41,10 +38,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.search.SearchBar
+import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.feature.search.SearchTabState
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.search.message
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -95,18 +92,10 @@ internal fun SearchContent(
             }
         }
     }
-    val pager = key(state.sessionKey) { rememberPagerState(initialPage = state.selectedTarget.ordinal, pageCount = { SearchTarget.entries.size }) }
-    val latestTarget by rememberUpdatedState(state.selectedTarget)
-    val latestSelect by rememberUpdatedState(onSelectTarget)
-    LaunchedEffect(state.selectedTarget, pager) {
-        if (pager.currentPage != state.selectedTarget.ordinal) pager.animateScrollToPage(state.selectedTarget.ordinal)
+    val tabs = key(state.sessionKey) {
+        rememberSwipeTabs(state.selectedTarget.ordinal, SearchTarget.entries.size) { onSelectTarget(SearchTarget.entries[it]) }
     }
-    LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
-            val target = SearchTarget.entries[page]
-            if (target != latestTarget) latestSelect(target)
-        }
-    }
+    val pager = tabs.pagerState
     Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
         SearchBar(
             query = state.searchQuery, active = state.isSearchActive, sessionKey = state.sessionKey,
@@ -116,9 +105,9 @@ internal fun SearchContent(
             isVisible = isVisible,
         )
         if (state.isSearchActive && state.searchQuery.isNotBlank()) {
-            SecondaryTabRow(selectedTabIndex = state.selectedTarget.ordinal) {
+            SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
                 SearchTarget.entries.forEach { target -> Tab(
-                    selected = target == state.selectedTarget, onClick = { onSelectTarget(target) },
+                    selected = target.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(target.ordinal) },
                     text = { Text(target.searchLabel()) }, modifier = Modifier.testTag("search_target_${target.name.lowercase()}"),
                 ) }
             }
@@ -161,7 +150,8 @@ internal fun SearchContent(
                         }
                     }
                     if (results == null && !tab.isSearching && tab.error == null) item {
-                        MessageContent("対象を選び、キーボードの検索キーで検索してください")
+                        if (state.submittedQuery == state.searchQuery.trim()) LoadingContent("${target.searchLabel()}を検索しています")
+                        else MessageContent("対象を選び、キーボードの検索キーで検索してください")
                     }
                 }
             }

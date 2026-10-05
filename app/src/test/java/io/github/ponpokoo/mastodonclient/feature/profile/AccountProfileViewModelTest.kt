@@ -13,6 +13,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.testStatus
 import io.github.ponpokoo.mastodonclient.feature.common.testProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
@@ -30,6 +32,69 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
         override suspend fun completeAuthorization(callbackUrl: String) = Result.success(testAccount)
         override suspend fun logout() = Unit
+    }
+
+    @Test fun postsAndPinsAppearTogetherRegardlessOfWhichRequestFinishesFirst() = runTest(dispatcher) {
+        for (pinsFirst in listOf(false, true)) {
+            val repository = ProfileLoadingRepositoryFake()
+            val viewModel = own(AccountProfileViewModel("author", repository, auth))
+            advanceUntilIdle()
+            assertTrue(repository.postsRequested && repository.pinsRequested)
+            val page = Result.success(TimelinePage(listOf(testStatus("normal")), "next", false))
+            val pins = Result.success(listOf(testStatus("pinned")))
+            if (pinsFirst) repository.pinned.complete(pins) else repository.posts.complete(page)
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+            assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
+            assertTrue(viewModel.uiState.value.isLoadingMore)
+            viewModel.loadMore()
+            if (pinsFirst) repository.posts.complete(page) else repository.pinned.complete(pins)
+            advanceUntilIdle()
+            assertEquals(listOf("normal"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+            assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
+            assertFalse(viewModel.uiState.value.isLoadingMore)
+        }
+    }
+
+    @Test fun pinFailureShowsPostsAndKeepsPreviousPinsOnRefresh() = runTest(dispatcher) {
+        val repository = ProfileLoadingRepositoryFake().apply {
+            posts.complete(Result.success(TimelinePage(listOf(testStatus()), null, true)))
+            pinned.complete(Result.failure(IllegalStateException("pins unavailable")))
+        }
+        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle()
+        assertEquals(listOf("post"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
+        assertFalse(viewModel.uiState.value.isLoadingMore)
+        repository.pinned = CompletableDeferred(Result.success(listOf(testStatus("pinned"))))
+        viewModel.refresh()
+        advanceUntilIdle()
+        repository.posts = CompletableDeferred(Result.success(TimelinePage(listOf(testStatus("fresh")), null, true)))
+        repository.pinned = CompletableDeferred(Result.failure(IllegalStateException("pins unavailable")))
+        viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("fresh"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
+        assertFalse(viewModel.uiState.value.isRefreshing)
+    }
+
+    @Test fun refreshRejectsPostsWaitingForAnOlderPinRequest() = runTest(dispatcher) {
+        val repository = object : ProfileLoadingRepositoryFake() {
+            override suspend fun getPinnedProfileStatuses(session: AccountSession, accountId: String) =
+                withContext(NonCancellable) { super.getPinnedProfileStatuses(session, accountId) }
+        }
+        repository.posts.complete(Result.success(TimelinePage(listOf(testStatus("old post")), null, true)))
+        val oldPins = repository.pinned
+        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle()
+        repository.posts = CompletableDeferred(Result.success(TimelinePage(listOf(testStatus("fresh post")), null, true)))
+        repository.pinned = CompletableDeferred(Result.success(listOf(testStatus("fresh pin"))))
+        viewModel.refresh()
+        advanceUntilIdle()
+        oldPins.complete(Result.success(listOf(testStatus("old pin"))))
+        advanceUntilIdle()
+        assertEquals(listOf("fresh post"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
+        assertEquals(listOf("fresh pin"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
     }
 
     @Test fun muteStopsPendingPaginationAndTabsUntilUnmuteAndRefresh() = runTest(dispatcher) {

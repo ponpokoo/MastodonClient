@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="3" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-10-05T11:28:26" hostname="localhost">
+  <testsuite name="io.github.ponpokoo.mastodonclient.ProfilePinnedStatusesDeviceTest" tests="3" failures="0" errors="0" skipped="0" time="6.671" timestamp="2026-10-05T11:28:26" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="delayedPinnedPostPreservesThePostBeingReadAfterScrolling" classname="io.github.ponpokoo.mastodonclient.ProfilePinnedStatusesDeviceTest" time="2.926" />
+    <testcase name="delayedPinnedPostAppearsFirstWhenProfileIsStillAtTop" classname="io.github.ponpokoo.mastodonclient.ProfilePinnedStatusesDeviceTest" time="1.889" />
+    <testcase name="delayedPinnedPostPreservesPartialScrollWithinTheFirstPost" classname="io.github.ponpokoo.mastodonclient.ProfilePinnedStatusesDeviceTest" time="1.856" />
+  </testsuite>
+</testsuites>

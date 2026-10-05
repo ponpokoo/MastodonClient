@@ -63,8 +63,9 @@ class AvatarShapeSettingsDeviceTest {
     private fun assertAvatarCorner(isSquare: Boolean) {
         rule.onNodeWithTag("settings_screen").performScrollToNode(hasTestTag("status_author_avatar"))
         val pixels = rule.onNodeWithTag("status_author_avatar").captureToImage().toPixelMap()
-        val center = pixels[pixels.width / 2, pixels.height / 2]
-        val corner = pixels[2, 2]
-        if (isSquare) assertEquals(center, corner) else assertNotEquals(center, corner)
+        val corner = pixels[0, 0]
+        assertNotEquals(pixels[pixels.width / 2, pixels.height / 2], corner)
+        val shoulder = pixels[pixels.width * 3 / 20, pixels.height / 10]
+        if (isSquare) assertNotEquals(corner, shoulder) else assertEquals(corner, shoulder)
     }
 }

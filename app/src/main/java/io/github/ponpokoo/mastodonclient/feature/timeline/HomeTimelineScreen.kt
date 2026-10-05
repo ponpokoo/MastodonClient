@@ -670,7 +670,6 @@ fun HomeTimelineScreen(
                     selectedTab = profileState.profileSelectedTab,
                     isLoadingMore = profileState.isLoadingMoreProfile,
                     onSelectTab = profileViewModel::selectProfileTab,
-                    onPrepareTab = profileViewModel::prepareProfileTab,
                     onLoadMore = profileViewModel::loadMoreProfile,
                     onFollowers = { profileState.profile?.author?.id?.let(onFollowers) },
                     onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
