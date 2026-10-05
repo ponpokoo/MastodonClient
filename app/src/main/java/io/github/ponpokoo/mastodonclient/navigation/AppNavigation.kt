@@ -204,7 +204,11 @@ fun AppNavigation(
             pushSettings.navigationHandled()
         }
     }
+    val wordMuteRepository = remember(preferences) {
+        io.github.ponpokoo.mastodonclient.data.repository.DefaultWordMuteRepository(preferences, scope)
+    }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
+        wordMuteRepository = wordMuteRepository,
         notificationLocalDataSource = notificationLocalDataSource,
         homeTimelineLocalDataSource = homeTimelineLocalDataSource,
         networkAvailable = networkAvailability::isAvailable,
@@ -572,6 +576,11 @@ fun AppNavigation(
                 activeSession = activeSession,
                 sessions = sessions,
                 pushSettings = pushSettings,
+                moderation = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.ModerationManagementViewModel>(
+                    factory = ScreenViewModelFactory {
+                        io.github.ponpokoo.mastodonclient.feature.settings.ModerationManagementViewModel(timelineRepository, authRepository, wordMuteRepository)
+                    },
+                ),
                 onBack = { navController.popBackStack() },
                 onAddAccount = { navController.navigate(Route.AddAccount) },
                 onLogout = pushSettings::logout,

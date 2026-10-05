@@ -38,6 +38,7 @@ data class AccountRelationship(
     val blockedBy: Boolean = false,
     val muting: Boolean = false,
     val requested: Boolean = false,
+    val mutingNotifications: Boolean? = null,
 )
 
 enum class ProfileStatusTab { Posts, Replies, Media }

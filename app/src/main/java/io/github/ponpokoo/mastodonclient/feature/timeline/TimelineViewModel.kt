@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -51,7 +54,9 @@ class TimelineViewModel(
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(TimelineUiState())
-    val uiState = _uiState.asStateFlow()
+    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var timelineJob: Job? = null
     private var followingTop = false
     private var streamSequence = 0L

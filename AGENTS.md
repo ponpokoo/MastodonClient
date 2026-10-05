@@ -3,6 +3,9 @@
 This repository is a generic Android Mastodon client. It must not assume that the server is
 `mastodon.social` or that all instances run the same Mastodon version.
 
+Use [`docs/index.md`](docs/index.md) to find project documentation. Keep the index current when
+adding, moving, or removing documentation entry points.
+
 ## Required boundaries
 
 - UI -> ViewModel -> Use case/domain repository -> data repository -> remote/local data source.
@@ -51,3 +54,24 @@ priorities. Distinguish planned candidates from implemented features.
 
 When an API detail is uncertain, verify it against the official Mastodon API documentation before
 implementing it.
+
+## Architecture decision records
+
+- Keep lightweight ADRs in [`docs/adr/`](docs/adr/README.md). Record decisions whose rationale is
+  needed to safely revisit them: shared architectural boundaries, migration or compatibility
+  impacts, meaningful alternatives with accepted costs, or future extension and review conditions.
+- Add or update the relevant ADR alongside the implementation change. If an existing document
+  already explains the rationale sufficiently, reference it instead of duplicating the record.
+- Routine visual adjustments and ordinary bug fixes belong in the relevant specification, PR,
+  investigation, or validation record. Add an ADR when they also change an architectural decision
+  meeting the criteria above. API requirements alone do not require an ADR.
+- Use one short Markdown file per decision, with a stable sequential number and descriptive name.
+  Aim for 20–40 lines covering status and recording date, context, decision and rationale,
+  alternatives, accepted costs or constraints, review conditions, and related documents.
+- Keep current behavior and implementation rules in the existing specifications and guides;
+  link them and the ADR in both directions. Keep proposed decisions distinct from accepted ones.
+- When replacing a decision, create a new ADR, mark the old one as superseded, and link both
+  records. Preserve the old rationale and never reuse its number. Update the ADR index.
+- For retrospective records, distinguish verified facts from historical rationale. Mark unknown
+  adoption dates or reasons as unknown; label newly assessed alternatives and review conditions
+  as current analysis rather than claiming they were considered at the time.

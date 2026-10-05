@@ -1,8 +1,11 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenu
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -42,9 +45,16 @@ class StatusDetailViewModel(
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StatusDetailUiState())
-    val uiState: StateFlow<StatusDetailUiState> = _uiState.asStateFlow()
+    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var session: AccountSession? = null
 
+    private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
+        session = { session }, context = { session }, isCurrent = { authRepository.restoreSession() == it },
+        message = { message -> _uiState.update { it.copy(actionMessage = message) } })
+    val moderationMenuState = moderationMenu.state
+    fun loadModerationMenu(accountId: String?) = moderationMenu.load(accountId)
     init {
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
@@ -135,15 +145,10 @@ class StatusDetailViewModel(
         timelineRepository.setFollowing(it, status.author.id, false)
     }
 
-    fun mute(status: TimelineStatus) = runAccountAction("ミュートしました") {
-        timelineRepository.setMuted(it, status.author.id, true)
-    }
+    fun mute(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
+    fun block(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
 
-    fun block(status: TimelineStatus) = runAccountAction("ブロックしました") {
-        timelineRepository.setBlocked(it, status.author.id, true)
-    }
-
-    fun report(status: TimelineStatus, comment: String) = runAccountAction("通報を送信しました") {
+    fun report(status: TimelineStatus, comment: String) = runAccountAction("報告を送信しました") {
         timelineRepository.reportStatus(it, status.author.id, status.statusId, comment)
     }
 

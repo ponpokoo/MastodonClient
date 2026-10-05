@@ -2,6 +2,8 @@
 
 Android、Node.jsローカル模擬Relay、Workers版Relayが使用する登録・解除・Push受付・暗号文取得・FCMエンベロープの契約を定義する。
 Mastodon購読の接続順序と再開・ログアウト処理は[購読管理](push-settings.md)を参照する。
+暗号文の中継と端末側の復号に責務を分ける判断は、
+[ADR 0003：PushとRelayの責務](adr/0003-push-relay-responsibilities.md)を参照する。
 
 VAPID検証、保存方式、配送・再送、件数上限は実装ごとに異なる。
 [ローカルRelay](../relay/README.md)と[Workers版Relay](../relay/workers/README.md)の条件を混同しない。

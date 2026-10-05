@@ -26,6 +26,11 @@ class StatusActionsViewModel(
 ) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(StatusActionsUiState())
     val uiState = _uiState.asStateFlow()
+    private val moderationMenu = AccountModerationMenu(timelineRepository, requestScope,
+        session = { currentSnapshot()?.account }, context = { currentSnapshot() },
+        message = { message -> _uiState.update { it.copy(actionMessage = message) } })
+    val moderationMenuState = moderationMenu.state
+    fun loadModerationMenu(accountId: String?) = moderationMenu.load(accountId)
     init {
         observeSession()
         viewModelScope.launch {
@@ -38,7 +43,7 @@ class StatusActionsViewModel(
             }
         }
     }
-    override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) { _uiState.value = StatusActionsUiState() }
+    override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) { moderationMenu.reset(); _uiState.value = StatusActionsUiState() }
 
     fun toggleFavourite(status: TimelineStatus) =
         runOptimisticAction(status, statusActionManager::beginFavourite)
@@ -83,21 +88,16 @@ class StatusActionsViewModel(
         timelineRepository.setFollowing(it, status.author.id, false)
     }
 
-    fun mute(status: TimelineStatus) = accountAction("${status.author.displayName}さんをミュートしました") {
-        timelineRepository.setMuted(it, status.author.id, true)
-    }
-
-    fun block(status: TimelineStatus) = accountAction("${status.author.displayName}さんをブロックしました") {
-        timelineRepository.setBlocked(it, status.author.id, true)
-    }
+    fun mute(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
+    fun block(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
 
     fun report(status: TimelineStatus, comment: String) {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         requestScope.launch {
             timelineRepository.reportStatus(session, status.author.id, status.statusId, comment).forSession(snapshot).fold(
-                onSuccess = { _uiState.update { it.copy(actionMessage = "通報を送信しました") } },
-                onFailure = { showActionError(it, "通報を送信できませんでした") },
+                onSuccess = { _uiState.update { it.copy(actionMessage = "報告を送信しました") } },
+                onFailure = { showActionError(it, "報告を送信できませんでした") },
             )
         }
     }

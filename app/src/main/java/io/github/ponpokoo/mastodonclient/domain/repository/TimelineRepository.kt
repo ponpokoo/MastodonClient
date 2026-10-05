@@ -30,6 +30,13 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository {
+    val wordMutes: kotlinx.coroutines.flow.StateFlow<Map<String, List<String>>>
+        get() = EmptyWordMutes.state
+    suspend fun getModerationAccounts(session: AccountSession, kind: io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind, maxId: String? = null): Result<io.github.ponpokoo.mastodonclient.domain.model.ModerationAccountsPage> =
+        Result.failure(UnsupportedOperationException("管理一覧は未対応です"))
+    suspend fun restoreMute(session: AccountSession, accountId: String, notifications: Boolean, durationSeconds: Long?): Result<AccountRelationship> = setMuted(session, accountId, true)
+    val moderation: kotlinx.coroutines.flow.StateFlow<io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState>
+        get() = EmptyModeration.state
     suspend fun getExplore(session: AccountSession, feed: io.github.ponpokoo.mastodonclient.domain.model.ExploreFeed,
         cursor: String? = null, limit: Int = 20): Result<io.github.ponpokoo.mastodonclient.domain.model.ExplorePage> =
         Result.failure(UnsupportedOperationException("探索は未対応です"))
@@ -105,7 +112,7 @@ interface TimelineRepository {
     suspend fun setBlocked(session: AccountSession, accountId: String, blocked: Boolean): Result<AccountRelationship> =
         Result.failure(UnsupportedOperationException("ブロック操作は未対応です"))
     suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean): Result<Unit> =
-        Result.failure(UnsupportedOperationException("通報は未対応です"))
+        Result.failure(UnsupportedOperationException("報告は未対応です"))
     suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> =
         Result.failure(UnsupportedOperationException("プロフィール編集は未対応です"))
 
@@ -219,5 +226,13 @@ interface TimelineRepository {
         maxId: String? = null,
     ): Result<TimelinePage> = Result.failure(UnsupportedOperationException("保存済みタイムラインは未対応です"))
     suspend fun reportStatus(session: AccountSession, accountId: String, statusId: String, comment: String): Result<Unit> =
-        Result.failure(UnsupportedOperationException("投稿の通報は未対応です"))
+        Result.failure(UnsupportedOperationException("投稿の報告は未対応です"))
+}
+
+private object EmptyWordMutes {
+    val state = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<String>>>(emptyMap())
+}
+
+private object EmptyModeration {
+    val state = kotlinx.coroutines.flow.MutableStateFlow(io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState())
 }

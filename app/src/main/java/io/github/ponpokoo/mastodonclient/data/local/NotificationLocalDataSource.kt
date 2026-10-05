@@ -12,6 +12,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 interface NotificationLocalDataSource {
+    suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) = Unit
     suspend fun read(session: AccountSession): CachedNotifications
     suspend fun write(session: AccountSession, notifications: List<TimelineNotification>)
     suspend fun writeMarker(session: AccountSession, lastReadId: String?)
@@ -24,6 +25,21 @@ class RoomNotificationLocalDataSource(
 ) : NotificationLocalDataSource {
     private val dao = database.notifications()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private var moderation = io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState()
+
+    override suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            moderation = state
+            if (!isAccountPresent(session)) return@withTransaction
+            val instance = session.instanceUrl.trimEnd('/')
+            val hidden = dao.read(session.sessionId, instance).filter { row ->
+                val notification = try { json.decodeFromString<TimelineNotification>(row.payload) }
+                    catch (_: SerializationException) { return@filter false }
+                state.hides(session, notification)
+            }
+            dao.deleteRows(session.sessionId, instance, hidden.map { it.id })
+        }
+    }
 
     override suspend fun read(session: AccountSession): CachedNotifications = withContext(Dispatchers.IO) {
         database.withTransaction {
@@ -45,15 +61,15 @@ class RoomNotificationLocalDataSource(
 
     override suspend fun write(session: AccountSession, notifications: List<TimelineNotification>) = withContext(Dispatchers.IO) {
         val instance = session.instanceUrl.trimEnd('/')
-        val rows = notifications.distinctBy(TimelineNotification::id).take(MAX_NOTIFICATIONS)
-            .mapIndexed { position, notification ->
-                CachedNotificationEntity(session.sessionId, instance, notification.id, position, json.encodeToString(notification))
-            }
         database.withTransaction {
             // Checked inside the same transaction that serializes account deletion. A late
             // response cannot repopulate the cache after logout has removed the session.
             if (!isAccountPresent(session)) return@withTransaction
             currentCoroutineContext().ensureActive()
+            val rows = notifications.filterNot { moderation.hides(session, it) }
+                .distinctBy(TimelineNotification::id).take(MAX_NOTIFICATIONS).mapIndexed { position, notification ->
+                    CachedNotificationEntity(session.sessionId, instance, notification.id, position, json.encodeToString(notification))
+                }
             dao.clearRows(session.sessionId, instance)
             dao.insert(rows)
         }

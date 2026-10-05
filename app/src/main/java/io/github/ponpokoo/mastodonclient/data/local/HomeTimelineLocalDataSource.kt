@@ -16,6 +16,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 interface HomeTimelineLocalDataSource {
+    suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) = Unit
     suspend fun readPage(session: AccountSession, maxId: String?, limit: Int, anchorId: String? = null): TimelinePage?
     suspend fun writePage(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<BrowsingSession.Change> = emptyList())
     suspend fun applyChange(session: AccountSession, change: BrowsingSession.Change)
@@ -30,6 +31,10 @@ class RoomHomeTimelineLocalDataSource(
     private val dao = database.homeTimeline()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val writes = Mutex()
+    private var moderation = io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState()
+
+    override suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) =
+        mutate(session) { previous -> moderation = state; previous }
 
     override suspend fun readPage(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): TimelinePage? = withContext(Dispatchers.IO) {
         require(limit in 1..40)
@@ -77,7 +82,7 @@ class RoomHomeTimelineLocalDataSource(
                 val previous = TimelinePage(decoded, decoded.lastOrNull()?.timelineId,
                     decoded.size == rows.size && dao.state(session.sessionId, instance)?.endReached == true)
                 val result = transform(previous)
-                val statuses = result.statuses.take(MAX_HOME_STATUSES)
+                val statuses = result.statuses.filterNot { moderation.hides(session, it) }.take(MAX_HOME_STATUSES)
                 dao.clearRows(session.sessionId, instance)
                 dao.insert(statuses.mapIndexed { position, status ->
                     CachedHomeStatusEntity(session.sessionId, instance, status.timelineId, position, json.encodeToString(status))

@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.notifications
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
@@ -45,7 +48,9 @@ class NotificationsViewModel(
     private val systemNotifications: io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository? = null,
 ) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(NotificationsUiState())
-    val uiState = _uiState.asStateFlow()
+    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var notificationsJob: Job? = null
     private var cacheWriteJob: Job? = null
     private var cacheRestored = false

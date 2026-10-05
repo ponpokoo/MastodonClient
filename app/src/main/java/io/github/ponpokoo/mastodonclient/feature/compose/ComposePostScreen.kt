@@ -118,6 +118,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
+import io.github.ponpokoo.mastodonclient.feature.common.showTwoSecondSnackbar
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
@@ -211,21 +212,9 @@ fun ComposePostScreen(
             if (it == "下書きに保存しました") {
                 cwEnabled = false
                 altEditingUri = null
-                val dismissJob = launch {
-                    delay(2_000)
-                    snackbarHostState.currentSnackbarData?.dismiss()
-                }
-                try {
-                    if (snackbarHostState.showSnackbar(
-                            it,
-                            actionLabel = "下書きを見る",
-                            duration = androidx.compose.material3.SnackbarDuration.Indefinite,
-                        ) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                        keyboardController?.hide()
-                        draftSheetOpen = true
-                    }
-                } finally {
-                    dismissJob.cancel()
+                if (snackbarHostState.showTwoSecondSnackbar(it, "下書きを見る") == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    keyboardController?.hide()
+                    draftSheetOpen = true
                 }
             } else {
                 val showJob = launch { snackbarHostState.showSnackbar(it) }
@@ -405,35 +394,14 @@ fun ComposePostScreen(
                     onRemove = viewModel::clearQuote,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable {
+            io.github.ponpokoo.mastodonclient.feature.common.AccountSwitcherRow(
+                session = state.selectedSession,
+                onClick = {
                     keyboardController?.hide()
                     accountDialogOpen = true
-                }
-                    .padding(vertical = 10.dp).testTag("compose_account_switcher"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AsyncImage(
-                    model = state.selectedSession?.avatarUrl,
-                    contentDescription = null,
-                    modifier = Modifier.size(42.dp).clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surface),
-                    contentScale = ContentScale.Crop,
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        state.selectedSession?.displayName?.ifBlank { state.selectedSession?.username.orEmpty() }.orEmpty(),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        state.selectedSession?.let { "@${it.username} · ${it.instanceUrl.removePrefix("https://")}" }.orEmpty(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text("切り替え", color = MaterialTheme.colorScheme.primary)
-            }
+                },
+                modifier = Modifier.testTag("compose_account_switcher"),
+            )
             Box {
                 AssistChip(
                     onClick = { visibilityMenuOpen = true },

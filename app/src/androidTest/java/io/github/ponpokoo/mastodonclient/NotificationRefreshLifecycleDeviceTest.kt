@@ -44,6 +44,7 @@ class NotificationRefreshLifecycleDeviceTest {
         val unused = Proxy.newProxyInstance(TimelineRepository::class.java.classLoader,
             arrayOf(TimelineRepository::class.java)) { _, method, _ -> error("Unexpected call: ${method.name}") } as TimelineRepository
         val repository = object : TimelineRepository by unused {
+            override val moderation = kotlinx.coroutines.flow.MutableStateFlow(AccountModerationState())
             override suspend fun getCachedNotifications(session: AccountSession) = Result.success(CachedNotifications(emptyList()))
             override suspend fun getNotificationMarker(session: AccountSession) = Result.success<String?>(null)
             override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>) = Result.success(Unit)

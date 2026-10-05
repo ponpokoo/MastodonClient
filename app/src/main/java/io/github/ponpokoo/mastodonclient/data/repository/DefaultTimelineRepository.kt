@@ -47,6 +47,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import java.util.Collections
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -79,7 +80,31 @@ class DefaultTimelineRepository(
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
     private val networkAvailable: () -> Boolean = { true },
     private val configurationClock: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val wordMuteRepository: io.github.ponpokoo.mastodonclient.domain.repository.WordMuteRepository? = null,
 ) : TimelineRepository {
+    override val wordMutes get() = wordMuteRepository?.words ?: super.wordMutes
+
+    override suspend fun getModerationAccounts(session: AccountSession, kind: io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind, maxId: String?) = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val response = if (kind == io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind.Mutes) api.getMutes(maxId) else api.getBlocks(maxId)
+        if (!response.isSuccessful) throw HttpException(response)
+        val accounts = response.body().orEmpty()
+        val relationships = if (accounts.isEmpty()) emptyMap() else api.getRelationships(accounts.map { it.id }).associateBy { it.id }
+        io.github.ponpokoo.mastodonclient.domain.model.ModerationAccountsPage(accounts.map { account ->
+            val relation = requireNotNull(relationships[account.id]) { "関係状態を取得できませんでした" }.toDomain()
+            io.github.ponpokoo.mastodonclient.domain.model.ModerationAccount(account.toDomain(), relation, account.muteExpiresAt)
+        }, nextAccountListCursor(response.headers()["Link"]))
+    }
+
+    override suspend fun restoreMute(session: AccountSession, accountId: String, notifications: Boolean, durationSeconds: Long?) = runCatching {
+        moderationMutex.withLock {
+            apiClientFactory.create(session.instanceUrl, session.accessToken).mute(accountId, notifications, durationSeconds).toDomain()
+                .also { applyModeration(session, accountId, it) }
+        }
+    }
+    private val mutableModeration = kotlinx.coroutines.flow.MutableStateFlow(io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState())
+    override val moderation = mutableModeration.asStateFlow()
+    private val moderationMutex = Mutex()
     private data class CachedConfiguration(val value: ComposerConfiguration, val fetchedAt: Long)
     private val configurationMutex = Mutex()
     private val configurations = object : LinkedHashMap<String, CachedConfiguration>(8, 0.75f, true) {
@@ -87,7 +112,9 @@ class DefaultTimelineRepository(
     }
     override fun isNetworkAvailable() = networkAvailable()
     override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = runCatching {
-        homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)?.also { page -> page.statuses.forEach { cacheStatus(session, it) } }
+        homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)
+            ?.let { it.copy(statuses = it.statuses.filterNot { status -> moderation.value.hides(session, status) }) }
+            ?.also { page -> page.statuses.forEach { cacheStatus(session, it) } }
     }
     override suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change>): Result<Unit> = runCatching {
         homeTimelineLocalDataSource?.writePage(session, maxId, page, changes)
@@ -107,10 +134,11 @@ class DefaultTimelineRepository(
         },
     )
 
-    override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = statusCache[cacheKey(session, statusId)]
+    override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? =
+        statusCache[cacheKey(session, statusId)]?.takeUnless { moderation.value.hides(session, it) }
 
     private fun cacheStatus(session: AccountSession, status: TimelineStatus): TimelineStatus = status.also {
-        statusCache[cacheKey(session, it.statusId)] = it
+        if (!moderation.value.hides(session, it)) statusCache[cacheKey(session, it.statusId)] = it
     }
 
     override suspend fun getAnnouncements(session: AccountSession): Result<List<ServerAnnouncement>> = runCatching {
@@ -247,7 +275,11 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getRelationship(session: AccountSession, accountId: String) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).getRelationships(listOf(accountId)).first().toDomain()
+        moderationMutex.withLock {
+            apiClientFactory.create(session.instanceUrl, session.accessToken).getRelationships(listOf(accountId)).first().toDomain().also {
+                if (it.muting || it.blocking || moderation.value.relationship(session, accountId) != null) applyModeration(session, accountId, it)
+            }
+        }
     }
 
     override suspend fun getRelationships(session: AccountSession, accountIds: List<String>) = runCatching {
@@ -257,16 +289,43 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (following) it.follow(accountId) else it.unfollow(accountId) }.toDomain()
+        moderationMutex.withLock {
+            apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (following) it.follow(accountId) else it.unfollow(accountId) }.toDomain().also {
+                if (moderation.value.relationship(session, accountId) != null) applyModeration(session, accountId, it)
+            }
+        }
     }
 
     override suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (muted) it.mute(accountId) else it.unmute(accountId) }.toDomain()
+        moderationMutex.withLock {
+            apiClientFactory.create(session.instanceUrl, session.accessToken)
+                .let { if (muted) it.mute(accountId) else it.unmute(accountId) }.toDomain()
+                .also { applyModeration(session, accountId, it) }
+        }
     }
 
     override suspend fun setBlocked(session: AccountSession, accountId: String, blocked: Boolean) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).let { if (blocked) it.block(accountId) else it.unblock(accountId) }.toDomain()
+        moderationMutex.withLock {
+            apiClientFactory.create(session.instanceUrl, session.accessToken)
+                .let { if (blocked) it.block(accountId) else it.unblock(accountId) }.toDomain()
+                .also { applyModeration(session, accountId, it) }
+        }
     }
+
+    private suspend fun applyModeration(session: AccountSession, accountId: String, relationship: AccountRelationship) =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            // Once the server accepted a change, finish local invalidation even if its screen closes.
+            mutableModeration.value = mutableModeration.value.changed(session, accountId, relationship)
+            val state = mutableModeration.value
+            synchronized(statusCache) {
+                statusCache.entries.removeAll { (key, status) ->
+                    key.sessionId == session.sessionId && key.instanceUrl == session.instanceUrl.trimEnd('/') && state.hides(session, status)
+                }
+            }
+            val home = runCatching { homeTimelineLocalDataSource?.applyModeration(session, state) }
+            val notifications = runCatching { notificationLocalDataSource?.applyModeration(session, state) }
+            if (home.isFailure || notifications.isFailure) mutableModeration.value = state.cleanupFailed(session, accountId)
+        }
 
     override suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean) = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken).report(accountId, comment, forward)
@@ -318,7 +377,7 @@ class DefaultTimelineRepository(
             .map(NotificationDto::toDomain)
         notifications.mapNotNull(TimelineNotification::status).forEach { cacheStatus(session, it) }
         NotificationPage(
-            notifications = notifications,
+            notifications = notifications.filterNot { moderation.value.hides(session, it) },
             nextMaxId = notifications.lastOrNull()?.id,
             // Instances can cap the page below the requested limit. Only an empty
             // response proves there are no older notifications to request.
@@ -327,7 +386,9 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getCachedNotifications(session: AccountSession): Result<CachedNotifications> = runCatching {
-        notificationLocalDataSource?.read(session) ?: CachedNotifications()
+        (notificationLocalDataSource?.read(session) ?: CachedNotifications()).let { cached ->
+            cached.copy(notifications = cached.notifications.filterNot { moderation.value.hides(session, it) })
+        }
     }
 
     override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> = runCatching {
@@ -429,6 +490,7 @@ class DefaultTimelineRepository(
                 when (message.event) {
                     "update", "status.update" -> runCatching {
                         TimelineStreamEvent.StatusAdded(cacheStatus(session, json.decodeFromString<StatusDto>(message.payload).toDomain()), isEdit = message.event == "status.update")
+                            .takeUnless { moderation.value.hides(session, it.status) }
                     }.getOrNull()
                     "delete" -> TimelineStreamEvent.StatusDeleted(message.payload.trim('"')).also {
                         statusCache.remove(cacheKey(session, it.statusId))
@@ -438,7 +500,7 @@ class DefaultTimelineRepository(
                             json.decodeFromString<NotificationDto>(message.payload).toDomain().also {
                                 it.status?.let { status -> cacheStatus(session, status) }
                             },
-                        )
+                        ).takeUnless { moderation.value.hides(session, it.notification) }
                     }.getOrNull()
                     else -> null
                 }
@@ -456,9 +518,9 @@ class DefaultTimelineRepository(
             .create(session.instanceUrl, session.accessToken)
             .getHomeTimeline(maxId = maxId, limit = limit)
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         TimelinePage(
-            statuses = statuses,
+            statuses = statuses.filterNot { moderation.value.hides(session, it) },
             nextMaxId = response.lastOrNull()?.id,
             // Instances may return fewer than the requested limit before the history ends.
             endReached = response.isEmpty(),
@@ -910,7 +972,7 @@ internal fun nextAccountListCursor(linkHeader: String?): String? {
 
 private fun io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto.toDomain() = AccountRelationship(
     following = following, followedBy = followedBy, blocking = blocking, blockedBy = blockedBy,
-    muting = muting, requested = requested,
+    muting = muting, requested = requested, mutingNotifications = mutingNotifications,
 )
 
 private fun NotificationDto.toDomain() = TimelineNotification(

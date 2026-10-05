@@ -97,6 +97,7 @@ fun StatusDetailScreen(
     onStatusClick: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val moderationMenu by viewModel.moderationMenuState.collectAsStateWithLifecycle()
     val status = state.detail?.status
     val conversationListState = rememberConversationListState(
         status?.statusId,
@@ -229,9 +230,14 @@ fun StatusDetailScreen(
         }
     }
 
+    LaunchedEffect(menuStatus?.author?.id) {
+        menuStatus?.author?.id?.let { viewModel.loadModerationMenu(it) }
+    }
     menuStatus?.let { selected ->
         StatusMenuDialog(
             status = selected,
+            moderation = moderationMenu.takeIf { it.accountId == selected.author.id },
+            onRetryRelationship = { viewModel.loadModerationMenu(selected.author.id) },
             isOwnStatus = selected.author.id == state.currentAccountId,
             onDismiss = { menuStatus = null },
             onOpenBrowser = {
@@ -243,8 +249,8 @@ fun StatusDetailScreen(
             onDelete = { menuStatus = null; confirmation = "delete" to selected },
             onAddToList = { menuStatus = null; listStatus = selected; viewModel.loadLists() },
             onUnfollow = { menuStatus = null; confirmation = "unfollow" to selected },
-            onMute = { menuStatus = null; confirmation = "mute" to selected },
-            onBlock = { menuStatus = null; confirmation = "block" to selected },
+            onMute = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to selected },
+            onBlock = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to selected },
             onReport = { menuStatus = null; reportStatus = selected },
         )
     }
@@ -258,7 +264,9 @@ fun StatusDetailScreen(
                     "delete" -> viewModel.deleteStatus(selected)
                     "unfollow" -> viewModel.unfollow(selected)
                     "mute" -> viewModel.mute(selected)
+                    "unmute" -> viewModel.mute(selected, false)
                     "block" -> viewModel.block(selected)
+                    "unblock" -> viewModel.block(selected, false)
                 }
                 confirmation = null
             },

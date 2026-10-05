@@ -26,6 +26,7 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Connection("タイムラインと通信", "ストリーミング・更新時の動作"),
     Notifications("通知", "通知の受け取り方・Android通知の表示"),
     Composer("投稿", "公開範囲・ALT確認・ボタンの並び"),
+    Moderation("ミュート・ブロックの管理", "ワードミュート・ミュート中・ブロック中"),
     Accounts("アカウント管理", "登録済みアカウント・追加・ログアウト"),
     Storage("ストレージ", "画像キャッシュの削除"),
     About("このアプリについて", "バージョン情報"),
@@ -41,6 +42,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onAddAccount: () -> Unit,
     pushSettings: PushSettingsViewModel? = null,
+    moderation: ModerationManagementViewModel? = null,
 ) {
     val nav = rememberNavController()
     NavHost(
@@ -54,18 +56,22 @@ fun SettingsScreen(
     ) {
         SettingsPage.entries.forEach { page ->
             composable(page.name) {
-                SettingsPageContent(
-                    page = page,
-                    onPage = { nav.navigate(it.name) { launchSingleTop = true } },
-                    maintenance = maintenance,
-                    store = store,
-                    activeSession = activeSession,
-                    sessions = sessions,
-                    onBack = { if (page == SettingsPage.Root) onBack() else nav.popBackStack() },
-                    onLogout = onLogout,
-                    onAddAccount = onAddAccount,
-                    pushSettings = pushSettings,
-                )
+                if (page == SettingsPage.Moderation && moderation != null) {
+                    ModerationManagementScreen(moderation, onBack = { nav.popBackStack() })
+                } else {
+                    SettingsPageContent(
+                        page = page,
+                        onPage = { nav.navigate(it.name) { launchSingleTop = true } },
+                        maintenance = maintenance,
+                        store = store,
+                        activeSession = activeSession,
+                        sessions = sessions,
+                        onBack = { if (page == SettingsPage.Root) onBack() else nav.popBackStack() },
+                        onLogout = onLogout,
+                        onAddAccount = onAddAccount,
+                        pushSettings = pushSettings,
+                    )
+                }
             }
         }
     }

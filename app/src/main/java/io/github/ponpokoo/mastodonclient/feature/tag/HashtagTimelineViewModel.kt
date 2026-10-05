@@ -1,8 +1,10 @@
 package io.github.ponpokoo.mastodonclient.feature.tag
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -25,7 +27,9 @@ class HashtagTimelineViewModel(private val hashtag: String, private val timeline
     browsing: BrowsingSession, private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : SessionScopedViewModel(browsing) {
     private val mutableState = MutableStateFlow(HashtagTimelineUiState())
-    val uiState = mutableState.asStateFlow()
+    val uiState = mutableState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var timelineJob: Job? = null
     private var timelineGeneration = 0L
     private var tagJob: Job? = null

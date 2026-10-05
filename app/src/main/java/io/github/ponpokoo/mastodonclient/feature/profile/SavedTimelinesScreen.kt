@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -35,7 +38,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -72,7 +74,9 @@ class SavedTimelinesViewModel(
     private val statusActionManager: StatusActionManager = StatusActionManager(repository),
 ) : ViewModel() {
     private val _state = MutableStateFlow(SavedTimelinesUiState())
-    val state = _state.asStateFlow()
+    val state = _state.moderated(viewModelScope, repository, { session }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var session: AccountSession? = null
 
     init {

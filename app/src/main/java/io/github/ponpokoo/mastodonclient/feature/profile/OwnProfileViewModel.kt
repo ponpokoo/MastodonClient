@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -28,7 +31,9 @@ data class ProfileUiState(
 
 class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(ProfileUiState())
-    val uiState = _uiState.asStateFlow()
+    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var profileJob: Job? = null
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
     private var requested = false

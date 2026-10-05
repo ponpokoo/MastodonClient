@@ -22,6 +22,7 @@ data class AccountDto(
     val fields: List<AccountFieldDto> = emptyList(),
     val emojis: List<AccountEmojiDto> = emptyList(),
     val source: AccountSourceDto? = null,
+    @SerialName("mute_expires_at") val muteExpiresAt: String? = null,
 )
 
 @Serializable
@@ -56,6 +57,7 @@ data class RelationshipDto(
     @SerialName("blocked_by") val blockedBy: Boolean = false,
     val muting: Boolean = false,
     val requested: Boolean = false,
+    @SerialName("muting_notifications") val mutingNotifications: Boolean? = null,
 )
 
 @Serializable

@@ -5,6 +5,8 @@ Firebaseのビルド設定からFCMトークン取得、受信Worker、暗号文
 Workersの配置は[配置・運用手順](../relay/workers/setup.md)を参照する。
 Firebaseなしでも受信ロジックを呼び出し、固定の暗号文による検証ができる。
 FirebaseとRelay URLを設定したビルドでは、アカウントごとにPushを有効化できる。
+RelayとAndroidの責務を分ける背景は、
+[ADR 0003：PushとRelayの責務](adr/0003-push-relay-responsibilities.md)を参照する。
 
 ## ビルド設定
 

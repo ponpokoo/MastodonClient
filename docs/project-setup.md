@@ -2,13 +2,14 @@
 
 UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](ui-guidelines.md) を参照する。
 本書は開発環境、実装の境界、状態管理、確認手順をまとめる。
+設計判断の背景・採用理由・見直し条件は[ADR一覧](adr/README.md)を参照する。
 
 ## プロジェクト構成
 
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| 作業ツリーの版番号 | `2.3.0`（versionCode 14）。対象版・確認結果は [更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| 作業ツリーの版番号 | `2.4.0`（versionCode 15、実機確認用）。対象版・確認結果は [更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -84,6 +85,9 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
   今回はRepository経由の表示キャッシュに留め、全画面の唯一のデータ源への移行や投稿・アカウントの共通テーブル化は行わない。
 - コルーチンのキャンセルを一般エラーとして握りつぶさない。メディア取り込みのファイルI/Oは背景処理に分離する。
 
+永続キャッシュの対象とRepository経由の保存境界については、
+[ADR 0002：永続キャッシュの範囲](adr/0002-persistent-browsing-cache.md)に判断を記録する。
+
 ## メイン画面の責務とライフサイクル
 
 4タブのViewModelは`Route.Timeline`のナビゲーションエントリに保持する。
@@ -99,15 +103,20 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 | OwnProfileViewModel | 自分のプロフィール・タブ・更新・追加取得 |
 | StatusActionsViewModel | メイン4タブの投稿・アカウント操作、リスト選択 |
 | SettingsMaintenanceViewModel | 画像キャッシュ削除の実行状態・結果、インストール済みAPKの版情報 |
+| ModerationManagementViewModel | 管理対象アカウントの隔離、サーバーのミュート・ブロック一覧と解除・取り消し、端末保存のワード管理 |
 
 `HomeTimelineScreen`は各状態を個別に購読する。別画面のプロフィール編集・関係操作は
 `AccountProfileViewModel`が担当し、表示には共通の`ProfileUiState`を使う。
 
 `MainSessionViewModel`が所有する`BrowsingSession`を他のViewModelへ渡す。
+設定の管理画面は閲覧セッションを変更せず管理対象を選ぶ。専用ViewModel内で同じキャンセルと世代番号の方針を適用する。[ADR 0005](adr/0005-moderation-management-word-mutes.md)を参照。
 スナップショットはアカウントと世代番号を持ち、A→B→Aと切り替えても以前のAの応答を採用しない。
 `SessionScopedViewModel`は切替時にリクエストをキャンセルして状態を初期化し、
 結果反映前にキャンセル状態とスナップショットの一致を確認する。
 検索語・プロフィールタブ・再取得の変更でも不要な要求をキャンセルする。
+
+キャンセルと世代番号の照合を併用する判断は、
+[ADR 0001：セッション隔離](adr/0001-session-isolation.md)を参照する。
 
 ストリームと操作成功のイベントにはセッションを添え、該当するタブへ配信する。
 投稿の反応更新ではブースト行の識別情報を保ち、削除時は一覧と通知の参照を更新する。
@@ -221,3 +230,4 @@ adb -s emulator-5554 reverse --remove tcp:8765
 旧来のプロフィール仕様・設定／投稿仕様はUI・機能仕様へ、状態管理メモ・実機確認手順は本書へ統合した。
 機能変更時は該当する文書を更新し、予定と実装済みを区別する。細かな実装値の正本はコードとし、
 文書には利用者から見える設定・挙動、設計上の境界、確認に必要な情報を残す。
+ADRの記録基準と運用は[AGENTS.md](../AGENTS.md#architecture-decision-records)に従う。

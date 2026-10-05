@@ -3,15 +3,20 @@ package io.github.ponpokoo.mastodonclient.feature.profile
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
+import io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenRepositoryFake
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelTestBase
 import io.github.ponpokoo.mastodonclient.feature.common.testAccount
 import io.github.ponpokoo.mastodonclient.feature.common.testStatus
+import io.github.ponpokoo.mastodonclient.feature.common.testProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,6 +30,58 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
         override suspend fun completeAuthorization(callbackUrl: String) = Result.success(testAccount)
         override suspend fun logout() = Unit
+    }
+
+    @Test fun muteStopsPendingPaginationAndTabsUntilUnmuteAndRefresh() = runTest(dispatcher) {
+        val older = CompletableDeferred<Result<TimelinePage>>()
+        val calls = mutableListOf<Pair<ProfileStatusTab, String?>>()
+        var lookups = 0
+        val repository = object : ScreenRepositoryFake() {
+            override val moderation = MutableStateFlow(AccountModerationState())
+            override suspend fun getProfile(session: AccountSession, accountId: String) =
+                Result.success(testProfile().copy(author = testStatus().author.copy(id = accountId), isOwnProfile = false))
+            override suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> {
+                lookups++
+                return Result.success(moderation.value.relationship(session, accountId) ?: AccountRelationship())
+            }
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+                maxId: String?): Result<TimelinePage> {
+                calls += tab to maxId
+                return if (maxId != null) older.await() else Result.success(TimelinePage(
+                    listOf(testStatus().copy(author = testStatus().author.copy(id = accountId))), "older", false))
+            }
+            override suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean): Result<AccountRelationship> {
+                val relationship = AccountRelationship(muting = muted)
+                moderation.value = moderation.value.changed(session, accountId, relationship)
+                return Result.success(relationship)
+            }
+        }
+        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle()
+        viewModel.loadModerationMenu(); advanceUntilIdle()
+        assertEquals(1, lookups)
+        viewModel.loadMore(); runCurrent()
+        assertTrue(viewModel.uiState.value.isLoadingMore)
+        viewModel.setProfileMuted(true); advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+        assertNull(viewModel.uiState.value.profile!!.nextMaxId)
+        assertTrue(viewModel.uiState.value.profile!!.endReached)
+        assertTrue(viewModel.uiState.value.profileTabs.values.all { it.isLoaded && !it.isLoading && !it.isLoadingMore && !it.isRefreshing })
+        assertFalse(viewModel.uiState.value.isLoadingMore)
+        viewModel.loadMore()
+        viewModel.selectTab(ProfileStatusTab.Replies)
+        viewModel.refresh(); advanceUntilIdle()
+        assertEquals(2, calls.size)
+        older.complete(Result.success(TimelinePage(listOf(testStatus("late")), "next", false)))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+        viewModel.loadModerationMenu(); advanceUntilIdle()
+        viewModel.setProfileMuted(false); advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
+        viewModel.refresh(); advanceUntilIdle()
+        assertEquals(3, calls.size)
+        assertEquals(1, viewModel.uiState.value.profile!!.statuses.size)
+        assertFalse(viewModel.uiState.value.isRefreshing)
     }
 
     @Test fun cachedTabsReflectFavouriteAndDeletion() = runTest(dispatcher) {

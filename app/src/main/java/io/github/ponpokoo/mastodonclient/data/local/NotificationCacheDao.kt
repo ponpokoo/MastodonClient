@@ -25,6 +25,8 @@ data class NotificationMarkerEntity(
 
 @Dao
 interface NotificationCacheDao {
+    @Query("DELETE FROM notification_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl AND id IN (:ids)")
+    suspend fun deleteRows(sessionId: String, instanceUrl: String, ids: List<String>)
     @Query("SELECT * FROM notification_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl ORDER BY position")
     suspend fun read(sessionId: String, instanceUrl: String): List<CachedNotificationEntity>
 

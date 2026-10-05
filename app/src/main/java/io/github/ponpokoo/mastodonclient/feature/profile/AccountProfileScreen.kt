@@ -56,6 +56,7 @@ fun AccountProfileScreen(
     onEditStatus: (String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val moderationMenu by viewModel.moderationMenuState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var confirmAction by remember { mutableStateOf<String?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
@@ -115,6 +116,7 @@ fun AccountProfileScreen(
         )
     }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileContent(
+            instanceUrl = state.instanceUrl,
             state = ProfileUiState(
                 profile = profile,
                 isLoadingProfile = state.isLoading,
@@ -159,27 +161,32 @@ fun AccountProfileScreen(
                     .setPrimaryClip(ClipData.newPlainText("profile", it))
             } },
             onShowProfileQr = { qrOpen = true },
-            onOpenProfileBrowser = { profile?.url?.let {
-                context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri()))
-            } },
             onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
             onOpenFollowedTags = { profile?.url?.let { onOpenLink("$it/followed_tags") } },
-            onOpenAccountSettings = { profile?.url?.let { onOpenLink("$it/settings/profile") } },
-            onMuteProfile = { confirmAction = "mute" },
-            onBlockProfile = { confirmAction = "block" },
+            onProfileMenuOpen = { if (profile?.isOwnProfile == false) viewModel.loadModerationMenu() },
+            moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
+            moderationError = moderationMenu.error,
+            onRetryModeration = { viewModel.loadModerationMenu() },
+            onMuteProfile = { confirmAction = if (moderationMenu.relationship?.muting == true) "unmute" else "mute" },
+            onBlockProfile = { confirmAction = if (moderationMenu.relationship?.blocking == true) "unblock" else "block" },
             onReportProfile = { reportOpen = true },
-            isProfileMuted = state.relationship?.muting == true,
-            isProfileBlocked = state.relationship?.blocking == true,
+            isProfileMuted = moderationMenu.relationship?.muting == true,
+            isProfileBlocked = moderationMenu.relationship?.blocking == true,
             onMoreClick = { statusMenu = it },
             listStates = profileListStates,
             headerListState = profileHeaderListState,
         )
     }
 
+    LaunchedEffect(statusMenu?.author?.id) {
+        statusMenu?.author?.id?.let { viewModel.loadModerationMenu(it) }
+    }
     statusMenu?.let { status ->
         StatusMenuDialog(
             status = status,
-            isOwnStatus = profile?.isOwnProfile == true && status.author.id == profile.author.id,
+            moderation = moderationMenu.takeIf { it.accountId == status.author.id },
+            onRetryRelationship = { viewModel.loadModerationMenu(status.author.id) },
+            isOwnStatus = status.author.id == state.currentAccountId,
             onDismiss = { statusMenu = null },
             onOpenBrowser = {
                 statusMenu = null
@@ -190,8 +197,8 @@ fun AccountProfileScreen(
             onDelete = { statusMenu = null; statusConfirmation = "delete" to status },
             onAddToList = { statusMenu = null; listStatus = status; viewModel.loadLists() },
             onUnfollow = { statusMenu = null; statusConfirmation = "unfollow" to status },
-            onMute = { statusMenu = null; statusConfirmation = "mute" to status },
-            onBlock = { statusMenu = null; statusConfirmation = "block" to status },
+            onMute = { statusMenu = null; statusConfirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to status },
+            onBlock = { statusMenu = null; statusConfirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to status },
             onReport = { statusMenu = null; statusReport = status },
         )
     }
@@ -201,7 +208,9 @@ fun AccountProfileScreen(
                 "delete" -> viewModel.deleteStatus(status)
                 "unfollow" -> viewModel.unfollowStatus(status)
                 "mute" -> viewModel.muteStatus(status)
+                "unmute" -> viewModel.muteStatus(status, false)
                 "block" -> viewModel.blockStatus(status)
+                "unblock" -> viewModel.blockStatus(status, false)
             }
             statusConfirmation = null
         }
@@ -227,16 +236,26 @@ fun AccountProfileScreen(
 
     confirmAction?.let { action -> AlertDialog(
         onDismissRequest = { confirmAction = null }, title = { Text(when (action) {
-            "mute" -> "ミュートを変更"
+            "mute" -> "ミュート"
+            "unmute" -> "ミュート解除"
+            "unblock" -> "ブロック解除"
             "unfollow" -> "フォローを解除しますか？"
-            else -> "ブロックを変更"
+            else -> "ブロック"
         }) },
-        text = { Text(if (action == "unfollow") "${profile?.author?.displayName.orEmpty()}さんのフォローを解除します。" else "この操作を実行しますか？") },
+        text = { Text("${profile?.author?.displayName.orEmpty()}さん" + when (action) {
+            "unfollow" -> "のフォローを解除しますか？"
+            "mute" -> "をミュートしますか？"
+            "unmute" -> "のミュートを解除しますか？"
+            "unblock" -> "のブロックを解除しますか？"
+            else -> "をブロックしますか？"
+        }) },
         confirmButton = { TextButton(onClick = {
             when (action) {
-                "mute" -> viewModel.toggleMute()
+                "mute" -> viewModel.setProfileMuted(true)
+                "unmute" -> viewModel.setProfileMuted(false)
+                "unblock" -> viewModel.setProfileBlocked(false)
                 "unfollow" -> viewModel.toggleFollow()
-                else -> viewModel.toggleBlock()
+                else -> viewModel.setProfileBlocked(true)
             }
             confirmAction = null
         }) { Text(if (action == "unfollow") "フォロー解除" else "実行") } },
@@ -249,7 +268,7 @@ fun AccountProfileScreen(
 
 @Composable private fun ReportDialog(onDismiss: () -> Unit, onSubmit: (String, Boolean) -> Unit) {
     var text by remember { mutableStateOf("") }; var forward by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("アカウントを通報") }, text = { Column {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("アカウントを報告") }, text = { Column {
         OutlinedTextField(text, { text = it.take(1000) }, label = { Text("理由・補足") }, minLines = 3)
         Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(forward, { forward = it }); Text("相手側のサーバーにも転送") }
     } }, confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSubmit(text, forward) }) { Text("送信") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })

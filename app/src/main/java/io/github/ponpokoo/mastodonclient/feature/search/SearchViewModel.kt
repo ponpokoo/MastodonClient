@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.search
 
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.SearchResults
 import io.github.ponpokoo.mastodonclient.domain.model.SearchException
 import io.github.ponpokoo.mastodonclient.domain.model.SearchFailure
@@ -54,9 +57,13 @@ internal fun SearchFailure.message(): String = when (this) {
 
 class SearchViewModel(private val repository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
     private val mutableState = MutableStateFlow(SearchUiState())
-    val uiState = mutableState.asStateFlow()
+    val uiState = mutableState.moderated(viewModelScope, repository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private val mutableExplore = MutableStateFlow(ExploreUiState())
-    val exploreState = mutableExplore.asStateFlow()
+    val exploreState = mutableExplore.moderated(viewModelScope, repository, { browsing.snapshot.value.account }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private val exploreJobs = mutableMapOf<ExploreFeed, Job>()
     private val exploreGenerations = mutableMapOf<ExploreFeed, Long>()
     private data class TagOverride(val tag: SearchTag, val revision: Long)

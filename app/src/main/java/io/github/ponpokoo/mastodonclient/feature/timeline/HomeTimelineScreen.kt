@@ -225,6 +225,7 @@ fun HomeTimelineScreen(
     val notificationsState by notificationsViewModel.uiState.collectAsStateWithLifecycle()
     val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
     val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
+    val moderationMenu by actionsViewModel.moderationMenuState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(exploreState.actionMessage) {
         exploreState.actionMessage?.let { snackbarHostState.showSnackbar(it); searchViewModel.consumeExploreMessage() }
@@ -645,6 +646,7 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Profile -> ProfileContent(
                     state = profileState,
+                    instanceUrl = mainState.session?.instanceUrl,
                     padding = padding,
                     onRetry = profileViewModel::loadProfile,
                     onRefresh = {
@@ -726,9 +728,14 @@ fun HomeTimelineScreen(
             }
         }
     }
+    LaunchedEffect(menuStatus?.author?.id) {
+        menuStatus?.author?.id?.let { actionsViewModel.loadModerationMenu(it) }
+    }
     menuStatus?.let { status ->
         StatusMenuDialog(
             status = status,
+            moderation = moderationMenu.takeIf { it.accountId == status.author.id },
+            onRetryRelationship = { actionsViewModel.loadModerationMenu(status.author.id) },
             isOwnStatus = status.author.id == mainState.session?.accountId,
             onDismiss = { menuStatus = null },
             onOpenBrowser = {
@@ -740,8 +747,8 @@ fun HomeTimelineScreen(
             onDelete = { menuStatus = null; confirmation = "delete" to status },
             onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
             onUnfollow = { menuStatus = null; confirmation = "unfollow" to status },
-            onMute = { menuStatus = null; confirmation = "mute" to status },
-            onBlock = { menuStatus = null; confirmation = "block" to status },
+            onMute = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to status },
+            onBlock = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to status },
             onReport = { menuStatus = null; reportStatus = status },
         )
     }
@@ -755,7 +762,9 @@ fun HomeTimelineScreen(
                     "delete" -> actionsViewModel.deleteStatus(status)
                     "unfollow" -> actionsViewModel.unfollow(status)
                     "mute" -> actionsViewModel.mute(status)
+                    "unmute" -> actionsViewModel.mute(status, false)
                     "block" -> actionsViewModel.block(status)
+                    "unblock" -> actionsViewModel.block(status, false)
                 }
                 confirmation = null
             },
@@ -804,6 +813,8 @@ internal fun StatusMenuDialog(
     onMute: () -> Unit,
     onBlock: () -> Unit,
     onReport: () -> Unit,
+    moderation: io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenuState? = null,
+    onRetryRelationship: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
@@ -824,12 +835,13 @@ internal fun StatusMenuDialog(
                     label: String,
                     icon: ImageVector,
                     destructive: Boolean = false,
+                    enabled: Boolean = true,
                     action: () -> Unit,
                 ) {
                     val color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clickable(onClick = action)
+                            .clickable(enabled = enabled, onClick = action)
                             .heightIn(min = 48.dp)
                             .padding(horizontal = 4.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -859,9 +871,14 @@ internal fun StatusMenuDialog(
                     Action("リストに追加", Icons.Outlined.PlaylistAdd, action = onAddToList)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     Action("フォロー解除", Icons.Outlined.PersonRemove, action = onUnfollow)
-                    Action("ミュート", Icons.Outlined.VolumeOff, action = onMute)
-                    Action("ブロック", Icons.Outlined.Block, action = onBlock)
-                    Action("報告", Icons.Outlined.Flag, action = onReport)
+                    Action(if (moderation?.relationship?.muting == true) "ミュート（解除）" else "ミュート",
+                        Icons.Outlined.VolumeOff, destructive = true,
+                        enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onMute)
+                    Action(if (moderation?.relationship?.blocking == true) "ブロック（解除）" else "ブロック",
+                        Icons.Outlined.Block, destructive = true,
+                        enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onBlock)
+                    Action("報告", Icons.Outlined.Flag, destructive = true, action = onReport)
+                    moderation?.error?.let { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = onRetryRelationship) { Text("再試行") } }
                 }
             }
         },
@@ -874,6 +891,8 @@ internal fun ConfirmStatusActionDialog(action: String, status: TimelineStatus, o
     val (title, message) = when (action) {
         "delete" -> "投稿を削除" to "この投稿を削除します。この操作は元に戻せません。"
         "unfollow" -> "フォロー解除" to "${status.author.displayName}さんのフォローを解除しますか？"
+        "unmute" -> "ミュート解除" to "${status.author.displayName}さんのミュートを解除しますか？"
+        "unblock" -> "ブロック解除" to "${status.author.displayName}さんのブロックを解除しますか？"
         "mute" -> "ミュート" to "${status.author.displayName}さんをミュートしますか？"
         else -> "ブロック" to "${status.author.displayName}さんをブロックしますか？"
     }

@@ -90,6 +90,7 @@ data class AppPreferences(
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val hiddenComposerActions: Set<ComposerAction> = emptySet(),
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
+    val wordMutes: Map<String, List<String>> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
 }
@@ -136,6 +137,10 @@ class UserPreferencesStore(
     }
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
+
+    suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update {
+        it.copy(wordMutes = it.wordMutes + (sessionId to transform(it.wordMutes[sessionId].orEmpty())))
+    }
 
     val reactionHistory: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->
         stored[REACTION_HISTORY]?.let { encoded ->

@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenu
+import io.github.ponpokoo.mastodonclient.feature.common.moderated
+import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.*
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
@@ -13,6 +17,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 
 data class AccountProfileUiState(
+    val currentAccountId: String? = null,
     val profile: UserProfile? = null,
     val relationship: AccountRelationship? = null,
     val selectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
@@ -25,6 +30,7 @@ data class AccountProfileUiState(
     val message: String? = null,
     val errorMessage: String? = null,
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
+    val instanceUrl: String? = null,
 )
 
 class AccountProfileViewModel(
@@ -34,11 +40,30 @@ class AccountProfileViewModel(
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(AccountProfileUiState())
-    val uiState: StateFlow<AccountProfileUiState> = _uiState.asStateFlow()
+    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
+        state.withModeration(moderation, account)
+    }
     private var session: AccountSession? = null
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
 
+    private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
+        session = { session }, context = { session }, isCurrent = { authRepository.restoreSession() == it },
+        message = { message -> _uiState.update { it.copy(message = message) } },
+        updated = { target, relationship -> if (target == accountId) _uiState.update { it.copy(relationship = relationship) } })
+    val moderationMenuState = moderationMenu.state
+    fun loadModerationMenu(target: String? = accountId) = moderationMenu.load(target)
+    fun setProfileMuted(enabled: Boolean) = moderationMenu.mute(accountId, enabled)
+    fun setProfileBlocked(enabled: Boolean) = moderationMenu.block(accountId, enabled)
     init {
+        viewModelScope.launch {
+            timelineRepository.moderation.collect { moderation ->
+                val current = session ?: return@collect
+                if (moderation.relationship(current, accountId)?.let { it.muting || it.blocking } == true) {
+                    tabJobs.values.forEach { it.cancel() }
+                    _uiState.update { it.withModeration(moderation, current) }
+                }
+            }
+        }
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
                 val current = session ?: return@collect
@@ -74,6 +99,7 @@ class AccountProfileViewModel(
 
     fun loadMore() {
         val current = session ?: return
+        if (postsHidden(current)) return
         val state = _uiState.value
         val tab = state.selectedTab
         val cached = state.profileTabs[tab] ?: return
@@ -97,6 +123,7 @@ class AccountProfileViewModel(
 
     private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
         val current = session ?: return
+        if (postsHidden(current)) return
         if (_uiState.value.profile == null) return
         val cached = _uiState.value.profileTabs[tab] ?: ProfileTabUiState()
         if (cached.isLoading || cached.isRefreshing || (!refresh && (cached.isLoaded || cached.isLoadingMore))) return
@@ -131,14 +158,12 @@ class AccountProfileViewModel(
     }
 
     fun toggleFollow() = relationshipMutation { current, rel -> timelineRepository.setFollowing(current, accountId, !(rel.following || rel.requested)) }
-    fun toggleMute() = relationshipMutation { current, rel -> timelineRepository.setMuted(current, accountId, !rel.muting) }
-    fun toggleBlock() = relationshipMutation { current, rel -> timelineRepository.setBlocked(current, accountId, !rel.blocking) }
 
     fun report(comment: String, forward: Boolean) {
         val current = session ?: return
         _uiState.update { it.copy(isMutating = true) }
         viewModelScope.launch { timelineRepository.reportAccount(current, accountId, comment, forward).fold(
-            { _uiState.update { it.copy(isMutating = false, message = "通報を送信しました") } }, ::showError,
+            { _uiState.update { it.copy(isMutating = false, message = "報告を送信しました") } }, ::showError,
         ) }
     }
     fun updateProfile(request: ProfileEditRequest) {
@@ -183,17 +208,13 @@ class AccountProfileViewModel(
     fun unfollowStatus(status: TimelineStatus) = accountMutation {
         timelineRepository.setFollowing(it, status.author.id, false)
     }
-    fun muteStatus(status: TimelineStatus) = accountMutation {
-        timelineRepository.setMuted(it, status.author.id, true)
-    }
-    fun blockStatus(status: TimelineStatus) = accountMutation {
-        timelineRepository.setBlocked(it, status.author.id, true)
-    }
+    fun muteStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
+    fun blockStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
     fun reportStatus(status: TimelineStatus, comment: String) {
         val current = session ?: return
         viewModelScope.launch {
             timelineRepository.reportStatus(current, status.author.id, status.statusId, comment).fold(
-                onSuccess = { _uiState.update { it.copy(message = "通報を送信しました") } },
+                onSuccess = { _uiState.update { it.copy(message = "報告を送信しました") } },
                 onFailure = ::showError,
             )
         }
@@ -236,16 +257,21 @@ class AccountProfileViewModel(
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession() ?: run { _uiState.value = AccountProfileUiState(isLoading = false, errorMessage = "ログインが必要です"); return@launch }
         session = current
+        _uiState.update { it.copy(currentAccountId = current.accountId) }
         timelineRepository.getProfileHeader(current, accountId).fold({ profile ->
-            _uiState.update { it.copy(profile = profile, isLoading = false, isLoadingMore = true) }
+            _uiState.update { it.copy(profile = profile, instanceUrl = current.instanceUrl, isLoading = false, isLoadingMore = true) }
             if (!profile.isOwnProfile) viewModelScope.launch {
                 timelineRepository.getRelationship(current, accountId).onSuccess { rel ->
+                    moderationMenu.remember(accountId, rel)
                     _uiState.update { it.copy(relationship = rel) }
                 }
             }
             loadTab(ProfileStatusTab.Posts, initialPosts = true)
         }, ::showError)
     }
+    private fun postsHidden(current: AccountSession) =
+        (timelineRepository.moderation.value.relationship(current, accountId) ?: _uiState.value.relationship)
+            ?.let { it.muting || it.blocking } == true
     private fun relationshipMutation(request: suspend (AccountSession, AccountRelationship) -> Result<AccountRelationship>) {
         val current = session ?: return; val relationship = _uiState.value.relationship ?: return
         _uiState.update { it.copy(isMutating = true) }

@@ -139,7 +139,9 @@ interface MastodonApi {
 
     @POST("api/v1/accounts/{id}/follow") suspend fun follow(@Path("id") id: String): RelationshipDto
     @POST("api/v1/accounts/{id}/unfollow") suspend fun unfollow(@Path("id") id: String): RelationshipDto
-    @FormUrlEncoded @POST("api/v1/accounts/{id}/mute") suspend fun mute(@Path("id") id: String, @Field("notifications") notifications: Boolean = true): RelationshipDto
+    @GET("api/v1/mutes") suspend fun getMutes(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
+    @GET("api/v1/blocks") suspend fun getBlocks(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
+    @FormUrlEncoded @POST("api/v1/accounts/{id}/mute") suspend fun mute(@Path("id") id: String, @Field("notifications") notifications: Boolean = true, @Field("duration") duration: Long? = null): RelationshipDto
     @POST("api/v1/accounts/{id}/unmute") suspend fun unmute(@Path("id") id: String): RelationshipDto
     @POST("api/v1/accounts/{id}/block") suspend fun block(@Path("id") id: String): RelationshipDto
     @POST("api/v1/accounts/{id}/unblock") suspend fun unblock(@Path("id") id: String): RelationshipDto
