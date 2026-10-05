@@ -155,6 +155,7 @@ import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsLifecycleEffect
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.EditProfileDialog
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
@@ -317,7 +318,7 @@ fun HomeTimelineScreen(
         notificationFilter = NotificationFilter.All
         pagerState.scrollToPage(MainDestination.Notifications.ordinal)
         allNotificationsListState.scrollToItem(0)
-        if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsVisible()
+        notificationsViewModel.onSystemNotificationOpened()
         onNotificationOpenHandled(request)
     }
 
@@ -327,9 +328,6 @@ fun HomeTimelineScreen(
                 Lifecycle.Event.ON_START -> {
                     viewModel.updateViewport(destination == MainDestination.Home && timelineListState.firstVisibleItemIndex == 0 &&
                         timelineListState.firstVisibleItemScrollOffset == 0 && !timelineListState.isScrollInProgress)
-                    if (destination == MainDestination.Notifications) {
-                        notificationsViewModel.onNotificationsVisible()
-                    }
                 }
                 Lifecycle.Event.ON_STOP -> {
                     viewModel.updateViewport(false)
@@ -433,19 +431,9 @@ fun HomeTimelineScreen(
             scrollProfileAfterRefresh = false
         }
     }
+    NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
     LaunchedEffect(destination) {
-        when (destination) {
-            MainDestination.Notifications -> {
-                notificationsViewModel.onNotificationsVisible()
-            }
-            MainDestination.Profile -> profileViewModel.loadProfile()
-            else -> Unit
-        }
-    }
-    DisposableEffect(notificationsViewModel, destination) {
-        onDispose {
-            if (destination == MainDestination.Notifications) notificationsViewModel.onNotificationsHidden()
-        }
+        if (destination == MainDestination.Profile) profileViewModel.loadProfile()
     }
     LaunchedEffect(
         destination, notificationFilter, notificationsState.notifications,

@@ -153,8 +153,16 @@ class NotificationsViewModel(
         }
     }
 
-    /** Refresh whenever the notification tab becomes visible or returns to foreground. */
-    fun onNotificationsVisible() = loadNotifications(force = true)
+    /** Load once for this session; returning to the tab keeps the current list. */
+    fun onNotificationsVisible() = loadNotifications()
+
+    /** Catch up after foreground return, including when another tab is selected. */
+    fun onAppForeground() {
+        if (requested) loadNotifications(force = true)
+    }
+
+    /** An Android notification can refer to an event absent from the current list. */
+    fun onSystemNotificationOpened() = loadNotifications(force = true)
 
     /** Refresh initiated by the pull-to-refresh gesture. */
     fun refreshNotifications() = loadNotifications(force = true, showPullRefreshIndicator = true)

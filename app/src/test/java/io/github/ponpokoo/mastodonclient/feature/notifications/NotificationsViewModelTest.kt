@@ -272,7 +272,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
     }
 
-    @Test fun becomingVisibleRefreshesAnAlreadyLoadedNotificationList() = runTest(dispatcher) {
+    @Test fun returningToTheTabKeepsLoadedListAndStreamedNotificationsWithoutFetching() = runTest(dispatcher) {
         var requests = 0
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
@@ -286,15 +286,74 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
+        viewModel.onNotificationsHidden()
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(
+            TimelineStreamEvent.NotificationReceived(testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z")),
+        ))
+        advanceUntilIdle()
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
 
-        assertEquals(2, requests)
+        assertEquals(1, requests)
         assertEquals(
-            listOf("notification-2", "notification-1"),
+            listOf("live", "notification-1"),
             viewModel.uiState.value.notifications.map(TimelineNotification::id),
         )
-        assertTrue(requireNotNull(viewModel.uiState.value.refreshResult).hasNewNotifications)
+        assertEquals(setOf("live"), viewModel.uiState.value.pendingNewNotificationIds)
+    }
+
+    @Test fun foregroundReturnAndSystemNotificationOpenRefreshOnlyAfterTheListIsRequested() = runTest(dispatcher) {
+        var requests = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                requests++
+                return Result.success(NotificationPage(listOf(testNotification("notification-$requests")), null, true))
+            }
+        }
+        val viewModel = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        advanceUntilIdle()
+        viewModel.onAppForeground()
+        advanceUntilIdle()
+        assertEquals(0, requests)
+
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(1, requests)
+        viewModel.onNotificationsHidden()
+        viewModel.onAppForeground()
+        advanceUntilIdle()
+        assertEquals(2, requests)
+        assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
+
+        viewModel.onSystemNotificationOpened()
+        advanceUntilIdle()
+        assertEquals(3, requests)
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(3, requests)
+        assertEquals(listOf("notification-3", "notification-2", "notification-1"),
+            viewModel.uiState.value.notifications.map { it.id })
+    }
+
+    @Test fun failedInitialFetchCanRetryWhenTheTabIsOpenedAgain() = runTest(dispatcher) {
+        var requests = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> =
+                if (++requests == 1) Result.failure(IllegalStateException("offline"))
+                else Result.success(NotificationPage(listOf(testNotification()), null, true))
+        }
+        val viewModel = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        advanceUntilIdle()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals("offline", viewModel.uiState.value.notificationsError)
+
+        viewModel.onNotificationsHidden()
+        viewModel.onNotificationsVisible()
+        advanceUntilIdle()
+        assertEquals(2, requests)
+        assertNull(viewModel.uiState.value.notificationsError)
+        assertTrue(viewModel.uiState.value.isInitialPageLoaded)
     }
 
     @Test fun initialLoadWithoutMarkerDoesNotTreatExistingNotificationsAsNew() = runTest(dispatcher) {
@@ -327,7 +386,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        viewModel.onNotificationsVisible()
+        viewModel.onAppForeground()
         advanceUntilIdle()
         val live = testNotification("live").copy(createdAt = "2026-09-09T00:00:00Z")
         browsing.publish(

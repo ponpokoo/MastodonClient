@@ -76,6 +76,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -146,6 +147,9 @@ internal fun NotificationsContent(
     onNewNoticeClick: (() -> Unit)?,
 ) {
     check(listStates.size == NotificationFilter.entries.size)
+    // Keep new rows close to the quoted post's surface instead of using a full accent fill.
+    val highlightedBackground = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+        .compositeOver(MaterialTheme.colorScheme.surface)
     val filterPagerState = rememberPagerState(
         initialPage = selectedFilter.ordinal,
         pageCount = { NotificationFilter.entries.size },
@@ -209,7 +213,7 @@ internal fun NotificationsContent(
                     if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
                     items(filteredNotifications, key = TimelineNotification::id) { notification ->
                         Column(Modifier.fillMaxWidth().background(
-                            if (notification.id in state.highlightedNotificationIds) MaterialTheme.colorScheme.primaryContainer
+                            if (notification.id in state.highlightedNotificationIds) highlightedBackground
                             else MaterialTheme.colorScheme.surface,
                         )) {
                         val status = notification.status
