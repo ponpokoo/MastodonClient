@@ -50,6 +50,25 @@ class RelayRegistrationProtocolTest {
         }
     }
 
+    @Test fun v2BindingUsesRevisionAndNeverFallsBackToUnboundRegistration() = runTest {
+        MockWebServer().use { server ->
+            val client = client(server)
+            server.enqueue(MockResponse().setBody("""{"endpoint":"https://relay.example/push/opaque","revision":1,"state":"pending"}"""))
+            client.putBound(id, secret, "fcm", null, 1)
+            val request = server.takeRequest()
+            assertEquals("/v2/registrations/$id", request.path)
+            assertEquals("Bearer $secret", request.getHeader("Authorization"))
+            assertTrue(request.body.readUtf8().contains("\"revision\":1"))
+            server.enqueue(MockResponse().setResponseCode(404))
+            try { client.putBound(id, secret, "fcm", null, 2); fail() }
+            catch (error: HttpException) { assertEquals(404, error.code()) }
+            assertEquals(2, server.requestCount)
+            server.enqueue(MockResponse().setBody("""{"endpoint":"https://relay.example/push/opaque","revision":3,"state":"pending"}"""))
+            try { client.putBound(id, secret, "fcm", "public-key", 3); fail() }
+            catch (_: IllegalStateException) { }
+        }
+    }
+
     @Test fun malformedRegistrationCannotChangeRequestPath() = runTest {
         MockWebServer().use { server ->
             try { client(server).put("../other", secret, "token"); fail("Invalid ID accepted") }

@@ -13,6 +13,23 @@ import retrofit2.HttpException
 import java.net.URLDecoder
 
 class PushSubscriptionProtocolTest {
+    @Test fun vapidMetadataIsNullableAndOnlyNotFoundPermitsSubscriptionFallback() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
+            server.enqueue(MockResponse().setBody("""{"configuration":{"vapid":{"public_key":"public-key","future":true}}}"""))
+            assertEquals("public-key", repository.serverKey(session(server)))
+            assertNull(server.takeRequest().getHeader("Authorization"))
+            server.enqueue(MockResponse().setBody("""{"configuration":{}}"""))
+            assertNull(repository.serverKey(session(server)))
+            server.enqueue(MockResponse().setResponseCode(404))
+            assertNull(repository.serverKey(session(server)))
+            for (status in listOf(401,403,500)) {
+                server.enqueue(MockResponse().setResponseCode(status))
+                try { repository.serverKey(session(server)); fail() }
+                catch (error: HttpException) { assertEquals(status, error.code()) }
+            }
+        }
+    }
     @Test fun reactionSupportUsesAdvertisedCapabilityAndStaysIsolatedPerInstance() = runTest {
         MockWebServer().use { fedibird -> MockWebServer().use { standard ->
             fedibird.enqueue(MockResponse().setBody("""{"fedibird_capabilities":["emoji_reaction","future_feature"]}"""))

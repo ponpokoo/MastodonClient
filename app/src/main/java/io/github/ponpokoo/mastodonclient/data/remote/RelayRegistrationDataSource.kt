@@ -50,6 +50,18 @@ class RelayRegistrationDataSource internal constructor(private val api: RelayApi
         if (!response.isSuccessful && response.code() != 404) throw HttpException(response)
     }
 
+    suspend fun putBound(id: String, token: String, fcmToken: String, serverKey: String?, revision: Long): RelayRegistrationDto {
+        validate(id, token)
+        require(fcmToken.isNotBlank() && revision > 0)
+        val result = api.putBound(id, "Bearer $token", RelayBoundRegistrationRequest(fcmToken, serverKey, revision))
+        val endpoint = result.endpoint.toHttpUrl()
+        require(endpoint.isHttps && endpoint.username.isEmpty() && endpoint.password.isEmpty() && endpoint.fragment == null)
+        check(result.revision == revision && result.state == if (serverKey == null) "pending" else "active") {
+            "Relay did not confirm the requested key binding"
+        }
+        return result
+    }
+
     private fun validate(id: String, token: String) {
         require(id.matches(Regex("[A-Za-z0-9_-]{22,128}"))) { "Invalid registration ID" }
         require(token.matches(Regex("[A-Za-z0-9_-]{43,128}"))) { "Invalid management token" }
@@ -57,6 +69,9 @@ class RelayRegistrationDataSource internal constructor(private val api: RelayApi
 }
 
 internal interface RelayApi {
+    @PUT("v2/registrations/{id}")
+    suspend fun putBound(@Path("id") id: String, @Header("Authorization") authorization: String,
+        @Body request: RelayBoundRegistrationRequest): RelayRegistrationDto
     @PUT("v1/registrations/{id}")
     suspend fun put(
         @Path("id") id: String,
@@ -72,4 +87,7 @@ internal interface RelayApi {
 internal class RelayRegistrationRequest(val fcmToken: String)
 
 @Serializable
-class RelayRegistrationDto(val endpoint: String)
+class RelayRegistrationDto(val endpoint: String, val revision: Long? = null, val state: String? = null)
+
+@Serializable
+internal class RelayBoundRegistrationRequest(val fcmToken: String, val serverKey: String?, val revision: Long)

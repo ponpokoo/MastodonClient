@@ -9,7 +9,8 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| 作業ツリーの版番号 | `2.4.0`（versionCode 15、リリース対象）。対象版・確認結果は [更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| リリース準備の対象版 | `2.4.1`（versionCode 16）。対象版・確認結果は[更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| 旧事前検証用成果物の版番号 | Relay移行の事前検証APK/AABは`2.4.0`（versionCode 15）。2.4.1の配布候補とは区別する |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |
@@ -18,7 +19,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | JVMバイトコード | Java 11（Gradle実行用JDKとは別） |
 | ビルド設定 | Kotlin DSL・`gradle/libs.versions.toml` |
 
-単一の`app`モジュールを使用する。依存関係はVersion Catalogに固定する。
+本体は`app`モジュールを使用する。調査用の独立した`transition-prototype`モジュールもあるが、本体への採用は未確定。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。
@@ -71,7 +72,9 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
   リリースでHTTP本文ログを有効にしない。メディアアップロードは`/api/v2/media`を使用する。
 - 投稿キャッシュはインスタンス・セッション・投稿IDで区別する上限付きメモリキャッシュ。
   設定・下書きの保存と、タイムラインの永続保存を混同しない。
-- 通知は`BrowsingDatabase`（Room）の通知テーブルに、セッション・インスタンス別で最新200件まで保存する。
+- 通知は`BrowsingDatabase`（Room）に、セッション・インスタンス・タブ別で最新200件まで保存する。
+  「すべて」は既存の通知テーブル、種類別は専用テーブルを使い、各タブの最新ページから取得範囲を確立する。
+  閲覧済みIDは独立したテーブルに最新1,000件と「すべて」の閲覧位置を保存する。一覧の置換で既読記録を消さない。
   投稿・通知元は通知のJSONに内包し、画像本体・認証情報は保存しない。既読位置は別テーブルに保持する。
   保存は一覧スナップショットの置換と件数制限を同じトランザクションで行い、通信結果やStreaming・投稿操作の反映後に更新する。
   DB読み書き・JSON処理はUIスレッド外で行う。ログアウト時は対象セッションを削除し、遅延書き込みは登録済みアカウントの確認で拒否する。
@@ -81,12 +84,15 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
   保存済み末尾と取得ページの末尾が重なる場合だけ履歴を接続し、未取得区間を飛ばさない。保存上限をサーバー履歴の末尾として扱わない。
   通信できないことが分かる場合は自動通信を省く。保存済み表示中の自動取得失敗は静かに扱い、手動更新・保存なしの失敗は再試行可能なエラーにする。
   投稿操作・Streamingの編集、追加、削除もDBへ反映する。通信中の変更を応答へ反映し直し、古い反応状態へ戻さない。
-  スキーマv2への移行は通知を保持する。今後の拡張も`app/schemas`のスキーマを基準にマイグレーションする。
+  スキーマv2への移行は通知を保持し、v3では種類別通知キャッシュと閲覧記録を追加して通知・既読位置・ホームを保持する。
+  今後の拡張も`app/schemas`のスキーマを基準にマイグレーションする。
   今回はRepository経由の表示キャッシュに留め、全画面の唯一のデータ源への移行や投稿・アカウントの共通テーブル化は行わない。
 - コルーチンのキャンセルを一般エラーとして握りつぶさない。メディア取り込みのファイルI/Oは背景処理に分離する。
 
 永続キャッシュの対象とRepository経由の保存境界については、
 [ADR 0002：永続キャッシュの範囲](adr/0002-persistent-browsing-cache.md)に判断を記録する。
+通知の種類別取得、一覧と既読の分離、閲覧記録と不確定な新着件数の扱いは
+[ADR 0007](adr/0007-notification-category-pages-and-read-state.md)を参照する。
 
 ## メイン画面の責務とライフサイクル
 
@@ -109,7 +115,7 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 `AccountProfileViewModel`が担当し、表示には共通の`ProfileUiState`を使う。
 
 `MainSessionViewModel`が所有する`BrowsingSession`を他のViewModelへ渡す。
-設定の管理画面は閲覧セッションを変更せず管理対象を選ぶ。専用ViewModel内で同じキャンセルと世代番号の方針を適用する。[ADR 0005](adr/0005-moderation-management-word-mutes.md)を参照。
+設定の管理画面は閲覧セッションを変更せず管理対象を選ぶ。専用ViewModel内で同じキャンセルと世代番号の方針を適用する。[ADR 0008](adr/0008-word-mutes-in-notification-lists.md)を参照。
 スナップショットはアカウントと世代番号を持ち、A→B→Aと切り替えても以前のAの応答を採用しない。
 `SessionScopedViewModel`は切替時にリクエストをキャンセルして状態を初期化し、
 結果反映前にキャンセル状態とスナップショットの一致を確認する。

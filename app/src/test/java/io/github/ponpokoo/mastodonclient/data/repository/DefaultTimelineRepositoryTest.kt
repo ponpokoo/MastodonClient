@@ -381,7 +381,7 @@ class DefaultTimelineRepositoryTest {
             assertEquals(results.statuses.single(), repository.getCachedStatus(session, "found"))
             assertTrue(results.hashtags.isEmpty())
             assertTrue(results.accounts.isEmpty())
-            assertEquals("/api/v1/notifications?limit=80", server.takeRequest().path)
+            assertEquals("/api/v1/notifications?limit=40", server.takeRequest().path)
             assertEquals("/api/v2/search?q=android&type=statuses&limit=20&offset=0&resolve=false", server.takeRequest().path)
         }
     }
@@ -398,7 +398,7 @@ class DefaultTimelineRepositoryTest {
             assertTrue(page.notifications.isEmpty())
             assertNull(page.nextMaxId)
             assertTrue(page.endReached)
-            assertEquals("/api/v1/notifications?max_id=n1&limit=80", server.takeRequest().path)
+            assertEquals("/api/v1/notifications?max_id=n1&limit=40", server.takeRequest().path)
         }
     }
 

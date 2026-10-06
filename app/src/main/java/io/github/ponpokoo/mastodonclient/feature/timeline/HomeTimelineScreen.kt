@@ -433,22 +433,24 @@ fun HomeTimelineScreen(
         }
     }
     NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
+    LaunchedEffect(notificationFilter) { notificationsViewModel.selectCategory(notificationFilter) }
     LaunchedEffect(destination) {
         if (destination == MainDestination.Profile) profileViewModel.loadProfile()
     }
     LaunchedEffect(
-        destination, notificationFilter, notificationsState.notifications,
-        notificationsState.isInitialPageLoaded, notificationsState.isLoadingNotifications, lifecycleOwner,
+        destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleOwner,
     ) {
+        val notificationTabState = notificationsState.forCategory(notificationFilter)
         if (destination == MainDestination.Notifications &&
-            notificationsState.isInitialPageLoaded && !notificationsState.isLoadingNotifications &&
-            (notificationsState.notificationsError == null || notificationsState.notificationsErrorIsPagination)
+            notificationTabState.isInitialPageLoaded && !notificationTabState.isLoadingNotifications &&
+            (notificationTabState.notificationsError == null || notificationTabState.notificationsErrorIsPagination) &&
+            notificationsState.canExplore(notificationFilter)
         ) {
-            val shown = notificationsState.notifications.filter(notificationFilter::includes)
+            val shown = notificationTabState.notifications.filter(notificationFilter::includes)
             val newestId = shown.firstOrNull()?.id
             if (newestId != null) {
                 val listState = notificationListStates[notificationFilter.ordinal]
-                val shownIds = shown.mapTo(mutableSetOf(), io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification::id)
+                val loadedIds = shown.mapTo(mutableSetOf(), io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification::id)
                 snapshotFlow {
                     lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
                         listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 &&
@@ -456,7 +458,8 @@ fun HomeTimelineScreen(
                         listState.layoutInfo.visibleItemsInfo.any { it.key == newestId }
                 }.distinctUntilChanged().collect { newestIsShown ->
                     if (newestIsShown) notificationsViewModel.onLatestNotificationsShown(
-                        shownIds, notificationFilter == NotificationFilter.All,
+                        listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.filterTo(mutableSetOf()) { it in loadedIds },
+                        notificationFilter == NotificationFilter.All,
                     )
                 }
             }
@@ -611,6 +614,7 @@ fun HomeTimelineScreen(
                     padding = padding,
                     onRefresh = notificationsViewModel::refreshNotifications,
                     onLoadMore = notificationsViewModel::loadNextNotifications,
+                    onAutoLoadMore = notificationsViewModel::loadNextNotificationsAutomatically,
                     onStatusClick = onStatusClick,
                     onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
@@ -627,7 +631,7 @@ fun HomeTimelineScreen(
                     listStates = notificationListStates,
                     selectedFilter = notificationFilter,
                     onSelectFilter = { notificationFilter = it },
-                    newNoticeMessage = if (snackbarHostState.currentSnackbarData == null) {
+                    newNoticeMessage = if (snackbarHostState.currentSnackbarData == null && notificationsState.canShowNewNotice) {
                         when {
                             notificationsState.pendingNewNotificationIds.isNotEmpty() ->
                                 "新着 ${notificationsState.pendingNewNotificationIds.size}件"

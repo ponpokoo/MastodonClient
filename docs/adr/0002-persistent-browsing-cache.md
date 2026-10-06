@@ -37,6 +37,7 @@
 
 ## 関連文書・実装
 
+- [ADR 0007：種類別通知ページと独立した閲覧記録](0007-notification-category-pages-and-read-state.md)は、通知・ホームに限定する境界を維持したまま通知キャッシュと閲覧記録を拡張する。
 - [開発ガイド：通信・認証・保存の境界](../project-setup.md#通信認証保存の境界)
 - [更新・リリース計画：品質・基盤候補](../release-plan.md#品質基盤候補)
 - [BrowsingDatabase](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/local/BrowsingDatabase.kt)

@@ -1,6 +1,8 @@
 # Nagisa Relay（ローカル開発版）
 
 Node.jsの標準機能のみで動く、共通通信契約v1のローカル通知中継実装。
+現在のAndroidが有効化に使用する登録v2には未対応。v1のHTTP契約試験用として維持し、
+新Androidとの登録・鍵確定の検証は[Workers版のローカル環境](workers/README.md)で行う。
 登録・解除・暗号文受付・永続キュー・模擬FCM送信を検証する。
 実際のFCM送信とVAPID検証は未実装。
 Workers Free＋D1での実FCM送信用コードは、別実装の[Workers試験版](workers/README.md)を参照する。

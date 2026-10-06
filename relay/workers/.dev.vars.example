@@ -1,4 +1,9 @@
-# Keep disabled until real credentials and allowed VAPID public keys are configured.
+# Keep disabled until schema, credentials, origin and staging verification are complete.
 RELAY_ENABLED="false"
+REGISTRATION_ENABLED="false"
+PUSH_ENABLED="false"
+DELIVERY_ENABLED="false"
+# Legacy grace is explicit and temporary; v2 does not require a global key list.
+LEGACY_V1_UNTIL=""
 # FCM_CLIENT_EMAIL="nagisa-relay@YOUR_PROJECT.iam.gserviceaccount.com"
 # FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"

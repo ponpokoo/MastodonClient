@@ -38,6 +38,8 @@ RelayはFCMトークン・配送情報・暗号文を扱うため、その保存
 
 ## 関連文書・実装
 
+購読ごとの公開鍵登録・互換移行は[ADR 0010](0010-relay-subscription-key-binding.md)に記録する。
+
 - [Relay共通通信契約](../relay-protocol.md)・[Android接続と受信処理](../push-reception.md)
 - [購読管理](../push-settings.md)・[ローカルRelay](../../relay/README.md)・[Workers版Relay](../../relay/workers/README.md)
 - [DefaultPushMessageRepository](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultPushMessageRepository.kt)

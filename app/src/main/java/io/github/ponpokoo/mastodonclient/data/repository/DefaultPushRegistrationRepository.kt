@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.data.repository
 
 import io.github.ponpokoo.mastodonclient.core.security.WebPushKeyGenerator
+import io.github.ponpokoo.mastodonclient.core.security.VapidPublicKey
 import io.github.ponpokoo.mastodonclient.data.local.PushRegistrationStore
 import io.github.ponpokoo.mastodonclient.data.local.StoredPushRegistration
 import io.github.ponpokoo.mastodonclient.data.remote.PushRelayDataSource
@@ -26,16 +27,21 @@ class DefaultPushRegistrationRepository(
             binding(session), relay.identity, keys.randomSecret(), keys.randomSecret(), keys.generate(),
         )
         check(record.state != PushRegistrationState.REMOVING) { "Finish pending removal before enabling push" }
-        record = record.copy(state = PushRegistrationState.REGISTERING)
+        record = record.copy(state = PushRegistrationState.REGISTERING, revision = record.revision + 1)
         store.write(session.sessionId, record) // Persist secrets before any remote mutation.
-        val endpoint = relay.register(record.registrationId, record.managementToken, fcmToken)
+        val advertisedKey = subscriptions.serverKey(session)?.let(VapidPublicKey::normalize)
+        if (record.serverKey == null && advertisedKey != null) {
+            record = record.copy(serverKey = advertisedKey)
+            store.write(session.sessionId, record)
+        }
+        val endpoint = relay.registerBound(record.registrationId, record.managementToken, fcmToken, record.serverKey, record.revision)
         check(record.endpoint == null || record.endpoint == endpoint) { "Relay changed an existing delivery endpoint" }
         record = record.copy(endpoint = endpoint)
         store.write(session.sessionId, record)
         val current = subscriptions.get(session)
         check(current == null || current.endpoint == endpoint) { "Another push subscription already exists" }
         val requestedAlerts = subscriptions.additionalAlerts(session).associateWith { true } + alerts
-        if (current == null || requestedAlerts.any { (type, enabled) -> current.alerts[type] != enabled } ||
+        val confirmed = if (current == null || requestedAlerts.any { (type, enabled) -> current.alerts[type] != enabled } ||
             (standard != null && current.standard != standard)) {
             val created = subscriptions.register(session, PushSubscriptionRequest(
                 endpoint, record.keys.publicKey, record.keys.authSecret, requestedAlerts, standard,
@@ -43,6 +49,17 @@ class DefaultPushRegistrationRepository(
             check(created.endpoint == endpoint) { "Server returned a different push endpoint" }
             check(requestedAlerts.all { (type, enabled) -> created.alerts[type] == enabled } &&
                 (standard == null || created.standard == standard)) { "Server did not accept the requested push options" }
+            created
+        } else current
+        // Prefer the authenticated subscription response; metadata is a fallback for servers
+        // that omit server_key. Never learn a signing key from an incoming Push.
+        val serverKey = confirmed.serverKey?.let(VapidPublicKey::normalize) ?: advertisedKey
+        check(serverKey != null) { "Server did not provide a VAPID public key" }
+        if (record.serverKey != serverKey) {
+            record = record.copy(serverKey = serverKey, revision = record.revision + 1)
+            store.write(session.sessionId, record)
+            val bound = relay.registerBound(record.registrationId, record.managementToken, fcmToken, serverKey, record.revision)
+            check(bound == endpoint) { "Relay changed an existing delivery endpoint" }
         }
         store.write(session.sessionId, record.copy(state = PushRegistrationState.ACTIVE))
     }

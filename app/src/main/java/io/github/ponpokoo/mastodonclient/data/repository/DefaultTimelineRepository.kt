@@ -30,6 +30,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationReadState
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
@@ -389,6 +392,64 @@ class DefaultTimelineRepository(
         (notificationLocalDataSource?.read(session) ?: CachedNotifications()).let { cached ->
             cached.copy(notifications = cached.notifications.filterNot { moderation.value.hides(session, it) })
         }
+    }
+
+    override suspend fun getNotificationCapabilities(session: AccountSession) = runCatching {
+        val api = apiClientFactory.create(session.instanceUrl)
+        val instance = try { api.getInstance() } catch (error: HttpException) {
+            if (error.code() != 404) throw error
+            api.getLegacyInstance()
+        }
+        val version = Regex("""^(\d+)\.(\d+)""").find(instance.version.orEmpty())
+        val major = version?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val minor = version?.groupValues?.get(2)?.toIntOrNull() ?: 0
+        NotificationCapabilities(
+            supportsTypeFiltering = major > 3 || major == 3 && minor >= 5,
+            supportsEmojiReactions = "emoji_reaction" in instance.fedibirdCapabilities.orEmpty(),
+        )
+    }
+
+    override suspend fun getNotificationPage(
+        session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean,
+    ): Result<NotificationPage> = runCatching {
+        require(limit in 1..40) { "通知の取得件数が範囲外です" }
+        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val types = if (!supportsTypeFiltering) null else when (category) {
+            NotificationCategory.All -> null
+            NotificationCategory.Mentions -> listOf("mention")
+            NotificationCategory.Reactions -> listOf("emoji_reaction")
+        }
+        var usedFilter = types != null
+        val dtos = try { api.getNotifications(maxId, limit, types) } catch (error: HttpException) {
+            // A query rejected by an older/forked API can use bounded local filtering.
+            // Authentication, rate limiting and transport failures are not incompatibility.
+            if (types == null || error.code() !in setOf(400, 422)) throw error
+            usedFilter = false
+            api.getNotifications(maxId, limit)
+        }
+        val raw = dtos.map(NotificationDto::toDomain)
+        raw.mapNotNull(TimelineNotification::status).forEach { cacheStatus(session, it) }
+        NotificationPage(
+            notifications = raw.filter(category::includes).filterNot { moderation.value.hides(session, it) },
+            nextMaxId = raw.lastOrNull()?.id,
+            endReached = raw.isEmpty(),
+            serverFiltered = category == NotificationCategory.All || usedFilter && raw.all(category::includes),
+        )
+    }
+
+    override suspend fun getCachedNotificationCategory(session: AccountSession, category: NotificationCategory) = runCatching {
+        val cached = notificationLocalDataSource?.readCategory(session, category) ?: CachedNotifications()
+        cached.copy(notifications = cached.notifications.filterNot { moderation.value.hides(session, it) })
+    }
+
+    override suspend fun cacheNotificationCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>) = runCatching {
+        notificationLocalDataSource?.writeCategory(session, category, notifications)
+        Unit
+    }
+
+    override suspend fun saveNotificationReadState(session: AccountSession, state: NotificationReadState) = runCatching {
+        notificationLocalDataSource?.writeReadState(session, state)
+        Unit
     }
 
     override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>): Result<Unit> = runCatching {

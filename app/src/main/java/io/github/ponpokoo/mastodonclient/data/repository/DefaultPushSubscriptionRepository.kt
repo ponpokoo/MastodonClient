@@ -10,6 +10,12 @@ import retrofit2.HttpException
 class DefaultPushSubscriptionRepository(
     private val clients: ApiClientFactory,
 ) : PushSubscriptionRepository {
+    override suspend fun serverKey(session: AccountSession): String? = try {
+        clients.create(session.instanceUrl).getInstance().configuration?.vapid?.publicKey
+    } catch (error: HttpException) {
+        if (error.code() == 404) null else throw error
+    }
+
     override suspend fun additionalAlerts(session: AccountSession): Set<String> {
         val publicApi = clients.create(session.instanceUrl)
         val instance = try {

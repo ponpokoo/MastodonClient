@@ -23,6 +23,8 @@ data class StoredPushRegistration(
     val keys: WebPushKeys,
     val endpoint: String? = null,
     val state: PushRegistrationState = PushRegistrationState.REGISTERING,
+    val serverKey: String? = null,
+    val revision: Long = 0,
 ) {
     override fun toString() = "StoredPushRegistration(state=$state)"
 }

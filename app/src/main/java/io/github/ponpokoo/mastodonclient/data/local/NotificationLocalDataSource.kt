@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.CachedNotifications
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationReadState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -17,6 +19,12 @@ interface NotificationLocalDataSource {
     suspend fun write(session: AccountSession, notifications: List<TimelineNotification>)
     suspend fun writeMarker(session: AccountSession, lastReadId: String?)
     suspend fun deleteAccount(sessionId: String)
+    suspend fun readCategory(session: AccountSession, category: NotificationCategory): CachedNotifications =
+        read(session).let { it.copy(notifications = it.notifications.filter(category::includes)) }
+    suspend fun writeCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>) {
+        if (category == NotificationCategory.All) write(session, notifications)
+    }
+    suspend fun writeReadState(session: AccountSession, state: NotificationReadState) = Unit
 }
 
 class RoomNotificationLocalDataSource(
@@ -38,6 +46,11 @@ class RoomNotificationLocalDataSource(
                 state.hides(session, notification)
             }
             dao.deleteRows(session.sessionId, instance, hidden.map { it.id })
+            for (category in listOf(NotificationCategory.Mentions, NotificationCategory.Reactions)) {
+                val payload = dao.readCategory(session.sessionId, instance, category.name) ?: continue
+                val rows = decodeNotifications(payload).filterNot { state.hides(session, it) }
+                dao.writeCategory(NotificationCategoryCacheEntity(session.sessionId, instance, category.name, json.encodeToString(rows)))
+            }
         }
     }
 
@@ -55,6 +68,7 @@ class RoomNotificationLocalDataSource(
                     }
                 },
                 lastReadId = dao.readMarker(session.sessionId, instance),
+                readState = decodeReadState(dao.readReadState(session.sessionId, instance)),
             )
         }
     }
@@ -83,10 +97,58 @@ class RoomNotificationLocalDataSource(
         }
     }
 
+    override suspend fun readCategory(session: AccountSession, category: NotificationCategory): CachedNotifications {
+        if (category == NotificationCategory.All) return read(session)
+        return withContext(Dispatchers.IO) {
+            database.withTransaction {
+                if (!isAccountPresent(session)) return@withTransaction CachedNotifications()
+                val instance = session.instanceUrl.trimEnd('/')
+                CachedNotifications(
+                    notifications = decodeNotifications(dao.readCategory(session.sessionId, instance, category.name))
+                        .filterNot { moderation.hides(session, it) },
+                    lastReadId = dao.readMarker(session.sessionId, instance),
+                    readState = decodeReadState(dao.readReadState(session.sessionId, instance)),
+                )
+            }
+        }
+    }
+
+    override suspend fun writeCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>) {
+        if (category == NotificationCategory.All) { write(session, notifications); return }
+        withContext(Dispatchers.IO) {
+            database.withTransaction {
+                if (!isAccountPresent(session)) return@withTransaction
+                currentCoroutineContext().ensureActive()
+                val rows = notifications.filter(category::includes).filterNot { moderation.hides(session, it) }
+                    .distinctBy(TimelineNotification::id).take(MAX_NOTIFICATIONS)
+                dao.writeCategory(NotificationCategoryCacheEntity(session.sessionId, session.instanceUrl.trimEnd('/'), category.name, json.encodeToString(rows)))
+            }
+        }
+    }
+
+    override suspend fun writeReadState(session: AccountSession, state: NotificationReadState) = withContext(Dispatchers.IO) {
+        database.withTransaction {
+            if (!isAccountPresent(session)) return@withTransaction
+            currentCoroutineContext().ensureActive()
+            dao.writeReadState(NotificationReadStateEntity(session.sessionId, session.instanceUrl.trimEnd('/'),
+                json.encodeToString(state.copy(viewedIds = state.viewedIds.distinct().take(1000)))))
+        }
+    }
+
+    private fun decodeNotifications(payload: String?): List<TimelineNotification> = try {
+        payload?.let { json.decodeFromString<List<TimelineNotification>>(it) }.orEmpty()
+    } catch (_: SerializationException) { emptyList() }
+
+    private fun decodeReadState(payload: String?): NotificationReadState = try {
+        payload?.let { json.decodeFromString<NotificationReadState>(it) } ?: NotificationReadState()
+    } catch (_: SerializationException) { NotificationReadState() }
+
     override suspend fun deleteAccount(sessionId: String) {
         database.withTransaction {
             dao.deleteNotifications(sessionId)
             dao.deleteMarker(sessionId)
+            dao.deleteCategories(sessionId)
+            dao.deleteReadState(sessionId)
         }
     }
 

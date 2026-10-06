@@ -70,12 +70,14 @@ data class NotificationPage(
     val notifications: List<TimelineNotification>,
     val nextMaxId: String?,
     val endReached: Boolean,
+    val serverFiltered: Boolean = true,
 )
 
 /** A bounded display snapshot, not a complete or necessarily current server history. */
 data class CachedNotifications(
     val notifications: List<TimelineNotification> = emptyList(),
     val lastReadId: String? = null,
+    val readState: NotificationReadState = NotificationReadState(),
 )
 
 data class SearchTag(

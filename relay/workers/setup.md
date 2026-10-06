@@ -6,6 +6,7 @@ Queues、KV、独自ドメインの契約は不要。まず少数アカウント
 
 本書はWorkers試験環境の配置手順。本運用向けの配置先選定・実装変更・移行・復旧は
 [本運用への移行手順](../../docs/relay-production.md)を参照する。
+Workers＋D1を継続する本運用の環境分離・移行・復元・停止の準備は[配置・復旧計画](production.md)に記録する。
 
 ## 1. D1を作る
 
@@ -13,6 +14,8 @@ Queues、KV、独自ドメインの契約は不要。まず少数アカウント
 2. 作成したD1のConsoleを開く。
 3. [0001_initial.sql](migrations/0001_initial.sql)のSQLを実行する。
    一括実行できない画面ではセミコロンごとに実行する。
+   続いて[0002_bound_registrations.sql](migrations/0002_bound_registrations.sql)を一度だけ適用する。
+   既存DBは退避後に0002だけを追加適用し、テーブルを作り直さない。
 4. `registrations`、`messages`、`daily_usage`テーブルが作られたことを確認する。
 
 ```sql
@@ -20,7 +23,7 @@ SELECT name FROM sqlite_master WHERE type='table';
 ```
 
 `daily_usage`も必須。欠けていると`/health`は成功しても、登録・解除でHTTP 500になる。
-不足があれば初期化SQLを最後まで適用する（すべて`IF NOT EXISTS`付き）。
+新コードには`request_usage`と追加列も必要。0002のALTERは再実行できないため適用履歴を管理する。
 
 このSQLには初期データや秘密値は含まれない。
 既存のローカルRelayのstate.jsonやAndroidの鍵をD1へ取り込まない。
@@ -62,9 +65,13 @@ WorkerのSettings → Variables and Secretsで以下を設定する。
 | 名前 | 種類 | 入力する値 |
 | --- | --- | --- |
 | `RELAY_ENABLED` | Text | 最初は`false` |
+| `REGISTRATION_ENABLED` | Text | 最初は`false`。新規登録の受付 |
+| `PUSH_ENABLED` | Text | 最初は`false`。Push受付 |
+| `DELIVERY_ENABLED` | Text | 最初は`false`。初回・Cron送信 |
+| `LEGACY_V1_UNTIL` | Text | 通常は空。旧APK移行期間だけUTCのISO日時を設定 |
 | `PUBLIC_ORIGIN` | Text | 手順2のHTTPS URL。`/push`などを付けない |
 | `FCM_PROJECT_ID` | Text | FirebaseのプロジェクトID（プロジェクト番号ではない） |
-| `VAPID_PUBLIC_KEYS` | Text | 後述のJSON配列 |
+| `VAPID_PUBLIC_KEYS` | Text | v2は`[]`。旧登録の期限付き移行だけ後述のJSON配列 |
 | `FCM_CLIENT_EMAIL` | Secret | サービスアカウントJSONの`client_email` |
 | `FCM_PRIVATE_KEY` | Secret | サービスアカウントJSONの`private_key` |
 
@@ -72,7 +79,9 @@ WorkerのSettings → Variables and Secretsで以下を設定する。
 JSONの外側の引用符は含めない。実改行と文字列`\n`のどちらも使用できる。
 保存後に秘密値を表示・ログ出力して確認しない。
 
-`VAPID_PUBLIC_KEYS`には、試すMastodonサーバーの公開鍵を指定する。
+新Androidは公開鍵を購読ごとに登録するため、全体リストへの手動追加は不要。
+既存v1の移行期間だけ、`LEGACY_V1_UNTIL`と`VAPID_PUBLIC_KEYS`を明示する。
+以下はその旧登録用の設定であり、v2の鍵制限は解除しない。
 Mastodon 4.3以降では、ブラウザーで**利用するサーバー**の`/api/v2/instance`を開き、
 `configuration.vapid.public_key`を確認できる。例のホストへ固定しない。
 
@@ -95,6 +104,7 @@ Mastodon 4.3以降では、ブラウザーで**利用するサーバー**の`/ap
 2. ObservabilityでWorkers Logsの保存を無効にする。
    コードは固定エラーコードだけを出すが、プラットフォームの自動ログは配送URLを含む可能性がある。
 3. `RELAY_ENABLED`を`true`へ変更し、設定をデプロイする。
+   検証準備後に`REGISTRATION_ENABLED`、`PUSH_ENABLED`、`DELIVERY_ENABLED`をそれぞれ`true`へ変更する。
 4. ブラウザーで`https://…workers.dev/health`を開く。
    `{"status":"configured","mode":"workers-d1"}`なら設定形式を読み込めている。
    `relay_not_configured`なら変数名・公開鍵配列・プロジェクトID・秘密鍵の形式を確認する。
@@ -124,6 +134,8 @@ SELECT day, count FROM daily_usage ORDER BY day DESC;
 ```
 
 試験を停止するときは`RELAY_ENABLED=false`へ変更する。
+新規登録だけ止めるなら`REGISTRATION_ENABLED=false`、Push受付は`PUSH_ENABLED=false`、
+送信は`DELIVERY_ENABLED=false`とする。これらの部分停止では既存の更新・取得・解除を維持する。
 新規受付とCron送信は止まるが、すでにFCMが受け付けた通知は取り消せない。
 停止中は削除処理も止まるので、D1の保存データは残る。
 試験を終了してデータを消す場合は先にAndroidで通知を無効化して解除を完了する。

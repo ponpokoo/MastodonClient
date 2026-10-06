@@ -1,3 +1,0 @@
-10-05 11:25:50.101 15428 15463 I PinnedScrollInvestigation: longHeader initial=Position(headerIndex=0, headerOffset=0, postIndex=0, postOffset=0, items={})
-10-05 11:25:50.484 15428 15463 I PinnedScrollInvestigation: longHeader afterHeaderFling=Position(headerIndex=1, headerOffset=0, postIndex=3, postOffset=1292, items={pin-3=-1166.0, post-0=741.0, post-1=1260.0, post-2=1779.0, post-3=2298.0})
-10-05 11:25:50.885 15428 15463 I PinnedScrollInvestigation: longHeader afterPostFling=Position(headerIndex=1, headerOffset=0, postIndex=19, postOffset=297, items={post-15=-171.0, post-16=348.0, post-17=867.0, post-18=1386.0, post-19=1905.0})

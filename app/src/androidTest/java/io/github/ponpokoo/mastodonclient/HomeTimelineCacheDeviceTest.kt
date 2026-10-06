@@ -180,7 +180,8 @@ class HomeTimelineCacheDeviceTest {
             old.execSQL("INSERT INTO notification_markers VALUES (?, ?, ?)", arrayOf(account.sessionId, "https://one.example", "marker"))
             old.version = 1
         }
-        val database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name).addMigrations(BrowsingDatabase.MIGRATION_1_2).build()
+        val database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
+            .addMigrations(BrowsingDatabase.MIGRATION_1_2, BrowsingDatabase.MIGRATION_2_3).build()
         try {
             val restored = RoomNotificationLocalDataSource(database) { true }.read(account)
             assertEquals(listOf(notification), restored.notifications)

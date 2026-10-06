@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MastodonClient"
 include(":app")
+include(":transition-prototype")

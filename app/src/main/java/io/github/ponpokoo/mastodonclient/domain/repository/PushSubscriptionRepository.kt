@@ -22,6 +22,8 @@ class PushSubscriptionRequest(
 )
 
 interface PushSubscriptionRepository {
+    /** HTTPS instance metadata; a missing field/404 permits the subscription-response fallback. */
+    suspend fun serverKey(session: AccountSession): String? = null
     /** Known optional alert types advertised by this instance, never inferred from its hostname. */
     suspend fun additionalAlerts(session: AccountSession): Set<String> = emptySet()
     suspend fun get(session: AccountSession): PushSubscription?

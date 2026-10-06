@@ -20,9 +20,15 @@ data class InstanceUrlsDto(
 
 @Serializable
 data class InstanceConfigurationDto(
+    val vapid: VapidConfigurationDto? = null,
     val statuses: StatusConfigurationDto? = null,
     @SerialName("media_attachments") val mediaAttachments: MediaConfigurationDto? = null,
     val urls: InstanceUrlsDto? = null,
+)
+
+@Serializable
+data class VapidConfigurationDto(
+    @SerialName("public_key") val publicKey: String? = null,
 )
 
 @Serializable

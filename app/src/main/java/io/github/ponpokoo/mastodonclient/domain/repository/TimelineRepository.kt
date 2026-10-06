@@ -14,6 +14,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
 import io.github.ponpokoo.mastodonclient.domain.model.CachedNotifications
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities
+import io.github.ponpokoo.mastodonclient.domain.model.NotificationReadState
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -119,9 +122,31 @@ interface TimelineRepository {
     suspend fun getNotifications(
         session: AccountSession,
         maxId: String? = null,
-        limit: Int = 80,
+        limit: Int = 40,
     ): Result<NotificationPage> =
         Result.failure(UnsupportedOperationException("通知は未対応です"))
+
+    suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> =
+        Result.success(NotificationCapabilities())
+
+    suspend fun getNotificationPage(
+        session: AccountSession,
+        category: NotificationCategory,
+        maxId: String? = null,
+        limit: Int = 40,
+        supportsTypeFiltering: Boolean = false,
+    ): Result<NotificationPage> = getNotifications(session, maxId, limit).map { page ->
+        page.copy(notifications = page.notifications.filter(category::includes),
+            serverFiltered = category == NotificationCategory.All)
+    }
+
+    suspend fun getCachedNotificationCategory(session: AccountSession, category: NotificationCategory): Result<CachedNotifications> =
+        getCachedNotifications(session).map { it.copy(notifications = it.notifications.filter(category::includes)) }
+
+    suspend fun cacheNotificationCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>): Result<Unit> =
+        if (category == NotificationCategory.All) cacheNotifications(session, notifications) else Result.success(Unit)
+
+    suspend fun saveNotificationReadState(session: AccountSession, state: NotificationReadState): Result<Unit> = Result.success(Unit)
 
     suspend fun getCachedNotifications(session: AccountSession): Result<CachedNotifications> =
         Result.success(CachedNotifications())

@@ -3,7 +3,7 @@ import { after, before, beforeEach, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { Miniflare, Response as MiniflareResponse, convertV4MiniflareOptions } from 'miniflare';
 import { createWorker } from '../src/worker.mjs';
-import { base64url, bytesOf, randomId, parsePush } from '../src/protocol.mjs';
+import { base64url, bytesOf, digest, randomId, parsePush } from '../src/protocol.mjs';
 import { D1Store, LIMITS } from '../src/store.mjs';
 
 const origin = 'https://relay.example';
@@ -35,6 +35,10 @@ async function push(endpoint, bytes = new Uint8Array([1, 2, 3]), headers = {}) {
 }
 async function settle() { const work = pending ?? []; pending = []; await Promise.all(work); }
 const count = async table => (await db.prepare(`SELECT count(*) AS n FROM ${table}`).first()).n;
+function putBound(owner, { key = publicKey, revision = 1, token = 'test-device-token' } = {}) {
+  return request(`/v2/registrations/${owner.id}`, 'PUT', JSON.stringify({ fcmToken: token, serverKey: key, revision }),
+    { Authorization: `Bearer ${owner.management}`, 'Content-Type': 'application/json' });
+}
 async function fakeGoogle(url, init) {
   assert.equal(init.redirect, 'manual');
   if (url === 'https://oauth2.googleapis.com/token') {
@@ -57,9 +61,9 @@ async function fakeGoogle(url, init) {
 
 before(async () => {
   mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("test")}}',
-    compatibilityDate: '2026-09-21', d1Databases: ['DB'] }));
+    compatibilityDate: '2026-09-21', d1Databases: ['DB', 'MIGRATION'] }));
   db = await mf.getD1Database('DB');
-  const sql = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+  const sql = (await Promise.all(['0001_initial.sql','0002_bound_registrations.sql'].map(name => readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')))).join('\n');
   await db.batch(sql.replace(/--[^\n]*/g, '').split(';').filter(s => s.trim()).map(s => db.prepare(s)));
   pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
   publicKey = base64url(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)));
@@ -68,13 +72,162 @@ before(async () => {
   privatePem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8', rsa.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`;
 });
 beforeEach(async () => {
-  await db.batch(['DELETE FROM messages', 'DELETE FROM registrations', 'DELETE FROM daily_usage'].map(sql => db.prepare(sql)));
+  await db.batch(['DELETE FROM messages', 'DELETE FROM registrations', 'DELETE FROM daily_usage', 'DELETE FROM request_usage'].map(sql => db.prepare(sql)));
   clock = start; pending = []; sent = []; oauthCalls = 0; outcomes = []; logs = [];
-  env = { DB: db, RELAY_ENABLED: 'true', PUBLIC_ORIGIN: origin, VAPID_PUBLIC_KEYS: JSON.stringify([publicKey]),
+  env = { DB: db, RELAY_ENABLED: 'true', REGISTRATION_ENABLED: 'true', PUSH_ENABLED: 'true', DELIVERY_ENABLED: 'true', LEGACY_V1_UNTIL: new Date(start + 86400000).toISOString(), PUBLIC_ORIGIN: origin, VAPID_PUBLIC_KEYS: JSON.stringify([publicKey]),
     FCM_PROJECT_ID: 'test-project', FCM_CLIENT_EMAIL: 'relay@test-project.iam.gserviceaccount.com', FCM_PRIVATE_KEY: privatePem };
   app = createWorker({ now: () => clock, fetcher: fakeGoogle, report: code => logs.push(code) });
 });
 after(async () => { await settle(); await mf?.dispose(); });
+
+test('additive migration preserves preexisting v1 IDs, tombstones and ciphertext', async () => {
+  const migrationDb = await mf.getD1Database('MIGRATION');
+  for (const name of ['0001_initial.sql', '0002_bound_registrations.sql']) {
+    if (name.startsWith('0002')) {
+      await migrationDb.batch([
+        migrationDb.prepare('INSERT INTO registrations(id,management_hash,delivery_id,fcm_token) VALUES(?,?,?,?)').bind('active','hash','delivery','fake-device'),
+        migrationDb.prepare('INSERT INTO registrations(id,management_hash,deleted) VALUES(?,?,1)').bind('retired','other-hash'),
+        migrationDb.prepare('INSERT INTO registrations(id,management_hash,invalid) VALUES(?,?,1)').bind('invalid','invalid-hash'),
+        migrationDb.prepare('INSERT INTO messages(id,registration_id,encoding,headers,body,expires_at,next_attempt) VALUES(?,?,?,?,?,?,?)')
+          .bind('message','active','aes128gcm','{}','AQID',clock + 3600000,clock),
+      ]);
+    }
+    const sql = await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8');
+    await migrationDb.batch(sql.replace(/--[^\n]*/g, '').split(';').filter(s => s.trim()).map(s => migrationDb.prepare(s)));
+  }
+  const active = await migrationDb.prepare('SELECT * FROM registrations WHERE id = ?').bind('active').first();
+  assert.equal(active.delivery_id, 'delivery'); assert.equal(active.management_hash, 'hash');
+  assert.equal(active.fcm_token, 'fake-device'); assert.equal(active.protocol, 1);
+  assert.equal((await migrationDb.prepare('SELECT deleted FROM registrations WHERE id = ?').bind('retired').first()).deleted, 1);
+  assert.ok((await migrationDb.prepare('SELECT invalid_since FROM registrations WHERE id = ?').bind('invalid').first()).invalid_since > 0);
+  assert.equal((await migrationDb.prepare('SELECT body FROM messages WHERE id = ?').bind('message').first()).body, 'AQID');
+});
+
+test('pending key binding rejects Push, finalization is replayable and preserves endpoint', async () => {
+  env.VAPID_PUBLIC_KEYS = '[]';
+  const owner = account();
+  const pendingResponse = await putBound(owner, { key: null });
+  assert.equal(pendingResponse.status, 201);
+  const pendingRegistration = await pendingResponse.json();
+  assert.equal(pendingRegistration.state, 'pending');
+  assert.equal((await push(pendingRegistration.endpoint)).status, 403);
+  const finalized = await putBound(owner, { revision: 2, key: publicKey + '=' });
+  assert.equal(finalized.status, 200);
+  assert.equal((await finalized.json()).endpoint, pendingRegistration.endpoint);
+  assert.equal((await putBound(owner, { revision: 2 })).status, 200);
+  assert.equal((await putBound(owner, { revision: 2, token: 'changed' })).status, 409);
+  assert.equal((await putBound(owner, { revision: 1 })).status, 409);
+  assert.equal((await put(owner)).status, 426);
+  assert.equal((await push(pendingRegistration.endpoint)).status, 201); await settle();
+});
+
+test('per-subscription VAPID isolates two servers and authenticated key rotation removes old key', async () => {
+  const other = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const otherKey = base64url(new Uint8Array(await crypto.subtle.exportKey('raw', other.publicKey)));
+  const first = account(), second = account();
+  const a = await (await putBound(first, {})).json();
+  const b = await (await putBound(second, { key: otherKey })).json();
+  assert.equal((await push(a.endpoint)).status, 201); await settle();
+  assert.equal((await push(b.endpoint)).status, 403);
+  assert.equal((await push(b.endpoint, undefined, await signedHeaders({ keyPair: other, key: otherKey }))).status, 201); await settle();
+  assert.equal((await putBound({ ...first, management: randomId() }, { key: otherKey, revision: 2 })).status, 403);
+  assert.equal((await putBound(first, { key: otherKey, revision: 2 })).status, 200);
+  assert.equal((await push(a.endpoint)).status, 403);
+  assert.equal((await push(a.endpoint, undefined, await signedHeaders({ keyPair: other, key: otherKey, legacy: true }))).status, 201); await settle();
+});
+
+
+test('legacy database migration keeps endpoints and tombstones, legacy grace expires closed', async () => {
+  const { owner, endpoint } = await register();
+  assert.equal((await putBound(owner)).status, 200);
+  const row = await db.prepare('SELECT delivery_id,protocol,server_key FROM registrations WHERE id = ?').bind(owner.id).first();
+  assert.equal(`${origin}/push/${row.delivery_id}`, endpoint); assert.equal(row.protocol, 2);
+  const old = await register(); env.LEGACY_V1_UNTIL = new Date(clock).toISOString();
+  assert.equal((await push(old.endpoint)).status, 403);
+  assert.equal((await put(old.owner)).status, 426);
+  assert.equal((await remove(old.owner)).status, 204);
+  assert.equal((await putBound(old.owner)).status, 410);
+});
+
+test('invalid points and expired pending registrations cannot accept Push or revive', async () => {
+  const owner = account();
+  const invalid = base64url(new Uint8Array([4, ...new Uint8Array(64)]));
+  assert.equal((await putBound(owner, { key: invalid })).status, 400);
+  const result = await putBound(owner, { key: null }); const endpoint = (await result.json()).endpoint;
+  clock += 86400001; await app.scheduled({}, env, {});
+  assert.equal((await push(endpoint)).status, 410);
+  assert.equal((await putBound(owner, { revision: 2 })).status, 410);
+});
+
+test('partial stops and full notification capacity preserve authenticated update, fetch and removal', async () => {
+  const owner = account();
+  const endpoint = (await (await putBound(owner, {})).json()).endpoint;
+  await push(endpoint, new Uint8Array(4000)); await settle(); const id = sent[0].data.messageId;
+  env.REGISTRATION_ENABLED = 'false'; env.PUSH_ENABLED = 'false'; env.DELIVERY_ENABLED = 'false';
+  assert.equal((await putBound(account(), {})).status, 503);
+  assert.equal((await putBound(owner, { revision: 2, token: 'new-token' })).status, 200);
+  assert.equal((await push(endpoint)).status, 503);
+  assert.equal((await getMessage(owner, id)).status, 200);
+  await db.prepare('INSERT INTO daily_usage(day,count) VALUES(?,?) ON CONFLICT(day) DO UPDATE SET count = excluded.count')
+    .bind(Math.floor(clock / 86400000), LIMITS.dailyRequests).run();
+  assert.equal((await remove(owner)).status, 204); assert.equal((await getMessage(owner, id)).status, 404);
+});
+
+test('Cron drains twenty queued messages fairly within the Free D1 statement ceiling', async () => {
+  const { owner } = await register(); const second = await register(); const store = new D1Store(db);
+  const payload = parsePush(new Headers({ TTL: '3600', 'Content-Encoding': 'aes128gcm' }), new Uint8Array([1]), clock);
+  for (let i = 0; i < 25; i++) await store.enqueue(owner.id, payload, clock);
+  await store.enqueue(second.owner.id, payload, clock);
+  let statements = 0;
+  env.DB = { prepare(sql) { statements++; return db.prepare(sql); }, batch: queries => db.batch(queries) };
+  await app.scheduled({}, env, {});
+  assert.ok(statements <= 50);
+  assert.equal(sent.length, 20); assert.equal(await count('messages'), 6);
+  assert.equal(sent.slice(0, 2).some(message => message.data.registrationId === second.owner.id), true);
+});
+
+test('racing identical v2 registrations are idempotent and a key change fences a validated old Push', async () => {
+  const owner = account();
+  const results = await Promise.all([putBound(owner), putBound(owner)]);
+  assert.deepEqual(results.map(result => result.status).sort(), [200,201]);
+  const endpoint = (await results[0].json()).endpoint;
+  const store = new D1Store(db), binding = await store.destination(endpoint.split('/').at(-1));
+  const other = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const key = base64url(new Uint8Array(await crypto.subtle.exportKey('raw', other.publicKey)));
+  assert.equal((await putBound(owner, { key, revision: 2 })).status, 200);
+  const payload = parsePush(new Headers({ TTL: '3600', 'Content-Encoding': 'aes128gcm' }), new Uint8Array([1]), clock);
+  await assert.rejects(store.enqueue(owner.id, payload, clock, binding), error => error.code === 'binding_changed');
+  assert.equal(await count('messages'), 0);
+});
+
+test('permanent FCM failures are reported and dropped without retiring the device', async () => {
+  const { owner, endpoint } = await register();
+  for (const status of [400,401,403,404]) {
+    outcomes.push(Response.json({ error: { status: 'CONFIGURATION_ERROR' } }, { status }));
+    await push(endpoint); await settle();
+    assert.equal(await count('messages'), 0);
+    assert.equal((await db.prepare('SELECT invalid FROM registrations WHERE id = ?').bind(owner.id).first()).invalid, 0);
+  }
+  assert.equal(logs.filter(code => code === 'relay_delivery_configuration_error').length, 4);
+});
+
+test('retiring restored registrations prevents deleted subscriptions and delayed updates from reviving', async () => {
+  const { owner, endpoint } = await register();
+  await push(endpoint, new Uint8Array(4000)); await settle();
+  // Model a backup restored with an old active registration and retained ciphertext.
+  env.RELAY_ENABLED = 'false';
+  const sql = await readFile(new URL('../operations/retire-restored-registrations.sql', import.meta.url), 'utf8');
+  await db.batch(sql.replace(/--[^\n]*/g, '').split(';').filter(s => s.trim()).map(s => db.prepare(s)));
+  env.RELAY_ENABLED = 'true';
+  assert.equal((await push(endpoint)).status, 410);
+  assert.equal((await put(owner)).status, 410);
+  assert.equal((await putBound(owner)).status, 410);
+  assert.equal(await count('messages'), 0);
+  const row = await db.prepare('SELECT deleted,fcm_token,delivery_id,server_key FROM registrations WHERE id = ?').bind(owner.id).first();
+  assert.deepEqual(row, { deleted: 1, fcm_token: null, delivery_id: null, server_key: null });
+  assert.equal((await remove(owner)).status, 204);
+  assert.equal((await putBound(account())).status, 201);
+});
 
 test('registration is idempotent, token refresh preserves endpoint, secrets are hashed', async () => {
   const { owner, endpoint } = await register();
@@ -165,10 +318,10 @@ test('TTL zero is discarded; malformed TTL, encoding and oversized bodies are re
 test('D1 capacity checks are atomic under parallel enqueue and registration attempts', async () => {
   const { owner } = await register(); const store = new D1Store(db);
   const payload = parsePush(new Headers({ TTL: '3600', 'Content-Encoding': 'aes128gcm' }), new Uint8Array([1]), clock);
-  const attempts = await Promise.allSettled(Array.from({ length: 25 }, () => store.enqueue(owner.id, payload, clock)));
+  const attempts = await Promise.allSettled(Array.from({ length: LIMITS.perRegistration + 5 }, () => store.enqueue(owner.id, payload, clock)));
   assert.equal(attempts.filter(r => r.status === 'fulfilled').length, LIMITS.perRegistration);
   assert.equal(await count('messages'), LIMITS.perRegistration);
-  await db.batch(Array.from({ length: 99 }, () => db.prepare('INSERT INTO registrations(id,management_hash,deleted) VALUES(?,?,1)').bind(randomId(), randomId())));
+  await db.batch(Array.from({ length: LIMITS.registrations - 1 }, () => db.prepare('INSERT INTO registrations(id,management_hash,deleted) VALUES(?,?,1)').bind(randomId(), randomId())));
   assert.equal((await put(account())).status, 429);
 });
 test('FCM 429 honors Retry-After and Cron retries the durable message', async () => {
@@ -188,7 +341,7 @@ test('overlapping workers and crashed leases recover without simultaneous sends'
   const claims = await Promise.all([store.claim(id, clock), store.claim(id, clock)]);
   assert.equal(claims.filter(Boolean).length, 1);
   await app.scheduled({}, env, {}); assert.equal(sent.length, 0);
-  clock += 30001;
+  clock += 60001;
   await Promise.all([app.scheduled({}, env, {}), app.scheduled({}, env, {})]);
   assert.equal(sent.length, 1); assert.equal(await count('messages'), 0);
 });
@@ -198,7 +351,7 @@ test('only typed UNREGISTERED retires the FCM token across its registrations', a
   await push(endpoint); await settle();
   assert.equal((await db.prepare('SELECT invalid FROM registrations WHERE id = ?').bind(second.owner.id).first()).invalid, 0);
   outcomes.push(Response.json({ error: { details: [{ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode: 'UNREGISTERED' }] } }, { status: 404 }));
-  clock += 60000; await app.scheduled({}, env, {});
+  await push(second.endpoint); await settle();
   const rows = (await db.prepare('SELECT invalid, fcm_token FROM registrations').all()).results;
   assert.equal(rows.every(row => row.invalid === 1 && row.fcm_token === null), true);
   assert.equal(await count('messages'), 0); assert.equal((await push(endpoint)).status, 410);
@@ -239,12 +392,12 @@ test('retry limit and expiration discard undeliverable messages', async () => {
 test('disabled/missing configuration fails closed; quota cannot overflow under concurrency', async () => {
   env.RELAY_ENABLED = 'false'; assert.equal((await put(account())).status, 503);
   assert.equal((await (await request('/health')).json()).status, 'disabled');
-  env.RELAY_ENABLED = 'true'; env.VAPID_PUBLIC_KEYS = '[]'; assert.equal((await put(account())).status, 503);
+  env.RELAY_ENABLED = 'true'; env.PUBLIC_ORIGIN = 'http://unsafe.example'; assert.equal((await put(account())).status, 503); env.PUBLIC_ORIGIN = origin;
   env.VAPID_PUBLIC_KEYS = JSON.stringify([publicKey]);
-  await db.prepare('INSERT INTO daily_usage(day,count) VALUES(?,?)').bind(Math.floor(clock / 86400000), 1999).run();
-  const responses = await Promise.all([put(account()), put(account())]);
+  await db.prepare('INSERT INTO daily_usage(day,count) VALUES(?,?)').bind(Math.floor(clock / 86400000), LIMITS.dailyRequests - 1).run();
+  const { endpoint } = await register(); const responses = await Promise.all([push(endpoint), push(endpoint)]); await settle();
   assert.deepEqual(responses.map(r => r.status).sort(), [201, 429]);
-  assert.equal((await db.prepare('SELECT count FROM daily_usage').first()).count, 2000);
+  assert.equal((await db.prepare('SELECT count FROM daily_usage').first()).count, LIMITS.dailyRequests);
 });
 test('production bundle runs in workerd with D1 and validates WebCrypto VAPID', async () => {
   const script = await readFile(new URL('../dist/worker.js', import.meta.url), 'utf8');
@@ -260,7 +413,7 @@ test('production bundle runs in workerd with D1 and validates WebCrypto VAPID', 
   }));
   try {
     const remoteDb = await runtime.getD1Database('DB');
-    const sql = await readFile(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8');
+    const sql = (await Promise.all(['0001_initial.sql','0002_bound_registrations.sql'].map(name => readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')))).join('\n');
     await remoteDb.batch(sql.replace(/--[^\n]*/g, '').split(';').filter(s => s.trim()).map(s => remoteDb.prepare(s)));
     const owner = account();
     const response = await runtime.dispatchFetch(`${origin}/v1/registrations/${owner.id}`, { method: 'PUT',

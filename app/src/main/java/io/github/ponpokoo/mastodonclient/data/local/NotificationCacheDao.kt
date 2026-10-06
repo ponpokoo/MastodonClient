@@ -23,8 +23,35 @@ data class NotificationMarkerEntity(
     val lastReadId: String?,
 )
 
+@Entity(tableName = "notification_category_cache", primaryKeys = ["sessionId", "instanceUrl", "category"])
+data class NotificationCategoryCacheEntity(
+    val sessionId: String, val instanceUrl: String, val category: String, val payload: String,
+)
+
+@Entity(tableName = "notification_read_state", primaryKeys = ["sessionId", "instanceUrl"])
+data class NotificationReadStateEntity(
+    val sessionId: String, val instanceUrl: String, val payload: String,
+)
+
 @Dao
 interface NotificationCacheDao {
+    @Query("SELECT payload FROM notification_category_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl AND category = :category")
+    suspend fun readCategory(sessionId: String, instanceUrl: String, category: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun writeCategory(row: NotificationCategoryCacheEntity)
+
+    @Query("SELECT payload FROM notification_read_state WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl")
+    suspend fun readReadState(sessionId: String, instanceUrl: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun writeReadState(row: NotificationReadStateEntity)
+
+    @Query("DELETE FROM notification_category_cache WHERE sessionId = :sessionId")
+    suspend fun deleteCategories(sessionId: String)
+
+    @Query("DELETE FROM notification_read_state WHERE sessionId = :sessionId")
+    suspend fun deleteReadState(sessionId: String)
     @Query("DELETE FROM notification_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl AND id IN (:ids)")
     suspend fun deleteRows(sessionId: String, instanceUrl: String, ids: List<String>)
     @Query("SELECT * FROM notification_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl ORDER BY position")

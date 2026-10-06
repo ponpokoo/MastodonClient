@@ -4,20 +4,22 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
 export class FcmSender {
-  constructor({ projectId, clientEmail, privateKey }, { fetcher = (url, init) => fetch(url, init), now = Date.now } = {}) {
+  constructor({ projectId, clientEmail, privateKey }, { fetcher = (url, init) => fetch(url, init), now = Date.now, timeoutMs = 10000 } = {}) {
     this.projectId = projectId; this.clientEmail = clientEmail; this.privateKey = privateKey;
     this.fetcher = fetcher; this.now = now;
+    this.timeoutMs = timeoutMs;
     this.cachedToken = undefined; this.pendingToken = undefined;
   }
   async request(url, init) {
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), 7000);
+    const timer = setTimeout(() => abort.abort(), this.timeoutMs);
     try {
       // workerd supports manual/follow, not the browser's redirect: 'error'.
       // Never follow redirects carrying Google credentials to another destination.
       const response = await this.fetcher(url, { ...init, redirect: 'manual', signal: abort.signal });
       // Consume the response within the timeout, including a stalled response body.
       const payload = await response.json().catch(() => null);
+      if (abort.signal.aborted) throw new Error('fcm_timeout');
       return { status: response.status, headers: response.headers, payload };
     } finally { clearTimeout(timer); }
   }
@@ -34,9 +36,10 @@ export class FcmSender {
     const claims = base64url(bytesOf(JSON.stringify({ iss: this.clientEmail, scope: SCOPE,
       aud: TOKEN_URL, iat: issuedAt, exp: issuedAt + 3600 })));
     const pem = this.privateKey.replaceAll('\\n', '\n').trim();
-    if (!/^-----BEGIN PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+\s+-----END PRIVATE KEY-----$/.test(pem)) throw new Error('fcm_configuration');
+    if (!/^-----BEGIN PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+\s+-----END PRIVATE KEY-----$/.test(pem)) throw Object.assign(new Error('fcm_configuration'), { permanent: true });
     const der = Uint8Array.from(atob(pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '')), c => c.charCodeAt(0));
-    const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+    const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign'])
+      .catch(() => { throw Object.assign(new Error('fcm_configuration'), { permanent: true }); });
     const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, bytesOf(`${header}.${claims}`));
     const response = await this.request(TOKEN_URL, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -45,7 +48,11 @@ export class FcmSender {
     });
     const payload = response.payload;
     if (response.status !== 200 || typeof payload?.access_token !== 'string' || !payload.access_token ||
-      !Number.isFinite(payload.expires_in) || payload.expires_in <= 60) throw new Error('fcm_authentication');
+      !Number.isFinite(payload.expires_in) || payload.expires_in <= 60) {
+      const error = new Error('fcm_authentication');
+      error.permanent = response.status !== 429 && response.status < 500;
+      throw error;
+    }
     this.cachedToken = { value: payload.access_token,
       expiresAt: issuedAt * 1000 + Math.min(payload.expires_in, 3600) * 1000 };
     return this.cachedToken.value;
@@ -66,13 +73,14 @@ export class FcmSender {
         detail['@type'] === 'type.googleapis.com/google.firebase.fcm.v1.FcmError' && detail.errorCode === 'UNREGISTERED');
       // A generic 400/404 can mean invalid payload/project. Never retire the device for it.
       if (response.status === 404 && unregistered) return { kind: 'invalid' };
+      if (response.status !== 429 && response.status < 500) return { kind: 'permanent' };
       const retryAfter = response.headers.get('retry-after');
       let delay = /^\d+$/.test(retryAfter ?? '') ? Number(retryAfter) : (Date.parse(retryAfter) - this.now()) / 1000;
       if (!Number.isFinite(delay)) delay = 60;
       return { kind: 'retry', delaySeconds: Math.max(60, Math.min(86400, Math.ceil(delay))) };
-    } catch {
+    } catch (error) {
       // Do not surface Google error bodies, credentials, JWTs, tokens, or request URLs.
-      return { kind: 'retry', delaySeconds: 60 };
+      return { kind: error.permanent ? 'permanent' : 'retry', delaySeconds: 60 };
     }
   }
 }

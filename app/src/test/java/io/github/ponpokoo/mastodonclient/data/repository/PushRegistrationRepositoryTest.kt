@@ -31,10 +31,17 @@ class PushRegistrationRepositoryTest {
         val tokens = mutableListOf<String>()
         var error: Exception? = null
         var removes = 0
+        val bindings = mutableListOf<Pair<String?, Long>>()
+        var finalizationError: Exception? = null
         override suspend fun register(id: String, managementToken: String, fcmToken: String): String {
             ids += id; tokens += fcmToken
             error?.let { throw it }
             return "https://relay.example/push/$id"
+        }
+        override suspend fun registerBound(id: String, managementToken: String, fcmToken: String, serverKey: String?, revision: Long): String {
+            bindings += serverKey to revision
+            if (serverKey != null) finalizationError?.let { throw it }
+            return register(id, managementToken, fcmToken)
         }
         override suspend fun unregister(id: String, managementToken: String) { removes++ }
     }
@@ -46,6 +53,9 @@ class PushRegistrationRepositoryTest {
         var deletes = 0
         var ignoreOptions = false
         var additional = emptySet<String>()
+        var signingKey: String? = io.github.ponpokoo.mastodonclient.core.security.WebPushKeyGenerator().generate().publicKey
+        var metadataAvailable = true
+        override suspend fun serverKey(session: AccountSession) = if (metadataAvailable) signingKey else null
         override suspend fun additionalAlerts(session: AccountSession) = additional
         override suspend fun get(session: AccountSession): PushSubscription? {
             getError?.let { throw it }
@@ -53,7 +63,7 @@ class PushRegistrationRepositoryTest {
         }
         override suspend fun register(session: AccountSession, request: PushSubscriptionRequest): PushSubscription {
             posts++
-            val result = PushSubscription("id", request.endpoint, if (ignoreOptions) emptyMap() else request.alerts, null, request.standard)
+            val result = PushSubscription("id", request.endpoint, if (ignoreOptions) emptyMap() else request.alerts, signingKey, request.standard)
             current = result
             registerError?.let { throw it } // Server committed, response was lost.
             return result
@@ -74,6 +84,50 @@ class PushRegistrationRepositoryTest {
         assertEquals(listOf(saved.registrationId, saved.registrationId), relay.ids)
         assertEquals(saved.keys.privateKey, store.records.getValue(account.sessionId).keys.privateKey)
         assertEquals(PushRegistrationState.ACTIVE, restored.state(account))
+    }
+
+    @Test fun subscriptionResponseFinalizesPendingKeyAndLostFinalizationResumesWithoutNewEndpointOrSubscription() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon().apply { metadataAvailable = false }
+        relay.finalizationError = IOException("Lost key binding response")
+        try { DefaultPushRegistrationRepository(store, relay, remote).enable(account, "fcm", alerts); fail() }
+        catch (_: IOException) { }
+        val saved = store.records.getValue(account.sessionId)
+        assertEquals(PushRegistrationState.REGISTERING, saved.state)
+        assertNull(relay.bindings.first().first)
+        assertEquals(remote.signingKey, saved.serverKey)
+        relay.finalizationError = null
+        DefaultPushRegistrationRepository(store, relay, remote).enable(account, "rotated-fcm", alerts)
+        assertEquals(1, remote.posts)
+        assertEquals(saved.endpoint, store.records.getValue(account.sessionId).endpoint)
+        assertEquals(saved.keys, store.records.getValue(account.sessionId).keys)
+        assertTrue(relay.bindings.last().second > saved.revision)
+        assertEquals(PushRegistrationState.ACTIVE, store.records.getValue(account.sessionId).state)
+    }
+
+    @Test fun missingOrInvalidServerKeyCannotBecomeActive() = runTest {
+        for (key in listOf(null, "invalid")) {
+            val store = MemoryStore(); val relay = Relay(); val remote = Mastodon().apply { signingKey = key }
+            try { DefaultPushRegistrationRepository(store, relay, remote).enable(account, "fcm", alerts); fail() }
+            catch (_: IllegalStateException) { } catch (_: IllegalArgumentException) { }
+            assertEquals(PushRegistrationState.REGISTERING, store.records.getValue(account.sessionId).state)
+            assertFalse(relay.bindings.any { it.first == "invalid" })
+        }
+    }
+
+    @Test fun keyRotationAndExistingV1RecordsKeepEncryptionKeysAndEndpoint() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon()
+        DefaultPushRegistrationRepository(store, relay, remote).enable(account, "fcm", alerts)
+        val saved = store.records.getValue(account.sessionId)
+        store.records[account.sessionId] = saved.copy(serverKey = null, revision = 0)
+        remote.signingKey = io.github.ponpokoo.mastodonclient.core.security.WebPushKeyGenerator().generate().publicKey
+        remote.current = remote.current!!.copy(serverKey = remote.signingKey)
+        DefaultPushRegistrationRepository(store, relay, remote).enable(account, "rotated-fcm", alerts)
+        val migrated = store.records.getValue(account.sessionId)
+        assertEquals(saved.registrationId, migrated.registrationId)
+        assertEquals(saved.endpoint, migrated.endpoint)
+        assertEquals(saved.keys, migrated.keys)
+        assertEquals(remote.signingKey, migrated.serverKey)
+        assertEquals(1, remote.posts)
     }
 
     @Test fun lostMastodonResponseIsReconciledWithoutReplacingSubscription() = runTest {
@@ -139,6 +193,7 @@ class PushRegistrationRepositoryTest {
         val otherRelay = object : PushRelayDataSource {
             override val identity = "https://other.example/"
             override suspend fun register(id: String, managementToken: String, fcmToken: String): String = error("Must not send")
+            override suspend fun registerBound(id: String, managementToken: String, fcmToken: String, serverKey: String?, revision: Long): String = error("Must not send")
             override suspend fun unregister(id: String, managementToken: String) = error("Must not send")
         }
         try { DefaultPushRegistrationRepository(store, otherRelay, remote).disable(account); fail() }

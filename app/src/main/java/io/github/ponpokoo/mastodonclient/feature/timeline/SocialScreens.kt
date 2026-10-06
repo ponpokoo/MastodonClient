@@ -107,19 +107,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-internal enum class NotificationFilter(val label: String) {
-    All("すべて"),
-    Mentions("メンション"),
-    Reactions("リアクション"),
-    ;
-
-    fun includes(notification: TimelineNotification): Boolean = when (this) {
-        All -> true
-        Mentions -> notification.type.equals("mention", ignoreCase = true) ||
-            notification.type.equals("reply", ignoreCase = true)
-        Reactions -> notification.type.contains("reaction", ignoreCase = true)
-    }
-}
+internal typealias NotificationFilter = io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
 
 @Composable
 internal fun NotificationsContent(
@@ -145,6 +133,7 @@ internal fun NotificationsContent(
     onSelectFilter: (NotificationFilter) -> Unit,
     newNoticeMessage: String?,
     onNewNoticeClick: (() -> Unit)?,
+    onAutoLoadMore: () -> Unit = onLoadMore,
 ) {
     check(listStates.size == NotificationFilter.entries.size)
     // Keep new rows close to the quoted post's surface instead of using a full accent fill.
@@ -155,31 +144,21 @@ internal fun NotificationsContent(
     }
     val filterPagerState = filterTabs.pagerState
     val selectedListState = listStates[selectedFilter.ordinal]
-    LaunchedEffect(selectedListState, state.notifications.size, state.notificationsNextMaxId, selectedFilter) {
-        if (state.notificationsNextMaxId != null && !state.notificationsEndReached) {
+    val activeState = state.forCategory(selectedFilter)
+    val activeList = state.list(selectedFilter)
+    LaunchedEffect(selectedListState, activeList, selectedFilter, state.capabilities, state.isCheckingCapabilities) {
+        if (state.canExplore(selectedFilter) && activeList.canAutoLoad) {
             snapshotFlow {
                 if (filterTabs.isMoving || filterPagerState.settledPage != selectedFilter.ordinal) null
                 else selectedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
             }
                 .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= selectedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
+                    if (lastVisible != null && lastVisible >= selectedListState.layoutInfo.totalItemsCount - 4) onAutoLoadMore()
                 }
         }
     }
-    when {
-        state.isLoadingNotifications && state.notifications.isEmpty() -> LoadingContent(
-            "通知を読み込んでいます", Modifier.padding(padding),
-        )
-        state.notificationsError != null && state.notifications.isEmpty() -> Column(
-            Modifier.fillMaxSize().padding(padding).padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(state.notificationsError, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = onRefresh) { Text("再試行") }
-        }
-        else -> AppPullToRefreshBox(
-            isRefreshing = state.isPullRefreshingNotifications,
+    AppPullToRefreshBox(
+            isRefreshing = activeState.isPullRefreshingNotifications,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
@@ -201,10 +180,21 @@ internal fun NotificationsContent(
                     key = { NotificationFilter.entries[it] },
                 ) { page ->
                     val filter = NotificationFilter.entries[page]
-                    val filteredNotifications = state.notifications.filter(filter::includes)
+                    val pageState = state.forCategory(filter)
+                    val filteredNotifications = pageState.notifications.filter(filter::includes)
+                    val supported = state.canExplore(filter)
                     LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
-                    if (filteredNotifications.isEmpty()) item { MessageContent("該当する通知はありません") }
-                    items(filteredNotifications, key = TimelineNotification::id) { notification ->
+                    if (!supported) item {
+                        MessageContent(if (state.isCheckingCapabilities) "対応状況を確認しています" else "現在サポートしていません")
+                    }
+                    else if (filteredNotifications.isEmpty() && pageState.notificationsError == null) item {
+                        MessageContent(when {
+                            !pageState.isInitialPageLoaded || pageState.isLoadingNotifications -> "通知を読み込んでいます"
+                            pageState.notificationsEndReached -> "該当する通知はありません"
+                            else -> "読み込んだ範囲に該当する通知はありません"
+                        })
+                    }
+                    items(if (supported) filteredNotifications else emptyList(), key = TimelineNotification::id) { notification ->
                         Column(Modifier.fillMaxWidth().background(
                             if (notification.id in state.highlightedNotificationIds) highlightedBackground
                             else MaterialTheme.colorScheme.surface,
@@ -255,22 +245,22 @@ internal fun NotificationsContent(
                         HorizontalDivider()
                         }
                     }
-                    if (state.isLoadingMoreNotifications) {
+                    if (supported && pageState.isLoadingMoreNotifications) {
                         item {
                             Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
                                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
                             }
                         }
-                    } else if (state.notificationsError != null) {
+                    } else if (supported && pageState.notificationsError != null) {
                         item {
                             Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(state.notificationsError, color = MaterialTheme.colorScheme.error)
-                                TextButton(onClick = if (state.notificationsErrorIsPagination) onLoadMore else onRefresh) {
+                                Text(pageState.notificationsError!!, color = MaterialTheme.colorScheme.error)
+                                TextButton(onClick = if (pageState.notificationsErrorIsPagination) onLoadMore else onRefresh) {
                                     Text("再試行")
                                 }
                             }
                         }
-                    } else if (!state.notificationsEndReached && state.notificationsNextMaxId != null) {
+                    } else if (supported && !pageState.isLoadingNotifications && !pageState.notificationsEndReached && pageState.notificationsNextMaxId != null) {
                         item {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
@@ -287,7 +277,6 @@ internal fun NotificationsContent(
                 }
             }
         }
-    }
 }
 
 @Composable

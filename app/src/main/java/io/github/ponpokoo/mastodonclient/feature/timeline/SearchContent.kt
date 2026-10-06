@@ -29,6 +29,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -79,6 +81,8 @@ internal fun SearchContent(
     onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
     scrollToTopRequest: Long = 0L,
 ) {
+    val searchFocusRequester = remember(state.sessionKey) { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(isVisible, state.isSearchActive, state.sessionKey) {
         if (isVisible && !state.isSearchActive) onEnsureExploreLoaded()
     }
@@ -103,6 +107,7 @@ internal fun SearchContent(
             onBack = onBack, onClear = onClear, onSearch = onSearch,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             isVisible = isVisible,
+            focusRequester = searchFocusRequester,
         )
         if (state.isSearchActive && state.searchQuery.isNotBlank()) {
             SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
@@ -116,7 +121,7 @@ internal fun SearchContent(
                 val target = SearchTarget.entries[page]
                 val tab = state.tabs[target] ?: SearchTabState()
                 val results = tab.results
-                LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
+                LazyColumn(Modifier.fillMaxSize().testTag("search_results_${target.name.lowercase()}"), state = listStates[page]) {
                     if (tab.isSearching) item { LoadingContent("${target.searchLabel()}を検索しています") }
                     if (results != null) {
                         when (target) {
@@ -160,7 +165,12 @@ internal fun SearchContent(
             onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxWidth().weight(1f), post = { status ->
                 SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,
                     onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences)
-            }, onFindTags = { onSelectTarget(SearchTarget.Hashtags); onEnterSearch() }, scrollToTopRequest = scrollToTopRequest)
+            }, onFindTags = {
+                onSelectTarget(SearchTarget.Hashtags)
+                onEnterSearch()
+                searchFocusRequester.requestFocus()
+                keyboard?.show()
+            }, scrollToTopRequest = scrollToTopRequest)
     }
 }
 

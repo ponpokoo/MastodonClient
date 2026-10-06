@@ -28,7 +28,7 @@ test('FCM 401 clears cached auth and does not retire device', async () => {
     if (url.includes('oauth2')) { auth++; return tokenReply(); }
     return ++sends === 1 ? Response.json({}, { status: 401 }) : success();
   } });
-  assert.equal((await sender.send('device', {}, Date.now() + 10000)).kind, 'retry');
+  assert.equal((await sender.send('device', {}, Date.now() + 10000)).kind, 'permanent');
   assert.equal((await sender.send('device', {}, Date.now() + 10000)).kind, 'success'); assert.equal(auth, 2);
 });
 test('expiry during auth prevents sending a late push', async () => {
@@ -38,16 +38,31 @@ test('expiry during auth prevents sending a late push', async () => {
   } });
   assert.equal((await sender.send('device', {}, 11000)).kind, 'expired'); assert.equal(sends, 0);
 });
-test('network errors and malformed OAuth response remain retryable without exposing error text', async () => {
-  for (const fetcher of [async () => { throw new Error('sensitive-credential'); }, async () => Response.json({})]) {
+test('network errors retry and malformed OAuth response requires repair without exposing error text', async () => {
+  for (const [fetcher, kind] of [[async () => { throw new Error('sensitive-credential'); }, 'retry'], [async () => Response.json({}), 'permanent']]) {
     const sender = new FcmSender(config, { fetcher });
-    assert.deepEqual(await sender.send('device', {}, Date.now() + 10000), { kind: 'retry', delaySeconds: 60 });
+    assert.deepEqual(await sender.send('device', {}, Date.now() + 10000), { kind, delaySeconds: 60 });
   }
 });
 test('HTTP-date Retry-After is honored and ordinary INVALID_ARGUMENT does not retire device', async () => {
   const time = 1750000000000;
   const sender = new FcmSender(config, { now: () => time, fetcher: async url => url.includes('oauth2') ? tokenReply() :
-    Response.json({ error: { status: 'INVALID_ARGUMENT' } }, { status: 400,
+    Response.json({ error: { status: 'RESOURCE_EXHAUSTED' } }, { status: 429,
       headers: { 'Retry-After': new Date(time + 300000).toUTCString() } }) });
   assert.deepEqual(await sender.send('device', {}, time + 3600000), { kind: 'retry', delaySeconds: 300 });
+  const invalid = new FcmSender(config, { now: () => time, fetcher: async url => url.includes('oauth2') ? tokenReply() :
+    Response.json({ error: { status: 'INVALID_ARGUMENT' } }, { status: 400 }) });
+  assert.deepEqual(await invalid.send('device', {}, time + 3600000), { kind: 'permanent' });
+});
+
+test('a stalled FCM response body times out as a transient failure and invalid credentials require repair', async () => {
+  const sender = new FcmSender(config, { timeoutMs: 20, fetcher: async (url, init) => {
+    if (url.includes('oauth2')) return tokenReply();
+    return new Response(new ReadableStream({ start(controller) {
+      init.signal.addEventListener('abort', () => controller.error(new Error('private-response-detail')));
+    } }));
+  } });
+  assert.deepEqual(await sender.send('device', {}, Date.now() + 60000), { kind: 'retry', delaySeconds: 60 });
+  const invalid = new FcmSender({ ...config, privateKey: 'invalid' }, { fetcher: () => { throw new Error('must not contact Google'); } });
+  assert.deepEqual(await invalid.send('device', {}, Date.now() + 60000), { kind: 'permanent', delaySeconds: 60 });
 });

@@ -1,4 +1,4 @@
-import { base64url, check, deliveryData, envelope, HttpError, managementHash, parsePush, readBody, unbase64url, verifyVapid } from './protocol.mjs';
+import { base64url, check, deliveryData, digest, envelope, HttpError, managementHash, normalizeServerKey, parsePush, readBody, unbase64url, verifyVapid } from './protocol.mjs';
 import { FcmSender } from './fcm.mjs';
 import { D1Store } from './store.mjs';
 
@@ -7,8 +7,8 @@ function configuration(env) {
   try {
     const origin = new URL(env.PUBLIC_ORIGIN);
     if (origin.protocol !== 'https:' || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) throw new Error();
-    const configuredKeys = JSON.parse(env.VAPID_PUBLIC_KEYS);
-    if (!Array.isArray(configuredKeys) || !configuredKeys.length || configuredKeys.length > 20) throw new Error();
+    const configuredKeys = JSON.parse(env.VAPID_PUBLIC_KEYS ?? '[]');
+    if (!Array.isArray(configuredKeys) || configuredKeys.length > 20) throw new Error();
     const keys = configuredKeys.map(value => {
       const raw = unbase64url(value);
       if (raw.length !== 65 || raw[0] !== 4) throw new Error();
@@ -17,7 +17,10 @@ function configuration(env) {
     if (!env.DB || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(env.FCM_PROJECT_ID ?? '') ||
       !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(env.FCM_CLIENT_EMAIL ?? '') ||
       !env.FCM_PRIVATE_KEY?.includes('BEGIN PRIVATE KEY')) throw new Error();
-    return { origin: origin.origin, keys, projectId: env.FCM_PROJECT_ID, clientEmail: env.FCM_CLIENT_EMAIL, privateKey: env.FCM_PRIVATE_KEY };
+    return { origin: origin.origin, keys, projectId: env.FCM_PROJECT_ID, clientEmail: env.FCM_CLIENT_EMAIL, privateKey: env.FCM_PRIVATE_KEY,
+      legacyUntil: Date.parse(env.LEGACY_V1_UNTIL ?? ''),
+      registrationEnabled: env.REGISTRATION_ENABLED === 'true', pushEnabled: env.PUSH_ENABLED === 'true',
+      deliveryEnabled: env.DELIVERY_ENABLED === 'true' };
   } catch { throw new HttpError(503, 'relay_not_configured'); }
 }
 function reply(status, value, headers = {}) {
@@ -41,6 +44,7 @@ export function createWorker({ now = Date.now, fetcher = (url, init) => fetch(ur
     const result = await getSender(config).send(message.token, data, message.expires_at);
     await store.complete(message, result, data.transport, now());
     if (result.kind === 'retry') report('relay_delivery_retry');
+    if (result.kind === 'permanent') report('relay_delivery_configuration_error');
   }
   return {
     async fetch(request, env, ctx) {
@@ -54,7 +58,10 @@ export function createWorker({ now = Date.now, fetcher = (url, init) => fetch(ur
         }
         const config = configuration(env);
         const store = new D1Store(env.DB);
-        const registration = /^\/v1\/registrations\/([A-Za-z0-9_-]{22,128})$/.exec(url.pathname);
+        if (request.method === 'GET' && url.pathname === '/v2/capabilities') {
+          return reply(200, { registrationVersion: 2, keyBinding: true });
+        }
+        const registration = /^\/v([12])\/registrations\/([A-Za-z0-9_-]{22,128})$/.exec(url.pathname);
         if (registration && request.method === 'PUT') {
           const hash = await managementHash(request.headers.get('authorization'));
           check(request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() === 'application/json', 415, 'json_required');
@@ -62,32 +69,54 @@ export function createWorker({ now = Date.now, fetcher = (url, init) => fetch(ur
           let body;
           try { body = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new HttpError(400, 'invalid_json'); }
           check(body && typeof body.fcmToken === 'string' && body.fcmToken.length > 0 && body.fcmToken.length <= 4096 &&
-            !/[\s\x00-\x1f]/.test(body.fcmToken) && Object.keys(body).every(key => key === 'fcmToken'), 400, 'invalid_registration');
-          await store.admit(now());
-          const result = await store.register(registration[1], hash, body.fcmToken);
-          return reply(result.created ? 201 : 200, { endpoint: `${config.origin}/push/${result.deliveryId}` });
+            !/[\s\x00-\x1f]/.test(body.fcmToken), 400, 'invalid_registration');
+          const id = registration[2];
+          const before = await store.registration(id, hash);
+          // Authenticate existing registrations before allocating per-registration counters.
+          await store.throttle(before ? 'update' : 'create', before ? id : 'global', now(), before ? 30 : 10);
+          let result;
+          if (registration[1] === '2') {
+            check(Object.keys(body).every(key => ['fcmToken', 'serverKey', 'revision'].includes(key)) &&
+              Number.isSafeInteger(body.revision) && body.revision > 0 && (body.serverKey == null || typeof body.serverKey === 'string'), 400, 'invalid_registration');
+            const key = body.serverKey == null ? null : await normalizeServerKey(body.serverKey);
+            const requestHash = await digest(JSON.stringify([body.fcmToken, key, body.revision]));
+            result = await store.registerBound(id, hash, body.fcmToken, key, body.revision, requestHash, now(), config.registrationEnabled);
+          } else {
+            check(now() < config.legacyUntil && config.keys.length, 426, 'bound_registration_required');
+            check(Object.keys(body).every(key => key === 'fcmToken'), 400, 'invalid_registration');
+            check(before || config.registrationEnabled, 503, 'registration_paused');
+            result = await store.register(id, hash, body.fcmToken);
+          }
+          return reply(result.created ? 201 : 200, { endpoint: `${config.origin}/push/${result.deliveryId}`,
+            ...(registration[1] === '2' ? { revision: result.revision, state: result.state } : {}) });
         }
         if (registration && request.method === 'DELETE') {
           const hash = await managementHash(request.headers.get('authorization'));
-          await store.admit(now());
-          await store.remove(registration[1], hash);
+          if (!await store.registration(registration[2], hash)) await store.throttle('unknown_delete', 'global', now(), 10);
+          await store.remove(registration[2], hash);
           return reply(204);
         }
         const message = /^\/v1\/registrations\/([A-Za-z0-9_-]{22,128})\/messages\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
         if (message && request.method === 'GET') {
           const hash = await managementHash(request.headers.get('authorization'));
-          await store.admit(now());
+          check(await store.registration(message[1], hash), 404, 'not_found');
+          await store.throttle('fetch', message[1], now(), 60);
           return reply(200, envelope(await store.message(message[1], message[2], hash, now())));
         }
         const push = /^\/push\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
         if (push && request.method === 'POST') {
-          await verifyVapid(request.headers, config.origin, config.keys, now());
+          check(config.pushEnabled, 503, 'push_paused');
+          const destination = await store.destination(push[1]);
+          check(destination.protocol === 1 ? now() < config.legacyUntil && config.keys.length :
+            destination.server_key && (!destination.pending_until || destination.pending_until > now()), 403, 'key_binding_pending');
+          await store.throttle('push', destination.id, now(), 360);
+          await store.admit(now());
+          await verifyVapid(request.headers, config.origin,
+            destination.protocol === 2 ? [destination.server_key] : config.keys, now());
           const bytes = await readBody(request, 65536);
           const payload = parsePush(request.headers, bytes, now());
-          await store.admit(now());
-          const registrationId = await store.destination(push[1]);
-          const id = await store.enqueue(registrationId, payload, now());
-          if (payload.ttl > 0) {
+          const id = await store.enqueue(destination.id, payload, now(), destination);
+          if (payload.ttl > 0 && config.deliveryEnabled) {
             // Commit before acknowledging Mastodon. If waitUntil is interrupted,
             // the D1 row and expiring lease allow Cron to recover delivery.
             ctx.waitUntil(deliver(store, id, config).catch(() => report('relay_delivery_failed')));
@@ -108,8 +137,14 @@ export function createWorker({ now = Date.now, fetcher = (url, init) => fetch(ur
         const config = configuration(env);
         const store = new D1Store(env.DB);
         await store.prune(now());
-        const candidate = await store.due(now());
-        if (candidate) await deliver(store, candidate.id, config);
+        if (!config.deliveryEnabled) return;
+        const candidates = await store.due(now());
+        for (const candidate of candidates) {
+          // Free permits 50 D1 statements/invocation. Reserve the worst-case claim,
+          // token retirement and stale-result release before starting another send.
+          if (store.statements > 45) break;
+          await deliver(store, candidate.id, config);
+        }
       } catch {
         report('relay_scheduled_failed');
         throw new Error('relay_scheduled_failed');

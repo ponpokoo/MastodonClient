@@ -15,6 +15,10 @@
   "triggers": { "crons": ["* * * * *"] },
   "vars": {
     "RELAY_ENABLED": "false",
+    "REGISTRATION_ENABLED": "false",
+    "PUSH_ENABLED": "false",
+    "DELIVERY_ENABLED": "false",
+    "LEGACY_V1_UNTIL": "",
     "PUBLIC_ORIGIN": "https://replace-me.workers.dev",
     "VAPID_PUBLIC_KEYS": "[]",
     "FCM_PROJECT_ID": "replace-me"

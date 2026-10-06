@@ -1,4 +1,4 @@
-# Nagisa Relay共通通信契約 v1
+# Nagisa Relay通信契約（登録v2・配送v1）
 
 Android、Node.jsローカル模擬Relay、Workers版Relayが使用する登録・解除・Push受付・暗号文取得・FCMエンベロープの契約を定義する。
 Mastodon購読の接続順序と再開・ログアウト処理は[購読管理](push-settings.md)を参照する。
@@ -9,9 +9,43 @@ VAPID検証、保存方式、配送・再送、件数上限は実装ごとに異
 [ローカルRelay](../relay/README.md)と[Workers版Relay](../relay/workers/README.md)の条件を混同しない。
 Workersの配置は[配置・運用手順](../relay/workers/setup.md)、Android受信は[Android接続と受信処理](push-reception.md)を参照する。
 
+## 購読ごとの鍵登録（v2）
+
+現在のAndroidは`PUT /v2/registrations/{registrationId}`を使用する。Workersはv2対応、
+ローカル模擬Relayはv1のみ。新Androidから旧Relayへの自動フォールバックは行わず、登録エラーとする。
+設計判断は[ADR 0010](adr/0010-relay-subscription-key-binding.md)を参照する。
+
+- Bearer管理用トークン・IDの形式・HTTPS・リダイレクト禁止はv1と同じ。
+- 本文：`{"fcmToken":"端末トークン","serverKey":"サーバーのVAPID公開鍵","revision":1}`。
+  `serverKey`の省略またはnullは仮登録。余分なフィールドは拒否する。
+- 201（新規）／200（更新）：`{"endpoint":"https://relay.example/push/配送専用ID","revision":1,"state":"active"}`。
+  鍵未確定なら`state`は`pending`。Androidはendpoint・revision・stateを確認する。
+- 公開の`GET /v2/capabilities`は`{"registrationVersion":2,"keyBinding":true}`を返す。
+  管理資格の証明ではない。Androidはv2の成功応答を要求し、旧契約へ秘密値を追加して送らない。
+
+P-256の曲線上にある非圧縮65 bytesの公開鍵だけを受け付け、パディングなしBase64URLへ正規化する。
+Pushは対象登録の鍵との一致、署名、audience、期限を検証してから保存する。
+鍵の検証後に登録が変更された場合も保存時のrevision照合で409とし、古い検証結果を使用しない。
+仮登録ではPushを403で拒否し、24時間で配送先・FCMトークン・鍵を消して墓標にする。
+期限の延長は更新で認めない。失効後はオフ→解除完了→オンで新しいIDを作る。
+
+revisionは正の安全なJSON整数。端末は更新前に増分を暗号化保存する。
+同一revision・同一内容の再送は同じendpointを返し、異なる内容や古いrevisionは409。
+鍵を確定後にnullへ戻せない。FCM更新は現在の鍵を維持する。
+管理認証付きの鍵変更では新しい鍵へ即時切り替え、旧鍵の併用期間は設けない。
+アプリ未起動中の鍵変更は検出できず、次の照合までは通知が欠落し得る。
+
+既存v1の登録は同じID・endpoint・管理資格でv2へ移行できる。移行後のv1 PUTは426。
+旧登録の受付・v1 PUTは運用者が明示した`LEGACY_V1_UNTIL`の期限内だけ全体鍵リストを使う。
+未設定・期限切れではv1 PUTは426、旧登録へのPushは403。期限前に受付済みの暗号文はTTLまで再送し得る。
+解除と暗号文取得、FCMエンベロープは引き続きv1。旧APKの解除も移行後に利用できる。
+旧Relayを先に新スキーマ・新コードへ更新してからAndroidを展開する。
+
 ## 登録・FCMトークン更新
 
 `PUT /v1/registrations/{registrationId}`
+
+以下はローカル模擬RelayとWorkersの期限付き旧契約。現在のAndroidの有効化には上記v2を使う。
 
 - Authorization: `Bearer {managementToken}`
 - Content-Type: `application/json`

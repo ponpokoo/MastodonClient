@@ -52,10 +52,10 @@ internal fun SearchBar(
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
     isVisible: Boolean = true,
+    focusRequester: FocusRequester = remember(sessionKey) { FocusRequester() },
 ) {
     var value by remember(sessionKey) { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
     var acceptingEdits by remember(sessionKey) { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(sessionKey) {
@@ -63,9 +63,7 @@ internal fun SearchBar(
         focusManager.clearFocus()
         keyboard?.hide()
     }
-    LaunchedEffect(active) {
-        if (active && isVisible) { focusRequester.requestFocus(); keyboard?.show() }
-    }
+    // Active preserves search results; only explicit input actions should start editing.
     LaunchedEffect(query, sessionKey) {
         if (value.text != query) value = TextFieldValue(query, TextRange(query.length))
     }
@@ -109,8 +107,10 @@ internal fun SearchBar(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (value.composition == null && value.text.isNotBlank()) {
-                        onSearch()
+                        acceptingEdits = false
+                        focusManager.clearFocus()
                         keyboard?.hide()
+                        onSearch()
                     }
                 }),
                 decorationBox = { editor ->

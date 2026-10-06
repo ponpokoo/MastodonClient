@@ -55,8 +55,17 @@ export function deliveryData(message) {
     { version: '1', registrationId: message.registration_id, messageId: message.id, transport: 'fetch' };
 }
 
-// Only operator-configured Mastodon keys may sign pushes in this trial relay.
-// No network key discovery, self-signed-key acceptance, or request-supplied URLs.
+export async function normalizeServerKey(value) {
+  try {
+    check(typeof value === 'string' && value.length <= 90, 400, 'invalid_server_key');
+    const raw = unbase64url(value);
+    check(raw.length === 65 && raw[0] === 4, 400, 'invalid_server_key');
+    await crypto.subtle.importKey('raw', raw, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    return base64url(raw);
+  } catch { throw new HttpError(400, 'invalid_server_key'); }
+}
+
+// Keys come from authenticated registration, never request-supplied URLs or TOFU.
 export async function verifyVapid(headers, origin, allowedKeys, now) {
   try {
     const authorization = headers.get('authorization') ?? '';

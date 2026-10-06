@@ -24,7 +24,6 @@ import io.github.ponpokoo.mastodonclient.feature.notifications.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.*
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.CompletableDeferred
-import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.*
 import org.junit.Rule
@@ -41,10 +40,14 @@ class NotificationRefreshLifecycleDeviceTest {
         fun page(id: String) = NotificationPage(listOf(
             TimelineNotification(id, "follow", "2026-10-05T00:00:00Z", author, null),
         ), null, true)
-        val unused = Proxy.newProxyInstance(TimelineRepository::class.java.classLoader,
-            arrayOf(TimelineRepository::class.java)) { _, method, _ -> error("Unexpected call: ${method.name}") } as TimelineRepository
-        val repository = object : TimelineRepository by unused {
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = error("unused")
             override val moderation = kotlinx.coroutines.flow.MutableStateFlow(AccountModerationState())
+            override suspend fun getNotificationCapabilities(session: AccountSession) = Result.success(NotificationCapabilities())
+            override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean) =
+                getNotifications(session, maxId, limit)
+            override suspend fun cacheNotificationCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>) = Result.success(Unit)
+            override suspend fun saveNotificationReadState(session: AccountSession, state: NotificationReadState) = Result.success(Unit)
             override suspend fun getCachedNotifications(session: AccountSession) = Result.success(CachedNotifications(emptyList()))
             override suspend fun getNotificationMarker(session: AccountSession) = Result.success<String?>(null)
             override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>) = Result.success(Unit)

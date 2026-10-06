@@ -1,9 +1,0 @@
-<?xml version='1.0' encoding='UTF-8' ?>
-<testsuites tests="1" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-10-05T10:44:45" hostname="localhost">
-  <testsuite name="io.github.ponpokoo.mastodonclient.ProfilePinnedScrollInvestigationTest" tests="1" failures="0" errors="0" skipped="0" time="15.092" timestamp="2026-10-05T10:44:45" hostname="localhost">
-    <properties>
-      <property name="device" value="emulator-5554" />
-    </properties>
-    <testcase name="mediumScrollDownAndBackWithFourImagePins" classname="io.github.ponpokoo.mastodonclient.ProfilePinnedScrollInvestigationTest" time="15.092" />
-  </testsuite>
-</testsuites>

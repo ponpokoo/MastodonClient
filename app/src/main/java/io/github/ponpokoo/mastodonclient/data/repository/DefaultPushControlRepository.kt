@@ -15,12 +15,14 @@ class DefaultPushControlRepository(
     private val control: PushControlStore,
     private val registrations: PushRegistrationStore,
     private val configured: () -> Boolean,
+    private val now: () -> Long = System::currentTimeMillis,
     // Use the saved relay for cleanup, even if the current configured relay has changed.
     private val repository: (StoredPushRegistration?) -> PushRegistrationRepository,
 ) : PushControlRepository, PushAuthLifecycle {
     private val mutable = MutableStateFlow<Map<String, PushControlState>>(emptyMap())
     override val states = mutable.asStateFlow()
     private val mutex = Mutex()
+    private val verifiedAt = mutableMapOf<String, Long>()
 
     override suspend fun refresh() = mutex.withLock { reconcile() }
     override suspend fun tokenChanged(token: String?) = mutex.withLock {
@@ -107,10 +109,12 @@ class DefaultPushControlRepository(
         if ("push" !in session.scopes.split(' ')) { update(session.sessionId, true, PushControlStatus.NEEDS_AUTH); return }
         val token = data.token
         if (token.isNullOrBlank()) { update(session.sessionId, true, PushControlStatus.PREPARING, "通知サービスの準備を待っています。"); return }
-        if (saved?.state == PushRegistrationState.ACTIVE && mutable.value[session.sessionId]?.status == PushControlStatus.ACTIVE) return
+        if (saved?.state == PushRegistrationState.ACTIVE && mutable.value[session.sessionId]?.status == PushControlStatus.ACTIVE &&
+            now() - (verifiedAt[session.sessionId] ?: 0) < 6 * 60 * 60 * 1000L) return
         update(session.sessionId, true, PushControlStatus.REGISTERING)
         runCatchingCancellable {
             repository(saved).enable(session, token, ALERTS)
+            verifiedAt[session.sessionId] = now()
             update(session.sessionId, true, PushControlStatus.ACTIVE)
         }.onFailure { update(session.sessionId, true, PushControlStatus.ERROR, "通知を登録できませんでした。再試行してください。") }
     }

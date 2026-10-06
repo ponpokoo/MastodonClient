@@ -211,7 +211,8 @@ interface MastodonApi {
     @GET("api/v1/notifications")
     suspend fun getNotifications(
         @Query("max_id") maxId: String? = null,
-        @Query("limit") limit: Int = 80,
+        @Query("limit") limit: Int = 40,
+        @Query("types[]") types: List<String>? = null,
     ): List<NotificationDto>
 
     @GET("api/v1/markers")

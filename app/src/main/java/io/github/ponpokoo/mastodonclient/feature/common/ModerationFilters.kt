@@ -29,12 +29,18 @@ internal fun TimelineUiState.withModeration(m: AccountModerationState, s: Accoun
 }
 
 internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession): NotificationsUiState {
-    val visible = notifications.filterNot { m.hides(s, it) }
-    if (visible == notifications) return this
-    val ids = visible.mapTo(mutableSetOf()) { it.id }
+    val words = m.wordMutes[s.sessionId].orEmpty()
+    val hidden = { notification: TimelineNotification ->
+        m.hides(s, notification) || notification.status?.matchesWordMute(words) == true
+    }
+    val visible = notifications.filterNot(hidden)
+    val filteredLists = lists.mapValues { (_, list) -> list.copy(notifications = list.notifications.filterNot(hidden)) }
+    if (visible == notifications && filteredLists == lists) return this
+    val ids = (visible + filteredLists.values.flatMap { it.notifications }).mapTo(mutableSetOf()) { it.id }
     val pending = pendingNewNotificationIds.intersect(ids)
-    return copy(notifications = visible, pendingNewNotificationIds = pending,
+    return copy(notifications = visible, lists = filteredLists, pendingNewNotificationIds = pending,
         highlightedNotificationIds = highlightedNotificationIds.intersect(ids),
+        refreshResult = refreshResult?.copy(hasNewNotifications = pending.isNotEmpty()),
         shownNewNotice = if (pending.isEmpty()) null else shownNewNotice?.copy(count = pending.size))
 }
 

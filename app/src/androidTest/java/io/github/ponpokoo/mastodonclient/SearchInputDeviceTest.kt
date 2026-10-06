@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsSelected
@@ -22,6 +23,8 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
 import io.github.ponpokoo.mastodonclient.domain.model.ExploreFeed
 import io.github.ponpokoo.mastodonclient.domain.model.ExplorePage
@@ -49,8 +52,11 @@ class SearchInputDeviceTest {
         rule.onNodeWithTag("search_input").assertIsFocused()
         rule.onNodeWithTag("search_clear").assertDoesNotExist()
         rule.onNodeWithTag("search_input").performTextInput("こんにちは")
+        waitForKeyboard(true)
         rule.runOnIdle { assertEquals(0, searches) }
         rule.onNodeWithTag("search_input").performImeAction()
+        rule.onNodeWithTag("search_input").assertIsNotFocused()
+        waitForKeyboard(false)
         rule.runOnIdle { assertEquals(1, searches) }
         rule.onNodeWithTag("search_back").performClick()
         rule.onNodeWithTag("search_input").assertTextEquals("こんにちは")
@@ -144,7 +150,8 @@ class SearchInputDeviceTest {
         val state = mutableStateOf(SearchUiState())
         rule.setContent { MaterialTheme { SearchContent(state.value, PaddingValues(),
             onQueryChanged = { state.value = state.value.copy(searchQuery = it) }, onSearch = { searches++ },
-            onEnterSearch = { state.value = state.value.copy(isSearchActive = true) }, onBack = {}, onClear = {},
+            onEnterSearch = { state.value = state.value.copy(isSearchActive = true) },
+            onBack = { state.value = state.value.copy(isSearchActive = false) }, onClear = {},
             onSelectTarget = { state.value = state.value.copy(selectedTarget = it) }, onLoadMore = {}, onRetry = {},
             onStatusClick = {}, onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = { _, _ -> }, onFavourite = {},
             onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> },
@@ -153,9 +160,28 @@ class SearchInputDeviceTest {
         ) } }
         rule.onNodeWithText("タグを検索").performClick()
         rule.onNodeWithTag("search_input").assertIsFocused().performTextInput("写真")
+        waitForKeyboard(true)
         rule.onNodeWithTag("search_target_hashtags").assertIsSelected()
         rule.onNodeWithTag("search_input").performImeAction()
+        rule.onNodeWithTag("search_input").assertIsNotFocused()
+        waitForKeyboard(false)
         rule.runOnIdle { assertEquals(1, searches); assertEquals(SearchTarget.Hashtags, state.value.selectedTarget) }
+        rule.onNodeWithTag("search_back").performClick()
+        rule.onNodeWithText("タグを検索").performClick()
+        rule.onNodeWithTag("search_input").assertIsFocused().performTextInput("館")
+        waitForKeyboard(true)
+        rule.runOnIdle { assertEquals("写真館", state.value.searchQuery) }
+    }
+
+    private fun waitForKeyboard(visible: Boolean) {
+        rule.waitUntil(5_000) {
+            var observed = false
+            rule.runOnUiThread {
+                observed = ViewCompat.getRootWindowInsets(rule.activity.window.decorView)
+                    ?.isVisible(WindowInsetsCompat.Type.ime()) == visible
+            }
+            observed
+        }
     }
 
     private fun assertInputEmpty() {

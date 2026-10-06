@@ -35,4 +35,4 @@ API成功後のローカル反映は画面のキャンセルで中断せず、�
 期間付きミュート、管理一覧、プロセス間での反映が必要になった時点で同期と保存方式を見直す。
 管理一覧とローカルワードミュートを追加した後の判断は[ADR 0005](0005-moderation-management-word-mutes.md)を参照する。上記の対象外は本判断を採用した時点の範囲。
 - [現行仕様](../ui-guidelines.md#ミュートブロック報告)
-- [更新記録](../release-plan.md#作業ツリーのミュートブロック報告の更新2026-10-05)
+- [採用時の更新記録](https://github.com/ponpokoo/MastodonClient/blob/c6b8bf612aba8a86f265fbc0c811bf63247c1703/docs/release-plan.md#作業ツリーのミュートブロック報告の更新2026-10-05)
