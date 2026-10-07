@@ -1,0 +1,3485 @@
+{
+  "runId": "20261007-hybrid",
+  "deliveryMode": "hybrid",
+  "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+  "scope": "synthetic payloads and mock FCM; 200 subscriptions; no real Android or Mastodon API measurement",
+  "artifacts": [
+    {
+      "sha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "rebuiltAt": "2026-10-07T11:59:06.048Z"
+    }
+  ],
+  "results": [
+    {
+      "task": "close",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:40.144Z",
+      "finishedAt": "2026-10-07T13:39:40.425Z",
+      "phases": [],
+      "closed": true,
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 6,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 5,
+            "rows_written": 3,
+            "fcm_calls": 1,
+            "fcm_success": 1,
+            "fcm_retry": 0,
+            "within60": 1,
+            "inline_count": 1,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "unlabelled",
+            "samples": 4,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          }
+        ]
+      }
+    },
+    {
+      "task": "fetch",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T12:05:09.602Z",
+      "finishedAt": "2026-10-07T12:07:10.328Z",
+      "phases": [
+        {
+          "name": "all-sync-4k",
+          "requested": 1000,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 1000
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 120333.3072,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 245.52550000000338,
+            "p95": 323.0725999999995,
+            "p99": 384.29959999999846,
+            "max": 452.18090000000666
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "all-sync-4k",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 4000,
+              "rows_read": 5497,
+              "rows_written": 2503,
+              "fcm_calls": 1000,
+              "fcm_success": 1000,
+              "fcm_retry": 0,
+              "within60": 1000,
+              "inline_count": 0,
+              "sync_count": 1000
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "init",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:40:23.785Z",
+      "finishedAt": "2026-10-07T11:40:41.460Z",
+      "phases": [],
+      "seeded": {
+        "total": 200,
+        "active": 200
+      },
+      "initialized": {
+        "initialized": true,
+        "runId": "20261007-hybrid",
+        "limits": {
+          "registrations": 300,
+          "tombstones": 10000,
+          "pending": 50,
+          "messages": 8000,
+          "perRegistration": 100,
+          "dailyRequests": 20000
+        }
+      },
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": []
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "inline",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T12:02:36.492Z",
+      "finishedAt": "2026-10-07T12:04:37.045Z",
+      "phases": [
+        {
+          "name": "all-inline-1k",
+          "requested": 1000,
+          "paceMs": 120,
+          "mix": 1024,
+          "statuses": {
+            "201": 1000
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 120104.8691,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 242.3752999999997,
+            "p95": 328.026300000005,
+            "p99": 427.7551999999996,
+            "max": 547.3457000000053
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "all-inline-1k",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 4000,
+              "rows_read": 5427,
+              "rows_written": 2573,
+              "fcm_calls": 1000,
+              "fcm_success": 1000,
+              "fcm_retry": 0,
+              "within60": 1000,
+              "inline_count": 1000,
+              "sync_count": 0
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "maintenance",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:01.131Z",
+      "finishedAt": "2026-10-07T13:39:02.312Z",
+      "phases": [],
+      "maintenance": {
+        "ran": true
+      },
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "normal",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:41:44.239Z",
+      "finishedAt": "2026-10-07T11:52:44.495Z",
+      "phases": [
+        {
+          "name": "normal-mix",
+          "requested": 1000,
+          "paceMs": 600,
+          "mix": "1KiB90-4KiB9-64KiB1",
+          "statuses": {
+            "201": 999,
+            "500": 1
+          },
+          "errorCodes": {
+            "internal_error": 1
+          },
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 599650.5741000001,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 183.5966999999946,
+            "p95": 218.55100000009406,
+            "p99": 270.5140999999712,
+            "max": 621.0353999999934
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "normal-mix",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 3998,
+              "rows_read": 5001,
+              "rows_written": 2992,
+              "fcm_calls": 999,
+              "fcm_success": 999,
+              "fcm_retry": 0,
+              "within60": 999,
+              "inline_count": 899,
+              "sync_count": 100
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "burst-mix",
+          "requested": 500,
+          "paceMs": 120,
+          "mix": "1KiB90-4KiB9-64KiB1",
+          "statuses": {
+            "201": 500
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 60103.707399999956,
+          "latencyMs": {
+            "count": 500,
+            "p50": 194.25349999999162,
+            "p95": 243.26839999994263,
+            "p99": 314.2905000000028,
+            "max": 349.828199999989
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "burst-mix",
+              "samples": 500,
+              "incomplete": 0,
+              "statements": 2000,
+              "rows_read": 2689,
+              "rows_written": 1311,
+              "fcm_calls": 500,
+              "fcm_success": 500,
+              "fcm_retry": 0,
+              "within60": 500,
+              "inline_count": 450,
+              "sync_count": 50
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": false,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "outage",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:33:50.807Z",
+      "finishedAt": "2026-10-07T13:33:54.429Z",
+      "phases": [
+        {
+          "name": "hybrid-outage",
+          "requested": 10,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "503": 10
+          },
+          "errorCodes": {
+            "delivery_unavailable": 10
+          },
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 1341.8794999999996,
+          "latencyMs": {
+            "count": 10,
+            "p50": 248.8977,
+            "p95": 387.0810999999999,
+            "p99": 387.0810999999999,
+            "max": 387.0810999999999
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "hybrid-outage",
+              "samples": 10,
+              "incomplete": 0,
+              "statements": 40,
+              "rows_read": 50,
+              "rows_written": 30,
+              "fcm_calls": 10,
+              "fcm_success": 0,
+              "fcm_retry": 10,
+              "within60": 0,
+              "inline_count": 0,
+              "sync_count": 10
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "hybrid-after-recovery",
+          "requested": 10,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 10
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 1386.2070999999996,
+          "latencyMs": {
+            "count": 10,
+            "p50": 293.15380000000005,
+            "p95": 374.90970000000016,
+            "p99": 374.90970000000016,
+            "max": 374.90970000000016
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "hybrid-after-recovery",
+              "samples": 10,
+              "incomplete": 0,
+              "statements": 40,
+              "rows_read": 60,
+              "rows_written": 20,
+              "fcm_calls": 10,
+              "fcm_success": 10,
+              "fcm_retry": 0,
+              "within60": 10,
+              "inline_count": 0,
+              "sync_count": 10
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": true
+      },
+      "allPushRequestsAccepted": false,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "smoke",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:41:27.717Z",
+      "finishedAt": "2026-10-07T11:41:29.576Z",
+      "phases": [
+        {
+          "name": "smoke-inline",
+          "requested": 5,
+          "paceMs": 120,
+          "mix": 1024,
+          "statuses": {
+            "201": 5
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 676.7461000000001,
+          "latencyMs": {
+            "count": 5,
+            "p50": 222.7885,
+            "p95": 245.1162999999999,
+            "p99": 245.1162999999999,
+            "max": 245.1162999999999
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "smoke-inline",
+              "samples": 5,
+              "incomplete": 0,
+              "statements": 20,
+              "rows_read": 25,
+              "rows_written": 15,
+              "fcm_calls": 5,
+              "fcm_success": 5,
+              "fcm_retry": 0,
+              "within60": 5,
+              "inline_count": 5,
+              "sync_count": 0
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "smoke-sync",
+          "requested": 5,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 5
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 664.5926999999999,
+          "latencyMs": {
+            "count": 5,
+            "p50": 205.82659999999987,
+            "p95": 210.48130000000015,
+            "p99": 210.48130000000015,
+            "max": 210.48130000000015
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "smoke-sync",
+              "samples": 5,
+              "incomplete": 0,
+              "statements": 20,
+              "rows_read": 30,
+              "rows_written": 10,
+              "fcm_calls": 5,
+              "fcm_success": 5,
+              "fcm_retry": 0,
+              "within60": 5,
+              "inline_count": 0,
+              "sync_count": 5
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "stops",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:20.996Z",
+      "finishedAt": "2026-10-07T13:39:23.699Z",
+      "phases": [],
+      "stops": [
+        {
+          "disabled": "registration",
+          "health": 200,
+          "push": 201,
+          "update": 200
+        },
+        {
+          "disabled": "push",
+          "health": 200,
+          "push": 503,
+          "update": 200
+        },
+        {
+          "disabled": "delivery",
+          "health": 200,
+          "push": 503,
+          "update": 200
+        },
+        {
+          "disabled": "relay",
+          "health": 200,
+          "push": 503,
+          "update": 503
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 6,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 5,
+            "rows_written": 3,
+            "fcm_calls": 1,
+            "fcm_success": 1,
+            "fcm_retry": 0,
+            "within60": 1,
+            "inline_count": 1,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "unlabelled",
+            "samples": 4,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          }
+        ]
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "task": "close",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:40.144Z",
+      "finishedAt": "2026-10-07T13:39:40.425Z",
+      "phases": [],
+      "closed": true,
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 6,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 5,
+            "rows_written": 3,
+            "fcm_calls": 1,
+            "fcm_success": 1,
+            "fcm_retry": 0,
+            "within60": 1,
+            "inline_count": 1,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "unlabelled",
+            "samples": 4,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          }
+        ]
+      }
+    },
+    {
+      "task": "fetch",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T12:05:09.602Z",
+      "finishedAt": "2026-10-07T12:07:10.328Z",
+      "phases": [
+        {
+          "name": "all-sync-4k",
+          "requested": 1000,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 1000
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 120333.3072,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 245.52550000000338,
+            "p95": 323.0725999999995,
+            "p99": 384.29959999999846,
+            "max": 452.18090000000666
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "all-sync-4k",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 4000,
+              "rows_read": 5497,
+              "rows_written": 2503,
+              "fcm_calls": 1000,
+              "fcm_success": 1000,
+              "fcm_retry": 0,
+              "within60": 1000,
+              "inline_count": 0,
+              "sync_count": 1000
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "init",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:40:23.785Z",
+      "finishedAt": "2026-10-07T11:40:41.460Z",
+      "phases": [],
+      "seeded": {
+        "total": 200,
+        "active": 200
+      },
+      "initialized": {
+        "initialized": true,
+        "runId": "20261007-hybrid",
+        "limits": {
+          "registrations": 300,
+          "tombstones": 10000,
+          "pending": 50,
+          "messages": 8000,
+          "perRegistration": 100,
+          "dailyRequests": 20000
+        }
+      },
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": []
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "inline",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:53:37.935Z",
+      "finishedAt": "2026-10-07T11:56:12.031Z",
+      "phases": [
+        {
+          "name": "all-inline-1k",
+          "requested": 1000,
+          "paceMs": 120,
+          "mix": 1024,
+          "statuses": {
+            "201": 1000
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 120123.31719999999,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 208.31950000000506,
+            "p95": 314.9249999999993,
+            "p99": 387.20659999999043,
+            "max": 577.1413999999932
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "all-inline-1k",
+              "samples": 1000,
+              "incomplete": 1,
+              "statements": 3996,
+              "rows_read": 5434,
+              "rows_written": 2558,
+              "fcm_calls": 999,
+              "fcm_success": 999,
+              "fcm_retry": 0,
+              "within60": 999,
+              "inline_count": 999,
+              "sync_count": 0
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": false,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": false,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 1000,
+            "incomplete": 1,
+            "statements": 3996,
+            "rows_read": 5434,
+            "rows_written": 2558,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "inline",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T12:02:36.492Z",
+      "finishedAt": "2026-10-07T12:04:37.045Z",
+      "phases": [
+        {
+          "name": "all-inline-1k",
+          "requested": 1000,
+          "paceMs": 120,
+          "mix": 1024,
+          "statuses": {
+            "201": 1000
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 120104.8691,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 242.3752999999997,
+            "p95": 328.026300000005,
+            "p99": 427.7551999999996,
+            "max": 547.3457000000053
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "all-inline-1k",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 4000,
+              "rows_read": 5427,
+              "rows_written": 2573,
+              "fcm_calls": 1000,
+              "fcm_success": 1000,
+              "fcm_retry": 0,
+              "within60": 1000,
+              "inline_count": 1000,
+              "sync_count": 0
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "maintenance",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:01.131Z",
+      "finishedAt": "2026-10-07T13:39:02.312Z",
+      "phases": [],
+      "maintenance": {
+        "ran": true
+      },
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "normal",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:41:44.239Z",
+      "finishedAt": "2026-10-07T11:52:44.495Z",
+      "phases": [
+        {
+          "name": "normal-mix",
+          "requested": 1000,
+          "paceMs": 600,
+          "mix": "1KiB90-4KiB9-64KiB1",
+          "statuses": {
+            "201": 999,
+            "500": 1
+          },
+          "errorCodes": {
+            "internal_error": 1
+          },
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 599650.5741000001,
+          "latencyMs": {
+            "count": 1000,
+            "p50": 183.5966999999946,
+            "p95": 218.55100000009406,
+            "p99": 270.5140999999712,
+            "max": 621.0353999999934
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "normal-mix",
+              "samples": 1000,
+              "incomplete": 0,
+              "statements": 3998,
+              "rows_read": 5001,
+              "rows_written": 2992,
+              "fcm_calls": 999,
+              "fcm_success": 999,
+              "fcm_retry": 0,
+              "within60": 999,
+              "inline_count": 899,
+              "sync_count": 100
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "burst-mix",
+          "requested": 500,
+          "paceMs": 120,
+          "mix": "1KiB90-4KiB9-64KiB1",
+          "statuses": {
+            "201": 500
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 60103.707399999956,
+          "latencyMs": {
+            "count": 500,
+            "p50": 194.25349999999162,
+            "p95": 243.26839999994263,
+            "p99": 314.2905000000028,
+            "max": 349.828199999989
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "burst-mix",
+              "samples": 500,
+              "incomplete": 0,
+              "statements": 2000,
+              "rows_read": 2689,
+              "rows_written": 1311,
+              "fcm_calls": 500,
+              "fcm_success": 500,
+              "fcm_retry": 0,
+              "within60": 500,
+              "inline_count": 450,
+              "sync_count": 50
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": false,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "outage",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:33:50.807Z",
+      "finishedAt": "2026-10-07T13:33:54.429Z",
+      "phases": [
+        {
+          "name": "hybrid-outage",
+          "requested": 10,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "503": 10
+          },
+          "errorCodes": {
+            "delivery_unavailable": 10
+          },
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 1341.8794999999996,
+          "latencyMs": {
+            "count": 10,
+            "p50": 248.8977,
+            "p95": 387.0810999999999,
+            "p99": 387.0810999999999,
+            "max": 387.0810999999999
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "hybrid-outage",
+              "samples": 10,
+              "incomplete": 0,
+              "statements": 40,
+              "rows_read": 50,
+              "rows_written": 30,
+              "fcm_calls": 10,
+              "fcm_success": 0,
+              "fcm_retry": 10,
+              "within60": 0,
+              "inline_count": 0,
+              "sync_count": 10
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "hybrid-after-recovery",
+          "requested": 10,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 10
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 1386.2070999999996,
+          "latencyMs": {
+            "count": 10,
+            "p50": 293.15380000000005,
+            "p95": 374.90970000000016,
+            "p99": 374.90970000000016,
+            "max": 374.90970000000016
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "hybrid-after-recovery",
+              "samples": 10,
+              "incomplete": 0,
+              "statements": 40,
+              "rows_read": 60,
+              "rows_written": 20,
+              "fcm_calls": 10,
+              "fcm_success": 10,
+              "fcm_retry": 0,
+              "within60": 10,
+              "inline_count": 0,
+              "sync_count": 10
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": true
+      },
+      "allPushRequestsAccepted": false,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      }
+    },
+    {
+      "task": "smoke",
+      "artifactSha256": "82d9da9b0b767043a8b45ac8408e839c30fdf1c9f688ea7c80273fa804bdd9a1",
+      "startedAt": "2026-10-07T11:41:27.717Z",
+      "finishedAt": "2026-10-07T11:41:29.576Z",
+      "phases": [
+        {
+          "name": "smoke-inline",
+          "requested": 5,
+          "paceMs": 120,
+          "mix": 1024,
+          "statuses": {
+            "201": 5
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 676.7461000000001,
+          "latencyMs": {
+            "count": 5,
+            "p50": 222.7885,
+            "p95": 245.1162999999999,
+            "p99": 245.1162999999999,
+            "max": 245.1162999999999
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "smoke-inline",
+              "samples": 5,
+              "incomplete": 0,
+              "statements": 20,
+              "rows_read": 25,
+              "rows_written": 15,
+              "fcm_calls": 5,
+              "fcm_success": 5,
+              "fcm_retry": 0,
+              "within60": 5,
+              "inline_count": 5,
+              "sync_count": 0
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        },
+        {
+          "name": "smoke-sync",
+          "requested": 5,
+          "paceMs": 120,
+          "mix": 4096,
+          "statuses": {
+            "201": 5
+          },
+          "errorCodes": {},
+          "transportErrors": 0,
+          "fetchStatuses": {},
+          "elapsedMs": 664.5926999999999,
+          "latencyMs": {
+            "count": 5,
+            "p50": 205.82659999999987,
+            "p95": 210.48130000000015,
+            "p99": 210.48130000000015,
+            "max": 210.48130000000015
+          },
+          "d1": [
+            {
+              "kind": "http",
+              "phase": "smoke-sync",
+              "samples": 5,
+              "incomplete": 0,
+              "statements": 20,
+              "rows_read": 30,
+              "rows_written": 10,
+              "fcm_calls": 5,
+              "fcm_success": 5,
+              "fcm_retry": 0,
+              "within60": 5,
+              "inline_count": 0,
+              "sync_count": 5
+            }
+          ],
+          "pendingAfter": 0,
+          "messagesAfter": 0
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          }
+        ]
+      },
+      "artifactReference": "inferred from initial artifact; early runner did not record the hash"
+    },
+    {
+      "task": "stops",
+      "artifactSha256": "44b7cc00ad6722fa35c3a5e3a81d5d876f02fcdf3ae8ba57c7dfdf751282e046",
+      "startedAt": "2026-10-07T13:39:20.996Z",
+      "finishedAt": "2026-10-07T13:39:23.699Z",
+      "phases": [],
+      "stops": [
+        {
+          "disabled": "registration",
+          "health": 200,
+          "push": 201,
+          "update": 200
+        },
+        {
+          "disabled": "push",
+          "health": 200,
+          "push": 503,
+          "update": 200
+        },
+        {
+          "disabled": "delivery",
+          "health": 200,
+          "push": 503,
+          "update": 200
+        },
+        {
+          "disabled": "relay",
+          "health": 200,
+          "push": 503,
+          "update": 503
+        }
+      ],
+      "measurementComplete": true,
+      "hybridChecks": {
+        "noStoredBodies": true,
+        "oneSendPerAcceptedPush": true,
+        "failedPushesReturn503": null
+      },
+      "allPushRequestsAccepted": true,
+      "allFetchRequestsSucceeded": null,
+      "final": {
+        "messages": 0,
+        "pending": 0,
+        "delivered": 0,
+        "stored_text_bytes": 0,
+        "registrations": {
+          "total": 200,
+          "active": 200
+        },
+        "summary": [
+          {
+            "kind": "cron",
+            "phase": "scheduled",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3158,
+            "rows_written": 2957,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-inline-1k",
+            "samples": 2000,
+            "incomplete": 1,
+            "statements": 7996,
+            "rows_read": 10861,
+            "rows_written": 5131,
+            "fcm_calls": 1999,
+            "fcm_success": 1999,
+            "fcm_retry": 0,
+            "within60": 1999,
+            "inline_count": 1999,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "all-sync-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 4000,
+            "rows_read": 5497,
+            "rows_written": 2503,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000,
+            "inline_count": 0,
+            "sync_count": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2000,
+            "rows_read": 2689,
+            "rows_written": 1311,
+            "fcm_calls": 500,
+            "fcm_success": 500,
+            "fcm_retry": 0,
+            "within60": 500,
+            "inline_count": 450,
+            "sync_count": 50
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-after-recovery",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 60,
+            "rows_written": 20,
+            "fcm_calls": 10,
+            "fcm_success": 10,
+            "fcm_retry": 0,
+            "within60": 10,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "hybrid-outage",
+            "samples": 10,
+            "incomplete": 0,
+            "statements": 40,
+            "rows_read": 50,
+            "rows_written": 30,
+            "fcm_calls": 10,
+            "fcm_success": 0,
+            "fcm_retry": 10,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 10
+          },
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5001,
+            "rows_written": 2992,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999,
+            "inline_count": 899,
+            "sync_count": 100
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-inline",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 25,
+            "rows_written": 15,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 5,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "smoke-sync",
+            "samples": 5,
+            "incomplete": 0,
+            "statements": 20,
+            "rows_read": 30,
+            "rows_written": 10,
+            "fcm_calls": 5,
+            "fcm_success": 5,
+            "fcm_retry": 0,
+            "within60": 5,
+            "inline_count": 0,
+            "sync_count": 5
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 6,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-delivery-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-push-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 4,
+            "rows_written": 1,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 4,
+            "rows_read": 5,
+            "rows_written": 3,
+            "fcm_calls": 1,
+            "fcm_success": 1,
+            "fcm_retry": 0,
+            "within60": 1,
+            "inline_count": 1,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-registration-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 3,
+            "rows_read": 3,
+            "rows_written": 2,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "stop-relay-update",
+            "samples": 1,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          },
+          {
+            "kind": "http",
+            "phase": "unlabelled",
+            "samples": 4,
+            "incomplete": 0,
+            "statements": 0,
+            "rows_read": 0,
+            "rows_written": 0,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0,
+            "inline_count": 0,
+            "sync_count": 0
+          }
+        ]
+      }
+    }
+  ]
+}

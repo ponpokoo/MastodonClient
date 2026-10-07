@@ -85,6 +85,31 @@ class PushRegistrationRepositoryTest {
         assertEquals(saved.keys.privateKey, store.records.getValue(account.sessionId).keys.privateKey)
         assertEquals(PushRegistrationState.ACTIVE, restored.state(account))
     }
+    @Test fun initializesCheckpointBeforeSubscriptionAndPreservesItOnTokenUpdates() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon()
+        var baselineCalls = 0
+        val repo = DefaultPushRegistrationRepository(store, relay, remote, syncBaseline = {
+            baselineCalls++
+            assertEquals(0, remote.posts)
+            "opaque-baseline"
+        })
+        repo.enable(account, "fcm", alerts)
+        assertEquals("opaque-baseline", store.records.getValue(account.sessionId).syncSinceId)
+        assertTrue(store.records.getValue(account.sessionId).syncInitialized)
+        repo.enable(account, "new-fcm", alerts)
+        assertEquals(1, baselineCalls)
+    }
+
+    @Test fun failedBaselineDoesNotCreateRemoteSubscriptionAndRetriesWithoutNewKeys() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon()
+        try { DefaultPushRegistrationRepository(store, relay, remote, syncBaseline = { throw IOException() }).enable(account, "fcm", alerts); fail() }
+        catch (_: IOException) { }
+        assertEquals(0, remote.posts); assertTrue(relay.ids.isEmpty())
+        val saved = store.records.getValue(account.sessionId)
+        DefaultPushRegistrationRepository(store, relay, remote, syncBaseline = { null }).enable(account, "fcm", alerts)
+        assertEquals(saved.registrationId, store.records.getValue(account.sessionId).registrationId)
+        assertTrue(store.records.getValue(account.sessionId).syncInitialized)
+    }
 
     @Test fun subscriptionResponseFinalizesPendingKeyAndLostFinalizationResumesWithoutNewEndpointOrSubscription() = runTest {
         val store = MemoryStore(); val relay = Relay(); val remote = Mastodon().apply { metadataAvailable = false }

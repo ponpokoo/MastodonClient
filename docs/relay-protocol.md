@@ -1,9 +1,14 @@
-# Nagisa Relay通信契約（登録v2・配送v1）
+# Nagisa Relay通信契約（登録v2・現行配送v1／採用方式v2）
 
 Android、Node.jsローカル模擬Relay、Workers版Relayが使用する登録・解除・Push受付・暗号文取得・FCMエンベロープの契約を定義する。
 Mastodon購読の接続順序と再開・ログアウト処理は[購読管理](push-settings.md)を参照する。
 暗号文の中継と端末側の復号に責務を分ける判断は、
-[ADR 0003：PushとRelayの責務](adr/0003-push-relay-responsibilities.md)を参照する。
+[ADR 0013：ハイブリッド配送と情報境界](adr/0013-adopt-hybrid-push-delivery.md)を参照する。
+
+本番Relayは2026-10-08からハイブリッド（小通知v1 inline／大通知v2 sync_required）。
+現在のAndroidソースはv1 inline／旧fetchとv2 sync_requiredに対応する。対応APKの配布は別途。
+旧APKの大通知欠落を許容した[直接切替の判断](adr/0015-production-hybrid-cutover.md)と[配置記録](investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
+各版の契約を混同しない。テストの一覧は[Relay検証ガイド](../relay/workers/testing.md)。
 
 VAPID検証、保存方式、配送・再送、件数上限は実装ごとに異なる。
 [ローカルRelay](../relay/README.md)と[Workers版Relay](../relay/workers/README.md)の条件を混同しない。
@@ -110,6 +115,38 @@ GETの取得応答は、`version`、`registrationId`、`messageId`、`encoding`�
 各値はStringで、FCMのinline形式と同じ暗号文情報を返す。取得応答には`transport`を含めない。
 Androidは要求した登録ID・メッセージIDと取得応答を照合する。
 FCMへはdataメッセージだけを送り、notificationメッセージによる自動表示を使用しない。
+
+## 採用したハイブリッド方式の配送契約
+
+2026-10-07に[ADR 0013](adr/0013-adopt-hybrid-push-delivery.md)で採用した[配送仕様](../relay/workers/hybrid.md)。
+隔離したRelay入口で実装・測定後、2026-10-08に本番へ配置した。現在のAndroidと本番ハイブリッドは配送v2も扱い、ローカル模擬Relayは配送v1。
+採用決定と実配置は区別し、直接切替の条件は[ADR 0015](adr/0015-production-hybrid-cutover.md)に記録する。
+
+登録・更新はv2だけ、解除は既存の管理認証と墓標を維持する。
+ハイブリッド入口の`GET /v2/capabilities`は次を返す。
+
+```json
+{"registrationVersion":2,"keyBinding":true,"deliveryMode":"hybrid","deliveryVersion":2,"syncRequired":true}
+```
+
+deliveryVersionはその入口が使う最新配送版。小通知には既存v1 inlineも使う。
+FCM dataはすべてStringで、JSON全体3,500 bytes以内の小通知は現在と同じv1 inline形式。
+超過時は次の形式で、暗号文・暗号ヘッダー・本文取得先を含めない。
+
+```json
+{"version":"2","registrationId":"登録ID","messageId":"配送識別子","transport":"sync_required"}
+```
+
+registrationIdとmessageIdの形式はv1と同じ。messageIdはRelay内の配送識別子であり、
+Mastodon通知IDやsince_idとして使わない。残りTTLはFCMのandroid.ttlで伝える。
+Androidが対応する場合は現在のセッション・購読を照合してNotifications APIを差分取得する。
+現在のAndroidの同期・初期化・回復は[受信仕様](push-reception.md#ハイブリッドの差分同期と欠落回復)に従う。
+対応前の旧APKはv2 sync_requiredを拒否する。今回の本番切替は[ADR 0015](adr/0015-production-hybrid-cutover.md)に従い、その大通知欠落を許容して実施した。
+
+正のTTLのPushはFCM受付成功後に201。本文を保存せず、本文GETは404、永続retryはない。
+一時的な送信失敗は503＋Retry-After、恒久的な送信設定エラーは502で返す。
+TTL 0は保存・送信せず破棄する。応答喪失時の重複・欠落を、Relayで回復する保証はない。
+上流再送へ依存した保証を設けず、端末の同期補完・通知ID重複排除を別途実装する。
 
 ## 過去の検証記録
 

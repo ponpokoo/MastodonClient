@@ -27,6 +27,7 @@ class PushMessageRepositoryTest {
             endpoint = "https://relay.example/push/delivery", state = PushRegistrationState.ACTIVE)
         val displayed = mutableListOf<Pair<AccountSession, PushNotification>>()
         var fetches = 0
+        val syncRequests = mutableListOf<String>()
         var onFetch: suspend () -> RelayMessageDto? = { envelope() }
         val store = object : PushRegistrationStore {
             override suspend fun read(sessionId: String) = stored.takeIf { sessionId == "one" }
@@ -40,7 +41,7 @@ class PushMessageRepositoryTest {
             onFetch()
         }, PushNotificationPresenter { account, notification, current ->
             if (current()) displayed += account to notification
-        })
+        }, requestSync = { id -> syncRequests += id; stored?.registrationId == id && stored?.state == PushRegistrationState.ACTIVE })
     }
 
     @Test fun inlineStandardAndLegacyDisplayPlainTextAndPreserveOpaqueIds() = runTest {
@@ -54,6 +55,18 @@ class PushMessageRepositoryTest {
             assertEquals("future_type", notification.type)
             assertEquals("<b>そのままのテキスト</b>", notification.body)
         }
+    }
+    @Test fun syncRequiredDispatchesOnlyValidatedRegistrationWithoutDecryptingOrFetching() = runTest {
+        val env = Environment()
+        val sync = fetchMessage() + mapOf("version" to "2", "transport" to "sync_required")
+        assertEquals(PushReceiveResult.PROCESSED, env.repository.receive(sync))
+        assertEquals(listOf("r".repeat(43)), env.syncRequests)
+        assertEquals(0, env.fetches); assertTrue(env.displayed.isEmpty())
+        for (extra in listOf("body", "url", "since_id", "access_token"))
+            assertEquals(PushReceiveResult.REJECTED, env.repository.receive(sync + (extra to "untrusted")))
+        assertEquals(1, env.syncRequests.size)
+        env.stored = null
+        assertEquals(PushReceiveResult.IGNORED, env.repository.receive(sync))
     }
     @Test fun encryptedFedibirdReactionReachesNotificationPresenter() = runTest {
         val env = Environment()

@@ -92,6 +92,7 @@ class NotificationsViewModel(
     private val timelineRepository: TimelineRepository,
     browsing: BrowsingSession,
     private val systemNotifications: SystemNotificationRepository? = null,
+    private val pushSync: io.github.ponpokoo.mastodonclient.domain.repository.PushSyncRepository? = null,
 ) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
@@ -208,6 +209,9 @@ class NotificationsViewModel(
         val before = _uiState.value.list(category)
         if (before.isLoading || !force && before.isLoaded) return
         val initial = !before.isLoaded
+        if (initial || force) requestScope.launch {
+            io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable { pushSync?.recover(snapshot.account!!.sessionId, false) }
+        }
         val boundary = before.notifications.firstOrNull()?.id
         val pendingAtStart = _uiState.value.pendingNewNotificationIds
         pageJobs[category]?.cancel()

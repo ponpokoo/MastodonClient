@@ -1,6 +1,14 @@
 # Workers Relayの配置・運用・復旧
 
-CloudflareとGoogleのWeb画面は利用者が操作する。
+本書の`dist/worker.js`・保存・fetch・毎分Cronは既存入口向け。
+本番は2026-10-08にハイブリッドへ切替済み。`dist/hybrid/hybrid-worker.js`・日次清掃を使う。
+既存origin・D1・購読・FCM設定を継承した。[切替記録・差し戻し先](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
+エミュレーターで実FCMを試す準備は[専用ハイブリッドRelayの手順](hybrid-live-setup.md)を使う。
+方式の選択と移行条件は[hybrid.md](hybrid.md)、専用合成環境の準備は[bench/hybrid-setup.md](bench/hybrid-setup.md)。
+両者のバンドルとCron設定を混在させない。
+
+既存本番の更新では、Dashboardのコード更新で既存DBバインド・変数・Secretsを継承する。
+旧入口向けの新規配置手順と、本番ハイブリッド更新を混同しない。
 コード・SQL・ローカルテストは[Workers版Relay](README.md)に用意した。
 Queues、KV、独自ドメインの契約は不要。まず少数アカウントで試す。
 
@@ -8,7 +16,7 @@ Queues、KV、独自ドメインの契約は不要。まず少数アカウント
 [配置とDB移行](#配置とdb移行)、障害時は[バックアップと隔離復元](#バックアップと隔離復元)・
 [停止と差し戻し](#停止と差し戻し)を参照する。
 公開条件・購読の移行順序は[本運用への移行手順](../../docs/relay-production.md)、
-実測の合否は[検証ガイド](testing.md)で確認する。本書だけで本運用開始の完了とは扱わない。
+実測の合否は[検証ガイド](testing.md)で確認する。本書だけで本運用開始や100人対応の完了とは扱わない。
 
 ## 1. D1を作る
 
@@ -165,6 +173,8 @@ SELECT day, count FROM daily_usage ORDER BY day DESC;
 ## 既存環境の更新と復旧
 
 以下は旧production.mdから統合した運用手順。手順2・4・6・7の番号は[本運用への移行手順](../../docs/relay-production.md)を指す。
+現在の本番はハイブリッドへ切替済み。旧方式の更新・復旧資料として以下を保持する。
+先行する実FCM確認・APK更新待ちを省略した判断と差し戻し先は[切替記録](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
 
 ## 環境と公開origin
 
@@ -183,18 +193,13 @@ URL変更が必要なら移行手順6.2に従う。URLを維持してもDBの作
 
 ## 変数・Secrets・背景処理
 
-- 現行の`PUBLIC_ORIGIN`、`FCM_PROJECT_ID`、`DB`と、Secretsの`FCM_CLIENT_EMAIL`・`FCM_PRIVATE_KEY`を環境ごとに設定する。
-  値はチャット・Git・操作記録・ログへ貼らず、必要な運用権限だけに限定する。
-- `RELAY_ENABLED=false`を配置・復元時の初期状態とする。現行では更新・解除・取得も止まる全体停止であり、部分停止と区別する。
-- `REGISTRATION_ENABLED`・`PUSH_ENABLED`・`DELIVERY_ENABLED`を配置時はすべて`false`にし、検証後に個別に有効化する。
-  全体停止を解除してもこれらが明示的に`true`になるまでは新規登録・受付・送信を開始しない。
-- `VAPID_PUBLIC_KEYS`はv2では`[]`。旧登録を維持する移行期間だけUTCの`LEGACY_V1_UNTIL`と全体リストを明示する。
-  今回は運用者の判断により猶予を設けず、2026-10-06の配置時に`[]`へ変更した。`LEGACY_V1_UNTIL`は未設定。
-  未設定・期限切れでは旧登録の新しいPushを拒否する。
-- Cronは毎分`* * * * *`を出発点とする。UTCで動作し、設定反映と実際の起動を確認する。
-  処理件数・リース・試行回数・タイムアウトは手順3の確定仕様を反映し、HTTP・CronともFree CPU 10ms内か測定する。
-- Workers Logsの保存を無効にし、Metrics・Custom Alertsの対象データに配送URLや秘密値が入らないことを確認する。
-  通知先・しきい値・評価間隔とテスト通知の到達を記録する。
+設定値と停止フラグは[手順4](#4-workerの変数secretsを設定する)、Cron・ログ設定は[手順5](#5-cronを追加して試験を開始する)を使う。
+環境ごとに設定し、配置・復元時は全体・部分停止をすべてfalseから始め、検証後に個別に有効化する。
+
+2026-10-06の配置では運用者の判断で旧登録の猶予を設けず、`VAPID_PUBLIC_KEYS=[]`、`LEGACY_V1_UNTIL`未設定とした。
+未設定・期限切れでは旧登録の新しいPushを拒否する。
+毎分CronはUTCでの反映と実起動を確認し、HTTP・CronともFree CPUの条件を実測する。
+Metrics・Custom Alertsに配送URLや秘密値が入らないこと、通知先・しきい値・評価間隔とテスト通知の到達も確認する。
 
 ## 配置とDB移行
 

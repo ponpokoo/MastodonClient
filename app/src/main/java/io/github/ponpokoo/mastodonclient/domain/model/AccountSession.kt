@@ -11,3 +11,8 @@ data class AccountSession(
     val accessToken: String,
     val scopes: String = "",
 )
+
+/** Display metadata does not change the authentication context. */
+fun AccountSession.hasSameCredentials(other: AccountSession?): Boolean =
+    other != null && sessionId == other.sessionId && instanceUrl == other.instanceUrl &&
+        accountId == other.accountId && accessToken == other.accessToken && scopes == other.scopes

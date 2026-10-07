@@ -15,6 +15,9 @@ class NagisaMessagingService : FirebaseMessagingService() {
         if (message.notification != null) return
         enqueue { FcmWorkScheduler.receive(this, message.data, message.sentTime, message.ttl, message.priority == RemoteMessage.PRIORITY_HIGH) }
     }
+    override fun onDeletedMessages() {
+        enqueue { FcmWorkScheduler.recover(this, force = true) }
+    }
     private fun enqueue(action: () -> androidx.work.Operation?) {
         try {
             // Ensure the durable handoff finishes before Firebase releases its service callback.

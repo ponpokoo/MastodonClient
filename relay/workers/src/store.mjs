@@ -1,15 +1,27 @@
 import { check, randomId } from './protocol.mjs';
 
 // Enrollment and active subscriptions are separate. Tombstones are never recycled.
-export const LIMITS = Object.freeze({ registrations: 120, tombstones: 10000, pending: 30,
-  messages: 1000, perRegistration: 100, dailyRequests: 20000 });
+const DEFAULT_LIMITS = { registrations: 120, tombstones: 10000, pending: 30,
+  messages: 1000, perRegistration: 100, dailyRequests: 20000 };
+export const LIMITS = Object.freeze(DEFAULT_LIMITS);
+// Only trusted entry points can supply a measurement/deployment capacity candidate.
+// Neither HTTP requests nor environment bindings override admission limits.
+export function capacityLimits(candidate = LIMITS) {
+  const limits = { ...LIMITS, ...candidate };
+  for (const name of Object.keys(LIMITS)) {
+    if (!Number.isSafeInteger(limits[name]) || limits[name] < 1) throw new TypeError('invalid_capacity_limits');
+  }
+  if (limits.pending > limits.registrations || limits.registrations > limits.tombstones ||
+    limits.perRegistration > limits.messages) throw new TypeError('invalid_capacity_limits');
+  return Object.freeze(limits);
+}
 export class D1Store {
-  constructor(db) { this.db = db; this.statements = 0; }
+  constructor(db, limits = LIMITS) { this.db = db; this.limits = capacityLimits(limits); this.statements = 0; }
   query(sql, ...args) { this.statements++; return this.db.prepare(sql).bind(...args); }
   async admit(now) {
     const row = await this.query(`INSERT INTO daily_usage(day, count) VALUES (?, 1)
       ON CONFLICT(day) DO UPDATE SET count = count + 1 WHERE count < ? RETURNING count`,
-    Math.floor(now / 86400000), LIMITS.dailyRequests).first();
+    Math.floor(now / 86400000), this.limits.dailyRequests).first();
     check(row, 429, 'daily_capacity');
   }
   async registration(id, hash) {
@@ -53,7 +65,7 @@ export class D1Store {
         AND (registrations.server_key IS NULL OR excluded.server_key IS NOT NULL)
       RETURNING delivery_id, server_key`,
     id, hash, deliveryId, token, key, revision, requestHash, key ? null : now + 86400000,
-    id, LIMITS.registrations, LIMITS.tombstones, key, id, LIMITS.pending).first();
+    id, this.limits.registrations, this.limits.tombstones, key, id, this.limits.pending).first();
     if (!row) {
       const current = await this.registration(id, hash);
       check(!current?.deleted, 410, 'registration_retired');
@@ -75,7 +87,7 @@ export class D1Store {
         OR (SELECT count(*) FROM registrations) < ?
       ON CONFLICT(id) DO UPDATE SET fcm_token = excluded.fcm_token, invalid = 0
         WHERE registrations.management_hash = excluded.management_hash AND registrations.deleted = 0 AND registrations.protocol = 1
-      RETURNING delivery_id`, id, hash, deliveryId, token, id, LIMITS.registrations).first();
+      RETURNING delivery_id`, id, hash, deliveryId, token, id, this.limits.registrations).first();
     if (!row) {
       const current = await this.registration(id, hash);
       check(!current?.deleted, 410, 'registration_retired');
@@ -83,19 +95,20 @@ export class D1Store {
     }
     return { created: row.delivery_id === deliveryId, deliveryId: row.delivery_id };
   }
-  async remove(id, hash) {
+  async remove(id, hash, discardMessages = true) {
     await this.registration(id, hash);
     // Authorization is also checked within the SQL, so a racing initial PUT cannot
     // replace the owner or allow another caller to remove its queued messages.
-    const results = await this.db.batch([
+    const statements = [
       this.query(`INSERT INTO registrations(id, management_hash, deleted)
         SELECT ?, ?, 1 WHERE EXISTS(SELECT 1 FROM registrations WHERE id = ?)
           OR (SELECT count(*) FROM registrations) < ?
         ON CONFLICT(id) DO UPDATE SET deleted = 1, fcm_token = NULL, delivery_id = NULL, server_key = NULL, pending_until = NULL, invalid_since = NULL
-          WHERE registrations.management_hash = excluded.management_hash`, id, hash, id, LIMITS.tombstones),
-      this.query(`DELETE FROM messages WHERE registration_id = ? AND EXISTS
-        (SELECT 1 FROM registrations WHERE id = ? AND management_hash = ? AND deleted = 1)`, id, id, hash),
-    ]);
+          WHERE registrations.management_hash = excluded.management_hash`, id, hash, id, this.limits.tombstones),
+    ];
+    if (discardMessages) statements.push(this.query(`DELETE FROM messages WHERE registration_id = ? AND EXISTS
+        (SELECT 1 FROM registrations WHERE id = ? AND management_hash = ? AND deleted = 1)`, id, id, hash));
+    const results = await this.db.batch(statements);
     if (!results[0].meta.changes) {
       await this.registration(id, hash);
       check(false, 429, 'registration_capacity');
@@ -105,6 +118,33 @@ export class D1Store {
     const row = await this.query('SELECT id, protocol, server_key, revision, pending_until FROM registrations WHERE delivery_id = ? AND deleted = 0 AND invalid = 0', deliveryId).first();
     check(row, 410, 'subscription_gone');
     return row;
+  }
+  async directDestination(binding, now) {
+    // Recheck after VAPID verification/body parsing, and capture the token actually sent.
+    const row = await this.query(`SELECT id,protocol,server_key,revision,pending_until,fcm_token,deleted,invalid
+      FROM registrations WHERE id = ?`, binding.id).first();
+    check(row && !row.deleted && !row.invalid && row.fcm_token, 410, 'subscription_gone');
+    check(row.protocol === binding.protocol && row.server_key === binding.server_key && row.revision === binding.revision,
+      409, 'binding_changed');
+    check(row.protocol === 2 && row.server_key && (!row.pending_until || row.pending_until > now), 403, 'key_binding_pending');
+    return row;
+  }
+  async invalidateDirect(destination, now) {
+    // Retire this subscription only. A late response cannot invalidate a refreshed token/key.
+    const result = await this.query(`UPDATE registrations SET invalid = 1, invalid_since = ?, fcm_token = NULL
+      WHERE id = ? AND fcm_token = ? AND protocol = ? AND server_key IS ? AND revision = ?
+        AND deleted = 0 AND invalid = 0`, now, destination.id, destination.fcm_token,
+    destination.protocol, destination.server_key, destination.revision).run();
+    return result.meta.changes > 0;
+  }
+  async pruneDirect(now) {
+    // No messages, lease or delivery retry work in the candidate's daily maintenance.
+    await this.db.batch([
+      this.query('DELETE FROM daily_usage WHERE day < ?', Math.floor(now / 86400000) - 1),
+      this.query('DELETE FROM request_usage WHERE window < ?', Math.floor(now / 60000) - 1),
+      this.query(`UPDATE registrations SET deleted = 1, fcm_token = NULL, delivery_id = NULL, server_key = NULL,
+        pending_until = NULL, invalid_since = NULL WHERE deleted = 0 AND (pending_until <= ? OR invalid_since <= ?)`, now, now - 30 * 86400000),
+    ]);
   }
   async enqueue(registrationId, message, now, binding = null) {
     const id = randomId();
@@ -119,7 +159,7 @@ export class D1Store {
         AND (SELECT count(*) FROM messages WHERE registration_id = ?) < ?`,
     id, registrationId, message.encoding, message.headers, message.body, message.expires_at, now,
     registrationId, binding ? 1 : 0, binding?.protocol ?? 1, binding?.server_key ?? null, binding?.revision ?? 0,
-    LIMITS.messages, registrationId, LIMITS.perRegistration).run();
+    this.limits.messages, registrationId, this.limits.perRegistration).run();
     if (!result.meta.changes) {
       const row = await this.query('SELECT deleted, invalid FROM registrations WHERE id = ?', registrationId).first();
       check(row && !row.deleted && !row.invalid, 410, 'subscription_gone');

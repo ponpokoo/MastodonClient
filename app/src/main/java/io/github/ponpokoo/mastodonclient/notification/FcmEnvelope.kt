@@ -7,7 +7,9 @@ import kotlinx.serialization.json.Json
 internal object FcmEnvelope {
     private val allowed = setOf("version", "registrationId", "messageId", "transport", "encoding", "headers", "body")
     fun encode(data: Map<String, String>): String? {
-        if (data["version"] != "1" || data["transport"] !in setOf("inline", "fetch")) return null
+        if (data["version"] == "2") {
+            if (data["transport"] != "sync_required" || data.keys != setOf("version", "registrationId", "messageId", "transport")) return null
+        } else if (data["version"] != "1" || data["transport"] !in setOf("inline", "fetch")) return null
         if (data["registrationId"]?.matches(Regex("[A-Za-z0-9_-]{22,128}")) != true ||
             data["messageId"]?.matches(Regex("[A-Za-z0-9_-]{43}")) != true) return null
         if (data.keys.any { it !in allowed }) return null

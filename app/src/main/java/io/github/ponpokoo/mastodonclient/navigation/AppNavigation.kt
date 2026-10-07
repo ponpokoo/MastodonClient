@@ -409,6 +409,7 @@ fun AppNavigation(
         composable<Route.Timeline> { backStackEntry ->
             val mainViewModel: MainSessionViewModel = viewModel(factory = ScreenViewModelFactory {
                 MainSessionViewModel(authRepository, timelineRepository, preferences,
+                    pushSync = pushRuntime.sync,
                     systemNotifications = io.github.ponpokoo.mastodonclient.data.repository.DefaultSystemNotificationRepository(
                         io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSource(context),
                     ), networkIsWifi = {
@@ -430,6 +431,7 @@ fun AppNavigation(
                     io.github.ponpokoo.mastodonclient.data.repository.DefaultSystemNotificationRepository(
                         io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSource(context),
                     ),
+                    pushSync = pushRuntime.sync,
                 )
             })
             val profileViewModel: OwnProfileViewModel = viewModel(factory = ScreenViewModelFactory {

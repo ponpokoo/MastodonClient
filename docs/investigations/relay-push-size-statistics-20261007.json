@@ -1,0 +1,37 @@
+{
+  "date_jst": "2026-10-07",
+  "measurement": "device_local_read_only_aggregate",
+  "app_version": "2.4.1",
+  "app_version_code": 16,
+  "scope": "retained_work_snapshot_not_complete_ingress_history",
+  "initial": {
+    "retained_receive_work": 57,
+    "inline": 57,
+    "fetch_size_unknown": 0,
+    "unsupported_or_unreadable": 0,
+    "inline_le_1k": 57,
+    "inline_k1_2": 0,
+    "inline_k2_3": 0,
+    "inline_k3_4": 0,
+    "inline_gt_4k": 0
+  },
+  "after_user_sent_five_notifications": {
+    "retained_receive_work": 62,
+    "inline": 62,
+    "fetch_size_unknown": 0,
+    "unsupported_or_unreadable": 0,
+    "inline_le_1k": 62,
+    "inline_k1_2": 0,
+    "inline_k2_3": 0,
+    "inline_k3_4": 0,
+    "inline_gt_4k": 0
+  },
+  "snapshot_count_delta": 5,
+  "new_work_observation_final_result_recovered": false,
+  "limitations": [
+    "Retention period and notification origins were not collected.",
+    "Snapshot count delta is not an identifier-level correspondence check.",
+    "No population ratio, response bytes, battery use or display latency was measured.",
+    "Size bands use 1024 bytes per KiB. No payloads, tokens or identifiers were exported."
+  ]
+}

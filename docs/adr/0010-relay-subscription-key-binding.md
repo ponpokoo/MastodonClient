@@ -35,6 +35,7 @@ Relayの120購読上限は人数の証明ではない。テスター資格のAPI
 本番更新・エミュレーターでの移行確認と残る制約は[実施記録](../investigations/relay-production-measurement-20261006.md#手順6既存公開relayの互換更新2026-10-06)、アプリ配布の対象版と確認状況は[リリース計画](../release-plan.md)を参照する。
 
 一般公開・登録濫用・複数プロセスの端末更新・鍵併用の必要が出たら資格確認とrevision方式を再評価する。
+公開後100人の見込みに対する資格確認・濫用対策・超過時停止の評価は[再測定計画](../relay-100-user-remeasurement-plan.md)に従う。
 [通信契約](../relay-protocol.md)、[購読管理](../push-settings.md)、
 [Workers](../../relay/workers/README.md)、[配置・復旧](../../relay/workers/setup.md)、
-[本運用手順](../relay-production.md)、[情報境界のADR 0003](0003-push-relay-responsibilities.md)。
+[本運用手順](../relay-production.md)、[配送・情報境界のADR 0013](0013-adopt-hybrid-push-delivery.md)。

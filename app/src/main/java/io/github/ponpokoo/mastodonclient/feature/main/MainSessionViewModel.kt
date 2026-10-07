@@ -37,6 +37,7 @@ class MainSessionViewModel(
     preferencesStore: UserPreferencesStore? = null,
     private val networkIsWifi: () -> Boolean = { true },
     private val systemNotifications: io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository? = null,
+    private val pushSync: io.github.ponpokoo.mastodonclient.domain.repository.PushSyncRepository? = null,
 ) : ViewModel() {
     val browsing = BrowsingSession()
     private val mutableState = MutableStateFlow(MainSessionUiState(preferencesLoaded = preferencesStore == null))
@@ -66,6 +67,7 @@ class MainSessionViewModel(
     }
 
     init {
+        recoverPush()
         preferencesStore?.let { store ->
             viewModelScope.launch {
                 store.preferences.collect { preferences ->
@@ -144,7 +146,12 @@ class MainSessionViewModel(
     fun setForeground(foreground: Boolean) {
         if (isForeground == foreground) return
         isForeground = foreground
+        if (foreground) recoverPush()
         startStreaming()
+    }
+
+    private fun recoverPush() {
+        viewModelScope.launch { runCatchingCancellable { pushSync?.recover(null, false) } }
     }
 
     private fun activate(account: AccountSession?, sessions: List<AccountSession>) {

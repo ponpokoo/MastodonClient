@@ -6,7 +6,13 @@ Workersの配置は[配置・運用手順](../relay/workers/setup.md)を参照�
 Firebaseなしでも受信ロジックを呼び出し、固定の暗号文による検証ができる。
 FirebaseとRelay URLを設定したビルドでは、アカウントごとにPushを有効化できる。
 RelayとAndroidの責務を分ける背景は、
-[ADR 0003：PushとRelayの責務](adr/0003-push-relay-responsibilities.md)を参照する。
+[ADR 0013：ハイブリッド配送と情報境界](adr/0013-adopt-hybrid-push-delivery.md)を参照する。
+
+2026-10-07にハイブリッド方式を採用し、Androidにinline／旧fetch／v2 `sync_required`の受信を実装した。
+2026-10-08に旧APKの大通知欠落を許容して本番Relayを直接切替済み。
+[小通知5件の実FCM測定](investigations/relay-live-fcm-measurement-20261008.md)を完了し、配布APKの移行・大通知と欠落回復の実FCM確認は未完了。
+追加する責務・確認事項は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、
+Relay側のテストと測定記録は[検証ガイド](../relay/workers/testing.md)を参照する。
 
 ## ビルド設定
 
@@ -36,13 +42,13 @@ FIDを登録トークンとして送信する実装にはしていない。
 ## FCM受信とWorkManager
 
 `NagisaMessagingService`は非公開ServiceとしてFCMのdataメッセージを受け取り、
-`FcmWorkScheduler`がWorkManagerへ暗号文と有効期限を保存する。
+`FcmWorkScheduler`がWorkManagerへ暗号文または同期要求エンベロープと有効期限を保存する。
 同じ登録・メッセージの実行中作業は重複登録しない。
 取得が必要な通知はネットワーク接続を待つ。Android 12以上の高優先度通知は
 expedited workを使用し、割当不足時は通常の作業として実行する。
 Android 8〜11では通常の作業を使用するため、表示の即時性は未保証。
 
-Workerから既存の`PushMessageHandler`へ渡し、購読照合・暗号文取得・復号・表示を行う。
+Workerから`PushMessageHandler`へ渡し、inline／fetchは購読照合・暗号文取得・復号・表示、sync_requiredは下記の同期Work投入を行う。
 受信時と表示直前に期限を確認し、前景では「起動中の通知」の設定にも従う。
 無効な形式、未知フィールド、サイズ超過、期限切れ、TTL 0を受け付けない。
 TTLは最大24時間。実行失敗時は指数バックオフで最大5回再試行する。
@@ -85,6 +91,45 @@ Mastodon Push本文はREST通知とは別DTOで解析する。
 本文内の`access_token`は取り込まず、保存・ログ出力しない。
 タイトル・本文は平文として表示し、HTMLの解釈や追加の通知詳細API取得は行わない。
 
+## ハイブリッドの差分同期と欠落回復
+
+v2は`version`・`registrationId`・`messageId`・`transport=sync_required`だけを許す。
+本文・URL・since_idなどの追加項目、v1 sync_required、v2 inlineは拒否する。
+Relay messageIdは配送識別子として扱い、Mastodon通知IDに転用しない。
+`DefaultPushSyncRepository`が保存済みのACTIVE購読と認証を照合し、要求世代を暗号化保存してから
+`nagisa-push-sync-{sessionId}`のUnique Workを永続投入する。小さいinlineには同期APIを追加しない。
+
+- 3秒の待機で短時間の要求を集約する。APPEND_OR_REPLACEで同じアカウントの同期を直列化し、
+  処理済み世代の後続WorkはAPIを呼ばず終了する。実行中の新要求は次の世代として残る。
+  KEEPだけでは終了直前の要求を失い得るため、Work数そのものは1件へ限定しない。
+- 対象アカウントの`GET /api/v1/notifications?since_id=…&max_id=…&limit=40`を利用する。
+  IDはStringのまま扱い、最初のページの先頭IDを次の同期位置とする。短いページでも終了とせず、
+  空ページまたは保存済み位置まで取得する。循環するカーソルは失敗とし、位置を進めない。
+- 全ページ取得後に古い順で既存の通知表示へ渡す。確定済み購読の通知種類を適用する。
+  旧保存情報に種類がない間は全種類を対象にし、次の購読照合で更新する。
+  共有の500件履歴に加え、同期途中の表示処理済みIDを暗号化保存し、再実行時の重複を抑える。
+  同期位置・完了世代は表示処理後にまとめて更新する。本文は永続保存しない。
+- 新規購読はMastodon購読作成前に最新1件から開始位置を保存する。空の履歴も初期化済みとして扱う。
+  旧購読で開始位置がない場合は直近1ページを起点にする。通常の初期化は表示せず、
+  sync_required／FCM欠落による初期化はそのページを表示対象にする。初期化前の全履歴回復は保証しない。
+- ネットワーク接続を待ち、1実行は最大120秒。通信・保存・表示失敗や時間切れは指数バックオフで最大5回再試行する。
+  失敗しても要求世代・同期位置を保持し、次のPush・前景復帰・画面更新で再投入する。
+  受信期限内に受理した同期要求は履歴回復として扱い、同期WorkにFCMの残りTTLを引き継がない。
+- MainSessionViewModelによる起動・前景復帰とNotificationsViewModelによる初回取得・更新で、
+  未完了の要求、未初期化、または最後の同期から15分経過したACTIVE購読を補完する。
+  周期ポーリングは追加しない。`onDeletedMessages()`はこの間隔を無視して全ACTIVE購読を補完する。
+- 解除・ログアウト・再認証では解除中の保存後にアカウントの同期Workを取り消す。
+  API取得前後・表示直前・保存前にも現在の資格と登録を照合する。閲覧アカウントの切替は
+  他アカウント宛てPushを無効にしない。旧登録を指定した遅延Workは終了する。
+
+前景設定・OS許可により表示しない場合も同期は完了とする。後から許可を与えて過去通知を再掲する機能ではない。
+プロセス停止とOS表示の間の完全な原子性、サーバーで削除された履歴、500件より古いinlineとの重複排除は保証しない。
+待機・OSの実行制限・APIページ数により同期通知には遅延がある。実通知での通信量・電池・表示遅延は別途測定する。
+設計の理由・初期化と集約の制約は[ADR 0014](adr/0014-android-hybrid-push-sync.md)を参照する。
+APIとWorkの根拠は[Mastodon通知API](https://docs.joinmastodon.org/methods/notifications/)、
+[WorkManagerの競合方針](https://developer.android.com/reference/androidx/work/ExistingWorkPolicy)、
+[FCM欠落コールバック](https://firebase.google.com/docs/cloud-messaging/android/receive-messages#override_ondeletedmessages)。
+
 ## 表示と重複防止
 
 登録IDに対応するログイン済みアカウントを選び、閲覧中アカウントには依存しない。
@@ -107,6 +152,53 @@ Push表示も前景では「起動中のAndroid通知」に従う。[設定画�
 公開RFC・draftの既知ベクトルに加え、Node.jsの独立したHKDF/AES実装による固定暗号文を使用する。
 `relay/tools/encryption-fixtures.mjs`を実行すると単体・Androidテスト用の資材を再生成できる。
 資材の鍵は公開仕様の例で、利用者の鍵ではない。
+
+### 2026-10-07：Androidハイブリッド同期の確認
+
+単体テスト全体401件（失敗・スキップ0）とDebug APKビルドが成功した。
+PushSyncRepository／Source、PushMessage、PushRegistration／Control、暗号化Store、FCM形式、
+回復を呼び出すViewModelの追加・関連テストを先に実行した。
+集中した要求のAPI集約、短いページと不透明ID、途中失敗・再生成・取消、トークン更新との競合、
+資格／購読変更後の遅延応答、初期化、前景補完の間隔、通知種類と重複を確認した。
+
+Pixel_10aエミュレーター（Android 17）でHybridPushDeviceTest 2件、PushNotificationDeviceTest 1件が成功した。
+人工の購読と公開暗号文fixture、模擬APIページを使い、Keystoreへの同期位置保存・再読込、
+inlineと同期の共通ID重複排除、Android通知表示、Unique Workの取消後の再投入を確認した。
+既存ログイン情報や本番購読を試験用に書き換えていない。実Mastodon→Relay→FCMの大通知配送、
+onDeletedMessagesの実FCM発火、通信量・電池・遅延・2時間障害・本番切替は未検証。
+
+再現コマンドはリポジトリルートで実行する。実行前に対象端末を選び、実際の結果のクラス名を確認する。
+端末指定を変更したときの設定キャッシュ再利用を避け、クラスを個別に指定する。
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug
+.\gradlew.bat :app:connectedDebugAndroidTest --no-configuration-cache '-Pandroid.testInstrumentationRunnerArguments.class=io.github.ponpokoo.mastodonclient.HybridPushDeviceTest'
+.\gradlew.bat :app:connectedDebugAndroidTest --no-configuration-cache '-Pandroid.testInstrumentationRunnerArguments.class=io.github.ponpokoo.mastodonclient.PushNotificationDeviceTest'
+```
+
+### 2026-10-08：本番Relayのハイブリッド切替
+
+利用者の指示により既存origin・D1・購読・FCM設定を継承して本番を切り替え、公開capabilitiesと日次Cronの保存を確認した。
+旧APKの大通知欠落を許容する判断、実FCM測定の未完了範囲、差し戻し先は[本番切替記録](investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
+この配置確認は実通知・大通知の端末表示を確認した試験ではない。
+
+### 2026-10-08：エミュレーターでの簡易再確認
+
+利用者の依頼でPushSyncRepositoryTest 13件と、接続したPixel_10a（Android 17）のHybridPushDeviceTest 2件を再実行し、
+失敗・スキップ0で成功した。全単体テスト・実FCMは今回の対象にしていない。
+模擬ページで5件の同期要求を2回のページ取得（データ1ページ＋空ページ）へ集約し、
+inlineとの重複排除、同期位置の暗号化保存・再読込、Work取消後の再投入を確認した。
+途中失敗・再生成後の回復と資格変更の抑止は単体テストで確認した。
+実FCMの大通知・自然な欠落コールバック、通信量・配信遅延の実測には、実FCMを設定した専用Relayとテスト用アカウントが必要。
+
+実行：`:app:testDebugUnitTest --tests '*PushSyncRepositoryTest' :app:connectedDebugAndroidTest --no-configuration-cache`に
+`-Pandroid.testInstrumentationRunnerArguments.class=io.github.ponpokoo.mastodonclient.HybridPushDeviceTest`を指定した。
+
+### 2026-10-08：実FCMの通信量・表示遅延
+
+本番ハイブリッドと背景のエミュレーターで小通知5件の受信・復号・OS表示を測定した。
+実測値・時計のずれ・匿名原票と再現手順は[測定記録](investigations/relay-live-fcm-measurement-20261008.md)を参照する。
+今回の少量調査は終了。大通知同期、自然な欠落コールバック、電池・物理端末・長時間運用は未測定。
 
 ### 公開Relayへの接続テスト
 

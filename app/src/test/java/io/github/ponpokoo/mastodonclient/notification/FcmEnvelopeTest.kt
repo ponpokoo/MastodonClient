@@ -15,6 +15,15 @@ class FcmEnvelopeTest {
     @Test fun utf8SizeIsBoundedBeforeDurableQueue() {
         assertNull(FcmEnvelope.encode(fetch + mapOf("transport" to "inline", "encoding" to "aes128gcm", "body" to "あ".repeat(3000))))
     }
+    @Test fun syncRequiredAcceptsOnlyV2IdentifiersAndNeverAcceptsContentOrFetchUrl() {
+        val sync = fetch + mapOf("version" to "2", "transport" to "sync_required")
+        assertNotNull(FcmEnvelope.encode(sync))
+        for (extra in listOf("body", "headers", "url", "since_id", "access_token"))
+            assertNull(FcmEnvelope.encode(sync + (extra to "untrusted")))
+        assertNull(FcmEnvelope.encode(sync + ("version" to "1")))
+        assertNull(FcmEnvelope.encode(sync + ("transport" to "inline")))
+        assertNull(FcmEnvelope.encode(sync + ("messageId" to "Mastodon-notification-id")))
+    }
     @Test fun expiredZeroTtlAndFutureMessagesAreDroppedAndLongTtlIsCapped() {
         val now = 1_000_000L
         assertNull(FcmEnvelope.deadline(now, 0, now))

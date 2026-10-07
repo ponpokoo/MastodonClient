@@ -7,21 +7,31 @@ import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 import io.github.ponpokoo.mastodonclient.data.local.*
 import io.github.ponpokoo.mastodonclient.data.remote.DefaultPushRelayDataSource
 import io.github.ponpokoo.mastodonclient.data.repository.*
+import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import kotlinx.coroutines.flow.first
 
 /** Application-wide wiring shared by UI and Firebase workers. */
 class PushRuntime private constructor(context: Context) {
     @Volatile private var relayUrl: String? = BuildConfig.RELAY_URL.takeIf { BuildConfig.FIREBASE_CONFIGURED && it.isNotBlank() }
     private val auth = SecureAuthStore(context)
     private val registrations = EncryptedPushRegistrationStore(context)
+    private val syncSource = MastodonPushSyncSource(ApiClientFactory())
+    val sync = DefaultPushSyncRepository(auth::getSessions, registrations, syncSource,
+        SyncedNotificationPresenter { session, notification, current ->
+            val preferences = UserPreferencesStore(context)
+            suspend fun allowed() = !PushVisibility.foreground || preferences.preferences.first().foregroundNotificationsEnabled
+            if (allowed()) SystemNotificationDataSource(context).showNotification(session, notification) { current() && allowed() }
+        }, { sessionId, registrationId -> FcmWorkScheduler.syncAccount(context, sessionId, registrationId) })
     val control = DefaultPushControlRepository(
         sessions = auth::getSessions,
         control = EncryptedPushControlStore(context),
         registrations = registrations,
         configured = { relayUrl != null },
+        cancelSync = { FcmWorkScheduler.cancelSync(context, it) },
         repository = { saved ->
             DefaultPushRegistrationRepository(registrations,
                 DefaultPushRelayDataSource(saved?.relayIdentity ?: checkNotNull(relayUrl)),
-                DefaultPushSubscriptionRepository(ApiClientFactory()))
+                DefaultPushSubscriptionRepository(ApiClientFactory()), syncBaseline = syncSource::baseline)
         },
     )
     /** An explicit transport override for integration environments. */

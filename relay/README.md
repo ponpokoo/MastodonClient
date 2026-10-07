@@ -9,6 +9,9 @@ Workers Free＋D1での実FCM送信用コードは、別実装の[Workers試験�
 Android側の受信・復号・表示と過去の検証記録は[Android接続と受信処理](../docs/push-reception.md)を参照する。
 **この版は127.0.0.1での開発用。本番公開できる完成版ではない。**
 
+2026-10-07に採用した[ハイブリッド配送](workers/hybrid.md)はWorkersの別入口に実装する。
+このv1模擬実装と16件の回帰テストは旧契約の確認用に維持する。検証の入口は[Relayテスト一覧](workers/testing.md)。
+
 ## 起動
 
 Node.js 20以降が必要。外部パッケージのインストールは不要。

@@ -10,14 +10,18 @@
 | --- | --- | --- |
 | 0001 | [キャンセルと世代番号の照合によるセッション隔離](0001-session-isolation.md) | accepted |
 | 0002 | [通知・ホームに限定した永続キャッシュ](0002-persistent-browsing-cache.md) | accepted |
-| 0003 | [Relayでの暗号文中継とAndroidでの復号](0003-push-relay-responsibilities.md) | accepted |
+| 0003 | [Relayでの暗号文中継とAndroidでの復号](0003-push-relay-responsibilities.md) | superseded by 0013（情報境界は継承） |
 | 0004 | [ミュート・ブロック成功後の共有非表示状態とキャッシュ除去](0004-account-moderation-invalidation.md) | accepted |
 | 0005 | [管理アカウントの隔離とローカルワードミュート](0005-moderation-management-word-mutes.md) | superseded by 0008 |
 | 0006 | [スワイプの選択表示とデータ取得の分離](0006-shared-swipe-tabs.md) | accepted |
 | 0007 | [種類別通知ページと独立した閲覧記録](0007-notification-category-pages-and-read-state.md) | accepted |
 | 0008 | [通知欄のワードミュートとAndroid通知の適用範囲](0008-word-mutes-in-notification-lists.md) | accepted |
-| 0009 | [小規模Relayの実装・検証先としてWorkersとD1を継続利用](0009-relay-cloudflare-deployment.md) | accepted（Free公開可否は未判定） |
-| 0010 | [Relay登録v2で購読ごとのVAPID鍵を確定](0010-relay-subscription-key-binding.md) | accepted（本番未配置） |
+| 0009 | [小規模Relayの実装・検証先としてWorkersとD1を継続利用](0009-relay-cloudflare-deployment.md) | accepted（配送保存方針は0013で置換、Free公開可否は未判定） |
+| 0010 | [Relay登録v2で購読ごとのVAPID鍵を確定](0010-relay-subscription-key-binding.md) | accepted（本番互換更新済み、全購読移行は未完了） |
+| 0012 | [本文を保存しないハイブリッドRelayを隔離候補として実装](0012-isolated-hybrid-relay-candidate.md) | superseded by 0013 |
+| 0013 | [本文を保存しないハイブリッドPush配送を採用](0013-adopt-hybrid-push-delivery.md) | accepted（移行条件は0015で置換、本番切替済み） |
+| 0014 | [AndroidのハイブリッドPushを永続世代と差分位置で補完](0014-android-hybrid-push-sync.md) | accepted（小通知の実FCM測定済み、大通知・欠落回復・対応APK配布は未完了） |
+| 0015 | [旧APKの大通知欠落を許容して本番Relayを直接切替](0015-production-hybrid-cutover.md) | accepted（0013の移行条件を置換） |
 
 ## 記録方法
 

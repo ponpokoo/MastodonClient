@@ -22,8 +22,15 @@ class DefaultPushMessageRepository(
     private val source: PushMessageSource,
     private val presenter: PushNotificationPresenter,
     private val decryptor: WebPushDecryptor = WebPushDecryptor(),
+    private val requestSync: (suspend (String) -> Boolean)? = null,
 ) : PushMessageRepository {
     override suspend fun receive(data: Map<String, String>): PushReceiveResult = withContext(Dispatchers.IO) {
+        if (data["version"] == "2") {
+            if (data.keys != setOf("version", "registrationId", "messageId", "transport") || data["transport"] != "sync_required" ||
+                data["registrationId"]?.matches(Regex("[A-Za-z0-9_-]{22,128}")) != true ||
+                data["messageId"]?.matches(Regex("[A-Za-z0-9_-]{43}")) != true) return@withContext PushReceiveResult.REJECTED
+            return@withContext if (requestSync?.invoke(data.getValue("registrationId")) == true) PushReceiveResult.PROCESSED else PushReceiveResult.IGNORED
+        }
         if (data.size > 16 || data.entries.sumOf { it.key.length.toLong() + it.value.length } > 100_000 ||
             data["version"] != "1" || data["transport"] !in setOf("inline", "fetch")) return@withContext PushReceiveResult.REJECTED
         val registrationId = data["registrationId"] ?: return@withContext PushReceiveResult.REJECTED

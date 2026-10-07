@@ -5,8 +5,15 @@ Mastodon Web Pushを受け、暗号文をFCM HTTP v1のdataメッセージでNag
 
 本運用の準備・実装変更・検証・移行は[本運用への移行手順](../../docs/relay-production.md)、
 選定したWorkers＋D1の環境準備は[配置・復旧計画](setup.md)、選定理由は[ADR 0009](../../docs/adr/0009-relay-cloudflare-deployment.md)を参照する。
-登録v2・購読ごとの鍵検証・部分停止・再送の変更は実装済み。本番配置・Free適合性は未確認。
+登録v2・購読ごとの鍵検証・部分停止・再送は実装済み。本番互換更新と購読1件の移行確認は記録済み。Free適合性・全購読移行は未完了。
 契約と移行判断は[ADR 0010](../../docs/adr/0010-relay-subscription-key-binding.md)を参照する。
+2026-10-07に[ハイブリッド配送](hybrid.md)を採用した（[ADR 0013](../../docs/adr/0013-adopt-hybrid-push-delivery.md)）。
+別入口での実装・短時間測定とAndroid同期の実装は完了。2026-10-08に本番を直接切替した。
+本番は小通知inline・大通知sync_required・日次清掃。[小通知5件の実FCM測定](../../docs/investigations/relay-live-fcm-measurement-20261008.md)を完了。大通知・欠落回復の実測と対応APKの配布は未完了。
+旧APKの大通知欠落は許容済み。[切替記録と差し戻し先](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
+テストの配置・実行方法・測定記録は[testing.md](testing.md)へ集約した。
+以下の保存・fetch・再送・毎分Cronの説明は、回帰確認・差し戻し用に残す旧入口`src/worker.mjs`／`wrangler.jsonc`に適用する。
+本番更新には`npm run build:hybrid`の`dist/hybrid/hybrid-worker.js`を使う。配置テンプレートのDB ID・変数を本番へそのまま適用しない。
 
 ```text
 Mastodon → Worker → D1へ保存 → FCM → Nagisa
@@ -30,7 +37,7 @@ npm run db:local
 npm run dev
 ```
 
-`npm test`は配布バンドルを作り、Node.js＋MiniflareのD1、workerdで検証する。
+`npm test`は既存・ハイブリッドのバンドルを作り、Node.js＋MiniflareのD1、workerdと測定記録を検証する。
 Googleへの送信はすべて模擬応答に置き換える。Cloudflareへのログイン・公開は不要。
 Wrangler 4.135.0と、それが使用するMiniflare 5.20260918.0-alphaをlockfileで固定した。
 開発ツールの版であり、デプロイ先でnpmパッケージを動かす構成ではない。

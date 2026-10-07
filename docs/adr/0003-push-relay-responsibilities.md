@@ -1,6 +1,6 @@
 # ADR 0003：Relayでの暗号文中継とAndroidでの復号
 
-- 状態：accepted（既存設計の追記）
+- 状態：superseded by [ADR 0013](0013-adopt-hybrid-push-delivery.md)（2026-10-07）。秘密情報の境界は新判断へ継承。
 - 記録日：2026-10-05
 - 当初の採用日・比較経緯：不明。以下の理由・代替案の評価・見直し条件は現行仕様と実装を基に今回整理した。
 
@@ -39,6 +39,8 @@ RelayはFCMトークン・配送情報・暗号文を扱うため、その保存
 ## 関連文書・実装
 
 購読ごとの公開鍵登録・互換移行は[ADR 0010](0010-relay-subscription-key-binding.md)に記録する。
+隔離候補の検証経緯は[ADR 0012](0012-isolated-hybrid-relay-candidate.md)、ハイブリッド採用は[ADR 0013](0013-adopt-hybrid-push-delivery.md)に記録する。
+本文の以下の判断は旧方式の背景として保持する。本番は2026-10-08に[ADR 0015](0015-production-hybrid-cutover.md)の判断で切替済み。
 
 - [Relay共通通信契約](../relay-protocol.md)・[Android接続と受信処理](../push-reception.md)
 - [購読管理](../push-settings.md)・[ローカルRelay](../../relay/README.md)・[Workers版Relay](../../relay/workers/README.md)

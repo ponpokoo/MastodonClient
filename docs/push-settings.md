@@ -1,5 +1,9 @@
 # Push通知の設定と購読管理
 
+ハイブリッド方式のAndroid受信・差分同期を実装し、2026-10-08に本番Relayを切替済み。対応APKの配布は未完了。
+以下は現行の購読ライフサイクル。能力確認・旧fetch終了・移行の条件は
+[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)と[ADR 0013](adr/0013-adopt-hybrid-push-delivery.md)を参照する。
+
 現在の購読状態管理・再認証・解除・再開を定義する。利用者向けの通知動作は[UI・機能仕様](ui-guidelines.md)、
 Firebase設定・トークン取得・受信・復号・表示は[Android接続と受信処理](push-reception.md)、
 Relayとの通信形式は[Relay共通契約](relay-protocol.md)を参照する。
@@ -20,7 +24,8 @@ Relayとの通信形式は[Relay共通契約](relay-protocol.md)を参照する�
 
 ## Mastodonとの接続順序
 
-1. Web Push鍵とRelay登録用秘密値を端末に保存する。
+1. Web Push鍵とRelay登録用秘密値を端末に保存する。新規購読ではNotifications APIの最新1件から
+   差分同期の開始位置も暗号化保存する。取得失敗時は購読作成へ進まず、同じ鍵で再試行する。
 2. 対象サーバーの`/api/v2/instance`から`configuration.vapid.public_key`を取得する。
    項目欠落・404だけ購読応答での鍵取得を許し、401／403・通信失敗は登録エラーにする。
 3. Relay v2へ公開鍵とFCMトークンを登録し、endpointを保存する。鍵未取得なら仮登録にする。
@@ -45,6 +50,9 @@ POSTは既存購読を置き換えるため、取得・照合と明示的な有�
 再認証時の旧購読の解除と移行は、後述の「保存・解除・再開」に従う。
 
 解除は端末の状態を解除中に保存し、Relay → Mastodon → ローカル保存情報の順で行う。
+解除中にした直後にアカウントの同期Workを取り消す。同期位置・要求世代は購読と一緒に削除する。
+既存購読の開始位置初期化と回復の制約は[差分同期](push-reception.md#ハイブリッドの差分同期と欠落回復)と
+[ADR 0014](adr/0014-android-hybrid-push-sync.md)を参照する。
 Mastodon側は保存済みendpointと一致する購読だけを削除する。
 ログアウト時は認証情報を破棄する前に解除待ち情報を保存する。通信失敗時は必要な旧認証情報を暗号化して保持し、解除を再試行する。
 GET照合とPOST／DELETEの間の外部クライアントによる変更には、Mastodon APIに条件付き更新がないため

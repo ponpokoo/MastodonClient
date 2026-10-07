@@ -50,7 +50,9 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 | AndroidのFirebase設定・FCMトークン同期・受信・復号・表示 | [Android接続と受信処理](push-reception.md) |
 | Androidと両Relay実装の共通通信形式 | [Relay共通契約](relay-protocol.md) |
 | Node.jsローカル模擬Relayの起動・保存・制限・テスト | [ローカルRelay](../relay/README.md) |
-| Workers版Relayの開発・配送・保存・制限・テスト | [Workers版Relay](../relay/workers/README.md) |
+| Workers版Relayの開発・配送・保存・制限 | [Workers版Relay](../relay/workers/README.md) |
+| Relayのテスト配置・測定履歴・実行方法 | [Relay検証ガイド](../relay/workers/testing.md) |
+| 採用したハイブリッド配送と未完了作業 | [ハイブリッド仕様](../relay/workers/hybrid.md) |
 | Workersの公開配置・変数・Secrets・監視・停止 | [配置・運用手順](../relay/workers/setup.md) |
 
 各技術文書の末尾には、確認日・記録時点と確認範囲を示した過去の検証記録を残す。

@@ -1,0 +1,189 @@
+{
+  "runId": "20261007-100",
+  "sourceCommit": "6a9681ce9a2275b4924db241622054b216afc8d1",
+  "includesWorkingTreeChanges": true,
+  "artifactSha256": "21d9aa4bab78fddcb45f49524a94fe9a28b9533ddd286cca1655987fc9f5c524",
+  "environment": "cloudflare-free",
+  "mockGoogle": true,
+  "users": 100,
+  "accountsPerUser": 2,
+  "devicesPerUser": 1,
+  "subscriptions": 200,
+  "limits": {
+    "registrations": 300,
+    "tombstones": 10000,
+    "pending": 50,
+    "messages": 8000,
+    "perRegistration": 100,
+    "dailyRequests": 20000
+  },
+  "normal": {
+    "startedAt": "2026-10-07T08:56:26.145Z",
+    "finishedAt": "2026-10-07T09:07:27.591Z",
+    "phases": [
+      {
+        "name": "normal-mix",
+        "requested": 1000,
+        "paceMs": 600,
+        "mix": "1KiB90-4KiB9-64KiB1",
+        "statuses": {
+          "201": 999,
+          "500": 1
+        },
+        "transportErrors": 0,
+        "fetchStatuses": {},
+        "elapsedMs": 599653.0475,
+        "latencyMs": {
+          "count": 1000,
+          "p50": 192.72649999998976,
+          "p95": 279.977200000023,
+          "p99": 2874.27429999999,
+          "max": 5259.947199999995
+        },
+        "d1": [
+          {
+            "kind": "http",
+            "phase": "normal-mix",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 5998,
+            "rows_read": 62789,
+            "rows_written": 10093,
+            "fcm_calls": 999,
+            "fcm_success": 999,
+            "fcm_retry": 0,
+            "within60": 999
+          }
+        ],
+        "pendingAfter": 0,
+        "messagesAfter": 105
+      },
+      {
+        "name": "burst-mix",
+        "requested": 500,
+        "paceMs": 120,
+        "mix": "1KiB90-4KiB9-64KiB1",
+        "statuses": {
+          "201": 499,
+          "500": 1
+        },
+        "transportErrors": 0,
+        "fetchStatuses": {},
+        "elapsedMs": 60114.17090000003,
+        "latencyMs": {
+          "count": 500,
+          "p50": 238.48140000004787,
+          "p95": 367.8192000000272,
+          "p99": 467.50210000004154,
+          "max": 723.3719999999739
+        },
+        "d1": [
+          {
+            "kind": "http",
+            "phase": "burst-mix",
+            "samples": 500,
+            "incomplete": 0,
+            "statements": 2998,
+            "rows_read": 68949,
+            "rows_written": 4895,
+            "fcm_calls": 499,
+            "fcm_success": 499,
+            "fcm_retry": 0,
+            "within60": 499
+          }
+        ],
+        "pendingAfter": 0,
+        "messagesAfter": 154
+      }
+    ]
+  },
+  "allFetch": {
+    "startedAt": "2026-10-07T09:07:58.269Z",
+    "finishedAt": "2026-10-07T09:09:59.191Z",
+    "phases": [
+      {
+        "name": "all-fetch-4k",
+        "requested": 1000,
+        "paceMs": 120,
+        "mix": 4096,
+        "statuses": {
+          "201": 1000
+        },
+        "errorCodes": {},
+        "transportErrors": 0,
+        "fetchStatuses": {
+          "200": 999,
+          "500": 1
+        },
+        "elapsedMs": 120448.4627,
+        "latencyMs": {
+          "count": 1000,
+          "p50": 577.0084999999963,
+          "p95": 764.4171999999962,
+          "p99": 872.0846999999994,
+          "max": 961.3771000000015
+        },
+        "d1": [
+          {
+            "kind": "http",
+            "phase": "all-fetch-4k",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 6000,
+            "rows_read": 669686,
+            "rows_written": 10404,
+            "fcm_calls": 1000,
+            "fcm_success": 1000,
+            "fcm_retry": 0,
+            "within60": 1000
+          },
+          {
+            "kind": "http",
+            "phase": "all-fetch-4k-fetch",
+            "samples": 1000,
+            "incomplete": 0,
+            "statements": 3998,
+            "rows_read": 5589,
+            "rows_written": 1405,
+            "fcm_calls": 0,
+            "fcm_success": 0,
+            "fcm_retry": 0,
+            "within60": 0
+          }
+        ],
+        "pendingAfter": 0,
+        "messagesAfter": 1154
+      }
+    ]
+  },
+  "final": {
+    "messages": 1154,
+    "pending": 0,
+    "delivered": 1154,
+    "storedTextBytes": 7534256
+  },
+  "dashboardObservation": {
+    "scope": "aggregate including initialization, seed, control, Cron and measurement wrapper; observed during all-fetch",
+    "invocationsDisplay": "2.29k",
+    "cpuMs": {
+      "p50": 3.4,
+      "p90": 4.96,
+      "p99": 8.42,
+      "p999": 19.59
+    },
+    "exceededCpuDisplay": 0
+  },
+  "tests": {
+    "passed": 35,
+    "failed": 0
+  },
+  "assessment": "current candidate does not meet 100-user public Push operating criteria",
+  "unmeasured": [
+    "24-hour retention",
+    "2-hour outage and recovery",
+    "operational alerts",
+    "isolated restore",
+    "physical device and multiple Mastodon servers",
+    "limited rollout observation"
+  ]
+}

@@ -1,7 +1,7 @@
 const utf8 = new TextEncoder();
 export const bytesOf = value => utf8.encode(value);
 export class HttpError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code; }
+  constructor(status, code, retryAfter) { super(code); this.status = status; this.code = code; this.retryAfter = retryAfter; }
 }
 export function check(condition, status, code) {
   if (!condition) throw new HttpError(status, code);
@@ -53,6 +53,13 @@ export function deliveryData(message) {
   const data = { ...envelope(message), transport: 'inline' };
   return bytesOf(JSON.stringify(data)).length <= 3500 ? data :
     { version: '1', registrationId: message.registration_id, messageId: message.id, transport: 'fetch' };
+}
+
+// Candidate delivery v2: keep the existing v1 inline wire format; never send a fetch reference.
+export function hybridDeliveryData(message) {
+  const data = deliveryData(message);
+  return data.transport === 'inline' ? data :
+    { version: '2', registrationId: message.registration_id, messageId: message.id, transport: 'sync_required' };
 }
 
 export async function normalizeServerKey(value) {

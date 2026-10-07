@@ -49,9 +49,9 @@ export class FcmSender {
     const payload = response.payload;
     if (response.status !== 200 || typeof payload?.access_token !== 'string' || !payload.access_token ||
       !Number.isFinite(payload.expires_in) || payload.expires_in <= 60) {
-      const error = new Error('fcm_authentication');
-      error.permanent = response.status !== 429 && response.status < 500;
-      throw error;
+      throw Object.assign(new Error('fcm_authentication'), {
+        permanent: response.status !== 429 && response.status < 500,
+      });
     }
     this.cachedToken = { value: payload.access_token,
       expiresAt: issuedAt * 1000 + Math.min(payload.expires_in, 3600) * 1000 };

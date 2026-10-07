@@ -18,15 +18,19 @@
 ## Push・Relay
 
 まず[Workers版Relay](../relay/workers/README.md)で現在の方式を確認する。
+本番は2026-10-08にハイブリッド方式へ切替済み。Android差分同期を実装し、実FCMの小通知5件を測定済み。大通知・欠落回復の実測と対応APKの配布は未完了。
 
 | 目的 | 文書 |
 | --- | --- |
 | Androidの購読・受信を変更する | [通知設定と購読管理](push-settings.md)・[Android接続と受信処理](push-reception.md) |
-| 通信形式・配送仕様を確認する | [共通通信契約](relay-protocol.md) |
+| 通信形式・配送仕様を確認する | [共通通信契約](relay-protocol.md)・[ハイブリッド仕様と未完了作業](../relay/workers/hybrid.md) |
 | Relayを開発・起動する | [Workers版](../relay/workers/README.md)・[ローカルv1模擬版](../relay/README.md) |
 | 配置・更新・停止・復旧する | [Workers配置・運用・復旧](../relay/workers/setup.md) |
-| 公開条件・購読移行を確認する | [本運用への移行手順](relay-production.md) |
-| テスト・測定・過去の調査を読む | [検証ガイド](../relay/workers/testing.md)（測定ツール・各記録への入口） |
+| 本番ハイブリッド切替の結果・旧APKへの影響を確認する | [2026-10-08切替記録](investigations/relay-production-hybrid-cutover-20261008.md)・[直接切替の判断](adr/0015-production-hybrid-cutover.md) |
+| 実FCMの通信量・表示遅延を確認する | [2026-10-08 小通知5件の測定](investigations/relay-live-fcm-measurement-20261008.md)（匿名結果・時計のずれ・測定範囲） |
+| エミュレーターで実FCMのハイブリッド配送を試す | [専用Worker・D1・FCM設定とAndroid購読の切替](../relay/workers/hybrid-live-setup.md) |
+| 公開条件・購読移行を確認する | [本運用への移行手順](relay-production.md)・[100人向け再測定計画](relay-100-user-remeasurement-plan.md) |
+| テスト・測定・過去の調査を読む | [検証ガイド](../relay/workers/testing.md)（測定ツール・専用環境の準備・各記録への入口） |
 
 実測値は各測定記録、設計の採用理由は[ADR一覧](adr/README.md)を正本とし、入口の文書には重複して転記しない。
 

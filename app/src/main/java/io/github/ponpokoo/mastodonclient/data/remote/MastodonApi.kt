@@ -213,6 +213,7 @@ interface MastodonApi {
         @Query("max_id") maxId: String? = null,
         @Query("limit") limit: Int = 40,
         @Query("types[]") types: List<String>? = null,
+        @Query("since_id") sinceId: String? = null,
     ): List<NotificationDto>
 
     @GET("api/v1/markers")

@@ -16,6 +16,7 @@ class DefaultPushControlRepository(
     private val registrations: PushRegistrationStore,
     private val configured: () -> Boolean,
     private val now: () -> Long = System::currentTimeMillis,
+    private val cancelSync: suspend (String) -> Unit = {},
     // Use the saved relay for cleanup, even if the current configured relay has changed.
     private val repository: (StoredPushRegistration?) -> PushRegistrationRepository,
 ) : PushControlRepository, PushAuthLifecycle {
@@ -65,6 +66,7 @@ class DefaultPushControlRepository(
 
     private suspend fun markRemoving(session: AccountSession) = PushRegistrationGuard.mutex.withLock {
         registrations.read(session.sessionId)?.let { registrations.write(session.sessionId, it.copy(state = PushRegistrationState.REMOVING)) }
+        cancelSync(session.sessionId)
     }
     private suspend fun cleanup(session: AccountSession): Boolean {
         update(session.sessionId, false, PushControlStatus.REMOVING)

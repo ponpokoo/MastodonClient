@@ -27,5 +27,6 @@ class PushMessageHandler(context: Context) {
                 if (allowed()) delegate.show(session, notification) { isCurrent() && allowed() }
             }
         },
+        requestSync = { id -> notExpired() && PushRuntime.get(appContext).sync.requestRegistration(id) },
     ).receive(data)
 }

@@ -1,0 +1,117 @@
+# Relayハイブリッド配送の採用仕様
+
+- 記録日：2026-10-07
+- 状態：2026-10-07に方式採用。Relay実装・専用環境の資源評価・Android差分同期の実装を完了。2026-10-08に本番切替、小通知5件の実FCM測定済み。大通知・欠落回復の実測と対応APK配布は未完了。
+- 実行記録：[100人条件の測定](../../docs/investigations/relay-hybrid-100-user-measurement-20261007.md)。
+- 背景：[実端末62件を含む調査](../../docs/investigations/relay-hybrid-delivery-assessment-20261007.md)。
+- 判断：[ADR 0013](../../docs/adr/0013-adopt-hybrid-push-delivery.md)。隔離候補の経緯は[ADR 0012](../../docs/adr/0012-isolated-hybrid-relay-candidate.md)。
+- 本番配置・差し戻し先：[2026-10-08切替記録](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)。旧APKの大通知欠落を許容する判断は[ADR 0015](../../docs/adr/0015-production-hybrid-cutover.md)。
+- テスト・測定の入口：[testing.md](testing.md)。対応APK配布と一般公開の運用合格は本番配置と区別する。
+
+## 入口と環境
+
+本番ハイブリッドの入口は[src/hybrid-worker.mjs](src/hybrid-worker.mjs)、配置テンプレートは[wrangler.hybrid.jsonc](wrangler.hybrid.jsonc)。
+`createWorker({ deliveryMode: 'hybrid' })`を信頼されたコードから指定する。
+HTTP、登録本文、環境変数から配送方式を変更できない。
+`src/worker.mjs`と`wrangler.jsonc`は旧保存・fetch・再送方式の回帰確認と差し戻し用に残す。
+
+合成測定は別origin・空の専用D1・模擬FCMへ接続する。本番配置では既存origin・D1・購読・FCM設定を継承した。
+登録上限300、仮登録50で200購読の測定余地を用意する。墓標10,000、Push日次20,000等は既定値のまま。
+既存0001・0002のスキーマを使うため空のmessagesテーブルは残るが、候補経路は参照・更新しない。
+schemaの削除や既存保存行の移行は今回実装しない。
+
+```powershell
+npm run build:hybrid
+```
+
+このコマンドはdry-runで`dist/hybrid/hybrid-worker.js`を作る。外部への配置は行わない。
+設定の停止フラグはすべてfalse、DB IDと接続先は置換用の値。
+測定用のGoogle応答差し替えは既存と同じ`createWorker({ fetcher })`を使える。
+`100-worker.mjs`・`100-run.mjs`は`--mode=hybrid`で候補へ接続し、配送別件数を集計する。
+詳細は[測定ツール](bench/README.md#ハイブリッド方式の測定)を参照する。
+Dashboardで先に用意するWorker・空D1・バインドは[測定環境の準備](bench/hybrid-setup.md)にまとめる。
+
+## 配送契約
+
+登録は鍵紐付けv2だけを許可する。管理資格、revision、仮登録、墓標、頻度・日次制限は共通実装を使う。
+`GET /v2/capabilities`に`deliveryMode="hybrid"`、`deliveryVersion=2`、`syncRequired=true`を追加する。
+この能力情報だけで配布済み旧Androidが同期対応になるわけではない。対応前のAPKはsync_requiredを拒否する。
+FCM形式の詳細は[共通通信契約の採用方式節](../../docs/relay-protocol.md#採用したハイブリッド方式の配送契約)を参照する。
+
+1. 対象購読のVAPID鍵で署名・audience・期限を検証し、最大64KiBの暗号文を読む。
+2. 購読の解除・無効化・鍵・revision・仮登録期限を再照合し、現在のFCMトークンを捕捉する。
+3. 現行の配送JSON判定（UTF-8で3,500 bytes以下）ならv1 inlineを送る。
+4. 超過なら暗号文・encoding・headersを含まない小さいv2 sync_requiredを送る。
+5. FCMの受付成功を待って201を返す。本文INSERT、COUNT、claim、完了記録、永続retryは行わない。
+
+TTL 0は従来どおり保存・送信せず201で破棄する。正のTTLで送信停止中なら503。
+正常PushのD1はdestination SELECT、頻度UPSERT、日次UPSERT、再照合SELECTの4文。
+これは文数で、rows_read／rows_writtenのクラウド実測値ではない。
+本文GETは404、receipt URLは不透明な受付識別子で取得口ではない。
+FCM dataのみを使い、HIGHと残りTTLは現行送信器を再利用する。collapse_keyは追加しない。
+
+## エラー・競合・回復
+
+| FCM結果 | Push応答／保存 |
+| --- | --- |
+| 成功 | 201。Relayには本文・配送ジョブを残さない |
+| 通信失敗・429・5xx・認証の一時失敗 | 503＋Retry-After。永続retryなし。成功受付に数えない |
+| その他の恒久エラー | 502、固定コードを報告。トークンを無効化しない |
+| 型付きUNREGISTERED | トークン・鍵・revisionが一致する対象購読だけを無効化し、410 |
+| UNREGISTERED応答までに対象購読が更新 | 無効化せず409。新トークンに古い結果を適用しない |
+| 正のTTLが送信準備中に失効 | 503。FCM成功として数えない |
+
+現行方式と異なり、同じトークンの他購読は一括無効化しない。各購読の送信結果で判断する。
+署名検証後に更新された鍵／revisionは409、解除・無効化済み購読は410。
+再照合とFCM通信を跨ぐ原子的な配送停止は保証できず、通信開始後の解除には既存方式と同様の競合余地がある。
+通信中断、FCM受付後の応答喪失等では欠落・再送による重複が起こり得る。
+応答待ちにはOAuthとFCMの通信（各最大10秒）が入り、受付応答は現行より遅くなり得る。今回の模擬Google測定では実通信の時間は未確認。
+Mastodon側の再送は保証に含めない。[Android差分補完・重複排除](../../docs/push-reception.md#ハイブリッドの差分同期と欠落回復)は実装済み。実FCMの欠落回復は次工程で確認する。
+
+## 清掃と測定範囲
+
+毎分の配送Cronは不要。候補設定は日次00:17 UTC（09:17 JST）の清掃だけを指定する。
+scheduled処理は頻度記録、古い日次記録、失効仮登録／30日無効登録の墓標化の3文。
+messages清掃・due・送信は実行しない。日次清掃のrows_read／rows_writtenも測定費用に含める。
+
+専用環境で200購読・通常1,000件・集中500件・全小通知／全大通知各1,000件、模擬FCM障害応答・清掃・停止を測った。
+通常分布のD1読取5,001／書込2,992行、本文保持0。通常条件のHTTP 500が1件残り、原因は未特定。
+清掃実測を含む6,000通知/日の外挿は読取約42,200／書込約24,000行。登録の入替・拒否要求等は別に加える。
+CPU上位値と実Google通信、24時間運用は後続確認とする。詳細と匿名結果は[専用測定記録](../../docs/investigations/relay-hybrid-100-user-measurement-20261007.md)を参照する。
+実端末の小通知中心条件と従来の90%／10%条件を分け、サイズ比率100%を全利用者へ外挿しない。
+旧方式の2時間滞留解消を合格基準に流用せず、Android実装後に差分同期での欠落回復を測る。
+2026-10-08の直接切替は旧APKの大通知・旧fetch欠落を許容して実施した。方式の一般公開運用合格は引き続き未判定。
+
+## 確認記録
+
+テストの配置と実行方法は[testing.md](testing.md)。以下の件数・版は実装・測定時の履歴。
+
+2026-10-07、候補に関する8件のテストが成功した。
+続いて`relay/workers`の`npm test`で43件すべて成功（候補8件＋既存35件）。
+測定記録の再試行2件を追加した後の`npm test`は45件すべて成功。
+小通知／大通知、成功応答の待機、一時・恒久失敗、TTL、鍵／トークン更新競合、
+受付・解除・清掃がmessagesへアクセスしないことと、実バンドルのworkerd起動を模擬Googleで確認した。
+通常PushのSQL4文、日次清掃3文をクラウドでも確認した。文数だけでFree CPU・D1課金行数の合格にはしない。
+最初のサンドボックス実行はworkerdのSQLite起動がアクセス拒否で失敗し、許可された実行環境で再確認した。
+文書のローカルリンク123件は欠落なし、対象差分の空白チェックも成功。
+クラウド負荷は[専用測定記録](../../docs/investigations/relay-hybrid-100-user-measurement-20261007.md)へ残す。
+上記のクラウド測定では実FCM、Android同期、電池・通信量を測っていない。
+後続の[2026-10-08実FCM測定](../../docs/investigations/relay-live-fcm-measurement-20261008.md)で小通知5件の受信・表示・通信量と受信後遅延を確認した。大通知同期・欠落回復・電池は未測定。
+
+## 採用後の対応と確認
+
+| 項目 | 現在の状態・次の作業 |
+| --- | --- |
+| Relay配送・D1 | 本番ハイブリッドへ切替済み。既存DB・購読を継承、本文保存・永続retryなし。日次清掃 |
+| 内部エラー | 通常1,000件中HTTP 500が1件。秘密値を出さないエラー分類でSQL段階を切り分け、再測定 |
+| CPU・実FCM | 測定ラッパーを減らし、初回OAuth・更新・実FCMを含む経路別CPUと応答時間を確認 |
+| Android同期 | 実装済み。アカウントのUnique Work・永続世代でAPI取得を集約し、全ページ取得後に位置を更新。ID重複排除・資格照合・取消を単体／エミュレーターで確認。仕様は[Android受信](../../docs/push-reception.md) |
+| セッション隔離 | 同期・復号とも現在のアカウント／購読に照合。切替・解除・ログアウトのキャンセルと遅延応答は[開発ガイド](../../docs/project-setup.md)に従う |
+| 欠落回復 | 起動・前景・通知更新・onDeletedMessagesを接続済み。途中失敗・再生成後の回復を単体で確認。実FCMと2時間障害の回復試験は未完了 |
+| API・端末負担 | 小通知5件の実FCM通信量・受信後表示遅延を背景エミュレーターで測定済み。結果は[実FCM測定](../../docs/investigations/relay-live-fcm-measurement-20261008.md)。大通知のAPI回数・同期集約・通信量、物理端末・電池は未測定 |
+| 長時間・運用 | 24時間流量と日次清掃の実時刻起動、登録入替・拒否要求、監視通知、停止・隔離復元を確認 |
+| 購読移行 | 既存origin・登録v2を保持して一括切替済み。旧APKの大通知欠落を許容。対応APKの配布・共有FCMトークンの実配信確認は別途 |
+| 公開判断 | 未完了。100人・200購読の[再測定計画](../../docs/relay-100-user-remeasurement-plan.md)と段階的な実機確認に従う |
+
+同期の詳細はAndroid実装時に[受信仕様](../../docs/push-reception.md)・[購読管理](../../docs/push-settings.md)へ反映する。
+APIパラメーターとサーバー差は実装時に公式仕様で確認し、全サーバーの対応を仮定しない。

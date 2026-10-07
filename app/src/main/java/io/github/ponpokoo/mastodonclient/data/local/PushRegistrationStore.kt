@@ -25,6 +25,14 @@ data class StoredPushRegistration(
     val state: PushRegistrationState = PushRegistrationState.REGISTERING,
     val serverKey: String? = null,
     val revision: Long = 0,
+    val syncInitialized: Boolean = false,
+    val syncSinceId: String? = null,
+    val syncRequested: Long = 0,
+    val syncCompleted: Long = 0,
+    val syncCheckedAt: Long = 0,
+    val syncBootstrapNotify: Boolean = false,
+    val syncDeliveredIds: List<String> = emptyList(),
+    val notificationTypes: List<String>? = null,
 ) {
     override fun toString() = "StoredPushRegistration(state=$state)"
 }

@@ -48,3 +48,25 @@ class FcmReceiveWorker(context: Context, params: WorkerParameters) : CoroutineWo
         }.getOrElse { if (runAttemptCount < 5) Result.retry() else Result.failure() }
     }
 }
+
+class PushSyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        val sessionId = inputData.getString("sessionId") ?: return Result.success()
+        val registrationId = inputData.getString("registrationId") ?: return Result.success()
+        return runCatchingCancellable {
+            val finished = withTimeoutOrNull(120_000) {
+                PushRuntime.get(applicationContext).sync.sync(sessionId, registrationId)
+                true
+            } ?: false
+            if (finished) Result.success() else if (runAttemptCount < 5) Result.retry() else Result.failure()
+        }.getOrElse { if (runAttemptCount < 5) Result.retry() else Result.failure() }
+        // Failure leaves the encrypted pending generation and cursor for the next Push/foreground recovery.
+    }
+}
+
+class PushRecoveryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result = runCatchingCancellable {
+        PushRuntime.get(applicationContext).sync.recover(null, inputData.getBoolean("force", false))
+        Result.success()
+    }.getOrElse { if (runAttemptCount < 5) Result.retry() else Result.failure() }
+}

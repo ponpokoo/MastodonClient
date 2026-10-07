@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nagisa-relay-hybrid-candidate",
+  "main": "src/hybrid-worker.mjs",
+  "compatibility_date": "2026-09-21",
+  "workers_dev": true,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "nagisa-relay-hybrid-candidate",
+    "database_id": "00000000-0000-0000-0000-000000000000",
+    "migrations_dir": "migrations"
+  }],
+  "triggers": { "crons": ["17 0 * * *"] },
+  "vars": {
+    "RELAY_ENABLED": "false",
+    "REGISTRATION_ENABLED": "false",
+    "PUSH_ENABLED": "false",
+    "DELIVERY_ENABLED": "false",
+    "LEGACY_V1_UNTIL": "",
+    "PUBLIC_ORIGIN": "https://replace-me.workers.dev",
+    "VAPID_PUBLIC_KEYS": "[]",
+    "FCM_PROJECT_ID": "replace-me"
+  }
+}

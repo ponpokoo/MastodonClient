@@ -16,6 +16,7 @@ class DefaultPushRegistrationRepository(
     private val relay: PushRelayDataSource,
     private val subscriptions: PushSubscriptionRepository,
     private val keys: WebPushKeyGenerator = WebPushKeyGenerator(),
+    private val syncBaseline: (suspend (AccountSession) -> String?)? = null,
 ) : PushRegistrationRepository {
     override suspend fun state(session: AccountSession) = mutex.withLock {
         readBound(session)?.state ?: PushRegistrationState.DISABLED
@@ -29,6 +30,11 @@ class DefaultPushRegistrationRepository(
         check(record.state != PushRegistrationState.REMOVING) { "Finish pending removal before enabling push" }
         record = record.copy(state = PushRegistrationState.REGISTERING, revision = record.revision + 1)
         store.write(session.sessionId, record) // Persist secrets before any remote mutation.
+        // Establish the lower bound before the server can send Push for a new subscription.
+        if (!record.syncInitialized && record.endpoint == null && syncBaseline != null) {
+            record = record.copy(syncInitialized = true, syncSinceId = syncBaseline.invoke(session))
+            store.write(session.sessionId, record)
+        }
         val advertisedKey = subscriptions.serverKey(session)?.let(VapidPublicKey::normalize)
         if (record.serverKey == null && advertisedKey != null) {
             record = record.copy(serverKey = advertisedKey)
@@ -61,7 +67,8 @@ class DefaultPushRegistrationRepository(
             val bound = relay.registerBound(record.registrationId, record.managementToken, fcmToken, serverKey, record.revision)
             check(bound == endpoint) { "Relay changed an existing delivery endpoint" }
         }
-        store.write(session.sessionId, record.copy(state = PushRegistrationState.ACTIVE))
+        store.write(session.sessionId, record.copy(state = PushRegistrationState.ACTIVE,
+            notificationTypes = confirmed.alerts.filterValues { it }.keys.toList()))
     }
 
     override suspend fun disable(session: AccountSession) = mutex.withLock {

@@ -31,8 +31,12 @@ class PushControlRepositoryTest {
         var failure: Exception? = null
         val tokens = mutableListOf<Pair<String, String>>()
         val removed = mutableListOf<String>()
+        val cancelledSync = mutableListOf<String>()
         val keys = WebPushKeyGenerator().generate()
-        fun repository() = DefaultPushControlRepository({ accounts }, control, records, { configured }) {
+        fun repository() = DefaultPushControlRepository({ accounts }, control, records, { configured }, cancelSync = {
+            records.values[it]?.let { record -> assertEquals(PushRegistrationState.REMOVING, record.state) }
+            cancelledSync += it
+        }) {
             object : PushRegistrationRepository {
                 override suspend fun state(session: AccountSession) = records.read(session.sessionId)?.state ?: PushRegistrationState.DISABLED
                 override suspend fun enable(session: AccountSession, fcmToken: String, alerts: Map<String, Boolean>, standard: Boolean?) {
@@ -78,6 +82,7 @@ class PushControlRepositoryTest {
         assertEquals(account, f.control.data.intents.getValue("one").cleanup)
         assertEquals(PushRegistrationState.REMOVING, f.records.values.getValue("one").state)
         assertEquals(PushControlStatus.REMOVING, repo.states.value.getValue("one").status)
+        assertEquals(listOf("one"), f.cancelledSync)
         f.failure = null; f.repository().refresh()
         assertTrue(f.control.data.intents.isEmpty()); assertTrue(f.records.values.isEmpty())
         assertEquals(listOf("one"), f.removed)
@@ -89,6 +94,7 @@ class PushControlRepositoryTest {
         f.failure = null; repo.refresh()
         assertEquals(PushControlStatus.OFF, repo.states.value.getValue("one").status)
         assertEquals(1, f.tokens.size); assertTrue(f.records.values.isEmpty())
+        assertEquals(listOf("one"), f.cancelledSync)
     }
     @Test fun reauthorizationNeverReregistersOldCredentialsWhileBrowserIsPending() = runTest {
         val f = Fixture(); val repo = f.repository()
