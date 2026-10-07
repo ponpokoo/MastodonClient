@@ -55,21 +55,41 @@ priorities. Distinguish planned candidates from implemented features.
 When an API detail is uncertain, verify it against the official Mastodon API documentation before
 implementing it.
 
+## Documentation maintenance
+
+- Use a lightweight maintenance workflow for ordinary changes, including after Google Play
+  publication. Update an existing specification or guide only when the change makes its behavior,
+  contract, setup, or operating instructions inaccurate. Internal refactors and routine visual
+  fixes do not require documentation updates unless they affect those instructions.
+- Routine change descriptions and validation results belong in the PR or commit description.
+  Report the checks performed and relevant limitations briefly; do not add a Markdown report,
+  per-document validation history, or release-plan entry for every task.
+- Update the release plan when preparing a release or changing release scope or priorities.
+  Keep ongoing work in Issues; do not duplicate its progress across specifications and plans.
+- Create a separate investigation or validation record only when reproducible evidence is needed
+  for an unresolved problem, a compatibility or migration decision, or production operation and
+  recovery. Keep the evidence in one place and link to it where needed.
+- Prefer extending an existing document over adding a new one. Keep implementation details in
+  code and tests, current instructions in the relevant guide, and change history in Git.
+  Preserve useful existing records without appending routine history to them.
+- Authentication and session isolation, data retention and migration, Relay contracts, and
+  production setup/recovery instructions must remain accurate when changed. Record deployed
+  versions and migration/recovery results once where needed for safe operation; never record secrets.
+
 ## Architecture decision records
 
-- Keep lightweight ADRs in [`docs/adr/`](docs/adr/README.md). Record decisions whose rationale is
-  needed to safely revisit them: shared architectural boundaries, migration or compatibility
-  impacts, meaningful alternatives with accepted costs, or future extension and review conditions.
-- Add or update the relevant ADR alongside the implementation change. If an existing document
-  already explains the rationale sufficiently, reference it instead of duplicating the record.
-- Routine visual adjustments and ordinary bug fixes belong in the relevant specification, PR,
-  investigation, or validation record. Add an ADR when they also change an architectural decision
-  meeting the criteria above. API requirements alone do not require an ADR.
+- Keep ADRs in [`docs/adr/`](docs/adr/README.md) for lasting choices about shared boundaries,
+  storage/migration, compatibility, or production infrastructure whose rationale cannot be
+  recovered adequately from code and a short change description. A change in these areas alone
+  does not require an ADR; record a consequential choice with alternatives or accepted costs.
+- Ordinary features, bug fixes, visual adjustments, API requirements, test additions, and
+  documentation/process changes do not require an ADR unless they also make such a choice.
+  If an existing guide or ADR explains the rationale sufficiently, update or reference it.
 - Use one short Markdown file per decision, with a stable sequential number and descriptive name.
-  Aim for 20–40 lines covering status and recording date, context, decision and rationale,
-  alternatives, accepted costs or constraints, review conditions, and related documents.
-- Keep current behavior and implementation rules in the existing specifications and guides;
-  link them and the ADR in both directions. Keep proposed decisions distinct from accepted ones.
+  Include status/date, context, decision and rationale, relevant alternatives and constraints.
+  Add review conditions and related links only when useful; there is no required line count or
+  fixed section template. Add the record to the ADR index and link from the affected guide when
+  needed to understand its rule. Keep proposed decisions distinct from accepted ones.
 - When replacing a decision, create a new ADR, mark the old one as superseded, and link both
   records. Preserve the old rationale and never reuse its number. Update the ADR index.
 - For retrospective records, distinguish verified facts from historical rationale. Mark unknown
