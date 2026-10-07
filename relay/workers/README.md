@@ -4,7 +4,7 @@ Mastodon Web Pushを受け、暗号文をFCM HTTP v1のdataメッセージでNag
 本文の復号はAndroid側で行う。実行時の外部npm依存、Queues、KV、常駐サーバーは不要。
 
 本運用の準備・実装変更・検証・移行は[本運用への移行手順](../../docs/relay-production.md)、
-選定したWorkers＋D1の環境準備は[配置・復旧計画](production.md)、選定理由は[ADR 0009](../../docs/adr/0009-relay-cloudflare-deployment.md)を参照する。
+選定したWorkers＋D1の環境準備は[配置・復旧計画](setup.md)、選定理由は[ADR 0009](../../docs/adr/0009-relay-cloudflare-deployment.md)を参照する。
 登録v2・購読ごとの鍵検証・部分停止・再送の変更は実装済み。本番配置・Free適合性は未確認。
 契約と移行判断は[ADR 0010](../../docs/adr/0010-relay-subscription-key-binding.md)を参照する。
 
@@ -107,37 +107,7 @@ CloudflareのMetrics、D1の件数だけを返すSQL、端末の表示で動作�
 
 ## 過去の検証記録
 
-### 2026-10-06：Cloudflare Freeでの測定開始
-
-専用Worker＋空の専用D1、模擬FCMで120登録・1,000件の通知受付を測定した。
-burstは300件を59.98秒で受け付け、受付応答p99は279.06ms。600件の滞留から実Cronで復旧を観測中。
-初期CPU表示には10msを超える分位値があるため、無料本運用に合格したとは判断していない。
-条件・版・未検証項目は[測定記録](../../docs/investigations/relay-production-measurement-20261006.md)、
-再現手順は[bench/README](bench/README.md)を参照。
-
-### 2026-10-06：本運用準備のローカル確認
-
-Node.js 24.19.0で`npm ci`・`npm test`成功、34件成功・失敗なし。
-登録v2、仮登録・応答再送、2サーバーの鍵隔離・鍵更新、旧契約の期限、既存データの追加移行、
-部分停止・容量・リース競合・Cronの公平性と50 DB文以内、FCMのエラー分類・本文タイムアウト、
-復元登録の墓標化を模擬FCM／Miniflare／workerdで確認した。
-Androidは関連テスト後に単体テスト全体334件・Debugビルド成功。
-クラウド配置、Free CPU・D1消費量、600件の滞留復旧、実機配信、監視通知、Time Travel復元は未実施。
-
-以下は当時のコード・設定・確認範囲の記録。今回の文書整理ではテストを再実行していない。
-
-### 2026-09-21：Workersローカルテスト
-
-2026-09-21: 23件のローカルテスト成功。配布用バンドルのローカル生成、登録の競合・認証・墓標、
-署名拒否、旧暗号ヘッダー、TTL、暗号文取得、容量制限、D1リース、再送、
-トークン更新競合、FCMの認証・エラー分類を検証。
-このローカルテストではWorkers FreeのCPU上限、クラウド上のD1、実Mastodon→FCM→端末の配信は未検証。
-Androidのコード・設定URLはこの追加では変更していない。
-
-### 2026-09-21～2026-09-23：公開環境への接続・実配信
-
-公開Relayの登録・解除、利用者による実配信と継続試験の記録は[Android側の過去の検証記録](../../docs/push-reception.md#過去の検証記録)を参照する。
-ローカルテストの結果とは区別し、公開環境の性能保証には用いない。
+ローカル試験・公開接続・本運用準備の履歴は[検証ガイド](testing.md#workersの過去の検証記録)へ集約した。
 
 参照: [D1 batch](https://developers.cloudflare.com/d1/worker-api/d1-database/)、
 [Cron](https://developers.cloudflare.com/workers/configuration/cron-triggers/)、

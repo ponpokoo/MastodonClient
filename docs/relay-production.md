@@ -196,7 +196,7 @@ FCM受付の目標と端末表示の観測は別に記録する。端末のオ�
 **本運用向けの実装・検証先は既存のCloudflare Workers＋D1とする。初期はFreeで検証する。**
 配置先の選定と、Freeで公開してよいという性能・運用の判定は分ける。
 採用理由と見直し条件は[ADR 0009](adr/0009-relay-cloudflare-deployment.md)、
-環境設定・移行・復元・停止の準備は[Workers本運用の配置・復旧計画](../relay/workers/production.md)に記録する。
+環境設定・移行・復元・停止の準備は[Workers本運用の配置・復旧計画](../relay/workers/setup.md)に記録する。
 手順2の選定時点では文書・コード・公式資料の評価であり、クラウド設定変更や試作・負荷試験は行っていなかった。
 
 | 選ぶ構成 | 初期方針 | 残る確認・実装 |
@@ -258,7 +258,7 @@ URLが同じでもDBを空にすると既存の配送先は失われる。
 - 再送は最大20件/分、60秒リース、10秒のGoogle通信タイムアウト、最大8回・指数バックオフ＋ジッター。
   DB文数50の範囲で打ち切る。FCM永久エラーは固定コードで報告し、端末を誤って無効化しない。
 - 新旧契約・DB追加移行・復元時の墓標化は[通信契約](relay-protocol.md)、
-  [Workers配置・復旧](../relay/workers/production.md)、[ADR 0010](adr/0010-relay-subscription-key-binding.md)に記録した。
+  [Workers配置・復旧](../relay/workers/setup.md)、[ADR 0010](adr/0010-relay-subscription-key-binding.md)に記録した。
 
 クラウドのCPU・D1消費量、滞留復旧時間、実機配信、監視通知、隔離復元は手順4・5で検証する。
 ローカルの再送件数やテスト成功だけでFree枠内・本運用可能と判断しない。

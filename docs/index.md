@@ -17,23 +17,24 @@
 
 ## Push・Relay
 
-| 文書 | 読むとき |
+まず[Workers版Relay](../relay/workers/README.md)で現在の方式を確認する。
+
+| 目的 | 文書 |
 | --- | --- |
-| [通知設定と購読管理](push-settings.md) | Pushの登録・更新・解除、再認証、ログアウト後の再試行を確認する |
-| [Android接続と受信処理](push-reception.md) | Firebaseの設定、FCM受信、復号、通知表示を確認する |
-| [Relay通信契約](relay-protocol.md) | 登録v2・配送v1、旧Relay・ローカルv1との互換性を確認する |
-| [ローカル模擬Relay](../relay/README.md) | ローカルの起動・保存・模擬配送・テストを確認する |
-| [Workers版Relay](../relay/workers/README.md) | Workers版の開発・配送・保存・制限・テストを確認する |
-| [Workers配置・運用手順](../relay/workers/setup.md) | 公開配置、変数・Secrets、監視、停止の手順を確認する |
-| [Workers本運用の配置・復旧計画](../relay/workers/production.md) | 選定したWorkers＋D1の環境分離・DB移行・監視・隔離復元・停止の準備と未実施項目を確認する |
-| [Relay本運用への移行手順](relay-production.md) | 最大30人・無料運用の前提、Workers＋D1の選定、必要な実装変更、検証、購読移行、監視・復旧、開始条件を確認する |
+| Androidの購読・受信を変更する | [通知設定と購読管理](push-settings.md)・[Android接続と受信処理](push-reception.md) |
+| 通信形式・配送仕様を確認する | [共通通信契約](relay-protocol.md) |
+| Relayを開発・起動する | [Workers版](../relay/workers/README.md)・[ローカルv1模擬版](../relay/README.md) |
+| 配置・更新・停止・復旧する | [Workers配置・運用・復旧](../relay/workers/setup.md) |
+| 公開条件・購読移行を確認する | [本運用への移行手順](relay-production.md) |
+| テスト・測定・過去の調査を読む | [検証ガイド](../relay/workers/testing.md)（測定ツール・各記録への入口） |
+
+実測値は各測定記録、設計の採用理由は[ADR一覧](adr/README.md)を正本とし、入口の文書には重複して転記しない。
 
 ## 調査・継続確認
 
 | 文書 | 読むとき |
 | --- | --- |
 | [画像共有遷移の最小試作](../transition-prototype/README.md) | Issue #3の独立した試作アプリ、静止画1枚の開閉、ビルド手順、確認範囲を確認する |
-| [Relay本運用準備の測定](investigations/relay-production-measurement-20261006.md) | 合成負荷・滞留解消、本番RelayとDBの互換更新、既存購読の自動移行と少量実通知の確認記録を参照する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
 | [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
 | [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 公開APIの観測、MastodonとMisskeyの認証・通知・リアクションAPIの違い、連合と直接ログインの範囲を確認する |

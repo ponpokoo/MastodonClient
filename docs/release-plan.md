@@ -96,7 +96,7 @@ revisionで更新・再試行を保護し、配送・暗号文取得・解除は
 
 Workersのテスト34件が成功したバンドルを本番へ配置し、エミュレーターの既存Fedibird登録1件の自動移行と、移行後の通知1件の表示を確認した。
 記録時点の旧方式の有効登録5件は更新版の起動待ち。通知表示の確認を配送時間の測定や全登録の移行完了とは扱わない。
-詳細は[移行手順](relay-production.md)、[通信契約](relay-protocol.md)、[配置・復旧](../relay/workers/production.md)、[ADR 0010](adr/0010-relay-subscription-key-binding.md)、[実施記録](investigations/relay-production-measurement-20261006.md#手順6既存公開relayの互換更新2026-10-06)を参照する。
+詳細は[移行手順](relay-production.md)、[通信契約](relay-protocol.md)、[配置・復旧](../relay/workers/setup.md)、[ADR 0010](adr/0010-relay-subscription-key-binding.md)、[実施記録](investigations/relay-production-measurement-20261006.md#手順6既存公開relayの互換更新2026-10-06)を参照する。
 
 ### 事前検証用の成果物（2.4.0／15）
 

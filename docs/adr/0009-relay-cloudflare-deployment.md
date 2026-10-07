@@ -38,5 +38,5 @@ Paid・Queues・他環境への変更は費用、旧クライアント互換性�
 
 ## 関連文書
 
-- [本運用への移行手順・手順2](../relay-production.md#手順2配置先を選定する)・[Workers配置・復旧計画](../../relay/workers/production.md)
+- [本運用への移行手順・手順2](../relay-production.md#手順2配置先を選定する)・[Workers配置・復旧計画](../../relay/workers/setup.md)
 - [ADR 0003：情報の境界](0003-push-relay-responsibilities.md)・[Workers現行実装](../../relay/workers/README.md)

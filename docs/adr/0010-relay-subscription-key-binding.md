@@ -36,5 +36,5 @@ Relayの120購読上限は人数の証明ではない。テスター資格のAPI
 
 一般公開・登録濫用・複数プロセスの端末更新・鍵併用の必要が出たら資格確認とrevision方式を再評価する。
 [通信契約](../relay-protocol.md)、[購読管理](../push-settings.md)、
-[Workers](../../relay/workers/README.md)、[配置・復旧](../../relay/workers/production.md)、
+[Workers](../../relay/workers/README.md)、[配置・復旧](../../relay/workers/setup.md)、
 [本運用手順](../relay-production.md)、[情報境界のADR 0003](0003-push-relay-responsibilities.md)。

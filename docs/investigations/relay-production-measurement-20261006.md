@@ -263,4 +263,4 @@ CPU画面の証跡は同ディレクトリの`cpu-push-window.png`。いずれ�
   Workersの日次要求数の監視可否も未確認。エージェントはアラート保存・通知送信を行っていない。
 - Cron解除は完了。後続確認後に専用リソース・生成した使い捨て認証情報を片付ける。
 
-関連：[移行手順](../relay-production.md)、[配置・復旧計画](../../relay/workers/production.md)。
+関連：[移行手順](../relay-production.md)、[配置・復旧計画](../../relay/workers/setup.md)。
