@@ -261,6 +261,7 @@ fun MediaViewerScreen(
                         url = item.url ?: item.previewUrl.orEmpty(),
                         previewUrl = item.previewUrl,
                         description = item.description,
+                        cacheRevision = item.cacheRevision,
                         onScaleChanged = { pageScales[page] = it },
                         onTap = { setControlsVisible(!controlsVisible) },
                     )
@@ -321,6 +322,7 @@ private fun ZoomableImage(
     url: String,
     previewUrl: String?,
     description: String?,
+    cacheRevision: Long,
     onScaleChanged: (Float) -> Unit,
     onTap: () -> Unit,
 ) {
@@ -347,14 +349,14 @@ private fun ZoomableImage(
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (!originalLoaded && previewUrl != null && previewUrl != url) {
             AsyncImage(
-                model = previewUrl,
+                model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(previewUrl, cacheRevision),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
             )
         }
         AsyncImage(
-            model = url,
+            model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(url, cacheRevision),
             contentDescription = description ?: "添付画像",
             onSuccess = {
                 originalLoaded = true

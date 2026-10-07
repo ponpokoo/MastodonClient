@@ -76,6 +76,7 @@ class SearchNavigationDeviceTest {
                             onStatusClick = { openedStatus = it; navigation.navigate("detail") },
                             onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = { _, _ -> },
                             onFavourite = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> },
+                            onMoreClick = {},
                         )
                     }
                     composable("detail") {

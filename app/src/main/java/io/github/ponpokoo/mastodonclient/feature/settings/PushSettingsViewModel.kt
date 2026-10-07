@@ -2,6 +2,7 @@ package io.github.ponpokoo.mastodonclient.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import kotlinx.coroutines.Job
@@ -72,16 +73,17 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
             } finally { mutableBusy.value = false }
         }
     }
-    fun logout() {
+    fun logout(expected: AccountSession) {
         if (mutableBusy.value) return
         mutableBusy.value = true
         viewModelScope.launch {
             try {
+                mutableError.value = null
                 runCatchingCancellable {
-                    auth.logout()
+                    check(auth.logout(expected)) { "削除対象が変更されました" }
                     requiresLogin = auth.restoreSession() == null
                     mutableAuthenticated.value++
-                }.onFailure { mutableError.value = "ログアウトを完了できませんでした。再試行してください。" }
+                }.onFailure { mutableError.value = "アカウントを削除できませんでした。対象を確認して再試行してください。" }
             } finally { mutableBusy.value = false }
         }
     }

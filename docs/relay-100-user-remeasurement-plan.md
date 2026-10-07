@@ -194,5 +194,5 @@ Time TravelのFree履歴は7日で、別DBへの履歴複製には使えない�
 - [Workers制限](https://developers.cloudflare.com/workers/platform/limits/)
 - [D1料金・日次枠](https://developers.cloudflare.com/d1/platform/pricing/)・[D1制限](https://developers.cloudflare.com/d1/platform/limits/)
 - [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)
-- 関連：[本運用・公開条件](relay-production.md)、
+- 関連：[Play公開ワークフロー](google-play-publication-workflow.md#4-pushは限定テストと一般公開を分けて判断する)、
   [測定ツール](../relay/workers/bench/README.md)、[既存測定](investigations/relay-production-measurement-20261006.md)

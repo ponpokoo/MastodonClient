@@ -407,14 +407,20 @@ internal fun ProfileContent(
             item(key = "profile_header") {
                 Column(Modifier.fillMaxWidth().testTag("profile_header")) {
                 Box(Modifier.fillMaxWidth().height(184.dp)) {
-                    AsyncImage(
-                        model = profile.headerUrl, contentDescription = "ヘッダー画像",
+                    io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
+                        model = if (profile.isOwnProfile) io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(
+                            profile.headerUrl, state.imageRefreshRevision) else profile.headerUrl,
+                        identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "header"),
+                        retainPreviousImage = profile.isOwnProfile, contentDescription = "ヘッダー画像",
                         modifier = Modifier.fillMaxWidth().height(132.dp).clickable(onClick = onHeaderClick)
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentScale = ContentScale.Crop,
                     )
-                    AsyncImage(
-                        model = profile.author.avatarUrl, contentDescription = "プロフィール画像",
+                    io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
+                        model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(profile.author.avatarUrl,
+                            if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision),
+                        identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "avatar"),
+                        retainPreviousImage = profile.isOwnProfile, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
                             .clip(avatarShape).clickable(onClick = onAvatarClick)
                             .testTag("profile_avatar")
@@ -656,7 +662,7 @@ internal fun SocialStatus(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     preferences: AppPreferences,
-    onMoreClick: (TimelineStatus) -> Unit = {},
+    onMoreClick: (TimelineStatus) -> Unit,
     isPinned: Boolean = false,
 ) {
     if (isPinned) {

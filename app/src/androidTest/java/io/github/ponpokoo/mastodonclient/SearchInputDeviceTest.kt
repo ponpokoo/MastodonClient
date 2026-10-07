@@ -103,7 +103,7 @@ class SearchInputDeviceTest {
                         selections += it; state.value = state.value.copy(selectedTarget = it)
                     }, onLoadMore = {}, onRetry = {}, onStatusClick = {}, onOpenLink = {}, onReply = {},
                     onBoost = {}, onQuote = { _, _ -> }, onFavourite = {}, onReact = { _, _ -> },
-                    onAccountClick = {}, onMediaClick = { _, _ -> })
+                    onAccountClick = {}, onMediaClick = { _, _ -> }, onMoreClick = {})
             }
         }
         rule.onNodeWithTag("search_target_pager").performTouchInput { swipeLeft() }
@@ -155,6 +155,7 @@ class SearchInputDeviceTest {
             onSelectTarget = { state.value = state.value.copy(selectedTarget = it) }, onLoadMore = {}, onRetry = {},
             onStatusClick = {}, onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = { _, _ -> }, onFavourite = {},
             onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> },
+            onMoreClick = {},
             exploreState = ExploreUiState(selectedFeed = ExploreFeed.Followed,
                 tabs = mapOf(ExploreFeed.Followed to ExploreTabState(page = ExplorePage()))),
         ) } }

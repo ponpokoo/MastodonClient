@@ -1,0 +1,21 @@
+import groovy.json.JsonOutput
+
+// Run with --no-configuration-cache: this one-off audit reads Project/configuration
+// objects to export original archives, not Android's transformed classpath files.
+gradle.projectsEvaluated {
+    def appProject = gradle.rootProject.project(':app')
+    appProject.tasks.register('exportLicenseArtifacts') {
+        doLast {
+            def artifacts = appProject.configurations.getByName('releaseRuntimeClasspath')
+                .resolvedConfiguration.resolvedArtifacts.collect { artifact ->
+                    def id = artifact.moduleVersion.id
+                    [group: id.group, module: id.name, version: id.version,
+                     file: artifact.file.absolutePath]
+                }.sort { a, b -> "${a.group}:${a.module}" <=> "${b.group}:${b.module}" }
+            def destination = new File(gradle.rootProject.projectDir, 'build/license-audit/artifacts.json')
+            destination.parentFile.mkdirs()
+            destination.text = JsonOutput.prettyPrint(JsonOutput.toJson(artifacts))
+            println("Exported ${artifacts.size()} release runtime artifacts.")
+        }
+    }
+}

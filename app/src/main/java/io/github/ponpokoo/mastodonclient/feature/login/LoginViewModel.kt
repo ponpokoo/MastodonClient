@@ -3,6 +3,7 @@ package io.github.ponpokoo.mastodonclient.feature.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.ponpokoo.mastodonclient.core.network.InstanceUrlNormalizer
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonInstance
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
@@ -12,6 +13,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+
+enum class LoginOperation { Discover, PrepareAuthorization, CompleteAuthorization, Logout }
 
 data class LoginUiState(
     val instanceInput: String = "",
@@ -20,6 +25,8 @@ data class LoginUiState(
     val session: AccountSession? = null,
     val authorizationUrl: String? = null,
     val errorMessage: String? = null,
+    val inputErrorMessage: String? = null,
+    val operation: LoginOperation? = null,
 )
 
 class LoginViewModel(
@@ -41,20 +48,39 @@ class LoginViewModel(
     }
 
     fun onInstanceChanged(value: String) {
-        _uiState.update { it.copy(instanceInput = value, instance = null, errorMessage = null) }
+        if (_uiState.value.isLoading) return
+        _uiState.update {
+            it.copy(instanceInput = value, instance = null, authorizationUrl = null,
+                errorMessage = null, inputErrorMessage = null)
+        }
     }
 
     fun discover() {
         if (_uiState.value.isLoading) return
+        val input = _uiState.value.instanceInput
+        if (InstanceUrlNormalizer.normalize(input).isFailure) {
+            _uiState.update {
+                it.copy(instance = null, authorizationUrl = null, errorMessage = null,
+                    inputErrorMessage = "HTTPSのサーバードメインを入力してください。パスや認証情報は含められません。")
+            }
+            return
+        }
+        beginOperation(LoginOperation.Discover)
+        _uiState.update { it.copy(instance = null, authorizationUrl = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, instance = null, errorMessage = null) }
-            instanceRepository.discover(_uiState.value.instanceInput)
-                .onSuccess { instance -> _uiState.update { it.copy(isLoading = false, instance = instance) } }
+            instanceRepository.discover(input)
+                .onSuccess { instance ->
+                    ensureActive()
+                    _uiState.update { it.copy(isLoading = false, operation = null, instance = instance) }
+                }
                 .onFailure { error ->
+                    ensureActive()
+                    if (error is CancellationException) throw error
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            errorMessage = error.message ?: "インスタンスに接続できませんでした",
+                            operation = null,
+                            errorMessage = "サーバーに接続できませんでした。入力内容と通信環境を確認して、もう一度お試しください。",
                         )
                     }
                 }
@@ -62,14 +88,19 @@ class LoginViewModel(
     }
 
     fun startAuthorization() {
+        if (_uiState.value.isLoading || _uiState.value.authorizationUrl != null) return
         val instance = _uiState.value.instance ?: return
+        beginOperation(LoginOperation.PrepareAuthorization)
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             authRepository.createAuthorizationUrl(instance.baseUrl)
                 .onSuccess { url ->
-                    _uiState.update { it.copy(isLoading = false, authorizationUrl = url) }
+                    ensureActive()
+                    _uiState.update { it.copy(isLoading = false, operation = null, authorizationUrl = url) }
                 }
-                .onFailure(::showError)
+                .onFailure { error ->
+                    ensureActive()
+                    showError(error, "ログインの準備に失敗しました。もう一度お試しください。")
+                }
         }
     }
 
@@ -77,33 +108,55 @@ class LoginViewModel(
         _uiState.update { it.copy(authorizationUrl = null) }
     }
 
+    fun authorizationUrlOpenFailed() {
+        _uiState.update {
+            it.copy(authorizationUrl = null, errorMessage = "ブラウザーを開けませんでした。利用できるブラウザーを確認して、もう一度お試しください。")
+        }
+    }
+
     fun completeAuthorization(callbackUrl: String) {
         if (_uiState.value.isLoading) return
+        beginOperation(LoginOperation.CompleteAuthorization)
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             authRepository.completeAuthorization(callbackUrl)
                 .onSuccess { session ->
+                    ensureActive()
                     _uiState.update {
-                        it.copy(isLoading = false, session = session, instance = null)
+                        it.copy(isLoading = false, operation = null, session = session, instance = null)
                     }
                 }
-                .onFailure(::showError)
+                .onFailure { error ->
+                    ensureActive()
+                    showError(error, "ログインを完了できませんでした。ブラウザーでのログインをもう一度お試しください。")
+                }
         }
     }
 
-    fun logout() {
+    fun logout(expected: AccountSession) {
+        if (_uiState.value.isLoading) return
+        beginOperation(LoginOperation.Logout)
         viewModelScope.launch {
-            authRepository.logout()
-            _uiState.value = LoginUiState()
+            io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable {
+                check(authRepository.logout(expected)) { "削除対象が変更されました。対象を確認してください。" }
+                _uiState.value = LoginUiState(session = authRepository.restoreSession())
+            }.onFailure { showError(it) }
         }
     }
 
-    private fun showError(error: Throwable) {
+    private fun beginOperation(operation: LoginOperation) {
+        _uiState.update {
+            it.copy(isLoading = true, operation = operation, errorMessage = null, inputErrorMessage = null)
+        }
+    }
+
+    private fun showError(error: Throwable, message: String = error.message ?: "処理に失敗しました") {
+        if (error is CancellationException) throw error
         _uiState.update {
             it.copy(
                 isLoading = false,
+                operation = null,
                 authorizationUrl = null,
-                errorMessage = error.message ?: "処理に失敗しました",
+                errorMessage = message,
             )
         }
     }

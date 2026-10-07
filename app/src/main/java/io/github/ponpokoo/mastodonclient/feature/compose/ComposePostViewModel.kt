@@ -8,6 +8,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
@@ -296,6 +297,7 @@ class ComposePostViewModel(
                 )
             }
             selected?.let { session ->
+                observeAccountDisplay()
                 loadAccountData(session, restoreBuffer = editStatusId == null, sharedMediaUris = initialSharedMediaUris)
                 applyInitialShare()
                 consumePendingShare()
@@ -330,6 +332,19 @@ class ComposePostViewModel(
             if (containsQuoteUrl(state.text, url) && !containsQuoteUrl(text, url)) clearQuote()
         }
         change { it.copy(text = text) }
+    }
+
+    private fun observeAccountDisplay() {
+        viewModelScope.launch {
+            authRepository.observeSessions().collect { sessions ->
+                _uiState.update { state ->
+                    val current = state.selectedSession
+                    val updated = sessions.firstOrNull { it.sessionId == current?.sessionId }
+                    state.copy(sessions = sessions,
+                        selectedSession = if (current?.hasSameCredentials(updated) == true) updated else current)
+                }
+            }
+        }
     }
 
     private fun containsMention(text: String, author: StatusAuthor): Boolean =

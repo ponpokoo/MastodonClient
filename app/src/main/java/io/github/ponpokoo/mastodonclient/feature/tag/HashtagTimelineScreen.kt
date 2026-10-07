@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.tag
 
+import android.content.Intent
+import androidx.core.net.toUri
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 
@@ -27,14 +29,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
+import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -44,6 +54,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun HashtagTimelineScreen(
     hashtag: String,
     viewModel: HashtagTimelineViewModel,
+    actionsViewModel: StatusActionsViewModel,
+    currentAccountId: String?,
     preferences: AppPreferences,
     onBack: () -> Unit,
     onStatusClick: (String) -> Unit,
@@ -52,18 +64,32 @@ fun HashtagTimelineScreen(
     onOpenLink: (String) -> Unit,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
+    onEditStatus: (String) -> Unit,
     fromTrend: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
+    val moderationMenu by actionsViewModel.moderationMenuState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var menuStatus by remember(state.sessionKey) { mutableStateOf<TimelineStatus?>(null) }
+    var confirmation by remember(state.sessionKey) { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var reportStatus by remember(state.sessionKey) { mutableStateOf<TimelineStatus?>(null) }
+    var listStatus by remember(state.sessionKey) { mutableStateOf<TimelineStatus?>(null) }
     val listState = key(state.sessionKey) { rememberLazyListState() }
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(state.actionMessage) {
+    val snackbarHostState = remember(state.sessionKey) { SnackbarHostState() }
+    LaunchedEffect(state.sessionKey, state.actionMessage) {
         state.actionMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.consumeActionMessage()
         }
     }
-    LaunchedEffect(state.subscriptionError) { state.subscriptionError?.let {
+    LaunchedEffect(state.sessionKey, actionsState.actionMessage) {
+        actionsState.actionMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            actionsViewModel.consumeActionMessage()
+        }
+    }
+    LaunchedEffect(state.sessionKey, state.subscriptionError) { state.subscriptionError?.let {
         if (snackbarHostState.showSnackbar(it, actionLabel = "再試行") == SnackbarResult.ActionPerformed) viewModel.retrySubscription()
     } }
     LaunchedEffect(listState, state.statuses.size, state.nextMaxId) {
@@ -112,6 +138,7 @@ fun HashtagTimelineScreen(
                             onFavourite = { viewModel.toggleFavourite(status) },
                             onReact = { viewModel.setReaction(status, it) },
                             onUnavailableAction = {},
+                            onMoreClick = { menuStatus = it },
                             displayPreferences = preferences.timelineDisplay,
                             gifAutoplay = preferences.gifAutoplay,
                             videoAutoplay = preferences.videoAutoplay,
@@ -133,6 +160,55 @@ fun HashtagTimelineScreen(
                     }
                 }
             }
+        }
+    }
+    LaunchedEffect(state.sessionKey, menuStatus?.author?.id) {
+        menuStatus?.author?.id?.let { actionsViewModel.loadModerationMenu(it) }
+    }
+    menuStatus?.let { status ->
+        StatusMenuDialog(
+            status = status,
+            moderation = moderationMenu.takeIf { it.accountId == status.author.id },
+            onRetryRelationship = { actionsViewModel.loadModerationMenu(status.author.id) },
+            isOwnStatus = status.author.id == currentAccountId,
+            onDismiss = { menuStatus = null },
+            onOpenBrowser = {
+                menuStatus = null
+                status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) }
+            },
+            onPin = { menuStatus = null; actionsViewModel.setPinned(status) },
+            onEdit = { menuStatus = null; onEditStatus(status.statusId) },
+            onDelete = { menuStatus = null; confirmation = "delete" to status },
+            onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
+            onUnfollow = { menuStatus = null; confirmation = "unfollow" to status },
+            onMute = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to status },
+            onBlock = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to status },
+            onReport = { menuStatus = null; reportStatus = status },
+        )
+    }
+    confirmation?.let { (action, status) ->
+        ConfirmStatusActionDialog(action, status, { confirmation = null }) {
+            when (action) {
+                "delete" -> actionsViewModel.deleteStatus(status)
+                "unfollow" -> actionsViewModel.unfollow(status)
+                "mute" -> actionsViewModel.mute(status)
+                "unmute" -> actionsViewModel.mute(status, false)
+                "block" -> actionsViewModel.block(status)
+                "unblock" -> actionsViewModel.block(status, false)
+            }
+            confirmation = null
+        }
+    }
+    reportStatus?.let { status ->
+        StatusReportDialog(status, { reportStatus = null }) { comment ->
+            actionsViewModel.report(status, comment)
+            reportStatus = null
+        }
+    }
+    listStatus?.let { status ->
+        ListPickerSheet(actionsState.lists, actionsState.isLoadingLists, { listStatus = null }) { listId ->
+            actionsViewModel.addToList(status, listId)
+            listStatus = null
         }
     }
 }

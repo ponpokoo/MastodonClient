@@ -27,9 +27,10 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Notifications("通知", "通知の受け取り方・Android通知の表示"),
     Composer("投稿", "公開範囲・ALT確認・ボタンの並び"),
     Moderation("ミュート・ブロックの管理", "ワードミュート・ミュート中・ブロック中"),
-    Accounts("アカウント管理", "登録済みアカウント・追加・ログアウト"),
+    Accounts("アカウント管理", "登録済みアカウント・並び替え・追加・削除"),
     Storage("ストレージ", "画像キャッシュの削除"),
-    About("このアプリについて", "バージョン情報"),
+    About("このアプリについて", "バージョン・ライセンス"),
+    Licenses("ライセンス", ""),
 }
 
 @Composable
@@ -39,10 +40,14 @@ fun SettingsScreen(
     sessions: List<AccountSession>,
     maintenance: SettingsMaintenanceViewModel,
     onBack: () -> Unit,
-    onLogout: () -> Unit,
+    onLogout: (AccountSession) -> Unit,
     onAddAccount: () -> Unit,
     pushSettings: PushSettingsViewModel? = null,
     moderation: ModerationManagementViewModel? = null,
+    onMoveAccount: (String, String?) -> Unit = { _, _ -> },
+    changingAccountOrder: Boolean = false,
+    accountOrderError: String? = null,
+    licenses: LicensesViewModel? = null,
 ) {
     val nav = rememberNavController()
     NavHost(
@@ -56,7 +61,9 @@ fun SettingsScreen(
     ) {
         SettingsPage.entries.forEach { page ->
             composable(page.name) {
-                if (page == SettingsPage.Moderation && moderation != null) {
+                if (page == SettingsPage.Licenses && licenses != null) {
+                    LicenseTextScreen(licenses, onBack = { nav.popBackStack() })
+                } else if (page == SettingsPage.Moderation && moderation != null) {
                     ModerationManagementScreen(moderation, onBack = { nav.popBackStack() })
                 } else {
                     SettingsPageContent(
@@ -70,6 +77,9 @@ fun SettingsScreen(
                         onLogout = onLogout,
                         onAddAccount = onAddAccount,
                         pushSettings = pushSettings,
+                        onMoveAccount = onMoveAccount,
+                        changingAccountOrder = changingAccountOrder,
+                        accountOrderError = accountOrderError,
                     )
                 }
             }

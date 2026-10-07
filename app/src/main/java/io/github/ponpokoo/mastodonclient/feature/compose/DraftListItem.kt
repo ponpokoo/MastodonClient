@@ -54,7 +54,7 @@ internal fun DraftListItem(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(34.dp).clip(CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.Person, contentDescription = null)
-                AsyncImage(session?.avatarUrl, contentDescription = null,
+                AsyncImage(io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(session), contentDescription = null,
                     modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }
             Spacer(Modifier.width(10.dp))

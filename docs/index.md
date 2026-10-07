@@ -9,10 +9,15 @@
 | [実装ルール](../AGENTS.md) | 実装の境界、変更時の確認、ADRの記録基準を確認する |
 | [開発ガイド](project-setup.md) | 開発環境、セッション管理、保存方針、ビルド・テストの選び方を確認する |
 | [UI・機能仕様](ui-guidelines.md) | 画面、操作、テーマ、設定の現行動作を確認する |
+| [ログインとアカウント追加](ui-guidelines.md#ログインとアカウント追加) | 一画面のサーバー確認・ブラウザー認証、入力変更と再試行、追加の戻る操作を確認する |
+| [自アカウントの表示情報同期](ui-guidelines.md#登録済み自アカウントの表示情報) | 起動・切替・プロフィール取得／編集後の名前・アイコン更新と状態保持を確認する |
+| [登録済みアカウントの管理](ui-guidelines.md#登録済みアカウントの管理) | Play公開整備のIssue #10・#11、削除確認、共通ドラッグ操作、保存順と追加・再認証・削除後の動作を確認する |
 | [通知一覧の取得・新着判定](ui-guidelines.md#通知の表示更新既読位置) | 種類別取得、40件のページ、対応判定、既読待機と再起動後の新着判定を確認する |
 | [ミュート・ブロック・報告](ui-guidelines.md#ミュートブロック報告) | メニュー、設定・解除、操作後の非表示、報告、設定での管理、投稿・通知欄のワードミュートを確認する |
 | [設計判断（ADR）](adr/README.md) | 重要な設計の背景、採用理由、制約、見直し条件を確認する |
+| [ライセンスと第三者通知](third-party-licenses.md) | アプリ内のライセンス表示、Apache 2.0適用範囲、Release依存の収録内容と再生成・公開前確認を参照する |
 | [更新・リリース計画](release-plan.md) | 2.4.1の変更・確認状況、事前検証用成果物との区別、今後の候補、リリース手順を確認する |
+| [Google Play公開までのワークフロー](google-play-publication-workflow.md) | 公開準備、必要な文書・申告、Play配布版の確認、限定テストと一般公開の判断を確認する |
 | [GitHub Issues](https://github.com/ponpokoo/MastodonClient/issues) | 移行済みの継続確認・改善候補と対応の進捗を確認する |
 
 ## Push・Relay
@@ -40,6 +45,7 @@
 | --- | --- |
 | [画像共有遷移の最小試作](../transition-prototype/README.md) | Issue #3の独立した試作アプリ、静止画1枚の開閉、ビルド手順、確認範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
+| [自プロフィール画像の点滅](investigations/profile-image-refresh-flicker-report.md) | アイコンとヘッダーの再取得・旧画像保持・キャッシュの調査結果、採用した最小修正案と確認条件を参照する |
 | [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
 | [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 公開APIの観測、MastodonとMisskeyの認証・通知・リアクションAPIの違い、連合と直接ログインの範囲を確認する |
 

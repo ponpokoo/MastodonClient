@@ -9,6 +9,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
 import io.github.ponpokoo.mastodonclient.data.remote.MastodonStreamingDataSource
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.withAccountDisplay
 import io.github.ponpokoo.mastodonclient.domain.model.AccountListPage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
@@ -84,6 +85,7 @@ class DefaultTimelineRepository(
     private val networkAvailable: () -> Boolean = { true },
     private val configurationClock: () -> Long = { System.nanoTime() / 1_000_000 },
     private val wordMuteRepository: io.github.ponpokoo.mastodonclient.domain.repository.WordMuteRepository? = null,
+    private val accountDisplay: AccountDisplaySynchronizer? = null,
 ) : TimelineRepository {
     override val wordMutes get() = wordMuteRepository?.words ?: super.wordMutes
 
@@ -159,6 +161,7 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getProfile(session: AccountSession, accountId: String): Result<UserProfile> = runCatching { coroutineScope {
+        val displayRequest = if (accountId == session.accountId) accountDisplay?.begin(session) else null
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val accountRequest = async { api.getAccount(accountId) }
         val statusesRequest = async { api.getAccountStatuses(accountId, excludeReplies = true) }
@@ -174,10 +177,11 @@ class DefaultTimelineRepository(
         val account = accountRequest.await()
         val statuses = statusesRequest.await().map(StatusDto::toDomain)
         val pinned = pinnedRequest.await()
+        val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         pinned.forEach { cacheStatus(session, it) }
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         UserProfile(
-            author = account.toDomain(),
+            author = account.toDomain().withAccountDisplay(registered),
             headerUrl = account.header,
             noteHtml = account.note,
             followersCount = account.followersCount,
@@ -197,9 +201,11 @@ class DefaultTimelineRepository(
     } }
 
     override suspend fun getProfileHeader(session: AccountSession, accountId: String): Result<UserProfile> = runCatching {
+        val displayRequest = if (accountId == session.accountId) accountDisplay?.begin(session) else null
         val account = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccount(accountId)
+        val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         UserProfile(
-            author = account.toDomain(),
+            author = account.toDomain().withAccountDisplay(registered),
             headerUrl = account.header,
             noteHtml = account.note,
             followersCount = account.followersCount,
@@ -342,6 +348,7 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> = runCatching {
+        val displayRequest = accountDisplay?.begin(session)
         val parts = linkedMapOf<String, okhttp3.RequestBody>()
         fun add(key: String, value: String) { parts[key] = value.toRequestBody("text/plain".toMediaType()) }
         add("display_name", request.displayName)
@@ -359,8 +366,9 @@ class DefaultTimelineRepository(
         val account = apiClientFactory.create(session.instanceUrl, session.accessToken).updateCredentials(
             parts, imagePart("avatar", request.avatarFilePath), imagePart("header", request.headerFilePath),
         )
+        val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         UserProfile(
-            author = account.toDomain(), headerUrl = account.header, noteHtml = account.note,
+            author = account.toDomain().withAccountDisplay(registered), headerUrl = account.header, noteHtml = account.note,
             followersCount = account.followersCount, followingCount = account.followingCount,
             statusesCount = account.statusesCount, statuses = emptyList(), url = account.url,
             locked = account.locked, createdAt = account.createdAt,
@@ -1011,7 +1019,7 @@ private fun io.github.ponpokoo.mastodonclient.data.remote.dto.PollDto.toDomain()
         },
     )
 
-private fun AccountDto.toDomain() = StatusAuthor(
+internal fun AccountDto.toDomain() = StatusAuthor(
     id = id,
     displayName = displayName.ifBlank { username },
     accountName = acct,
@@ -1036,7 +1044,7 @@ private fun io.github.ponpokoo.mastodonclient.data.remote.dto.RelationshipDto.to
     muting = muting, requested = requested, mutingNotifications = mutingNotifications,
 )
 
-private fun NotificationDto.toDomain() = TimelineNotification(
+internal fun NotificationDto.toDomain() = TimelineNotification(
     id = id,
     type = type,
     createdAt = createdAt,

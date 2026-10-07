@@ -1,0 +1,10 @@
+Nagisa (Mastodon Client Android application)
+Copyright 2026 ponpokoo
+
+This notice applies to the Android application module under `app/`, as scoped in
+the root `LICENSE` file. It does not apply to `relay/`, `transition-prototype/`,
+or documentation.
+
+The Android application includes third-party components under separate terms.
+Their licenses and notices are provided in the application under
+Settings > About this app > Licenses.

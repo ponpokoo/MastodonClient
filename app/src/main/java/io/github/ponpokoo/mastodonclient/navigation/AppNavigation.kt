@@ -133,7 +133,8 @@ fun AppNavigation(
         )
     }
     val networkAvailability = remember { io.github.ponpokoo.mastodonclient.data.local.NetworkAvailability(context) }
-    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource, homeTimelineLocalDataSource) }
+    val accountDisplay = remember { io.github.ponpokoo.mastodonclient.data.repository.AccountDisplaySynchronizer(authStore) }
+    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource, homeTimelineLocalDataSource, accountDisplay) }
     val pushSettings: io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel = viewModel(
         factory = ScreenViewModelFactory { io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel(pushRuntime.control, authRepository) },
     )
@@ -208,6 +209,7 @@ fun AppNavigation(
         io.github.ponpokoo.mastodonclient.data.repository.DefaultWordMuteRepository(preferences, scope)
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
+        accountDisplay = accountDisplay,
         wordMuteRepository = wordMuteRepository,
         notificationLocalDataSource = notificationLocalDataSource,
         homeTimelineLocalDataSource = homeTimelineLocalDataSource,
@@ -400,7 +402,7 @@ fun AppNavigation(
                     restoreExistingSession = false,
                 ),
             )
-            InstanceLoginScreen(loginViewModel) {
+            InstanceLoginScreen(loginViewModel, onBack = { navController.popBackStack() }) {
                 navController.navigate(Route.Timeline) {
                     popUpTo(Route.Timeline) { inclusive = true }
                 }
@@ -435,7 +437,7 @@ fun AppNavigation(
                 )
             })
             val profileViewModel: OwnProfileViewModel = viewModel(factory = ScreenViewModelFactory {
-                OwnProfileViewModel(timelineRepository, browsing)
+                OwnProfileViewModel(timelineRepository, browsing, authRepository)
             })
             val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
                 StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
@@ -558,13 +560,19 @@ fun AppNavigation(
             )
         }
         composable<Route.Settings> {
-            val activeSession by produceState<io.github.ponpokoo.mastodonclient.domain.model.AccountSession?>(null) {
-                value = authRepository.restoreSession()
-            }
-            val sessions by produceState<List<io.github.ponpokoo.mastodonclient.domain.model.AccountSession>>(emptyList()) {
-                value = authRepository.getSessions()
-            }
+            val mainEntry = remember { navController.getBackStackEntry<Route.Timeline>() }
+            val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
+            val accountState by mainModel.uiState.collectAsStateWithLifecycle()
             SettingsScreen(
+                licenses = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.LicensesViewModel>(
+                    factory = ScreenViewModelFactory {
+                        io.github.ponpokoo.mastodonclient.feature.settings.LicensesViewModel(
+                            io.github.ponpokoo.mastodonclient.data.repository.DefaultAppLicensesRepository(
+                                io.github.ponpokoo.mastodonclient.data.local.AppLicensesLocalDataSource(context),
+                            ),
+                        )
+                    },
+                ),
                 maintenance = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel>(
                     factory = ScreenViewModelFactory {
                         io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel(
@@ -575,8 +583,8 @@ fun AppNavigation(
                     },
                 ),
                 store = preferences,
-                activeSession = activeSession,
-                sessions = sessions,
+                activeSession = accountState.session,
+                sessions = accountState.sessions,
                 pushSettings = pushSettings,
                 moderation = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.ModerationManagementViewModel>(
                     factory = ScreenViewModelFactory {
@@ -586,6 +594,9 @@ fun AppNavigation(
                 onBack = { navController.popBackStack() },
                 onAddAccount = { navController.navigate(Route.AddAccount) },
                 onLogout = pushSettings::logout,
+                onMoveAccount = mainModel::moveAccount,
+                changingAccountOrder = accountState.changingAccountOrder,
+                accountOrderError = accountState.accountOrderError,
             )
         }
         // Older versions may restore a WebView entry. Replace it with a browser tab once.
@@ -648,6 +659,13 @@ fun AppNavigation(
             val route = backStackEntry.toRoute<Route.HashtagTimeline>()
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
+            val mainState by mainModel.uiState.collectAsStateWithLifecycle()
+            val actionsViewModel: StatusActionsViewModel = viewModel(
+                viewModelStoreOwner = backStackEntry,
+                factory = ScreenViewModelFactory {
+                    StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+                },
+            )
             val hashtagViewModel: HashtagTimelineViewModel = viewModel(
                 factory = HashtagTimelineViewModel.Factory(
                     route.hashtag,
@@ -660,6 +678,8 @@ fun AppNavigation(
                 hashtag = route.hashtag,
                 fromTrend = route.fromTrend,
                 viewModel = hashtagViewModel,
+                actionsViewModel = actionsViewModel,
+                currentAccountId = mainState.session?.accountId,
                 preferences = appPreferences,
                 onBack = { navController.popBackStack() },
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
@@ -668,6 +688,7 @@ fun AppNavigation(
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
+                onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
         composable<Route.Lists> {

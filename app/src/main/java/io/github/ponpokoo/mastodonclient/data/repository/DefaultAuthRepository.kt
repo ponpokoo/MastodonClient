@@ -8,6 +8,7 @@ import io.github.ponpokoo.mastodonclient.core.security.PkceGenerator
 import io.github.ponpokoo.mastodonclient.core.security.RegisteredApplication
 import io.github.ponpokoo.mastodonclient.core.security.AuthStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import java.util.UUID
 
@@ -17,12 +18,25 @@ class DefaultAuthRepository(
     private val pushLifecycle: io.github.ponpokoo.mastodonclient.domain.repository.PushAuthLifecycle? = null,
     private val notificationLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource? = null,
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
+    private val accountDisplay: AccountDisplaySynchronizer = AccountDisplaySynchronizer(authStore),
 ) : AuthRepository {
+    override suspend fun moveAccount(sessionId: String, beforeSessionId: String?): Result<Unit> = runCatching {
+        authStore.moveSession(sessionId, beforeSessionId)
+    }
+    override fun observeSessions() = authStore.observeSessions()
+
+    override suspend fun refreshAccountDisplay(session: AccountSession): Result<Unit> = runCatching {
+        val request = accountDisplay.begin(session)
+        val account = apiClientFactory.create(session.instanceUrl, session.accessToken).verifyCredentials()
+        accountDisplay.commit(request, account.toDomain().copy(displayName = account.displayName))
+        Unit
+    }
     override suspend fun createAuthorizationUrl(instanceUrl: String): Result<String> = authorizationUrl(instanceUrl, SCOPES)
 
     override suspend fun pendingPushAuthorization() = authStore.getPending()?.reauthorizeSessionId != null
 
     override suspend fun createPushAuthorizationUrl(sessionId: String): Result<String> = runCatching {
+        accountDisplay.invalidate()
         val session = authStore.getSessions().firstOrNull { it.sessionId == sessionId } ?: error("アカウントが見つかりません")
         pushLifecycle?.beforeReauthorization(session)
         authorizationUrl(session.instanceUrl, "$SCOPES push", sessionId).getOrThrow()
@@ -69,6 +83,7 @@ class DefaultAuthRepository(
     }
 
     override suspend fun completeAuthorization(callbackUrl: String): Result<AccountSession> = runCatching {
+        accountDisplay.invalidate()
         val callback = callbackUrl.toUri()
         require(callback.scheme == REDIRECT_SCHEME && callback.host == "oauth" && callback.path == "/callback") {
             "OAuthコールバックが正しくありません"
@@ -107,8 +122,9 @@ class DefaultAuthRepository(
             avatarUrl = account.avatar,
             accessToken = token.accessToken,
             scopes = token.scope ?: pending.scopes,
+            avatarRevision = (previous?.avatarRevision ?: 0) + 1,
         )
-        authStore.saveSession(session)
+        accountDisplay.changeRegistration { authStore.saveSession(session) }
         authStore.clearPending()
         // Authentication is committed even if notification registration needs a later retry.
         runCatching { pushLifecycle?.afterAuthorization(session) }
@@ -119,11 +135,20 @@ class DefaultAuthRepository(
 
     override suspend fun getSessions(): List<AccountSession> = authStore.getSessions()
 
-    override suspend fun switchSession(sessionId: String): AccountSession? =
-        authStore.setActiveSession(sessionId)
+    override suspend fun switchSession(sessionId: String): AccountSession? {
+        return accountDisplay.changeRegistration { authStore.setActiveSession(sessionId) }
+    }
 
     override suspend fun logout() {
-        val session = authStore.getSession() ?: return
+        removeConfirmedAccount(null)
+    }
+
+    override suspend fun logout(expected: AccountSession): Boolean = removeConfirmedAccount(expected)
+
+    private suspend fun removeConfirmedAccount(expected: AccountSession?): Boolean = accountDisplay.changeRegistration {
+        val session = authStore.getSession() ?: return@changeRegistration false
+        if (expected != null && !expected.hasSameCredentials(session)) return@changeRegistration false
+        // Keep selection and reauthorization serialized until cleanup and local removal finish.
         pushLifecycle?.beforeLogout(session)
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
             authStore.removeSession(session.sessionId)
@@ -133,6 +158,7 @@ class DefaultAuthRepository(
             runCatching { homeTimelineLocalDataSource?.deleteAccount(session.sessionId) }
         }
         if (authStore.getPending()?.reauthorizeSessionId == session.sessionId) authStore.clearPending()
+        true
     }
 
     companion object {

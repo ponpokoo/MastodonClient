@@ -8,6 +8,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
+import io.github.ponpokoo.mastodonclient.domain.model.withAccountDisplay
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
@@ -19,6 +21,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
+
+/** Opaque cache generation, independent of whether account metadata could be persisted. */
+internal fun newProfileImageRevision(): Long = UUID.randomUUID().mostSignificantBits
 
 data class ProfileUiState(
     val profile: UserProfile? = null,
@@ -29,9 +35,13 @@ data class ProfileUiState(
     val profileSelectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     val isLoadingMoreProfile: Boolean = false,
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
+    val imageSessionKey: String? = null,
+    val imageRefreshRevision: Long = 0,
 )
 
-class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
+class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession,
+    authRepository: io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository? = null,
+) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
         state.withModeration(moderation, account)
@@ -39,11 +49,26 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     private var profileJob: Job? = null
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
     private var requested = false
-    init { observeSession() }
+    init {
+        observeSession()
+        if (authRepository != null) viewModelScope.launch {
+            authRepository.observeSessions().collect { sessions ->
+                val current = browsing.snapshot.value.account ?: return@collect
+                val updated = sessions.firstOrNull { current.hasSameCredentials(it) } ?: return@collect
+                _uiState.update { state ->
+                    val profile = state.profile ?: return@update state
+                    val author = profile.author.withAccountDisplay(updated)
+                    state.copy(profile = profile.copy(author = author), imageRefreshRevision =
+                        if (author.avatarRevision != profile.author.avatarRevision) newProfileImageRevision()
+                        else state.imageRefreshRevision)
+                }
+            }
+        }
+    }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         tabJobs.clear()
-        _uiState.value = ProfileUiState()
+        _uiState.value = ProfileUiState(imageSessionKey = UUID.randomUUID().toString())
         if (requested && snapshot.account != null) loadProfile()
     }
 
@@ -56,7 +81,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             _uiState.update { it.copy(isLoadingProfile = true, profileError = null) }
             timelineRepository.getProfileHeader(session)
                 .forSession(snapshot).onSuccess { profile ->
-                    _uiState.update { it.copy(profile = profile, isLoadingProfile = false) }
+                    _uiState.update { it.copy(profile = profile, isLoadingProfile = false,
+                        imageRefreshRevision = newProfileImageRevision()) }
                     loadTab(ProfileStatusTab.Posts, initialPosts = true)
                 }
                 .onFailure { error ->
@@ -88,6 +114,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                             customEmojis = updated.customEmojis,
                         ),
                         editMessage = "プロフィールを更新しました",
+                        imageRefreshRevision = newProfileImageRevision(),
                     ) }
                 },
                 onFailure = { error -> _uiState.update {
@@ -156,7 +183,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                         updateTab(tab) { it.copy(isRefreshing = false, error = error.message ?: "プロフィールを更新できませんでした") }
                         return@launch
                     }
-                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()))
+                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
+                    imageRefreshRevision = newProfileImageRevision())
                     .withTabs(state.profileTabs) }
             }
             val (result, pinnedResult) = coroutineScope {

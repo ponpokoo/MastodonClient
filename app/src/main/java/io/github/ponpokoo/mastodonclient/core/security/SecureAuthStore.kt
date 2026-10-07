@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.core.security
 
 import android.content.Context
+import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -8,6 +9,10 @@ import androidx.datastore.preferences.preferencesDataStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.ensureActive
+import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -43,9 +48,13 @@ private data class StoredSession(
     val avatarUrl: String,
     val accessToken: String,
     val scopes: String = "",
+    val avatarRevision: Long = 0,
 )
 
 interface AuthStore {
+    suspend fun moveSession(sessionId: String, beforeSessionId: String?) { throw UnsupportedOperationException() }
+    fun observeSessions(): kotlinx.coroutines.flow.Flow<List<AccountSession>> = kotlinx.coroutines.flow.emptyFlow()
+    suspend fun updateAccountDisplay(expected: AccountSession, author: StatusAuthor): AccountSession? = null
     suspend fun findApplication(instanceUrl: String): RegisteredApplication?
     suspend fun saveApplication(application: RegisteredApplication)
     suspend fun savePending(pending: PendingOAuth)
@@ -58,12 +67,34 @@ interface AuthStore {
     suspend fun removeSession(sessionId: String)
 }
 
-class SecureAuthStore(
-    context: Context,
-    private val cipher: KeystoreCipher = KeystoreCipher(),
+class SecureAuthStore internal constructor(
+    private val dataStore: androidx.datastore.core.DataStore<Preferences>,
+    private val encrypt: (String) -> String,
+    private val decrypt: (String) -> String,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : AuthStore {
-    private val dataStore = context.applicationContext.authDataStore
+    constructor(context: Context, cipher: KeystoreCipher = KeystoreCipher(), json: Json = Json { ignoreUnknownKeys = true }) :
+        this(context.applicationContext.authDataStore, cipher::encrypt, cipher::decrypt, json)
+
+    override fun observeSessions() = dataStore.data.map { sessionsFrom(it) }.distinctUntilChanged()
+
+    override suspend fun updateAccountDisplay(expected: AccountSession, author: StatusAuthor): AccountSession? {
+        var updated: AccountSession? = null
+        val caller = kotlinx.coroutines.currentCoroutineContext()
+        dataStore.edit { preferences ->
+            caller.ensureActive()
+            val sessions = sessionsFrom(preferences)
+            val current = sessions.firstOrNull { it.sessionId == expected.sessionId }
+            if (current?.hasSameCredentials(expected) == true && author.id == current.accountId) {
+                val replacement = current.copy(username = author.accountName, displayName = author.displayName,
+                    avatarUrl = author.avatarUrl, avatarRevision = current.avatarRevision + 1)
+                putSessions(preferences, sessions.map { if (it.sessionId == current.sessionId) replacement else it })
+                caller.ensureActive()
+                updated = replacement
+            }
+        }
+        return updated
+    }
 
     override suspend fun findApplication(instanceUrl: String): RegisteredApplication? =
         read<List<RegisteredApplication>>(REGISTRATIONS)
@@ -85,56 +116,94 @@ class SecureAuthStore(
     }
 
     override suspend fun saveSession(session: AccountSession) {
-        val sessions = getSessions().filterNot {
-            it.instanceUrl == session.instanceUrl && it.accountId == session.accountId
-        } + session
-        write(SESSIONS, json.encodeToString(sessions.map(AccountSession::toStored)))
-        dataStore.edit { it[ACTIVE_SESSION_ID] = session.sessionId }
-        dataStore.edit { it.remove(SESSION) }
+        dataStore.edit { preferences ->
+            val sessions = sessionsFrom(preferences).toMutableList()
+            val index = sessions.indexOfFirst {
+                it.instanceUrl == session.instanceUrl && it.accountId == session.accountId
+            }
+            if (index >= 0) sessions[index] = session else sessions.add(session)
+            putSessions(preferences, sessions)
+            preferences[ACTIVE_SESSION_ID] = session.sessionId
+        }
     }
 
     override suspend fun getSessions(): List<AccountSession> {
-        val stored = read<List<StoredSession>>(SESSIONS)?.map(StoredSession::toDomain).orEmpty()
-        if (stored.isNotEmpty()) return stored
-        val legacy = read<StoredSession>(SESSION)?.toDomain() ?: return emptyList()
-        write(SESSIONS, json.encodeToString(listOf(legacy.toStored())))
-        dataStore.edit { it[ACTIVE_SESSION_ID] = legacy.sessionId; it.remove(SESSION) }
-        return listOf(legacy)
+        return sessionsFrom(dataStore.data.first())
     }
 
     override suspend fun getSession(): AccountSession? {
-        val sessions = getSessions()
-        val activeId = dataStore.data.map { it[ACTIVE_SESSION_ID] }.first()
+        val preferences = dataStore.data.first()
+        val sessions = sessionsFrom(preferences)
+        val activeId = preferences[ACTIVE_SESSION_ID]
         return sessions.firstOrNull { it.sessionId == activeId } ?: sessions.firstOrNull()
     }
 
     override suspend fun setActiveSession(sessionId: String): AccountSession? {
-        val session = getSessions().firstOrNull { it.sessionId == sessionId } ?: return null
-        dataStore.edit { it[ACTIVE_SESSION_ID] = sessionId }
+        var session: AccountSession? = null
+        dataStore.edit { preferences ->
+            session = sessionsFrom(preferences).firstOrNull { it.sessionId == sessionId }
+            if (session != null) preferences[ACTIVE_SESSION_ID] = sessionId
+        }
         return session
     }
 
     override suspend fun removeSession(sessionId: String) {
-        val remaining = getSessions().filterNot { it.sessionId == sessionId }
-        if (remaining.isEmpty()) {
-            dataStore.edit {
-                it.remove(SESSIONS)
-                it.remove(ACTIVE_SESSION_ID)
-                it.remove(SESSION)
+        dataStore.edit { preferences ->
+            val remaining = sessionsFrom(preferences).filterNot { it.sessionId == sessionId }
+            if (remaining.isEmpty()) {
+                preferences.remove(SESSIONS)
+                preferences.remove(ACTIVE_SESSION_ID)
+                preferences.remove(SESSION)
+            } else {
+                putSessions(preferences, remaining)
+                if (preferences[ACTIVE_SESSION_ID] == sessionId) preferences[ACTIVE_SESSION_ID] = remaining.first().sessionId
             }
-        } else {
-            write(SESSIONS, json.encodeToString(remaining.map(AccountSession::toStored)))
-            dataStore.edit { if (it[ACTIVE_SESSION_ID] == sessionId) it[ACTIVE_SESSION_ID] = remaining.first().sessionId }
         }
+    }
+
+    override suspend fun moveSession(sessionId: String, beforeSessionId: String?) {
+        val caller = kotlinx.coroutines.currentCoroutineContext()
+        dataStore.edit { preferences ->
+            caller.ensureActive()
+            val sessions = sessionsFrom(preferences).toMutableList()
+            val index = sessions.indexOfFirst { it.sessionId == sessionId }
+            check(index >= 0) { "アカウントの登録が変更されました" }
+            if (beforeSessionId == sessionId) return@edit
+            check(beforeSessionId == null || sessions.any { it.sessionId == beforeSessionId }) { "移動先の登録が変更されました" }
+            val active = sessions.firstOrNull { it.sessionId == preferences[ACTIVE_SESSION_ID] } ?: sessions.first()
+            val moving = sessions.removeAt(index)
+            val destination = if (beforeSessionId == null) sessions.size else sessions.indexOfFirst { it.sessionId == beforeSessionId }
+            sessions.add(destination, moving)
+            if (destination != index) {
+                preferences[ACTIVE_SESSION_ID] = active.sessionId
+                putSessions(preferences, sessions)
+                caller.ensureActive()
+            }
+        }
+    }
+
+    private fun sessionsFrom(preferences: Preferences): List<AccountSession> {
+        fun <T> decode(key: Preferences.Key<String>, decode: (String) -> T): T? =
+            preferences[key]?.let { encrypted -> runCatching { decode(decrypt(encrypted)) }.getOrNull() }
+        val sessions = decode(SESSIONS) { json.decodeFromString<List<StoredSession>>(it) }
+        if (!sessions.isNullOrEmpty()) return sessions.map(StoredSession::toDomain)
+        return listOfNotNull(decode(SESSION) { json.decodeFromString<StoredSession>(it) }?.toDomain())
+    }
+
+    private fun putSessions(preferences: androidx.datastore.preferences.core.MutablePreferences, sessions: List<AccountSession>) {
+        preferences[SESSIONS] = encrypt(json.encodeToString(sessions.map(AccountSession::toStored)))
+        // Preserve selection when migrating a legacy record as part of a metadata write.
+        if (preferences[ACTIVE_SESSION_ID] == null) sessions.firstOrNull()?.let { preferences[ACTIVE_SESSION_ID] = it.sessionId }
+        preferences.remove(SESSION)
     }
 
     private suspend inline fun <reified T> read(key: Preferences.Key<String>): T? = runCatching {
         val encrypted = dataStore.data.map { it[key] }.first() ?: return null
-        json.decodeFromString<T>(cipher.decrypt(encrypted))
+        json.decodeFromString<T>(decrypt(encrypted))
     }.getOrNull()
 
     private suspend fun write(key: Preferences.Key<String>, plaintext: String) {
-        val encrypted = cipher.encrypt(plaintext)
+        val encrypted = encrypt(plaintext)
         dataStore.edit { it[key] = encrypted }
     }
 
@@ -156,6 +225,7 @@ private fun AccountSession.toStored() = StoredSession(
     avatarUrl = avatarUrl,
     accessToken = accessToken,
     scopes = scopes,
+    avatarRevision = avatarRevision,
 )
 
 private fun StoredSession.toDomain() = AccountSession(
@@ -167,4 +237,5 @@ private fun StoredSession.toDomain() = AccountSession(
     avatarUrl = avatarUrl,
     accessToken = accessToken,
     scopes = scopes,
+    avatarRevision = avatarRevision,
 )

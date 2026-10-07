@@ -7,6 +7,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.StreamingPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -28,6 +29,8 @@ data class MainSessionUiState(
     val preferencesLoaded: Boolean = false,
     val requiresLogin: Boolean = false,
     val errorMessage: String? = null,
+    val changingAccountOrder: Boolean = false,
+    val accountOrderError: String? = null,
 )
 
 /** Owns account selection and the single streaming connection, never tab content. */
@@ -45,6 +48,7 @@ class MainSessionViewModel(
     private var restoreJob: Job? = null
     private var accountChangeJob: Job? = null
     private var streamingJob: Job? = null
+    private var displayRefreshJob: Job? = null
     private var preferencesReady = preferencesStore == null
     @Volatile private var isForeground = true
     private var foregroundLifecycle: androidx.lifecycle.Lifecycle? = null
@@ -68,6 +72,16 @@ class MainSessionViewModel(
 
     init {
         recoverPush()
+        viewModelScope.launch {
+            authRepository.observeSessions().collect { sessions ->
+                mutableState.update { state ->
+                    val current = state.session
+                    val updated = sessions.firstOrNull { it.sessionId == current?.sessionId }
+                    state.copy(sessions = sessions,
+                        session = if (current?.hasSameCredentials(updated) == true) updated else current)
+                }
+            }
+        }
         preferencesStore?.let { store ->
             viewModelScope.launch {
                 store.preferences.collect { preferences ->
@@ -101,6 +115,7 @@ class MainSessionViewModel(
     fun switchAccount(sessionId: String) {
         if (uiState.value.session?.sessionId == sessionId || accountChangeJob?.isActive == true) return
         restoreJob?.cancel()
+        displayRefreshJob?.cancel()
         accountChangeJob = viewModelScope.launch {
             runCatchingCancellable {
                 val account = authRepository.switchSession(sessionId) ?: return@runCatchingCancellable
@@ -127,6 +142,7 @@ class MainSessionViewModel(
     fun logout() {
         if (accountChangeJob?.isActive == true) return
         restoreJob?.cancel()
+        displayRefreshJob?.cancel()
         streamingJob?.cancel()
         browsing.activate(null)
         accountChangeJob = viewModelScope.launch {
@@ -155,10 +171,43 @@ class MainSessionViewModel(
     }
 
     private fun activate(account: AccountSession?, sessions: List<AccountSession>) {
+        if (account != null && account.hasSameCredentials(browsing.snapshot.value.account)) {
+            mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = false, errorMessage = null) }
+            refreshAccountDisplay(account)
+            return
+        }
         streamingJob?.cancel()
         browsing.activate(account)
         mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = account == null, errorMessage = null) }
         startStreaming()
+        refreshAccountDisplay(account)
+    }
+
+    fun moveAccount(sessionId: String, beforeSessionId: String?) {
+        if (uiState.value.changingAccountOrder) return
+        mutableState.update { it.copy(changingAccountOrder = true, accountOrderError = null) }
+        viewModelScope.launch {
+            try {
+                runCatchingCancellable {
+                    authRepository.moveAccount(sessionId, beforeSessionId).getOrThrow()
+                    val sessions = authRepository.getSessions()
+                    mutableState.update { it.copy(sessions = sessions) }
+                }.onFailure {
+                    mutableState.update { it.copy(accountOrderError = "並び順を保存できませんでした。再試行してください。") }
+                }
+            } finally {
+                mutableState.update { it.copy(changingAccountOrder = false) }
+            }
+        }
+    }
+
+    private fun refreshAccountDisplay(account: AccountSession?) {
+        displayRefreshJob?.cancel()
+        if (account == null) return
+        displayRefreshJob = viewModelScope.launch {
+            // Saved information is already visible. Failure leaves it usable, including offline.
+            runCatchingCancellable { authRepository.refreshAccountDisplay(account) }
+        }
     }
 
     private fun startStreaming() {

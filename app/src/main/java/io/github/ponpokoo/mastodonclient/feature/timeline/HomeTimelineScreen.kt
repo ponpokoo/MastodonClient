@@ -607,6 +607,7 @@ fun HomeTimelineScreen(
                     onVotePoll = actionsViewModel::votePoll,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
+                    onMoreClick = { menuStatus = it },
                     preferences = mainState.preferences,
                 )
                 MainDestination.Notifications -> NotificationsContent(
@@ -679,12 +680,14 @@ fun HomeTimelineScreen(
                     onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
                     onHeaderClick = {
                         profileState.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(listOf(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像")), 0)
+                            onMediaClick(listOf(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像",
+                                cacheRevision = profileState.imageRefreshRevision)), 0)
                         }
                     },
                     onAvatarClick = {
                         profileState.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像")), 0)
+                            onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像",
+                                cacheRevision = profileState.imageRefreshRevision)), 0)
                         }
                     },
                     onEditProfile = { editProfileOpen = true },
@@ -945,7 +948,7 @@ internal fun ListPickerSheet(
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun TimelineTopBar(
+internal fun TimelineTopBar(
     selectedFeed: TimelineFeed,
     onFeedSelected: (TimelineFeed) -> Unit,
     onAnnouncements: () -> Unit,
@@ -997,8 +1000,11 @@ private fun TimelineTopBar(
         },
         actions = {
             IconButton(onClick = { accountDialogOpen = true }) {
-                AsyncImage(
-                    model = activeSession?.avatarUrl,
+                io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
+                    model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(activeSession),
+                    identity = listOf(activeSession?.sessionId, activeSession?.instanceUrl,
+                        activeSession?.accountId, "timeline-account-switcher"),
+                    retainPreviousImage = true,
                     contentDescription = "アカウントを切り替える",
                     modifier = Modifier.size(30.dp).clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface),

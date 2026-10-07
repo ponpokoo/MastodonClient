@@ -119,6 +119,8 @@ fun AccountProfileScreen(
             instanceUrl = state.instanceUrl,
             state = ProfileUiState(
                 profile = profile,
+                imageSessionKey = state.imageSessionKey,
+                imageRefreshRevision = state.imageRefreshRevision,
                 isLoadingProfile = state.isLoading,
                 isRefreshingProfile = state.isRefreshing,
                 profileError = state.errorMessage,
@@ -140,8 +142,8 @@ fun AccountProfileScreen(
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
-            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像")), 0) } },
-            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("avatar", "image", it, it, "プロフィール画像")), 0) } },
+            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像", cacheRevision = state.imageRefreshRevision)), 0) } },
+            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("avatar", "image", it, it, "プロフィール画像", cacheRevision = if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision)), 0) } },
             onEditProfile = { editOpen = true }, onToggleFollow = {
                 if (state.relationship?.following == true) confirmAction = "unfollow"
                 else viewModel.toggleFollow()

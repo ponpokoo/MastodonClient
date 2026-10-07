@@ -30,6 +30,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
     private val requests = SupervisorJob(viewModelScope.coroutineContext[Job])
     private val scope = CoroutineScope(viewModelScope.coroutineContext + requests)
     private var retryAction: (() -> Unit)? = null
+    private var sessionsJob: Job? = null
     private sealed interface Undo {
         data class Word(val word: String, val index: Int, val added: Boolean) : Undo
         data class Account(val kind: ModerationListKind, val entry: ModerationAccount, val index: Int) : Undo
@@ -42,12 +43,27 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         }
     }
     private fun loadSessions() {
-        viewModelScope.launch {
+        sessionsJob?.cancel()
+        sessionsJob = viewModelScope.launch {
             runCatchingCancellable {
                 val sessions = auth.getSessions()
                 val selected = auth.restoreSession()?.takeIf { active -> sessions.any { it.sessionId == active.sessionId } } ?: sessions.firstOrNull()
                 mutable.update { it.copy(sessions = sessions) }
                 selected?.let { selectAccount(it.sessionId) }
+                auth.observeSessions().collect { updated ->
+                    val previous = state.value.selected
+                    val current = updated.firstOrNull { it.sessionId == previous?.sessionId }
+                    mutable.update { it.copy(sessions = updated) }
+                    if (current != null && current.hasSameCredentials(previous)) {
+                        mutable.update { it.copy(selected = current) }
+                    } else if (current != null || updated.isNotEmpty()) {
+                        selectAccount((current ?: updated.first()).sessionId)
+                    } else if (previous != null) {
+                        generation++; requests.cancelChildren(); undo = null; retryAction = null
+                        mutable.update { it.copy(selected = null, lists = emptyMap(), words = emptyList(),
+                            busy = false, error = null, notice = null) }
+                    }
+                }
             }.onFailure {
                 retryAction = ::loadSessions
                 mutable.update { it.copy(error = "アカウントを読み込めませんでした") }
@@ -56,7 +72,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
     }
     fun selectAccount(id: String) {
         val account = state.value.sessions.firstOrNull { it.sessionId == id } ?: return
-        if (account == state.value.selected) return
+        if (account.hasSameCredentials(state.value.selected)) return
         generation++; requests.cancelChildren(); undo = null; retryAction = null
         mutable.update { it.copy(selected = account, lists = emptyMap(), words = wordRepository.words.value[id].orEmpty(), busy = false, error = null, notice = null) }
         kind(state.value.page)?.let { load(it) }
@@ -152,7 +168,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
     fun consumeNotice(id: Long) { if (state.value.notice?.id == id) { undo = null; mutable.update { it.copy(notice = null) } } }
     private suspend fun ensureCurrent(session: AccountSession) {
         currentCoroutineContext().ensureActive()
-        if (state.value.selected != session) throw CancellationException("Management account changed")
+        if (!session.hasSameCredentials(state.value.selected)) throw CancellationException("Management account changed")
     }
     private fun action(onRetry: () -> Unit, operation: suspend (AccountSession) -> Unit) {
         val session = state.value.selected ?: return

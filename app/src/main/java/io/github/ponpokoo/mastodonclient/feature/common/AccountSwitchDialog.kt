@@ -83,7 +83,7 @@ fun AccountSwitchDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 AsyncImage(
-                                    model = session.avatarUrl,
+                                    model = accountAvatarModel(session),
                                     contentDescription = null,
                                     modifier = Modifier.size(42.dp).clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.surface),

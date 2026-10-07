@@ -18,6 +18,7 @@
 | 0008 | [通知欄のワードミュートとAndroid通知の適用範囲](0008-word-mutes-in-notification-lists.md) | accepted |
 | 0009 | [小規模Relayの実装・検証先としてWorkersとD1を継続利用](0009-relay-cloudflare-deployment.md) | accepted（配送保存方針は0013で置換、Free公開可否は未判定） |
 | 0010 | [Relay登録v2で購読ごとのVAPID鍵を確定](0010-relay-subscription-key-binding.md) | accepted（本番互換更新済み、全購読移行は未完了） |
+| 0011 | [登録済み自アカウントの表示情報と認証セッションを分離](0011-account-display-synchronization.md) | accepted |
 | 0012 | [本文を保存しないハイブリッドRelayを隔離候補として実装](0012-isolated-hybrid-relay-candidate.md) | superseded by 0013 |
 | 0013 | [本文を保存しないハイブリッドPush配送を採用](0013-adopt-hybrid-push-delivery.md) | accepted（移行条件は0015で置換、本番切替済み） |
 | 0014 | [AndroidのハイブリッドPushを永続世代と差分位置で補完](0014-android-hybrid-push-sync.md) | accepted（小通知の実FCM測定済み、大通知・欠落回復・対応APK配布は未完了） |

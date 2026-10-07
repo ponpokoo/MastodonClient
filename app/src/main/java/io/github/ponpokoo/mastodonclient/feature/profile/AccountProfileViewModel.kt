@@ -33,6 +33,8 @@ data class AccountProfileUiState(
     val errorMessage: String? = null,
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
     val instanceUrl: String? = null,
+    val imageSessionKey: String? = null,
+    val imageRefreshRevision: Long = 0,
 )
 
 class AccountProfileViewModel(
@@ -49,7 +51,7 @@ class AccountProfileViewModel(
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
-        session = { session }, context = { session }, isCurrent = { authRepository.restoreSession() == it },
+        session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
         message = { message -> _uiState.update { it.copy(message = message) } },
         updated = { target, relationship -> if (target == accountId) _uiState.update { it.copy(relationship = relationship) } })
     val moderationMenuState = moderationMenu.state
@@ -57,6 +59,19 @@ class AccountProfileViewModel(
     fun setProfileMuted(enabled: Boolean) = moderationMenu.mute(accountId, enabled)
     fun setProfileBlocked(enabled: Boolean) = moderationMenu.block(accountId, enabled)
     init {
+        viewModelScope.launch {
+            authRepository.observeSessions().collect { sessions ->
+                val current = session ?: return@collect
+                val updated = sessions.firstOrNull { current.hasSameCredentials(it) } ?: return@collect
+                _uiState.update { state ->
+                    val profile = state.profile ?: return@update state
+                    val author = profile.author.withAccountDisplay(updated)
+                    state.copy(profile = profile.copy(author = author), imageRefreshRevision =
+                        if (author.avatarRevision != profile.author.avatarRevision) newProfileImageRevision()
+                        else state.imageRefreshRevision)
+                }
+            }
+        }
         viewModelScope.launch {
             timelineRepository.moderation.collect { moderation ->
                 val current = session ?: return@collect
@@ -144,7 +159,8 @@ class AccountProfileViewModel(
                     updateTab(tab) { it.copy(isRefreshing = false, error = error.message ?: "プロフィールを更新できませんでした") }
                     return@launch
                 }
-                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()))
+                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
+                    imageRefreshRevision = if (header.isOwnProfile) newProfileImageRevision() else state.imageRefreshRevision)
                     .withTabs(state.profileTabs) }
             }
             val (result, pinnedResult) = coroutineScope {
@@ -177,8 +193,14 @@ class AccountProfileViewModel(
     fun updateProfile(request: ProfileEditRequest) {
         val current = session ?: return
         _uiState.update { it.copy(isMutating = true) }
-        viewModelScope.launch { timelineRepository.updateProfile(current, request).fold(
-            { updated -> _uiState.update { old -> old.copy(profile = old.profile?.copy(author = updated.author, noteHtml = updated.noteHtml, locked = updated.locked, fields = updated.fields), isMutating = false, message = "プロフィールを更新しました") } }, ::showError,
+        viewModelScope.launch {
+            val result = timelineRepository.updateProfile(current, request)
+            currentCoroutineContext().ensureActive()
+            result.fold(
+            { updated -> _uiState.update { old -> old.copy(profile = old.profile?.copy(author = updated.author,
+                headerUrl = updated.headerUrl, noteHtml = updated.noteHtml, locked = updated.locked,
+                fields = updated.fields, customEmojis = updated.customEmojis),
+                imageRefreshRevision = newProfileImageRevision(), isMutating = false, message = "プロフィールを更新しました") } }, ::showError,
         ) }
     }
     fun clearMessage() = _uiState.update { it.copy(message = null, errorMessage = null) }
@@ -265,9 +287,13 @@ class AccountProfileViewModel(
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession() ?: run { _uiState.value = AccountProfileUiState(isLoading = false, errorMessage = "ログインが必要です"); return@launch }
         session = current
-        _uiState.update { it.copy(currentAccountId = current.accountId) }
-        timelineRepository.getProfileHeader(current, accountId).fold({ profile ->
-            _uiState.update { it.copy(profile = profile, instanceUrl = current.instanceUrl, isLoading = false, isLoadingMore = true) }
+        _uiState.update { it.copy(currentAccountId = current.accountId,
+            imageSessionKey = java.util.UUID.randomUUID().toString()) }
+        val result = timelineRepository.getProfileHeader(current, accountId)
+        currentCoroutineContext().ensureActive()
+        result.fold({ profile ->
+            _uiState.update { it.copy(profile = profile, instanceUrl = current.instanceUrl, isLoading = false,
+                isLoadingMore = true, imageRefreshRevision = if (profile.isOwnProfile) newProfileImageRevision() else 0) }
             if (!profile.isOwnProfile) viewModelScope.launch {
                 timelineRepository.getRelationship(current, accountId).onSuccess { rel ->
                     moderationMenu.remember(accountId, rel)

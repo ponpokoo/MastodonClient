@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
@@ -51,7 +52,7 @@ class StatusDetailViewModel(
     private var session: AccountSession? = null
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
-        session = { session }, context = { session }, isCurrent = { authRepository.restoreSession() == it },
+        session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
         message = { message -> _uiState.update { it.copy(actionMessage = message) } })
     val moderationMenuState = moderationMenu.state
     fun loadModerationMenu(accountId: String?) = moderationMenu.load(accountId)

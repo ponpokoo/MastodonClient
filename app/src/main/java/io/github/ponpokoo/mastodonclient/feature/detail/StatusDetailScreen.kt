@@ -208,7 +208,7 @@ fun StatusDetailScreen(
                 }
                 state.detail?.descendants?.let { replies ->
                     if (replies.isNotEmpty()) {
-                        item { Text("返信", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
+                        item { Text("返信", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
                         items(replies, key = { it.timelineId }) { reply ->
                             StatusCard(
                                 reply,

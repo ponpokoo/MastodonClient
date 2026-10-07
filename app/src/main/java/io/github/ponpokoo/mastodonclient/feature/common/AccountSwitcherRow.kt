@@ -20,7 +20,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 fun AccountSwitcherRow(session: AccountSession?, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     Row(modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = session?.avatarUrl, contentDescription = null,
+        AsyncImage(model = accountAvatarModel(session), contentDescription = null,
             modifier = Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {

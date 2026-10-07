@@ -12,6 +12,26 @@ import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
+    @Test fun sharedAccountOrderKeepsManagementSelectionAndPendingPage() = runTest(dispatcher) {
+        val sessions = MutableStateFlow(listOf(testAccount, secondAccount))
+        val liveAuth = object : AuthRepository by auth {
+            override fun observeSessions() = sessions
+            override suspend fun getSessions() = sessions.value
+        }
+        val repository = Repository()
+        val gate = CompletableDeferred<Result<ModerationAccountsPage>>()
+        repository.request = { _, _ -> gate.await() }
+        val model = own(ModerationManagementViewModel(repository, liveAuth, Words()))
+        runCurrent(); model.selectAccount(secondAccount.sessionId); model.open(ModerationPage.Mutes); runCurrent()
+        sessions.value = listOf(secondAccount, testAccount)
+        runCurrent()
+        assertEquals(sessions.value, model.state.value.sessions)
+        assertEquals(secondAccount, model.state.value.selected)
+        assertTrue(model.state.value.lists.getValue(ModerationListKind.Mutes).loading)
+        gate.complete(Result.success(ModerationAccountsPage(listOf(entry), null))); runCurrent()
+        assertEquals(listOf(entry), model.state.value.lists.getValue(ModerationListKind.Mutes).accounts)
+        assertEquals(listOf(secondAccount.sessionId to null), repository.requests)
+    }
     private val entry = ModerationAccount(testStatus().author, AccountRelationship(muting = true, blocking = true, mutingNotifications = false), "2026-10-05T00:01:00Z")
     private val auth = object : AuthRepository {
         override suspend fun restoreSession() = testAccount

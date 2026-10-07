@@ -69,6 +69,7 @@ internal fun SearchContent(
     onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
+    onMoreClick: (TimelineStatus) -> Unit,
     preferences: AppPreferences = AppPreferences(),
     isVisible: Boolean = true,
     exploreState: io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState = io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState(),
@@ -139,6 +140,7 @@ internal fun SearchContent(
                             SearchTarget.Posts -> items(results.statuses, key = { it.timelineId }) { status -> SocialStatus(
                                 status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,
                                 onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
+                                onMoreClick = onMoreClick,
                             ) }
                         }
                         if (results.count(target) == 0 && !tab.isSearching) item { MessageContent("${target.searchLabel()}が見つかりませんでした") }
@@ -164,7 +166,8 @@ internal fun SearchContent(
         else ExploreContent(exploreState, onSelectExploreFeed, onRefreshExplore, onLoadMoreExplore, onRetryExplore,
             onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxWidth().weight(1f), post = { status ->
                 SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,
-                    onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences)
+                    onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
+                    onMoreClick = onMoreClick)
             }, onFindTags = {
                 onSelectTarget(SearchTarget.Hashtags)
                 onEnterSearch()

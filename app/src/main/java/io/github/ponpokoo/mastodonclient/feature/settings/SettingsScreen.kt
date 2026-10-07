@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -80,12 +81,16 @@ internal fun SettingsPageContent(
     activeSession: AccountSession?,
     sessions: List<AccountSession>,
     onBack: () -> Unit,
-    onLogout: () -> Unit,
+    onLogout: (AccountSession) -> Unit,
     onAddAccount: () -> Unit,
     pushSettings: PushSettingsViewModel? = null,
+    onMoveAccount: (String, String?) -> Unit = { _, _ -> },
+    changingAccountOrder: Boolean = false,
+    accountOrderError: String? = null,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
     val updateDisplay = { value: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences ->
         scope.launch { store.setTimelineDisplay(value) }
     }
@@ -93,6 +98,15 @@ internal fun SettingsPageContent(
     val updateAccount = { value: AccountPreferences ->
         activeSession?.let { session -> scope.launch { store.setAccountPreferences(session.sessionId, value) } }
     }
+    val statusOrder = rememberActionReorderState(preferences.timelineDisplay.actionOrder) {
+        updateDisplay(preferences.timelineDisplay.copy(actionOrder = it))
+    }
+    val composerOrder = rememberActionReorderState(preferences.composerActionOrder) {
+        scope.launch { store.setComposerActionOrder(it) }
+    }
+    val accountOrder = rememberDragAndDropListState(sessions, AccountSession::sessionId,
+        onMove = { session, before -> onMoveAccount(session.sessionId, before?.sessionId) },
+        enabled = !changingAccountOrder, saveFailed = accountOrderError != null)
 
     Scaffold(
         topBar = {
@@ -106,7 +120,15 @@ internal fun SettingsPageContent(
             )
         },
     ) { padding ->
-        LazyColumn(contentPadding = padding, modifier = Modifier.testTag("settings_screen")) {
+        val reorderableState = rememberSettingsReorderableState(listState) { from, to ->
+            when (page) {
+                SettingsPage.Timeline -> statusOrder.move(from, to)
+                SettingsPage.Composer -> composerOrder.move(from, to)
+                SettingsPage.Accounts -> accountOrder.move(from, to)
+                else -> Unit
+            }
+        }
+        LazyColumn(state = listState, modifier = Modifier.padding(padding).testTag("settings_screen")) {
             if (page == SettingsPage.Appearance) {
                 item { SectionTitle("外観") }
                 item {
@@ -160,24 +182,21 @@ internal fun SettingsPageContent(
                     }
                 }
                 item { Text("投稿下部アイコン", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
-                item {
-                    ReorderActionList(
-                        order = preferences.timelineDisplay.actionOrder,
-                        label = { it.label() }, icon = { it.settingsIcon() },
-                        onReorder = { updateDisplay(preferences.timelineDisplay.copy(actionOrder = it)) },
-                        leading = { action ->
-                            Checkbox(
-                                checked = action !in preferences.timelineDisplay.hiddenActions,
-                                onCheckedChange = { visible ->
-                                    val hidden = preferences.timelineDisplay.hiddenActions.toMutableSet().apply {
-                                        if (visible) remove(action) else add(action)
-                                    }
-                                    updateDisplay(preferences.timelineDisplay.copy(hiddenActions = hidden))
-                                },
-                            )
-                        },
-                    )
-                }
+                reorderActionItems(
+                    state = statusOrder, reorderableState = reorderableState,
+                    label = { it.label() }, icon = { it.settingsIcon() },
+                    leading = { action ->
+                        Checkbox(
+                            checked = action !in preferences.timelineDisplay.hiddenActions,
+                            onCheckedChange = { visible ->
+                                val hidden = preferences.timelineDisplay.hiddenActions.toMutableSet().apply {
+                                    if (visible) remove(action) else add(action)
+                                }
+                                updateDisplay(preferences.timelineDisplay.copy(hiddenActions = hidden))
+                            },
+                        )
+                    },
+                )
                 item {
                     TextButton(
                         onClick = { updateDisplay(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences()) },
@@ -230,7 +249,7 @@ internal fun SettingsPageContent(
                                     activeSession?.let { "@${it.username} · ${accountPreferences.streaming.displayLabel()}" }
                                         ?: "閲覧中のアカウントがありません",
                                 )
-                                Text("タイムラインと通知をリアルタイムで更新します。Pushとは独立して動作します。")
+                                Text("タイムラインと通知をリアルタイムで更新します。Pushとは独立しています。")
                             }
                         },
                         trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null) },
@@ -269,7 +288,7 @@ internal fun SettingsPageContent(
                 }
                 item {
                     Text(
-                        "アプリを表示中に、上の方法で届いた新着をAndroid通知にも表示します。オフでも通知一覧の更新には影響しません。",
+                        "アプリを表示中に届いた新着をAndroid通知にも表示します。オフでも通知一覧の更新には影響しません。",
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -299,24 +318,21 @@ internal fun SettingsPageContent(
                     }
                 }
                 item { Text("投稿画面のボタン順", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
-                item {
-                    ReorderActionList(
-                        order = preferences.composerActionOrder,
-                        label = { it.label() }, icon = { it.settingsIcon() },
-                        onReorder = { scope.launch { store.setComposerActionOrder(it) } },
-                        leading = { action ->
-                            Checkbox(
-                                checked = action !in preferences.hiddenComposerActions,
-                                onCheckedChange = { visible ->
-                                    val hidden = preferences.hiddenComposerActions.toMutableSet().apply {
-                                        if (visible) remove(action) else add(action)
-                                    }
-                                    scope.launch { store.setHiddenComposerActions(hidden) }
-                                },
-                            )
-                        },
-                    )
-                }
+                reorderActionItems(
+                    state = composerOrder, reorderableState = reorderableState,
+                    label = { it.label() }, icon = { it.settingsIcon() },
+                    leading = { action ->
+                        Checkbox(
+                            checked = action !in preferences.hiddenComposerActions,
+                            onCheckedChange = { visible ->
+                                val hidden = preferences.hiddenComposerActions.toMutableSet().apply {
+                                    if (visible) remove(action) else add(action)
+                                }
+                                scope.launch { store.setHiddenComposerActions(hidden) }
+                            },
+                        )
+                    },
+                )
                 item {
                     SwitchRow("リンクをアプリ内で開く", preferences.openLinksInApp) {
                         scope.launch { store.setOpenLinksInApp(it) }
@@ -325,34 +341,20 @@ internal fun SettingsPageContent(
             }
             if (page == SettingsPage.Accounts) {
                 item { SectionTitle("アカウント管理") }
+                item { Text("アイコンをドラッグして並びを変更できます。アカウント切替や投稿画面にも反映されます。",
+                    Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium) }
+                accountOrderError?.let { message -> item {
+                    Text(message, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error)
+                } }
                 if (pushSettings != null) item {
                     val error by pushSettings.error.collectAsStateWithLifecycle()
                     error?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error) }
                 }
-                items(sessions, key = AccountSession::sessionId) { session ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = session.avatarUrl,
-                            contentDescription = "${session.displayName.ifBlank { session.username }}のアイコン",
-                            modifier = Modifier.size(46.dp).clip(CircleShape),
-                            contentScale = ContentScale.Crop,
-                        )
-                        Spacer(Modifier.padding(horizontal = 6.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(session.displayName.ifBlank { session.username }, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "@${session.username} · ${session.instanceUrl.removePrefix("https://")}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (session.sessionId == activeSession?.sessionId) {
-                                Text("現在のアカウント", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
+                dragAndDropItems(state = accountOrder, reorderableState = reorderableState,
+                    label = { it.displayName.ifBlank { it.username } },
+                    rowModifier = { Modifier.testTag("registered_account_${it.sessionId}").padding(vertical = 10.dp) },
+                ) { session ->
+                    RegisteredAccountRow(session, active = session.sessionId == activeSession?.sessionId)
                 }
                 item {
                     TextButton(onClick = onAddAccount, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -362,13 +364,13 @@ internal fun SettingsPageContent(
                     }
                 }
                 item {
-                    TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                        Text("現在のアカウントからログアウト", color = MaterialTheme.colorScheme.error)
-                    }
+                    val busy = pushSettings?.busy?.collectAsStateWithLifecycle()?.value ?: false
+                    io.github.ponpokoo.mastodonclient.feature.common.AccountRemovalButton(activeSession, onLogout,
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp), enabled = !busy)
                 }
             }
             if (page == SettingsPage.Root) {
-                items(SettingsPage.entries.filter { it != SettingsPage.Root }) { destination ->
+                items(SettingsPage.entries.filter { it != SettingsPage.Root && it != SettingsPage.Licenses }) { destination ->
                     androidx.compose.material3.ListItem(
                         headlineContent = { Text(destination.title) },
                         supportingContent = { Text(destination.description) },
@@ -386,6 +388,13 @@ internal fun SettingsPageContent(
                     androidx.compose.material3.ListItem(
                         headlineContent = { Text("Nagisa") },
                         supportingContent = { Text("バージョン " + maintenance.versionName + " (" + maintenance.versionCode + ")") },
+                    )
+                }
+                item {
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text("ライセンス") },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
+                        modifier = Modifier.clickable { onPage(SettingsPage.Licenses) }.testTag("settings_licenses"),
                     )
                 }
             }
@@ -542,9 +551,9 @@ private val previewStatus = TimelineStatus(
     timelineId = "settings-preview",
     statusId = "settings-preview",
     createdAt = "2026-09-09T00:00:00Z",
-    author = StatusAuthor("preview", "表示プレビュー", "preview@example.social", ""),
+    author = StatusAuthor("preview", "Nagisa", "preview@example.social", ""),
     boostedBy = null,
-    contentHtml = "<p>フォントサイズ、行間、アイコンの並びをここで確認できます。</p>",
+    contentHtml = "<p>フォントサイズ、行間、アイコンの並びのプレビューです。</p>",
     spoilerText = "",
     sensitive = false,
     visibility = "public",
