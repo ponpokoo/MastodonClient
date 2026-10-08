@@ -12,8 +12,8 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performClick
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.feature.settings.TimelineDisplayPreview
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionListOpener
+import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
+import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

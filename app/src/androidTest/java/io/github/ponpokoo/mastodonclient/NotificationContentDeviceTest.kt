@@ -9,8 +9,8 @@ import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationFilter
-import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationsContent
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals

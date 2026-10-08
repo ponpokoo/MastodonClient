@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
+import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -23,17 +25,18 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import java.io.File
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.domain.model.*
-import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
-import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
-import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
+import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
+import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+
+private enum class ProfileAccountAction { Unfollow, Mute, Unmute, Block, Unblock }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,13 +61,14 @@ fun AccountProfileScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val moderationMenu by viewModel.moderationMenuState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var confirmAction by remember { mutableStateOf<String?>(null) }
+    var confirmAction by remember { mutableStateOf<ProfileAccountAction?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
-    var editOpen by remember { mutableStateOf(false) }
+    val imageEdit by viewModel.profileImageEditState.collectAsStateWithLifecycle()
+    DisposableEffect(viewModel) { onDispose { viewModel.dismissProfileEdit() } }
     var initialEditorHandled by rememberSaveable { mutableStateOf(false) }
     var qrOpen by remember { mutableStateOf(false) }
     var statusMenu by remember { mutableStateOf<TimelineStatus?>(null) }
-    var statusConfirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var statusConfirmation by remember { mutableStateOf<StatusConfirmation?>(null) }
     var statusReport by remember { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     var profileListOpen by remember { mutableStateOf(false) }
@@ -78,7 +82,7 @@ fun AccountProfileScreen(
 
     LaunchedEffect(openEditor, profile?.author?.id) {
         if (openEditor && profile != null && !initialEditorHandled) {
-            editOpen = true
+            viewModel.beginProfileEdit()
             initialEditorHandled = true
         }
     }
@@ -144,8 +148,8 @@ fun AccountProfileScreen(
             onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像", cacheRevision = state.imageRefreshRevision)), 0) } },
             onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("avatar", "image", it, it, "プロフィール画像", cacheRevision = if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision)), 0) } },
-            onEditProfile = { editOpen = true }, onToggleFollow = {
-                if (state.relationship?.following == true) confirmAction = "unfollow"
+            onEditProfile = { viewModel.beginProfileEdit() }, onToggleFollow = {
+                if (state.relationship?.following == true) confirmAction = ProfileAccountAction.Unfollow
                 else viewModel.toggleFollow()
             },
             onOpenLists = onOpenLists,
@@ -168,8 +172,8 @@ fun AccountProfileScreen(
             moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
             moderationError = moderationMenu.error,
             onRetryModeration = { viewModel.loadModerationMenu() },
-            onMuteProfile = { confirmAction = if (moderationMenu.relationship?.muting == true) "unmute" else "mute" },
-            onBlockProfile = { confirmAction = if (moderationMenu.relationship?.blocking == true) "unblock" else "block" },
+            onMuteProfile = { confirmAction = if (moderationMenu.relationship?.muting == true) ProfileAccountAction.Unmute else ProfileAccountAction.Mute },
+            onBlockProfile = { confirmAction = if (moderationMenu.relationship?.blocking == true) ProfileAccountAction.Unblock else ProfileAccountAction.Block },
             onReportProfile = { reportOpen = true },
             isProfileMuted = moderationMenu.relationship?.muting == true,
             isProfileBlocked = moderationMenu.relationship?.blocking == true,
@@ -195,25 +199,24 @@ fun AccountProfileScreen(
             },
             onPin = { statusMenu = null; viewModel.setPinned(status) },
             onEdit = { statusMenu = null; onEditStatus(status.statusId) },
-            onDelete = { statusMenu = null; statusConfirmation = "delete" to status },
+            onDelete = { statusMenu = null; statusConfirmation = StatusConfirmation(StatusConfirmationAction.Delete, status) },
             onAddToList = { statusMenu = null; listStatus = status; viewModel.loadLists() },
-            onUnfollow = { statusMenu = null; statusConfirmation = "unfollow" to status },
-            onMute = { statusMenu = null; statusConfirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to status },
-            onBlock = { statusMenu = null; statusConfirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to status },
+            onUnfollow = { statusMenu = null; statusConfirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, status) },
+            onMute = { statusMenu = null; statusConfirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), status) },
+            onBlock = { statusMenu = null; statusConfirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), status) },
             onReport = { statusMenu = null; statusReport = status },
         )
     }
     statusConfirmation?.let { (action, status) ->
         ConfirmStatusActionDialog(action, status, { statusConfirmation = null }) {
             when (action) {
-                "delete" -> viewModel.deleteStatus(status)
-                "unfollow" -> viewModel.unfollowStatus(status)
-                "mute" -> viewModel.muteStatus(status)
-                "unmute" -> viewModel.muteStatus(status, false)
-                "block" -> viewModel.blockStatus(status)
-                "unblock" -> viewModel.blockStatus(status, false)
+                StatusConfirmationAction.Delete -> viewModel.deleteStatus(status)
+                StatusConfirmationAction.Unfollow -> viewModel.unfollowStatus(status)
+                StatusConfirmationAction.Mute -> viewModel.muteStatus(status)
+                StatusConfirmationAction.Unmute -> viewModel.muteStatus(status, false)
+                StatusConfirmationAction.Block -> viewModel.blockStatus(status)
+                StatusConfirmationAction.Unblock -> viewModel.blockStatus(status, false)
             }
-            statusConfirmation = null
         }
     }
     statusReport?.let { status ->
@@ -237,33 +240,34 @@ fun AccountProfileScreen(
 
     confirmAction?.let { action -> AlertDialog(
         onDismissRequest = { confirmAction = null }, title = { Text(when (action) {
-            "mute" -> "ミュート"
-            "unmute" -> "ミュート解除"
-            "unblock" -> "ブロック解除"
-            "unfollow" -> "フォローを解除しますか？"
-            else -> "ブロック"
+            ProfileAccountAction.Mute -> "ミュート"
+            ProfileAccountAction.Unmute -> "ミュート解除"
+            ProfileAccountAction.Unblock -> "ブロック解除"
+            ProfileAccountAction.Unfollow -> "フォローを解除しますか？"
+            ProfileAccountAction.Block -> "ブロック"
         }) },
         text = { Text("${profile?.author?.displayName.orEmpty()}さん" + when (action) {
-            "unfollow" -> "のフォローを解除しますか？"
-            "mute" -> "をミュートしますか？"
-            "unmute" -> "のミュートを解除しますか？"
-            "unblock" -> "のブロックを解除しますか？"
-            else -> "をブロックしますか？"
+            ProfileAccountAction.Unfollow -> "のフォローを解除しますか？"
+            ProfileAccountAction.Mute -> "をミュートしますか？"
+            ProfileAccountAction.Unmute -> "のミュートを解除しますか？"
+            ProfileAccountAction.Unblock -> "のブロックを解除しますか？"
+            ProfileAccountAction.Block -> "をブロックしますか？"
         }) },
         confirmButton = { TextButton(onClick = {
             when (action) {
-                "mute" -> viewModel.setProfileMuted(true)
-                "unmute" -> viewModel.setProfileMuted(false)
-                "unblock" -> viewModel.setProfileBlocked(false)
-                "unfollow" -> viewModel.toggleFollow()
-                else -> viewModel.setProfileBlocked(true)
+                ProfileAccountAction.Mute -> viewModel.setProfileMuted(true)
+                ProfileAccountAction.Unmute -> viewModel.setProfileMuted(false)
+                ProfileAccountAction.Unblock -> viewModel.setProfileBlocked(false)
+                ProfileAccountAction.Unfollow -> viewModel.toggleFollow()
+                ProfileAccountAction.Block -> viewModel.setProfileBlocked(true)
             }
             confirmAction = null
-        }) { Text(if (action == "unfollow") "フォロー解除" else "実行") } },
+        }) { Text(if (action == ProfileAccountAction.Unfollow) "フォロー解除" else "実行") } },
         dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("キャンセル") } },
     ) }
     if (reportOpen) ReportDialog(onDismiss = { reportOpen = false }, onSubmit = { text, forward -> viewModel.report(text, forward); reportOpen = false })
-    if (editOpen && profile != null) EditProfileDialog(profile, { editOpen = false }) { viewModel.updateProfile(it); editOpen = false }
+    if (imageEdit.isOpen && profile != null) EditProfileDialog(profile, imageEdit,
+        viewModel::selectProfileImage, viewModel::dismissProfileEdit, viewModel::updateProfile)
     if (qrOpen && profile != null) QrDialog(profile.url) { qrOpen = false }
 }
 
@@ -275,25 +279,26 @@ fun AccountProfileScreen(
     } }, confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSubmit(text, forward) }) { Text("送信") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
 }
 
-@Composable internal fun EditProfileDialog(profile: UserProfile, onDismiss: () -> Unit, onSave: (ProfileEditRequest) -> Unit) {
-    val context = LocalContext.current
+@Composable internal fun EditProfileDialog(profile: UserProfile, images: ProfileImageEditState,
+    onSelectImage: (ProfileImageSlot, String) -> Unit, onDismiss: () -> Unit, onSave: (ProfileEditRequest) -> Unit) {
     var name by remember { mutableStateOf(profile.author.displayName) }; var note by remember { mutableStateOf(androidx.core.text.HtmlCompat.fromHtml(profile.noteHtml, 0).toString()) }; var locked by remember { mutableStateOf(profile.locked) }
-    var avatarPath by remember { mutableStateOf<String?>(null) }; var headerPath by remember { mutableStateOf<String?>(null) }
-    fun copyImage(uri: android.net.Uri, prefix: String): String? = runCatching {
-        val file = File(context.cacheDir, "$prefix-${System.nanoTime()}")
-        context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use(input::copyTo) }; file.absolutePath
-    }.getOrNull()
-    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { uri -> avatarPath = copyImage(uri, "profile-avatar") } }
-    val headerPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let { uri -> headerPath = copyImage(uri, "profile-header") } }
+    val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
+        it?.let { uri -> onSelectImage(ProfileImageSlot.Avatar, uri.toString()) }
+    }
+    val headerPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
+        it?.let { uri -> onSelectImage(ProfileImageSlot.Header, uri.toString()) }
+    }
     val fields = remember { mutableStateListOf<Pair<String, String>>().also { list -> list.addAll(profile.fields.take(4).map { it.name to androidx.core.text.HtmlCompat.fromHtml(it.valueHtml, 0).toString() }) } }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("プロフィールを編集") }, text = { Column {
-        OutlinedTextField(name, { name = it }, label = { Text("表示名") }); Spacer(Modifier.height(8.dp))
-        OutlinedTextField(note, { note = it }, label = { Text("自己紹介") }, minLines = 4)
-        Row { TextButton(onClick = { avatarPicker.launch("image/*") }) { Text(if (avatarPath == null) "アイコンを変更" else "アイコン選択済み") }; TextButton(onClick = { headerPicker.launch("image/*") }) { Text(if (headerPath == null) "ヘッダーを変更" else "ヘッダー選択済み") } }
-        Row(verticalAlignment = Alignment.CenterVertically) { Switch(locked, { locked = it }); Spacer(Modifier.width(8.dp)); Text("フォローを承認制にする") }
-        fields.forEachIndexed { index, field -> Row { OutlinedTextField(field.first, { fields[index] = it to field.second }, Modifier.weight(0.4f), label = { Text("項目") }); OutlinedTextField(field.second, { fields[index] = field.first to it }, Modifier.weight(0.6f), label = { Text("内容") }) } }
-        if (fields.size < 4) TextButton(onClick = { fields.add("" to "") }) { Text("プロフィール項目を追加") }
-    } }, confirmButton = { TextButton(onClick = { onSave(ProfileEditRequest(name, note, locked, true, fields.toList(), avatarPath, headerPath)) }) { Text("保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
+        OutlinedTextField(name, { name = it }, enabled = !images.isSaving, label = { Text("表示名") }); Spacer(Modifier.height(8.dp))
+        OutlinedTextField(note, { note = it }, enabled = !images.isSaving, label = { Text("自己紹介") }, minLines = 4)
+        Row { TextButton(enabled = !images.isSaving, onClick = { avatarPicker.launch("image/*") }) { Text(if (images.avatarPath == null) "アイコンを変更" else "アイコン選択済み") }; TextButton(enabled = !images.isSaving, onClick = { headerPicker.launch("image/*") }) { Text(if (images.headerPath == null) "ヘッダーを変更" else "ヘッダー選択済み") } }
+        if (images.importing.isNotEmpty()) Text("画像を取り込み中…")
+        images.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Row(verticalAlignment = Alignment.CenterVertically) { Switch(locked, { locked = it }, enabled = !images.isSaving); Spacer(Modifier.width(8.dp)); Text("フォローを承認制にする") }
+        fields.forEachIndexed { index, field -> Row { OutlinedTextField(field.first, { fields[index] = it to field.second }, Modifier.weight(0.4f), enabled = !images.isSaving, label = { Text("項目") }); OutlinedTextField(field.second, { fields[index] = field.first to it }, Modifier.weight(0.6f), enabled = !images.isSaving, label = { Text("内容") }) } }
+        if (fields.size < 4) TextButton(enabled = !images.isSaving, onClick = { fields.add("" to "") }) { Text("プロフィール項目を追加") }
+    } }, confirmButton = { TextButton(enabled = images.importing.isEmpty() && !images.isSaving, onClick = { onSave(ProfileEditRequest(name, note, locked, true, fields.toList())) }) { Text(if (images.isSaving) "保存中…" else "保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
 }
 
 @Composable private fun QrDialog(url: String, onDismiss: () -> Unit) {

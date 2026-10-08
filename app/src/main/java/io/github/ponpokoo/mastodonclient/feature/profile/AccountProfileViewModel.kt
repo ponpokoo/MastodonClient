@@ -10,8 +10,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
@@ -42,7 +41,14 @@ class AccountProfileViewModel(
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+    profileImageRepository: io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageRepository? = null,
 ) : ViewModel() {
+    private val imageEditor = ProfileImageEditor(profileImageRepository, viewModelScope)
+    val profileImageEditState = imageEditor.state
+    fun beginProfileEdit() = imageEditor.open()
+    fun dismissProfileEdit() = imageEditor.dismiss()
+    fun selectProfileImage(slot: ProfileImageSlot, uri: String) = imageEditor.select(slot, uri)
+    override fun onCleared() { imageEditor.dismiss(); super.onCleared() }
     private val _uiState = MutableStateFlow(AccountProfileUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
         state.withModeration(moderation, account)
@@ -127,8 +133,7 @@ class AccountProfileViewModel(
             val result = timelineRepository.getProfileStatuses(current, accountId, tab, cursor)
             currentCoroutineContext().ensureActive()
             result.fold(
-                { page -> updateTab(tab) { it.copy(statuses = (it.statuses + page.statuses).distinctBy { status -> status.statusId },
-                    nextMaxId = page.nextMaxId, endReached = page.endReached || page.nextMaxId == cursor, isLoadingMore = false) } },
+                { page -> updateTab(tab) { it.appendPage(page, cursor) } },
                 { error -> updateTab(tab) { it.copy(isLoadingMore = false, error = error.message) } },
             )
         }
@@ -163,20 +168,12 @@ class AccountProfileViewModel(
                     imageRefreshRevision = if (header.isOwnProfile) newProfileImageRevision() else state.imageRefreshRevision)
                     .withTabs(state.profileTabs) }
             }
-            val (result, pinnedResult) = coroutineScope {
-                val posts = async { timelineRepository.getProfileStatuses(current, accountId, tab) }
-                val pinned = if (tab == ProfileStatusTab.Posts) {
-                    async { timelineRepository.getPinnedProfileStatuses(current, accountId) }
-                } else null
-                posts.await() to pinned?.await()
-            }
+            val (result, pinnedResult) = fetchProfileTab(timelineRepository, current, accountId, tab)
             currentCoroutineContext().ensureActive()
             val pinnedStatuses = pinnedResult?.getOrNull()
             result.fold(
-                { page -> updateTab(tab, pinnedStatuses) { it.copy(statuses = page.statuses, nextMaxId = page.nextMaxId,
-                    endReached = page.endReached, isLoaded = true, isLoading = false, isLoadingMore = false, isRefreshing = false) } },
-                { error -> updateTab(tab, pinnedStatuses) { it.copy(isLoading = false, isLoadingMore = false, isRefreshing = false,
-                    error = error.message ?: "投稿を取得できませんでした") } },
+                { page -> updateTab(tab, pinnedStatuses) { it.replacePage(page) } },
+                { error -> updateTab(tab, pinnedStatuses) { it.pageFailed(error) } },
             )
         }
     }
@@ -192,16 +189,26 @@ class AccountProfileViewModel(
     }
     fun updateProfile(request: ProfileEditRequest) {
         val current = session ?: return
+        val save = imageEditor.beginSave(request) ?: return
         _uiState.update { it.copy(isMutating = true) }
-        viewModelScope.launch {
-            val result = timelineRepository.updateProfile(current, request)
-            currentCoroutineContext().ensureActive()
-            result.fold(
-            { updated -> _uiState.update { old -> old.copy(profile = old.profile?.copy(author = updated.author,
-                headerUrl = updated.headerUrl, noteHtml = updated.noteHtml, locked = updated.locked,
-                fields = updated.fields, customEmojis = updated.customEmojis),
-                imageRefreshRevision = newProfileImageRevision(), isMutating = false, message = "プロフィールを更新しました") } }, ::showError,
-        ) }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var success = false
+            try {
+                val result = timelineRepository.updateProfile(current, save.request)
+                currentCoroutineContext().ensureActive()
+                result.fold(
+                    onSuccess = { updated ->
+                        success = true
+                        _uiState.update { old -> old.copy(profile = old.profile?.copy(author = updated.author,
+                            headerUrl = updated.headerUrl, noteHtml = updated.noteHtml, locked = updated.locked,
+                            fields = updated.fields, customEmojis = updated.customEmojis),
+                            imageRefreshRevision = newProfileImageRevision(), isMutating = false,
+                            message = "プロフィールを更新しました") }
+                    },
+                    onFailure = ::showError,
+                )
+            } finally { imageEditor.finishSave(save, success) }
+        }
     }
     fun clearMessage() = _uiState.update { it.copy(message = null, errorMessage = null) }
     fun toggleFavourite(status: TimelineStatus) =
@@ -353,8 +360,9 @@ class AccountProfileViewModel(
         private val timelineRepository: TimelineRepository,
         private val authRepository: AuthRepository,
         private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+        private val profileImageRepository: io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageRepository? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AccountProfileViewModel(accountId, timelineRepository, authRepository, statusActionManager) as T
+            AccountProfileViewModel(accountId, timelineRepository, authRepository, statusActionManager, profileImageRepository) as T
     }
 }

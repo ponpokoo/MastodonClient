@@ -16,9 +16,9 @@ import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPrefere
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
-import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationFilter
-import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationsContent
-import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals

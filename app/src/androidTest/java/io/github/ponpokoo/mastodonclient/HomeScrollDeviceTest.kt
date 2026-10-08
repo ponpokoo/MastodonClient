@@ -29,7 +29,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.timeline.animateToTimelineTop
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch

@@ -20,7 +20,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileTabUiState
-import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule

@@ -19,14 +19,11 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
-import io.github.ponpokoo.mastodonclient.domain.model.SearchResults
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTag
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
 import io.github.ponpokoo.mastodonclient.domain.model.SearchPage
-import io.github.ponpokoo.mastodonclient.domain.model.SearchException
 import io.github.ponpokoo.mastodonclient.domain.model.ExploreFeed
 import io.github.ponpokoo.mastodonclient.domain.model.ExplorePage
-import io.github.ponpokoo.mastodonclient.domain.model.ExploreNews
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
@@ -180,22 +177,10 @@ class DefaultTimelineRepository(
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         pinned.forEach { cacheStatus(session, it) }
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
-        UserProfile(
+        account.toProfile(
             author = account.toDomain().withAccountDisplay(registered),
-            headerUrl = account.header,
-            noteHtml = account.note,
-            followersCount = account.followersCount,
-            followingCount = account.followingCount,
-            statusesCount = account.statusesCount,
-            statuses = statuses,
-            url = account.url,
-            locked = account.locked,
-            createdAt = account.createdAt,
-            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
-            customEmojis = account.emojis.associate { it.shortcode to it.url },
-            pinnedStatuses = pinned,
-            nextMaxId = statuses.lastOrNull()?.statusId,
-            endReached = statuses.size < 20,
+            statuses = statuses, pinnedStatuses = pinned,
+            nextMaxId = statuses.lastOrNull()?.statusId, endReached = statuses.size < 20,
             isOwnProfile = account.id == session.accountId,
         )
     } }
@@ -204,23 +189,10 @@ class DefaultTimelineRepository(
         val displayRequest = if (accountId == session.accountId) accountDisplay?.begin(session) else null
         val account = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccount(accountId)
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
-        UserProfile(
+        account.toProfile(
             author = account.toDomain().withAccountDisplay(registered),
-            headerUrl = account.header,
-            noteHtml = account.note,
-            followersCount = account.followersCount,
-            followingCount = account.followingCount,
-            statusesCount = account.statusesCount,
-            statuses = emptyList(),
-            url = account.url,
-            locked = account.locked,
-            createdAt = account.createdAt,
-            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
-            customEmojis = account.emojis.associate { it.shortcode to it.url },
-            pinnedStatuses = emptyList(),
-            nextMaxId = null,
-            endReached = false,
-            isOwnProfile = account.id == session.accountId,
+            statuses = emptyList(), pinnedStatuses = emptyList(), nextMaxId = null,
+            endReached = false, isOwnProfile = account.id == session.accountId,
         )
     }
 
@@ -367,13 +339,10 @@ class DefaultTimelineRepository(
             parts, imagePart("avatar", request.avatarFilePath), imagePart("header", request.headerFilePath),
         )
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
-        UserProfile(
-            author = account.toDomain().withAccountDisplay(registered), headerUrl = account.header, noteHtml = account.note,
-            followersCount = account.followersCount, followingCount = account.followingCount,
-            statusesCount = account.statusesCount, statuses = emptyList(), url = account.url,
-            locked = account.locked, createdAt = account.createdAt,
-            fields = account.fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
-            customEmojis = account.emojis.associate { it.shortcode to it.url }, isOwnProfile = true,
+        account.toProfile(
+            author = account.toDomain().withAccountDisplay(registered),
+            statuses = emptyList(), pinnedStatuses = emptyList(), nextMaxId = null,
+            endReached = false, isOwnProfile = true,
         )
     }
 
@@ -381,7 +350,7 @@ class DefaultTimelineRepository(
         session: AccountSession,
         maxId: String?,
         limit: Int,
-    ): Result<NotificationPage> = runCatching {
+    ): Result<NotificationPage> = requestResult {
         require(limit in 1..80) { "通知の取得件数が範囲外です" }
         val notifications = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getNotifications(maxId = maxId, limit = limit)
@@ -419,7 +388,7 @@ class DefaultTimelineRepository(
 
     override suspend fun getNotificationPage(
         session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean,
-    ): Result<NotificationPage> = runCatching {
+    ): Result<NotificationPage> = requestResult {
         require(limit in 1..40) { "通知の取得件数が範囲外です" }
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val types = if (!supportsTypeFiltering) null else when (category) {
@@ -483,70 +452,17 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun search(
-        session: AccountSession,
-        query: String,
-        target: SearchTarget,
-        offset: Int,
-        limit: Int,
-    ): Result<SearchPage> = runCatching {
-        require(query.isNotBlank()) { "検索語を入力してください" }
-        require(offset >= 0 && limit in 1..40)
-        apiClientFactory.createForSearch(session.instanceUrl, session.accessToken)
-            .search(query.trim(), target.apiType(), limit, offset)
-            .let { result ->
-                val results = SearchResults(
-                    accounts = if (target == SearchTarget.Accounts) result.accounts.map(AccountDto::toDomain) else emptyList(),
-                    statuses = if (target == SearchTarget.Posts) result.statuses.map(StatusDto::toDomain).onEach { cacheStatus(session, it) } else emptyList(),
-                    hashtags = if (target == SearchTarget.Hashtags) result.hashtags.map { it.toSearchTag() } else emptyList(),
-                )
-                val count = results.count(target)
-                // Short pages are possible on older servers; stop only when a page is empty.
-                SearchPage(results, if (count == 0) null else offset + count, count == 0)
-            }
-    }.fold(
-        onSuccess = { Result.success(it) },
-        onFailure = { Result.failure(SearchException(it.toSearchFailure(), it)) },
-    )
+        session: AccountSession, query: String, target: SearchTarget, offset: Int, limit: Int,
+    ): Result<SearchPage> = loadSearchPage(apiClientFactory, { cacheStatus(session, it) }, session, query, target, offset, limit)
 
-    override suspend fun getExplore(session: AccountSession, feed: ExploreFeed, cursor: String?, limit: Int): Result<ExplorePage> = exploreRequest {
-        require(limit in 1..20)
-        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        if (feed == ExploreFeed.Followed) {
-            val response = api.getFollowedTags(limit, cursor)
-            if (!response.isSuccessful) throw HttpException(response)
-            ExplorePage(tags = response.body().orEmpty().map { it.toSearchTag().copy(following = true) },
-                nextCursor = nextAccountListCursor(response.headers()["Link"]))
-        } else {
-            val offset = cursor?.toIntOrNull() ?: 0
-            require(offset >= 0)
-            val page = when (feed) {
-                ExploreFeed.Posts -> ExplorePage(statuses = api.getTrendingStatuses(limit, offset).map { cacheStatus(session, it.toDomain()) })
-                ExploreFeed.Hashtags -> ExplorePage(tags = api.getTrendingTags(limit, offset).map { it.toSearchTag() })
-                ExploreFeed.News -> ExplorePage(news = api.getTrendingLinks(limit, offset).map {
-                    ExploreNews(it.url, it.title, it.description, it.providerName, it.image?.takeIf(String::isNotBlank))
-                })
-                ExploreFeed.Followed -> error("Handled above")
-            }
-            page.copy(nextCursor = if (page.count() == 0) null else (offset + page.count()).toString())
-        }
-    }
+    override suspend fun getExplore(session: AccountSession, feed: ExploreFeed, cursor: String?, limit: Int): Result<ExplorePage> =
+        loadExplorePage(apiClientFactory, { cacheStatus(session, it) }, session, feed, cursor, limit)
 
-    override suspend fun getTag(session: AccountSession, name: String): Result<SearchTag> = exploreRequest {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).getTag(name).toSearchTag()
-    }
+    override suspend fun getTag(session: AccountSession, name: String): Result<SearchTag> =
+        loadExploreTag(apiClientFactory, session, name)
 
-    override suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<SearchTag> = exploreRequest {
-        val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        (if (following) api.followTag(name) else api.unfollowTag(name)).toSearchTag().copy(following = following)
-    }
-
-    private suspend fun <T> exploreRequest(block: suspend () -> T): Result<T> = runCatching { block() }.fold(
-        onSuccess = { Result.success(it) },
-        onFailure = { error -> Result.failure(
-            if (error is HttpException && error.code() in setOf(404, 405, 501)) UnsupportedOperationException("探索APIは未対応です", error)
-            else SearchException(error.toSearchFailure(), error),
-        ) },
-    )
+    override suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<SearchTag> =
+        updateExploreTagFollowing(apiClientFactory, session, name, following)
 
     override fun observeUserStream(session: AccountSession): Flow<TimelineStreamEvent> = flow {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
@@ -581,7 +497,7 @@ class DefaultTimelineRepository(
         session: AccountSession,
         maxId: String?,
         limit: Int,
-    ): Result<TimelinePage> = runCatching {
+    ): Result<TimelinePage> = requestResult {
         require(limit in 1..40) { "タイムラインの取得件数が範囲外です" }
         val response = apiClientFactory
             .create(session.instanceUrl, session.accessToken)
@@ -603,7 +519,7 @@ class DefaultTimelineRepository(
         limit: Int,
     ): Result<TimelinePage> = if (feed == TimelineFeed.Home) {
         getHomeTimeline(session, maxId, limit)
-    } else runCatching {
+    } else requestResult {
         require(limit in 1..40) { "タイムラインの取得件数が範囲外です" }
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getPublicTimeline(
@@ -621,7 +537,7 @@ class DefaultTimelineRepository(
         )
     }
 
-    override suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> = runCatching {
+    override suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> = requestResult {
         apiClientFactory.create(session.instanceUrl, session.accessToken).getStatus(timelineId).toDomain()
             .also { cacheStatus(session, it) }
     }
@@ -648,7 +564,7 @@ class DefaultTimelineRepository(
     override suspend fun getStatusDetail(
         session: AccountSession,
         statusId: String,
-    ): Result<StatusDetail> = runCatching { coroutineScope {
+    ): Result<StatusDetail> = requestResult { coroutineScope {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val statusRequest = async { api.getStatus(statusId) }
         val contextRequest = async { api.getStatusContext(statusId) }
@@ -689,7 +605,7 @@ class DefaultTimelineRepository(
         statusId: String,
         pollId: String,
         choices: Set<Int>,
-    ) = runCatching {
+    ) = requestResult {
         require(choices.isNotEmpty()) { "投票する選択肢を選んでください" }
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val poll = api.votePoll(pollId, choices.sorted())
@@ -702,13 +618,13 @@ class DefaultTimelineRepository(
     override suspend fun setPinned(session: AccountSession, statusId: String, pinned: Boolean) =
         updateStatus(session) { if (pinned) pin(statusId) else unpin(statusId) }
 
-    override suspend fun deleteStatus(session: AccountSession, statusId: String) = runCatching {
+    override suspend fun deleteStatus(session: AccountSession, statusId: String) = requestResult {
         apiClientFactory.create(session.instanceUrl, session.accessToken).deleteStatus(statusId)
         statusCache.remove(cacheKey(session, statusId))
         Unit
     }
 
-    override suspend fun getEditableStatus(session: AccountSession, statusId: String) = runCatching {
+    override suspend fun getEditableStatus(session: AccountSession, statusId: String) = requestResult {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val source = api.getStatusSource(statusId)
         val status = api.getStatus(statusId)
@@ -760,7 +676,7 @@ class DefaultTimelineRepository(
         )
     }
 
-    override suspend fun getComposerConfiguration(session: AccountSession): Result<ComposerConfiguration> = runCatching {
+    override suspend fun getComposerConfiguration(session: AccountSession): Result<ComposerConfiguration> = requestResult {
         configurationMutex.withLock {
             val key = session.instanceUrl.trimEnd('/')
             configurations[key]?.takeIf { configurationClock() - it.fetchedAt < 5 * 60_000 }
@@ -784,7 +700,7 @@ class DefaultTimelineRepository(
         }
     }
 
-    override suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> = runCatching {
+    override suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> = requestResult {
         apiClientFactory.create(session.instanceUrl, session.accessToken).getCustomEmojis().map {
             CustomEmoji(it.shortcode, it.url, it.staticUrl, it.category)
         }
@@ -844,7 +760,7 @@ class DefaultTimelineRepository(
     } catch (error: kotlinx.coroutines.CancellationException) {
         throw error
     } catch (error: Exception) {
-        Result.failure(error)
+        Result.failure(error.toRequestException())
     }
 
     override suspend fun setFedibirdReaction(
@@ -866,7 +782,7 @@ class DefaultTimelineRepository(
     private suspend fun updateStatus(
         session: AccountSession,
         request: suspend io.github.ponpokoo.mastodonclient.data.remote.MastodonApi.() -> StatusDto,
-    ) = runCatching {
+    ) = requestResult {
         apiClientFactory.create(session.instanceUrl, session.accessToken).request().toDomain()
             .also { statusCache[cacheKey(session, it.statusId)] = it }
     }
@@ -908,7 +824,7 @@ internal fun reactionAccountsFromResponse(response: JsonElement, reactionName: S
     return collect(response).distinctBy(AccountDto::id)
 }
 
-private fun StatusDto.toDomain(): TimelineStatus {
+internal fun StatusDto.toDomain(): TimelineStatus {
     val displayed = reblog ?: this
     return TimelineStatus(
         timelineId = id,
@@ -959,24 +875,7 @@ private fun StatusDto.toDomain(): TimelineStatus {
                 } else null,
             )
         },
-        poll = displayed.poll?.let { poll ->
-            io.github.ponpokoo.mastodonclient.domain.model.StatusPoll(
-                id = poll.id,
-                expiresAt = poll.expiresAt,
-                expired = poll.expired,
-                multiple = poll.multiple,
-                votesCount = poll.votesCount,
-                votersCount = poll.votersCount,
-                voted = poll.voted,
-                ownVotes = poll.ownVotes.toSet(),
-                options = poll.options.map { option ->
-                    io.github.ponpokoo.mastodonclient.domain.model.PollOption(
-                        title = option.title,
-                        votesCount = option.votesCount,
-                    )
-                },
-            )
-        },
+        poll = displayed.poll?.toDomain(),
         mediaAttachments = displayed.mediaAttachments.map {
             MediaAttachment(
                 id = it.id,
@@ -1050,4 +949,22 @@ internal fun NotificationDto.toDomain() = TimelineNotification(
     createdAt = createdAt,
     account = account.toDomain(),
     status = status?.toDomain(),
+)
+
+/** Pure shared account mapping; each retrieval path supplies its own paging defaults. */
+internal fun AccountDto.toProfile(
+    author: StatusAuthor,
+    statuses: List<TimelineStatus>,
+    pinnedStatuses: List<TimelineStatus>,
+    nextMaxId: String?,
+    endReached: Boolean,
+    isOwnProfile: Boolean,
+) = UserProfile(
+    author = author, headerUrl = header, noteHtml = note,
+    followersCount = followersCount, followingCount = followingCount, statusesCount = statusesCount,
+    statuses = statuses, url = url, locked = locked, createdAt = createdAt,
+    fields = fields.map { ProfileField(it.name, it.value, it.verifiedAt) },
+    customEmojis = emojis.associate { it.shortcode to it.url },
+    pinnedStatuses = pinnedStatuses, nextMaxId = nextMaxId, endReached = endReached,
+    isOwnProfile = isOwnProfile,
 )

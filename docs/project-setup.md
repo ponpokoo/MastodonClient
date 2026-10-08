@@ -117,6 +117,7 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 | NotificationsViewModel | 通知・追加取得・未読件数・既読位置 |
 | OwnProfileViewModel | 自分のプロフィール・タブ・更新・追加取得 |
 | StatusActionsViewModel | メイン4タブの投稿・アカウント操作、リスト選択 |
+| StatusInteractionsViewModel | メインのナビゲーションエントリに保持するお気に入り／リアクションのアカウント一覧、カスタム絵文字取得・キャッシュ、既存Storeの反応履歴への接続 |
 | SettingsMaintenanceViewModel | 画像キャッシュ削除の実行状態・結果、インストール済みAPKの版情報 |
 | ModerationManagementViewModel | 管理対象アカウントの隔離、サーバーのミュート・ブロック一覧と解除・取り消し、端末保存のワード管理 |
 

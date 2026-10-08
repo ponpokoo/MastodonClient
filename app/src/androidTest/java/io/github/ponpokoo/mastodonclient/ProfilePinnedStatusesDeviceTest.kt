@@ -12,7 +12,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
-import io.github.ponpokoo.mastodonclient.feature.timeline.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule

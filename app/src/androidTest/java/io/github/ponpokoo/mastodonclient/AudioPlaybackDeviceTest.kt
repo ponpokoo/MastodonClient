@@ -18,7 +18,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import java.io.File
 import org.junit.After
 import org.junit.Rule

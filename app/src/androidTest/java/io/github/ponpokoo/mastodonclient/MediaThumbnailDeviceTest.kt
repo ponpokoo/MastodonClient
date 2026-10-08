@@ -30,7 +30,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.After

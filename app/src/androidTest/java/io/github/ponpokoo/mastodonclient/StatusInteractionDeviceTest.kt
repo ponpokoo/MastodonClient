@@ -25,9 +25,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.domain.model.StatusMention
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
+import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import androidx.compose.runtime.CompositionLocalProvider

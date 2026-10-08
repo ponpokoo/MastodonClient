@@ -17,7 +17,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
-import io.github.ponpokoo.mastodonclient.feature.timeline.NotificationsContent
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.atomic.AtomicInteger

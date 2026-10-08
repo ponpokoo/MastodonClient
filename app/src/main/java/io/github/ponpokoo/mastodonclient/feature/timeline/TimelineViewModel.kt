@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.domain.model.RequestFailure
+import io.github.ponpokoo.mastodonclient.domain.model.requestFailure
+import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
@@ -22,7 +25,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
 
 data class TimelineUiState(
     val statuses: List<TimelineStatus> = emptyList(),
@@ -531,9 +533,9 @@ class TimelineViewModel(
         loadingMore: Boolean = false,
         automatic: Boolean = false,
     ) {
-        val message = when ((error as? HttpException)?.code()) {
-            401 -> "ログインの有効期限が切れました。ログインし直してください。"
-            429 -> "アクセスが集中しています。しばらく待ってから再試行してください。"
+        val message = when (error.requestFailure) {
+            RequestFailure.Unauthorized -> "ログインの有効期限が切れました。ログインし直してください。"
+            RequestFailure.RateLimited -> "アクセスが集中しています。しばらく待ってから再試行してください。"
             else -> error.message ?: "ホームタイムラインを取得できませんでした。"
         }
         _uiState.update {

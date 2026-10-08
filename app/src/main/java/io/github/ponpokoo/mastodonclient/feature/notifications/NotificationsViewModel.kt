@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.notifications
 
+import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
@@ -12,7 +13,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
-import retrofit2.HttpException
 
 data class NotificationListState(
     val notifications: List<TimelineNotification> = emptyList(),
@@ -249,7 +249,7 @@ class NotificationsViewModel(
                 }
                 persistNotifications(snapshot, category)
             }.onFailure { error ->
-                val message = if ((error as? HttpException)?.code() in setOf(401, 403))
+                val message = if (error.requiresAuthentication)
                     "通知を表示するには、ログアウト後に再ログインして通知の読み取りを許可してください。"
                 else error.message ?: "通知を取得できませんでした"
                 updateList(category) { it.copy(isLoading = false, isRefreshing = false, error = message) }

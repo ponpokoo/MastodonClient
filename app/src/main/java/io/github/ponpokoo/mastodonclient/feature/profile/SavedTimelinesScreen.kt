@@ -46,7 +46,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate

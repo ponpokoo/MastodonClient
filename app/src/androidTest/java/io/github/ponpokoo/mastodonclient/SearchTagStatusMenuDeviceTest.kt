@@ -18,7 +18,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.*
 import io.github.ponpokoo.mastodonclient.feature.tag.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.SearchContent
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
+import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test

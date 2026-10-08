@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
+import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import androidx.compose.foundation.background
@@ -69,11 +71,11 @@ import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusMenuDialog
-import io.github.ponpokoo.mastodonclient.feature.timeline.ConfirmStatusActionDialog
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusReportDialog
-import io.github.ponpokoo.mastodonclient.feature.timeline.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
+import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
+import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Instant
@@ -107,7 +109,7 @@ fun StatusDetailScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var menuStatus by remember { mutableStateOf<TimelineStatus?>(null) }
-    var confirmation by remember { mutableStateOf<Pair<String, TimelineStatus>?>(null) }
+    var confirmation by remember { mutableStateOf<StatusConfirmation?>(null) }
     var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
 
@@ -246,11 +248,11 @@ fun StatusDetailScreen(
             },
             onPin = { menuStatus = null; viewModel.setPinned(selected) },
             onEdit = { menuStatus = null; onEditStatus(selected.statusId) },
-            onDelete = { menuStatus = null; confirmation = "delete" to selected },
+            onDelete = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Delete, selected) },
             onAddToList = { menuStatus = null; listStatus = selected; viewModel.loadLists() },
-            onUnfollow = { menuStatus = null; confirmation = "unfollow" to selected },
-            onMute = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.muting == true) "unmute" else "mute") to selected },
-            onBlock = { menuStatus = null; confirmation = (if (moderationMenu.relationship?.blocking == true) "unblock" else "block") to selected },
+            onUnfollow = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, selected) },
+            onMute = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), selected) },
+            onBlock = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), selected) },
             onReport = { menuStatus = null; reportStatus = selected },
         )
     }
@@ -261,14 +263,13 @@ fun StatusDetailScreen(
             onDismiss = { confirmation = null },
             onConfirm = {
                 when (action) {
-                    "delete" -> viewModel.deleteStatus(selected)
-                    "unfollow" -> viewModel.unfollow(selected)
-                    "mute" -> viewModel.mute(selected)
-                    "unmute" -> viewModel.mute(selected, false)
-                    "block" -> viewModel.block(selected)
-                    "unblock" -> viewModel.block(selected, false)
+                    StatusConfirmationAction.Delete -> viewModel.deleteStatus(selected)
+                    StatusConfirmationAction.Unfollow -> viewModel.unfollow(selected)
+                    StatusConfirmationAction.Mute -> viewModel.mute(selected)
+                    StatusConfirmationAction.Unmute -> viewModel.mute(selected, false)
+                    StatusConfirmationAction.Block -> viewModel.block(selected)
+                    StatusConfirmationAction.Unblock -> viewModel.block(selected, false)
                 }
-                confirmation = null
             },
         )
     }

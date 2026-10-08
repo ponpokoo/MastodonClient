@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenu
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
@@ -251,7 +252,7 @@ class StatusDetailViewModel(
                 }
                 .onFailure { error ->
                     _uiState.update {
-                        it.copy(errorMessage = if (error is retrofit2.HttpException && error.code() in setOf(401, 403)) {
+                        it.copy(errorMessage = if (error.requiresAuthentication) {
                             "投稿操作には追加権限が必要です。再ログインしてください。"
                         } else error.message ?: "投稿を更新できませんでした")
                     }

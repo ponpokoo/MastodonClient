@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState

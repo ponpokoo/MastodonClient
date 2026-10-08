@@ -43,6 +43,7 @@
 
 | 文書 | 読むとき |
 | --- | --- |
+| [段階的リファクタリング計画](refactoring-plan.md) | 調査で挙げた9候補の実装順、最小変更範囲、過剰設計を避ける制約、検証・完了条件を確認する（実装・実機確認完了） |
 | [画像共有遷移の最小試作](../transition-prototype/README.md) | Issue #3の独立した試作アプリ、静止画1枚の開閉、ビルド手順、確認範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
 | [自プロフィール画像の点滅](investigations/profile-image-refresh-flicker-report.md) | アイコンとヘッダーの再取得・旧画像保持・キャッシュの調査結果、採用した最小修正案と確認条件を参照する |

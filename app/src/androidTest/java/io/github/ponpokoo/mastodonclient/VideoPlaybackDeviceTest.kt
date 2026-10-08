@@ -50,7 +50,7 @@ import io.github.ponpokoo.mastodonclient.feature.media.VideoPlayer
 import io.github.ponpokoo.mastodonclient.feature.media.MediaPlayback
 import io.github.ponpokoo.mastodonclient.feature.media.MediaPlaybackControls
 import io.github.ponpokoo.mastodonclient.feature.media.rememberMediaPlayback
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.After

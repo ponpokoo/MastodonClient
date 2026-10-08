@@ -65,9 +65,9 @@ import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.feature.timeline.StatusCard
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalFavouriteListOpener
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionListOpener
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
+import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 

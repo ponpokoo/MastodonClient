@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -10,7 +11,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
 
 data class StatusActionsUiState(
     val lists: List<MastodonList> = emptyList(),
@@ -136,7 +136,7 @@ class StatusActionsViewModel(
         val pending = begin(snapshot.account!!, status) ?: return
         requestScope.launch {
             statusActionManager.complete(pending).forSession(snapshot).onFailure { error ->
-                val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
+                val message = if (error.requiresAuthentication) {
                     "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
                 } else error.message ?: "投稿を更新できませんでした"
                 _uiState.update { it.copy(actionMessage = message) }
@@ -157,7 +157,7 @@ class StatusActionsViewModel(
                     _uiState.update { it.copy(actionMessage = successMessage) }
                 }
                 .onFailure { error ->
-                    val message = if ((error as? HttpException)?.code() in setOf(401, 403)) {
+                    val message = if (error.requiresAuthentication) {
                         "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
                     } else error.message ?: "投稿を更新できませんでした"
                     _uiState.update { it.copy(actionMessage = message) }

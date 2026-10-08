@@ -96,7 +96,9 @@ class DefaultTimelineRepositoryTest {
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val session = testSession(server)
             val failure = repository.checkMedia(session, "opaque-media").exceptionOrNull()
-            assertEquals(422, (failure as retrofit2.HttpException).code())
+            assertEquals(io.github.ponpokoo.mastodonclient.domain.model.RequestFailure.Unprocessable,
+                (failure as io.github.ponpokoo.mastodonclient.domain.model.RequestException).failure)
+            assertEquals(422, (failure.cause as retrofit2.HttpException).code())
             repository.updateMediaDescription(session, "opaque-media", "").getOrThrow()
             server.takeRequest()
             val update = server.takeRequest()

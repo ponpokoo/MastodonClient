@@ -86,6 +86,65 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
         }, initialSharedMediaUris = sharedUris, logMediaFailure = {}),
     )
 
+    @Test fun lateUploadCannotRestoreOriginalStateAfterAtoBtoA() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        var calls = 0
+        var oldProgress: ((Float) -> Unit)? = null
+        val repository = object : Repository() {
+            override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> {
+                val call = ++calls
+                if (call == 1) {
+                    oldProgress = upload.onProgress
+                    withContext(NonCancellable) { gate.await() }
+                }
+                return Result.success(UploadedMedia("media-$call", "image", null, upload.description, true))
+            }
+        }
+        val vm = model(repository); runCurrent()
+        vm.importMedia(listOf("file:///one.jpg")); runCurrent(); advanceTimeBy(1_000); runCurrent()
+        vm.switchPostingAccount(secondAccount.sessionId); runCurrent()
+        vm.switchPostingAccount(testAccount.sessionId); runCurrent()
+        oldProgress!!(0.7f)
+        assertNull(vm.uiState.value.attachments.single().mediaId)
+        assertNull(vm.uiState.value.attachments.single().progress)
+        gate.complete(Unit); advanceUntilIdle()
+        assertEquals("media-2", vm.uiState.value.attachments.single().mediaId)
+        assertEquals(MediaTransferState.Ready, vm.uiState.value.attachments.single().transferState)
+    }
+
+    @Test fun processingRejectionDiscardsIdAndRetryUploadsLocalFile() = runTest(dispatcher) {
+        val repository = object : Repository() {
+            override suspend fun checkMedia(session: AccountSession, id: String): Result<UploadedMedia> =
+                Result.failure(RequestException(RequestFailure.Unprocessable, "HTTP 422", IllegalStateException()))
+        }
+        val vm = model(repository); runCurrent()
+        vm.restoreDraft(io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft(
+            key = "rejected", sessionId = testAccount.sessionId, attachmentUris = listOf("file:///one.jpg"),
+            attachmentMimeTypes = mapOf("file:///one.jpg" to "image/jpeg"),
+            attachmentMediaIds = mapOf("file:///one.jpg" to "rejected-id"),
+        )); advanceUntilIdle()
+        assertNull(vm.uiState.value.attachments.single().mediaId)
+        assertEquals(MediaTransferState.Failed, vm.uiState.value.attachments.single().transferState)
+        assertTrue(repository.uploads.isEmpty())
+        vm.retryMedia("file:///one.jpg"); advanceUntilIdle()
+        assertEquals(1, repository.uploads.size)
+        assertEquals(MediaTransferState.Ready, vm.uiState.value.attachments.single().transferState)
+    }
+
+    @Test fun postAuthenticationFailureKeepsInputAndPermissionGuidance() = runTest(dispatcher) {
+        for (kind in listOf(RequestFailure.Unauthorized, RequestFailure.Forbidden)) {
+            val repository = object : Repository() {
+                override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> =
+                    Result.failure(RequestException(kind, "HTTP", IllegalStateException("private cause")))
+            }
+            val vm = model(repository); runCurrent(); vm.onTextChanged("keep input")
+            vm.post(skipAltReminder = true); advanceUntilIdle()
+            assertEquals("keep input", vm.uiState.value.text)
+            assertTrue(vm.uiState.value.errorMessage.orEmpty().contains("再ログイン"))
+            assertFalse(vm.uiState.value.isPosting); assertFalse(vm.uiState.value.posted)
+        }
+    }
+
     @Test fun deletingDuringDebounceNeverUploads() = runTest(dispatcher) {
         val repository = Repository()
         val vm = model(repository)
@@ -284,7 +343,8 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
         var fail = true
         val repository = object : Repository() {
             override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> =
-                if (fail) Result.failure(java.net.SocketTimeoutException("private diagnostic"))
+                if (fail) Result.failure(io.github.ponpokoo.mastodonclient.domain.model.RequestException(
+                    io.github.ponpokoo.mastodonclient.domain.model.RequestFailure.Timeout, "SocketTimeoutException", java.net.SocketTimeoutException("private diagnostic")))
                 else super.uploadMedia(session, upload)
         }
         val vm = model(repository); runCurrent()
@@ -319,8 +379,9 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
     @Test fun missingDraftMediaIsUploadedAgainFromLocalFile() = runTest(dispatcher) {
         val repository = object : Repository() {
             override suspend fun checkMedia(session: AccountSession, id: String): Result<UploadedMedia> =
-                Result.failure(retrofit2.HttpException(retrofit2.Response.error<Unit>(404,
-                    okhttp3.ResponseBody.create(null, ""))))
+                Result.failure(io.github.ponpokoo.mastodonclient.domain.model.RequestException(
+                    io.github.ponpokoo.mastodonclient.domain.model.RequestFailure.NotFound, "HTTP 404",
+                    IllegalStateException("missing")))
         }
         val vm = model(repository); runCurrent()
         vm.restoreDraft(io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft(
