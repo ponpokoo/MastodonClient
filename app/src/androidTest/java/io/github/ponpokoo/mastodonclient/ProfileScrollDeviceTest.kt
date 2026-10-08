@@ -3,12 +3,21 @@ package io.github.ponpokoo.mastodonclient
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
@@ -19,7 +28,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
+import io.github.ponpokoo.mastodonclient.feature.timeline.animateToTimelineTop
 import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -75,6 +87,69 @@ class ProfileScrollDeviceTest {
         }
     }
 
+    @Test fun reverseDragStartingOnTabsReturnsPostsBeforeRevealingProfile() {
+        showLongProfile()
+        rule.runOnIdle { runBlocking { header.scrollToItem(1); posts.scrollToItem(12) } }
+        val before = position()
+        rule.onNodeWithTag("profile_status_tab_posts").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + 180f), delayMillis = 600)
+            advanceEventTime(200)
+            up()
+        }
+        rule.runOnIdle {
+            assertTrue("Posts should still be away from the top", posts.canScrollBackward)
+            assertTrue("Profile was revealed before posts reached the top", !header.canScrollForward)
+        }
+        assertTrue("Dragging the tab row should return posts", position() < before)
+    }
+
+    @Test fun sharedReturnReachesProfileTopWithinOneAnimation() {
+        showLongProfile(showReturnControl = true)
+        rule.runOnIdle { runBlocking { header.scrollToItem(1); posts.scrollToItem(18, 24) } }
+        rule.mainClock.autoAdvance = false
+        try {
+            rule.onNodeWithText("Go to top").performClick()
+            rule.mainClock.advanceTimeBy(600)
+            rule.runOnIdle {
+                assertEquals(0, posts.firstVisibleItemIndex)
+                assertEquals(0, posts.firstVisibleItemScrollOffset)
+                assertEquals(0, header.firstVisibleItemIndex)
+                assertEquals(0, header.firstVisibleItemScrollOffset)
+            }
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test fun gestureOnProfileInterruptsTheEntireSharedReturn() {
+        showLongProfile(showReturnControl = true)
+        rule.runOnIdle { runBlocking { header.scrollToItem(1); posts.scrollToItem(18, 24) } }
+        rule.mainClock.autoAdvance = false
+        try {
+            rule.onNodeWithText("Go to top").performClick()
+            rule.mainClock.advanceTimeBy(64)
+            rule.onNodeWithTag("profile_screen").performTouchInput {
+                swipe(Offset(width * 0.6f, height * 0.8f), Offset(width * 0.6f, height * 0.4f), 400)
+            }
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
+        rule.waitForIdle()
+        val postPosition = position()
+        var headerPosition = 0L
+        rule.runOnIdle {
+            headerPosition = header.firstVisibleItemIndex * 1_000_000L + header.firstVisibleItemScrollOffset
+            assertTrue(header.canScrollBackward || posts.canScrollBackward)
+        }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        assertEquals(postPosition, position())
+        rule.runOnIdle {
+            assertEquals(headerPosition, header.firstVisibleItemIndex * 1_000_000L + header.firstVisibleItemScrollOffset)
+        }
+    }
+
     private fun position(): Long {
         var position = 0L
         rule.runOnIdle { position = posts.firstVisibleItemIndex * 1_000_000L + posts.firstVisibleItemScrollOffset }
@@ -87,7 +162,7 @@ class ProfileScrollDeviceTest {
         }
     }
 
-    private fun showLongProfile() {
+    private fun showLongProfile(showReturnControl: Boolean = false) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         fun image(name: String, width: Int, height: Int): String {
             val file = File(context.cacheDir, "profile-scroll-$name.png")
@@ -120,13 +195,21 @@ class ProfileScrollDeviceTest {
             MaterialTheme {
                 posts = rememberLazyListState()
                 header = rememberLazyListState()
-                ProfileContent(
-                    state = ProfileUiState(profile = profile), padding = PaddingValues(),
-                    onRetry = {}, onRefresh = {}, onStatusClick = {}, onOpenLink = {}, onReply = {},
-                    onBoost = {}, onQuote = { _, _ -> }, onFavourite = {}, onReact = { _, _ -> },
-                    onAccountClick = {}, onMediaClick = { _, _ -> },
-                    listStates = listOf(posts, rememberLazyListState(), rememberLazyListState()), headerListState = header,
-                )
+                val scope = rememberCoroutineScope()
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f)) {
+                        ProfileContent(
+                            state = ProfileUiState(profile = profile), padding = PaddingValues(),
+                            onRetry = {}, onRefresh = {}, onStatusClick = {}, onOpenLink = {}, onReply = {},
+                            onBoost = {}, onQuote = { _, _ -> }, onFavourite = {}, onReact = { _, _ -> },
+                            onAccountClick = {}, onMediaClick = { _, _ -> },
+                            listStates = listOf(posts, rememberLazyListState(), rememberLazyListState()), headerListState = header,
+                        )
+                    }
+                    if (showReturnControl) {
+                        Button(onClick = { scope.launch { posts.animateToTimelineTop(header) } }) { Text("Go to top") }
+                    }
+                }
             }
         }
         rule.waitForIdle()

@@ -203,6 +203,10 @@ fun HomeTimelineScreen(
     var scrollProfileAfterRefresh by remember { mutableStateOf(false) }
     var profileRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
+    val topScrollScope = key(
+        mainState.session?.sessionId, destination, state.selectedFeed,
+        notificationFilter, profileState.profileSelectedTab,
+    ) { rememberCoroutineScope() }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
@@ -362,16 +366,14 @@ fun HomeTimelineScreen(
             notificationsViewModel.consumeShownNewNotice(notice.id)
         }
     }
-    LaunchedEffect(profileState.isRefreshingProfile) {
+    LaunchedEffect(profileState.isRefreshingProfile, mainState.session?.sessionId, profileState.profileSelectedTab) {
         if (profileState.isRefreshingProfile) {
             profileRefreshStarted = true
         } else if (profileRefreshStarted) {
-            if (scrollProfileAfterRefresh) {
-                profileListState.animateScrollToItem(0)
-                profileHeaderListState.animateScrollToItem(0)
-            }
+            val returnToTop = scrollProfileAfterRefresh
             profileRefreshStarted = false
             scrollProfileAfterRefresh = false
+            if (returnToTop) profileListState.animateToTimelineTop(profileHeaderListState)
         }
     }
     NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
@@ -434,8 +436,8 @@ fun HomeTimelineScreen(
                         modifier = Modifier.testTag("main_tab_${item.name.lowercase()}"),
                         selected = destination == item,
                         onClick = {
-                            scope.launch {
-                                if (pagerState.currentPage == page) {
+                            if (pagerState.currentPage == page) {
+                                topScrollScope.launch {
                                     when (item) {
                                         MainDestination.Home -> {
                                             if (state.isResumedWindow) viewModel.goToLatest()
@@ -443,14 +445,13 @@ fun HomeTimelineScreen(
                                         }
                                         MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
                                         MainDestination.Profile -> {
-                                            profileListState.animateScrollToItem(0)
-                                            profileHeaderListState.animateScrollToItem(0)
+                                            profileListState.animateToTimelineTop(profileHeaderListState)
                                         }
                                         MainDestination.Explore -> exploreScrollToTopRequest++
                                     }
-                                } else {
-                                    pagerState.scrollToPage(page)
                                 }
+                            } else {
+                                scope.launch { pagerState.scrollToPage(page) }
                             }
                         },
                         icon = {

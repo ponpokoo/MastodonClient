@@ -500,8 +500,8 @@ fun AppNavigation(
                 onPosted = { navController.popBackStack() },
             )
         }
-        composable<Route.Settings> {
-            val mainEntry = remember { navController.getBackStackEntry<Route.Timeline>() }
+        composable<Route.Settings> { backStackEntry ->
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry<Route.Timeline>() }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
             val accountState by mainModel.uiState.collectAsStateWithLifecycle()
             SettingsScreen(

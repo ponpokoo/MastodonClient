@@ -165,6 +165,13 @@ internal fun ProfileContent(
     val tabPagerState = profileTabs.pagerState
     val postsScrollConnection = remember(resolvedHeaderListState, resolvedListState, profileTabs) {
         object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // A reverse drag/fling owned by the outer list must return posts first.
+                // Child-owned gestures consume their own deltas without raw dispatch.
+                if (available.y <= 0f || resolvedListState.isScrollInProgress || profileTabs.isMoving) return Offset.Zero
+                return Offset(0f, -resolvedListState.dispatchRawDelta(-available.y))
+            }
+
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 // A gesture starting on the header belongs to the outer list. Keep its
                 // drag/fling running by consuming the remainder in the selected post list.

@@ -35,6 +35,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.feature.timeline.animateToTimelineTop
 
 private enum class ProfileAccountAction { Unfollow, Mute, Unmute, Block, Unblock }
 
@@ -92,16 +93,14 @@ fun AccountProfileScreen(
             viewModel.clearMessage()
         }
     }
-    LaunchedEffect(state.isRefreshing) {
+    LaunchedEffect(state.isRefreshing, state.selectedTab) {
         if (state.isRefreshing) {
             refreshStarted = true
         } else if (refreshStarted) {
-            if (scrollAfterRefresh) {
-                profileListState.animateScrollToItem(0)
-                profileHeaderListState.animateScrollToItem(0)
-            }
+            val returnToTop = scrollAfterRefresh
             refreshStarted = false
             scrollAfterRefresh = false
+            if (returnToTop) profileListState.animateToTimelineTop(profileHeaderListState)
         }
     }
 

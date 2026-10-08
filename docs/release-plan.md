@@ -6,18 +6,72 @@
 
 ## 現行のリリース対象版
 
-versionNameを2.4.1、versionCodeを16へ更新してリリースを準備する。
-Relay移行の旧事前検証APK/AAB（2.4.0／15）とは区別して、2.4.1の配布候補を生成・確認する。
-2.4.0の公開済みタグ・APKを差し替えず、別バージョンとして準備する。
+versionName `2.4.2`、versionCode `17`を今回のリリース用pushの対象とする。
+比較元の2.4.1と、Relay移行の旧事前検証APK/AAB（2.4.0／15）は差し替えない。
+今回の作業は署名済み配布候補の生成と、ブランチ・注釈付きタグのpushまでとし、GitHub Releaseは作成しない。
+
+| 項目 | v2.4.2 |
+| --- | --- |
+| 公開状況 | [GitHub Releaseを参照](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.4.2)。リンクの記載だけでは公開を意味しない |
+| 比較元 | [v2.4.1のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.4.1)（タグ対象`6a9681c`） |
+| 対象ソース | v2.4.1以降の変更とプロフィールのスクロール修正を含む、今回のリリース準備コミット |
+| アプリ版番号 | versionName `2.4.2`、versionCode `17` |
+| 配布候補APK・AAB | 下記「2.4.2の配布候補」を参照 |
+| 公開用タグ | 今回のリリース準備コミットに注釈付きタグ`v2.4.2`を作成する |
+
+### 今回の変更内容
+
+- ハイブリッドPush配送に対応する。小通知はFCM内の暗号文から表示し、大通知の`sync_required`と欠落回復では、アカウントごとの通知API差分同期を使用する。永続世代・重複排除・資格照合で購読変更や削除後の遅延処理を隔離する。
+- 自アカウントの名前・ユーザー名・アイコンを起動、切替、プロフィール取得・編集後に同期する。プロフィール画像の更新時は旧画像を保持し、同じURLの画像も再取得して拡大表示へ引き継ぐ。
+- アプリ内のアカウント削除に確認を追加し、登録順を保存する。アカウント・投稿ボタン・投稿下部アイコンの並び替えを共通のドラッグ操作へ統一し、自動スクロールと保存後の表示を調整する。
+- ログインを一画面へまとめ、接続先の確認、処理段階、入力変更時の再確認、ブラウザー起動失敗後の再試行を整理する。
+- アプリのApache 2.0ライセンスと第三者通知を整備し、設定から収録したライセンス本文を確認できるようにする。
+- プロフィールの縦スクロールでは投稿一覧を先頭へ戻してからプロフィール情報を表示する。先頭へ戻る操作は両一覧を一つのアニメーションとして扱い、ジェスチャー・アカウント・タブの変更で中断する。
+- セッション境界、投稿・画像処理、共通投稿操作、検索・探索、画面構成の内部整理を行う。採用範囲は[リファクタリング計画](refactoring-plan.md)、現行動作は[UI・機能仕様](ui-guidelines.md)を参照する。
+
+### 2.4.2の確認状況
+
+- 最終コードで`:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest --offline`が成功した。単体422件、失敗・エラー・スキップ0件。
+- `:app:lintRelease :app:assembleRelease :app:bundleRelease --offline`が成功した。設定画面のBackStackEntry保持に必要なキーを修正し、lintエラー0件、警告59件、ヒント6件。署名済みRelease APK/AABを生成した。
+- Pixel_10aエミュレーター（Android 17）の端末テスト66件が成功した。スクロール15件と、アカウント表示同期・画像更新・削除確認・並び替え・ログイン・ライセンス・ハイブリッドPush・投稿操作・検索メニュー・プロフィールタブ・通知表示51件を確認した。通信Repositoryの代替やローカル画像を含むテストであり、実サーバー・物理端末・Release APKの操作確認とは区別する。
+- Workers Relayの`npm test`45件、ローカルRelayの`npm test`16件が成功した。Google応答は模擬で、今回の確認では本番Relayを再配置していない。
+- APKの署名v2と版番号、AABのマニフェスト版番号と全275エントリーの署名、APK/AABの署名証明書とSHA-256を照合した。
+- Release依存153座標がライセンス索引と一致した。APK/AABそれぞれに索引1個・本文10個が収録され、索引154項目の参照先とソースのハッシュが一致した。
+- 関連文書の版番号・ローカルリンクと`git diff --check`を確認した。物理端末の操作確認、今回のRelease候補での実FCM測定、Play配布・GitHub Release作成は未実施。
+
+### 2.4.2の配布候補
+
+| 成果物 | パス | SHA-256 |
+| --- | --- | --- |
+| Release APK | `app/build/outputs/apk/release/app-release.apk` | `baf673d10f97b22de5f60bd57f4663415f8fcee98a1e7b1a0ea15dce6e844d21` |
+| Release AAB | `app/build/outputs/bundle/release/app-release.aab` | `4128c1e2970a0d902e922ab448e69ae51632dec87fbf730dc6a10fcfad654603` |
+
+APK/AABはversionName `2.4.2`／versionCode `17`。署名証明書SHA-256は従来の配布鍵と同じ
+`42a7a07e8fdd8fa16fe7360b6f45ad6c024daefe9727c9f7cc5dfaae378620c1`。
+同じ成果物を`app/release/Nagisa-2.4.2-release-20261008.apk`・`app/release/Nagisa-2.4.2-release-20261008.aab`へコピーし、
+`app/release/app-release.apk`と`output-metadata.json`も今回の候補へ更新した。
+リリースノートはGit管理外の`app/release/Nagisa-2.4.2-release-notes.md`へ用意した。成果物・署名設定・IDE設定はコミットしない。
+
+### 既知の制約・継続確認
+
+- 本番Relayは2026-10-08にハイブリッド方式へ切替済み。旧APKの大通知・旧fetch通知の欠落を許容して切り替えた。[切替記録](investigations/relay-production-hybrid-cutover-20261008.md)と[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)を参照する。
+- 実FCMの小通知5件は2.4.1 Debugで測定済み。大通知同期、障害後の欠落回復、物理端末の通信量・電池、24時間運用、日次Cronの実時刻起動と一般公開の運用合格は未完了。今回のRelease候補の実FCM測定と混同しない。
+- Google PlayへのAAB配布、Play配布版の確認、全利用者のAPK更新・購読移行と複数サーバーの実機確認は別途必要。公開準備は[Play公開ワークフロー](google-play-publication-workflow.md)を参照する。
+- Android通知へのワード判定、Streaming再接続時の欠落補完、Misskeyへの直接ログイン、下書き送信遅延の原因修正は今回の対象外。
+
+## 過去のリリース準備（2.4.1）
+
+以下は2.4.1／16の準備・確認記録。パスとハッシュは当時の成果物を示し、現在のビルド出力や2.4.2の配布候補を示さない。
+Relay移行の旧事前検証APK/AAB（2.4.0／15）とは区別して確認した。
 
 | 項目 | v2.4.1 |
 | --- | --- |
 | 公開状況 | [GitHub Releaseを参照](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.4.1)。リンクの記載だけでは公開を意味しない |
 | 比較元 | [v2.4.0のGitHub Release](https://github.com/ponpokoo/MastodonClient/releases/tag/v2.4.0)（タグ対象`c6b8bf6`） |
-| 対象ソース | v2.4.0以降の変更を含む今回のリリース準備コミット。公開用タグ`v2.4.1`の対象とする |
+| 対象ソース | v2.4.0以降の変更を含むリリース準備コミット`6a9681c` |
 | アプリ版番号 | versionName `2.4.1`、versionCode `16` |
 | 配布候補APK・AAB | 下記「配布候補の成果物」のパス・署名・SHA-256を参照 |
-| 公開用タグ | 注釈付きタグ`v2.4.1`を今回のリリース準備コミットに作成する |
+| 公開用タグ | 注釈付きタグ`v2.4.1`（対象`6a9681c`） |
 
 ### v2.4.1に含める更新
 
@@ -110,7 +164,7 @@ Workersのテスト34件が成功したバンドルを本番へ配置し、エ�
 
 ## 今後の確認事項
 
-下書き送信の追加調査・修正と機能詳細の整理は、2.4.1に含めない検討候補で、採用版・着手時期は未定。
+下書き送信の追加調査・修正と機能詳細の整理は、2.4.2に含めない検討候補で、採用版・着手時期は未定。
 Relayの配布・運用確認は、今回のリリースに伴う継続確認として扱う。
 
 ### 下書き保存後の送信
@@ -127,13 +181,13 @@ Relayの配布・運用確認は、今回のリリースに伴う継続確認と
 
 ### Relayの配布・運用確認
 
-2.4.1の限定テスター配布と既存購読の移行、複数サーバー・物理端末での通知を確認する。
+2.4.2の限定テスター配布と既存購読の継続利用、複数サーバー・物理端末での通知を確認する。
 無料枠監視・障害時再送・隔離復元の継続確認は[Issue #8](https://github.com/ponpokoo/MastodonClient/issues/8)で管理する。
 2026-10-07に、一般公開後最大100人・1人2アカウント／1端末を想定した[再測定計画](relay-100-user-remeasurement-plan.md)を追加した。
 200購読の容量候補を測定入口に用意し、通常・集中・全fetchの[初回資源評価](investigations/relay-100-user-measurement-20261007.md)を実施した。
 旧保存方式は公開条件未達。後続の[ハイブリッド資源評価](investigations/relay-hybrid-100-user-measurement-20261007.md)を経て、
-[ハイブリッド方式を採用](adr/0013-adopt-hybrid-push-delivery.md)した。本番上限・APK・配送経路はまだ切り替えていない。
-Android差分同期・欠落回復を実装し、単体／エミュレーターで確認した。実FCMの回復・通信量・電池・遅延、
+[ハイブリッド方式を採用](adr/0013-adopt-hybrid-push-delivery.md)し、2026-10-08に[本番を切り替えた](investigations/relay-production-hybrid-cutover-20261008.md)。
+Android差分同期・欠落回復を実装し、単体／エミュレーターで確認した。実FCMの小通知5件は測定済み。大通知の回復・通信量・電池・遅延、
 内部エラー・CPU、24時間運用・監視・隔離復元・実機配送と移行を継続する。
 未完了作業の正本は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、テスト・調査記録は[検証ガイド](../relay/workers/testing.md)。
 
@@ -226,7 +280,7 @@ Scaffoldの余白を一覧の外へ適用し、上部バーの下へハンドル
 
 ## 次回以降の候補
 
-以下は2.4.1の実装対象に含めない検討候補。採用版・着手時期は未定で、採用時に仕様と優先順位を決める。
+以下は2.4.2の実装対象に含めない検討候補。採用版・着手時期は未定で、採用時に仕様と優先順位を決める。
 
 ### 文書候補
 
@@ -243,7 +297,7 @@ Scaffoldの余白を一覧の外へ適用し、上部バーの下へハンドル
 
 - 古いメディア取得時の匿名レート制限への対応は[Issue #7](https://github.com/ponpokoo/MastodonClient/issues/7)で管理する。認証の送信先などの制約は[UI・機能仕様](ui-guidelines.md#投稿一覧と詳細)に残す。
 - プロフィール編集で編集用平文と改行を保持する改善は[Issue #9](https://github.com/ponpokoo/MastodonClient/issues/9)で管理する。
-- 通知欄の返信ワードミュートは2.4.1の実装へ移した。Android通知への適用は未採用で、必要時に本文取得・通信失敗・表示遅延の扱いを検討する。
+- 通知欄の返信ワードミュートは2.4.1から実装済み。Android通知への適用は未採用で、必要時に本文取得・通信失敗・表示遅延の扱いを検討する。
 - ホームDBの速度・容量・通信失敗時の使い勝手を評価する。ローカル・連合のDB化、全画面の唯一のデータ源への移行、投稿・アカウントの共通テーブル化は未採用。保存済みデータを保持するマイグレーションを前提とする。
 
 ## リリース用pushの手順
