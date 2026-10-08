@@ -9,8 +9,8 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| リリース準備の対象版 | `2.4.2`（versionCode 17）。対象版・確認結果は[更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
-| 旧事前検証用成果物の版番号 | Relay移行の事前検証APK/AABは`2.4.0`（versionCode 15）。2.4.2の配布候補とは区別する |
+| リリース準備の対象版 | `2.4.3`（versionCode 18）。対象版・確認結果は[更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| 旧事前検証用成果物の版番号 | Relay移行の事前検証APK/AABは`2.4.0`（versionCode 15）。2.4.3の配布候補とは区別する |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
 | OAuth redirect URI | `io.github.ponpokoo.mastodonclient://oauth/callback` |

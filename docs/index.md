@@ -16,7 +16,7 @@
 | [ミュート・ブロック・報告](ui-guidelines.md#ミュートブロック報告) | メニュー、設定・解除、操作後の非表示、報告、設定での管理、投稿・通知欄のワードミュートを確認する |
 | [設計判断（ADR）](adr/README.md) | 重要な設計の背景、採用理由、制約、見直し条件を確認する |
 | [ライセンスと第三者通知](third-party-licenses.md) | アプリ内のライセンス表示、Apache 2.0適用範囲、Release依存の収録内容と再生成・公開前確認を参照する |
-| [更新・リリース計画](release-plan.md) | 2.4.2の変更・確認状況、過去の成果物との区別、今後の候補、リリース手順を確認する |
+| [更新・リリース計画](release-plan.md) | 2.4.3の変更・確認状況、過去の成果物との区別、今後の候補、リリース手順を確認する |
 | [Google Play公開までのワークフロー](google-play-publication-workflow.md) | 公開準備、必要な文書・申告、Play配布版の確認、限定テストと一般公開の判断を確認する |
 | [GitHub Issues](https://github.com/ponpokoo/MastodonClient/issues) | 移行済みの継続確認・改善候補と対応の進捗を確認する |
 
