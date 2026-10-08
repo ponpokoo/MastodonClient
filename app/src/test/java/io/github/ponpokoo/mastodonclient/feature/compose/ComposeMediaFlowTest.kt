@@ -82,7 +82,7 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
             override suspend fun getSessions() = listOf(testAccount, secondAccount)
             override suspend fun logout() = Unit
         }, preferences, { deleted += it }, object : DraftMediaRepository {
-            override suspend fun importMedia(uris: List<String>) = Result.success(importer(uris))
+            override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(importer(uris))
         }, initialSharedMediaUris = sharedUris, logMediaFailure = {}),
     )
 

@@ -122,10 +122,16 @@ data class ComposeDraft(
 class UserPreferencesStore(
     private val dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
+    private val isAccountPresent: suspend (String) -> Boolean = { true },
 ) {
     constructor(context: Context, json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }) :
-        this(context.applicationContext.userPreferencesDataStore, json)
+        this(context.applicationContext.userPreferencesDataStore, json, { id ->
+            io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore(context).getSessions().any { it.sessionId == id }
+        })
     private val composeBuffers = MutableStateFlow<Map<String, ComposeDraft>>(emptyMap())
+    private val bufferLock = Any()
+    private val removedAccounts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private suspend fun canWriteAccount(id: String) = id !in removedAccounts && isAccountPresent(id)
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { stored ->
         stored[APP_PREFERENCES]?.let { encoded ->
@@ -138,7 +144,7 @@ class UserPreferencesStore(
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
 
-    suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update {
+    suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update(sessionId) {
         it.copy(wordMutes = it.wordMutes + (sessionId to transform(it.wordMutes[sessionId].orEmpty())))
     }
 
@@ -156,6 +162,7 @@ class UserPreferencesStore(
 
     suspend fun recordReaction(sessionId: String, emoji: String) {
         dataStore.edit { stored ->
+            if (!canWriteAccount(sessionId)) return@edit
             val current = stored[REACTION_HISTORY]?.let { encoded ->
                 runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
             }.orEmpty()
@@ -166,6 +173,7 @@ class UserPreferencesStore(
 
     suspend fun setReactionHistory(sessionId: String, emojis: List<String>) {
         dataStore.edit { stored ->
+            if (!canWriteAccount(sessionId)) return@edit
             val current = stored[REACTION_HISTORY]?.let { encoded ->
                 runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
             }.orEmpty()
@@ -175,6 +183,7 @@ class UserPreferencesStore(
 
     suspend fun recordComposerEmoji(sessionId: String, emoji: String) {
         dataStore.edit { stored ->
+            if (!canWriteAccount(sessionId)) return@edit
             val current = stored[COMPOSER_EMOJI_HISTORY]?.let { encoded ->
                 runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
             }.orEmpty()
@@ -185,6 +194,7 @@ class UserPreferencesStore(
 
     suspend fun setComposerEmojiHistory(sessionId: String, emojis: List<String>) {
         dataStore.edit { stored ->
+            if (!canWriteAccount(sessionId)) return@edit
             val current = stored[COMPOSER_EMOJI_HISTORY]?.let { encoded ->
                 runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
             }.orEmpty()
@@ -214,7 +224,7 @@ class UserPreferencesStore(
     suspend fun setHiddenComposerActions(value: Set<ComposerAction>) = update {
         it.copy(hiddenComposerActions = value)
     }
-    suspend fun setAccountPreferences(sessionId: String, value: AccountPreferences) = update {
+    suspend fun setAccountPreferences(sessionId: String, value: AccountPreferences) = update(sessionId) {
         it.copy(accountPreferences = it.accountPreferences + (sessionId to value))
     }
 
@@ -226,6 +236,7 @@ class UserPreferencesStore(
 
     suspend fun saveDraft(draft: ComposeDraft) {
         dataStore.edit { stored ->
+            check(canWriteAccount(draft.sessionId)) { "アカウントの登録が削除されています" }
             val drafts = stored[DRAFTS]?.let {
                 runCatching { json.decodeFromString<List<ComposeDraft>>(it) }.getOrNull()
             }.orEmpty().filterNot { it.key == draft.key } + draft
@@ -235,25 +246,80 @@ class UserPreferencesStore(
 
     suspend fun deleteDraft(key: String) {
         dataStore.edit { stored ->
-            val drafts = stored[DRAFTS]?.let {
+            val allDrafts = stored[DRAFTS]?.let {
                 runCatching { json.decodeFromString<List<ComposeDraft>>(it) }.getOrNull()
-            }.orEmpty().filterNot { it.key == key }
+            }.orEmpty()
+            // Preserve ownership of legacy flat files when a saved draft becomes active input.
+            allDrafts.firstOrNull { it.key == key }?.let { draft ->
+                val legacyFiles = draft.attachmentUris.filter { value ->
+                    val uri = runCatching { java.net.URI(value) }.getOrNull()
+                    uri?.scheme == "file" && uri.path?.substringBeforeLast('/')?.endsWith("/draft_media") == true
+                }
+                if (legacyFiles.isNotEmpty()) {
+                    val media = stored[DETACHED_MEDIA]?.let { json.decodeFromString<Map<String, Set<String>>>(it) }.orEmpty()
+                    stored[DETACHED_MEDIA] = json.encodeToString(media + (draft.sessionId to
+                        (media[draft.sessionId].orEmpty() + legacyFiles)))
+                }
+            }
+            val drafts = allDrafts.filterNot { it.key == key }
             if (drafts.isEmpty()) stored.remove(DRAFTS) else stored[DRAFTS] = json.encodeToString(drafts)
         }
     }
 
-    fun getComposeBuffer(key: String): ComposeDraft? = composeBuffers.value[key]
+    fun getComposeBuffer(key: String): ComposeDraft? = composeBuffers.value[key]?.takeUnless { it.sessionId in removedAccounts }
 
-    fun retainComposeBuffer(draft: ComposeDraft) {
-        composeBuffers.update { it + (draft.key to draft) }
+    fun retainComposeBuffer(draft: ComposeDraft) = synchronized(bufferLock) {
+        if (draft.sessionId !in removedAccounts) composeBuffers.update { it + (draft.key to draft) }
     }
 
     fun removeComposeBuffer(key: String) {
         composeBuffers.update { it - key }
     }
 
-    private suspend fun update(transform: (AppPreferences) -> AppPreferences) {
+    /** Remove account content atomically, journaling attachment paths before losing references. */
+    suspend fun removeAccountData(sessionId: String): Set<String> {
+        val buffers = synchronized(bufferLock) {
+            removedAccounts.add(sessionId)
+            composeBuffers.value.values.toList()
+        }
+        var files = emptySet<String>()
         dataStore.edit { stored ->
+            val settings = stored[APP_PREFERENCES]?.let(::decodeAppPreferences)
+            if (settings != null) stored[APP_PREFERENCES] = json.encodeToString(settings.copy(
+                accountPreferences = settings.accountPreferences - sessionId,
+                wordMutes = settings.wordMutes - sessionId,
+            ))
+            for (key in listOf(REACTION_HISTORY, COMPOSER_EMOJI_HISTORY)) {
+                val history = stored[key]?.let { json.decodeFromString<Map<String, List<String>>>(it) }.orEmpty() - sessionId
+                if (history.isEmpty()) stored.remove(key) else stored[key] = json.encodeToString(history)
+            }
+            val drafts = stored[DRAFTS]?.let { json.decodeFromString<List<ComposeDraft>>(it) }.orEmpty()
+            val detached = stored[DETACHED_MEDIA]?.let { json.decodeFromString<Map<String, Set<String>>>(it) }.orEmpty()
+            val pending = stored[PENDING_MEDIA]?.let { json.decodeFromString<Map<String, Set<String>>>(it) }.orEmpty()
+            val retained = (drafts + buffers).filter { it.sessionId != sessionId }.flatMap { it.attachmentUris }.toSet() +
+                detached.filterKeys { it != sessionId }.values.flatten()
+            files = ((drafts + buffers).filter { it.sessionId == sessionId }.flatMap { it.attachmentUris }.toSet() +
+                detached[sessionId].orEmpty() + pending[sessionId].orEmpty()) - retained
+            stored[PENDING_MEDIA] = json.encodeToString(pending + (sessionId to files))
+            val remaining = drafts.filterNot { it.sessionId == sessionId }
+            if (remaining.isEmpty()) stored.remove(DRAFTS) else stored[DRAFTS] = json.encodeToString(remaining)
+            if ((detached - sessionId).isEmpty()) stored.remove(DETACHED_MEDIA)
+            else stored[DETACHED_MEDIA] = json.encodeToString(detached - sessionId)
+        }
+        synchronized(bufferLock) { composeBuffers.update { current -> current.filterValues { it.sessionId != sessionId } } }
+        return files
+    }
+
+    suspend fun completeAccountMediaRemoval(sessionId: String) {
+        dataStore.edit { stored ->
+            val remaining = stored[PENDING_MEDIA]?.let { json.decodeFromString<Map<String, Set<String>>>(it) }.orEmpty() - sessionId
+            if (remaining.isEmpty()) stored.remove(PENDING_MEDIA) else stored[PENDING_MEDIA] = json.encodeToString(remaining)
+        }
+    }
+
+    private suspend fun update(sessionId: String? = null, transform: (AppPreferences) -> AppPreferences) {
+        dataStore.edit { stored ->
+            if (sessionId != null && !canWriteAccount(sessionId)) return@edit
             val current = stored[APP_PREFERENCES]?.let {
                 runCatching { decodeAppPreferences(it) }.getOrNull()
             } ?: AppPreferences(openLinksInApp = stored[LEGACY_OPEN_LINKS_IN_APP] ?: true)
@@ -283,6 +349,8 @@ class UserPreferencesStore(
     }
 
     private companion object {
+        val DETACHED_MEDIA = stringPreferencesKey("detached_draft_media")
+        val PENDING_MEDIA = stringPreferencesKey("pending_account_media_removal")
         val APP_PREFERENCES = stringPreferencesKey("app_preferences_v2")
         val DRAFTS = stringPreferencesKey("compose_drafts")
         val REACTION_HISTORY = stringPreferencesKey("reaction_history")

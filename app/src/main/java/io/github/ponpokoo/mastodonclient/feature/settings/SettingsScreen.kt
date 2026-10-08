@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient.feature.settings
 
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
+import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -395,6 +399,22 @@ internal fun SettingsPageContent(
                         headlineContent = { Text("ライセンス") },
                         trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
                         modifier = Modifier.clickable { onPage(SettingsPage.Licenses) }.testTag("settings_licenses"),
+                    )
+                }
+                item {
+                    val context = LocalContext.current
+                    val webLinkLauncher = remember(context) { WebLinkLauncher(context) }
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text("プライバシーポリシー") },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
+                        modifier = Modifier.clickable {
+                            if (!webLinkLauncher.open(
+                                    "https://ponpokoo.github.io/nagisa-policy/".toUri(),
+                                    inApp = preferences.openLinksInApp,
+                                )) {
+                                Toast.makeText(context, "リンクを開けるブラウザーが見つかりません", Toast.LENGTH_SHORT).show()
+                            }
+                        }.testTag("settings_privacy_policy"),
                     )
                 }
             }

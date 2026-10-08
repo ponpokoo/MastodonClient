@@ -29,7 +29,7 @@ class PushNotificationDeviceTest {
         val record = StoredPushRegistration(PushRegistrationGuard.binding(session), "https://relay.example/", "r".repeat(43), "s".repeat(43),
             json.decodeFromJsonElement<WebPushKeys>(fixture.getValue("keys")), "https://relay.example/push/test", PushRegistrationState.ACTIVE)
         val store = EncryptedPushRegistrationStore(context)
-        val local = SystemNotificationDataSource(context)
+        val local = SystemNotificationDataSource(context) { listOf(session) }
         val presenter = DefaultSystemNotificationRepository(local)
         val receiver = DefaultPushMessageRepository({ listOf(session) }, store, PushMessageSource { _, _, _, _ -> error("No fetch expected") }, presenter)
         val data = fixture.getValue("standard").jsonObject.mapValues { it.value.jsonPrimitive.content } + ("transport" to "inline")

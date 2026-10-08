@@ -21,10 +21,16 @@ import okhttp3.Request
 import java.io.ByteArrayOutputStream
 
 import io.github.ponpokoo.mastodonclient.domain.model.PushNotification
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
+import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 
-class SystemNotificationDataSource(private val context: android.content.Context) {
+class SystemNotificationDataSource(private val context: android.content.Context,
+    private val sessions: suspend () -> List<AccountSession> = SecureAuthStore(context)::getSessions,
+) {
+    private val seenStore by lazy { context.getSharedPreferences("delivered_notifications", android.content.Context.MODE_PRIVATE) }
+    private val markers by lazy { context.getSharedPreferences("notification_poll_markers", android.content.Context.MODE_PRIVATE) }
+    private suspend fun isRegistered(session: AccountSession) = sessions().any { it.hasSameCredentials(session) }
     private val delivery by lazy {
-        val seenStore = context.getSharedPreferences("delivered_notifications", android.content.Context.MODE_PRIVATE)
         NotificationDeliveryCoordinator(
             read = { sessionId ->
                 val stored = org.json.JSONArray(seenStore.getString(sessionId, "[]"))
@@ -77,9 +83,25 @@ class SystemNotificationDataSource(private val context: android.content.Context)
 
     suspend fun dismissRead(sessionId: String, notificationIds: Set<String>): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
         if (sessionId.isBlank() || notificationIds.isEmpty()) return@withContext
-        delivery.acknowledge(sessionId, notificationIds) {
+        delivery.acknowledge(sessionId, notificationIds, isCurrent = { sessions().any { it.sessionId == sessionId } }) {
             val manager = context.getSystemService(NotificationManager::class.java)
             notificationIds.forEach { manager.cancel("$sessionId:$it", 0) }
+        }
+    }
+
+    suspend fun deleteAccount(sessionId: String): Unit = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        delivery.removeAccount {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications.filter { it.notification.group == notificationGroup(sessionId) }
+                .forEach { manager.cancel(it.tag, it.id) }
+            check(seenStore.edit().remove(sessionId).commit()) { "通知履歴を削除できません" }
+            check(markers.edit().remove("last_notification_$sessionId").commit()) { "通知の取得位置を削除できません" }
+        }
+    }
+
+    suspend fun writePollingMarker(session: AccountSession, id: String) = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        delivery.updateIfCurrent({ isRegistered(session) }) {
+            check(markers.edit().putString("last_notification_${session.sessionId}", id).commit())
         }
     }
 
@@ -108,7 +130,7 @@ class SystemNotificationDataSource(private val context: android.content.Context)
                 .setGroup(notificationGroup(session.sessionId))
                 .build()
 
-        val posted = delivery.deliver(session.sessionId, id, isCurrent = { canPostNotifications() && isCurrent() }) {
+        val posted = delivery.deliver(session.sessionId, id, isCurrent = { canPostNotifications() && isRegistered(session) && isCurrent() }) {
             try {
                 NotificationManagerCompat.from(context).notify(notificationTag, 0, buildNotification())
                 true
@@ -123,6 +145,7 @@ class SystemNotificationDataSource(private val context: android.content.Context)
         val avatar = loadAvatarIcon(avatarUrl) ?: return@withContext
         if (!canPostNotifications() || !isCurrent()) return@withContext
         delivery.updateVisibleNotification {
+            if (!isRegistered(session) || !isCurrent()) return@updateVisibleNotification
             val isStillVisible = try {
                 context.getSystemService(NotificationManager::class.java)
                     .activeNotifications

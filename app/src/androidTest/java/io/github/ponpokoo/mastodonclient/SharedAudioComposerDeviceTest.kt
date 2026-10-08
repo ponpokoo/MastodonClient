@@ -89,7 +89,7 @@ class SharedAudioComposerDeviceTest {
                 override suspend fun getSessions() = listOf(session)
                 override suspend fun logout() = Unit
             }, UserPreferencesStore(preferences), {}, object : DraftMediaRepository {
-                override suspend fun importMedia(uris: List<String>) = Result.success(MediaImportResult(listOf(
+                override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(MediaImportResult(listOf(
                     DraftAttachment("file:///synthetic-song", "song.mp3", "audio/mpeg"),
                     DraftAttachment("file:///synthetic-pdf", "document.pdf", "application/pdf"),
                 )))

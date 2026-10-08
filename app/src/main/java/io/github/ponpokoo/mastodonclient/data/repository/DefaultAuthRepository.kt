@@ -11,6 +11,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class DefaultAuthRepository(
     private val apiClientFactory: ApiClientFactory,
@@ -19,7 +21,9 @@ class DefaultAuthRepository(
     private val notificationLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource? = null,
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
     private val accountDisplay: AccountDisplaySynchronizer = AccountDisplaySynchronizer(authStore),
+    private val accountData: io.github.ponpokoo.mastodonclient.data.local.AccountDataLocalDataSource? = null,
 ) : AuthRepository {
+    private val cleanupMutex = Mutex()
     override suspend fun moveAccount(sessionId: String, beforeSessionId: String?): Result<Unit> = runCatching {
         authStore.moveSession(sessionId, beforeSessionId)
     }
@@ -131,7 +135,25 @@ class DefaultAuthRepository(
         session
     }
 
-    override suspend fun restoreSession(): AccountSession? = authStore.getSession()
+    override suspend fun restoreSession(): AccountSession? {
+        retryAccountCleanup()
+        return authStore.getSession()
+    }
+
+    override suspend fun retryAccountCleanup() { cleanupAccounts() }
+
+    private suspend fun cleanupAccounts(additional: Set<String> = emptySet()) = cleanupMutex.withLock {
+        for (id in authStore.pendingAccountDeletions() + additional) {
+            // A retry must never erase a currently registered account.
+            if (authStore.getSessions().any { it.sessionId == id }) continue
+            val results = listOf(
+                runCatching { accountData?.deleteAccount(id) },
+                runCatching { notificationLocalDataSource?.deleteAccount(id) },
+                runCatching { homeTimelineLocalDataSource?.deleteAccount(id) },
+            )
+            if (results.all { it.isSuccess }) runCatching { authStore.completeAccountDeletion(id) }
+        }
+    }
 
     override suspend fun getSessions(): List<AccountSession> = authStore.getSessions()
 
@@ -152,10 +174,8 @@ class DefaultAuthRepository(
         pushLifecycle?.beforeLogout(session)
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
             authStore.removeSession(session.sessionId)
-            // A disk failure must not cause MainSessionViewModel to restore a logged-out account.
-            // Late cache reads/writes also verify that the account is still registered.
-            runCatching { notificationLocalDataSource?.deleteAccount(session.sessionId) }
-            runCatching { homeTimelineLocalDataSource?.deleteAccount(session.sessionId) }
+            // Failures leave the durable journal for startup/foreground retries; never restore credentials.
+            runCatching { cleanupAccounts(setOf(session.sessionId)) }
         }
         if (authStore.getPending()?.reauthorizeSessionId == session.sessionId) authStore.clearPending()
         true

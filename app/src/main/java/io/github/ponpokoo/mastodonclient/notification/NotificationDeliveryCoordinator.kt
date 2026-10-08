@@ -15,10 +15,15 @@ class NotificationDeliveryCoordinator(
         write(sessionId, seen.takeLast(499) + notificationId)
         true
     }
-    suspend fun acknowledge(sessionId: String, notificationIds: Set<String>, dismiss: () -> Unit) = mutex.withLock {
+    suspend fun acknowledge(sessionId: String, notificationIds: Set<String>, isCurrent: suspend () -> Boolean = { true }, dismiss: () -> Unit) = mutex.withLock {
+        if (!isCurrent()) return@withLock
         write(sessionId, (read(sessionId) + notificationIds).distinct().takeLast(500))
         dismiss()
     }
-    suspend fun updateVisibleNotification(update: () -> Unit) = mutex.withLock { update() }
+    suspend fun updateVisibleNotification(update: suspend () -> Unit) = mutex.withLock { update() }
+    suspend fun removeAccount(remove: () -> Unit) = mutex.withLock { remove() }
+    suspend fun updateIfCurrent(isCurrent: suspend () -> Boolean, update: () -> Unit) = mutex.withLock {
+        if (isCurrent()) update()
+    }
     private companion object { val mutex = Mutex() }
 }

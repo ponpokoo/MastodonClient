@@ -40,7 +40,7 @@ class ComposeQuoteTest : ScreenViewModelTestBase() {
             override suspend fun getSessions() = listOf(testAccount, secondAccount)
             override suspend fun logout() = Unit
         }, preferences, {}, object : DraftMediaRepository {
-            override suspend fun importMedia(uris: List<String>) = Result.success(io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult())
+            override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult())
         }, initialQuoteStatusId = quoted.statusId.takeIf { mode != null },
             initialQuoteStatusUrl = quoted.url.takeIf { mode != null }, nativeQuote = mode == QuoteMode.Native,
             logMediaFailure = {}),

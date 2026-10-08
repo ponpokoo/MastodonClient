@@ -18,15 +18,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-class DraftMediaDataSource(context: Context) {
+class DraftMediaDataSource(context: Context, private val isAccountPresent: suspend (String) -> Boolean = { id ->
+    io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore(context).getSessions().any { it.sessionId == id }
+}) {
     private val resolver = context.applicationContext.contentResolver
-    private val directory = File(context.applicationContext.filesDir, "draft_media")
+    private val files = DraftMediaFiles(File(context.applicationContext.filesDir, "draft_media"))
 
-    suspend fun importMedia(uris: List<String>): MediaImportResult {
+    suspend fun importMedia(sessionId: String, uris: List<String>): MediaImportResult = mediaMutex.withLock {
+        check(isAccountPresent(sessionId)) { "アカウントの登録が削除されています" }
+        val directory = files.directory(sessionId)
         val created = mutableListOf<File>()
         try {
-            return withContext(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 check(directory.isDirectory || directory.mkdirs()) { "添付ファイルの保存先を作成できません" }
                 val attachments = mutableListOf<DraftAttachment>()
                 val rejected = mutableListOf<RejectedMedia>()
@@ -72,6 +78,7 @@ class DraftMediaDataSource(context: Context) {
                         rejected += RejectedMedia(name, mimeType, reason)
                     }
                 }
+                check(isAccountPresent(sessionId)) { "アカウントの登録が削除されています" }
                 MediaImportResult(attachments, rejected)
             }
         } catch (error: Exception) {
@@ -82,6 +89,12 @@ class DraftMediaDataSource(context: Context) {
             throw error
         }
     }
+
+    suspend fun deleteAccount(sessionId: String, legacyUris: Set<String>) = mediaMutex.withLock {
+        withContext(Dispatchers.IO) { files.deleteAccount(sessionId, legacyUris) }
+    }
+
+    private companion object { val mediaMutex = Mutex() }
 
     private fun displayName(uri: Uri): String? = try {
         resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

@@ -47,6 +47,7 @@
 | [画像共有遷移の最小試作](../transition-prototype/README.md) | Issue #3の独立した試作アプリ、静止画1枚の開閉、ビルド手順、確認範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 調査の結果、再現条件、原因特定の限界を確認する |
 | [自プロフィール画像の点滅](investigations/profile-image-refresh-flicker-report.md) | アイコンとヘッダーの再取得・旧画像保持・キャッシュの調査結果、採用した最小修正案と確認条件を参照する |
+| [アカウント削除後の残留データ](investigations/account-removal-data-retention.md) | 削除対象・再試行の判断、統合前の検証記録、旧孤立添付やPush解除待ちの制約を確認する |
 | [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
 | [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 公開APIの観測、MastodonとMisskeyの認証・通知・リアクションAPIの違い、連合と直接ログインの範囲を確認する |
 

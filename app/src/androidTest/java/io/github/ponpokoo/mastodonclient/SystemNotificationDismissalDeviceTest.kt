@@ -25,7 +25,7 @@ class SystemNotificationDismissalDeviceTest {
         }
         val first = AccountSession("first-${UUID.randomUUID()}", "https://first.example", "first", "first", "First", "", "test-token")
         val second = AccountSession("second-${UUID.randomUUID()}", "https://second.example", "second", "second", "Second", "", "test-token")
-        val local = SystemNotificationDataSource(context)
+        val local = SystemNotificationDataSource(context) { listOf(first, second) }
         val manager = context.getSystemService(NotificationManager::class.java)
         val tags = listOf("${first.sessionId}:one", "${first.sessionId}:two", "${second.sessionId}:three")
         val author = StatusAuthor("sender", "Sender", "sender", "")

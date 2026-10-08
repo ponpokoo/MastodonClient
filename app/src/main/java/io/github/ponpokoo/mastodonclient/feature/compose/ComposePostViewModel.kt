@@ -110,6 +110,7 @@ class ComposePostViewModel(
             attachments = state.attachments.map { if (it.uri == uri) transform(it) else it }) } },
         posting = _uiState.map { it.isPosting }, logMediaFailure = logMediaFailure)
     private var restoredDraftKey: String? = null
+    private var postingJob: Job? = null
 
     private fun stopMedia() = mediaTransfer.stop()
 
@@ -183,11 +184,15 @@ class ComposePostViewModel(
             selected?.let { session ->
                 observeAccountDisplay()
                 loadAccountData(session, restoreBuffer = editStatusId == null, sharedMediaUris = initialSharedMediaUris)
+                if (_uiState.value.selectedSession?.hasSameCredentials(session) != true) return@launch
                 applyInitialShare()
                 consumePendingShare()
                 loadQuoteTarget(session)
                 editStatusId?.let { statusId ->
-                    timelineRepository.getEditableStatus(session, statusId).fold(
+                    val result = timelineRepository.getEditableStatus(session, statusId)
+                    currentCoroutineContext().ensureActive()
+                    if (_uiState.value.selectedSession?.hasSameCredentials(session) != true) return@launch
+                    result.fold(
                         onSuccess = { source -> _uiState.update { state -> state.copy(
                             text = source.text,
                             spoilerText = source.spoilerText,
@@ -221,6 +226,16 @@ class ComposePostViewModel(
     private fun observeAccountDisplay() {
         viewModelScope.launch {
             authRepository.observeSessions().collect { sessions ->
+                val selected = _uiState.value.selectedSession
+                if (selected != null && sessions.none { it.hasSameCredentials(selected) }) {
+                    postingJob?.cancel()
+                    stopMedia()
+                    clearPendingShare()
+                    ReferenceKind.entries.forEach(::cancelTargetLoad)
+                    _uiState.update { ComposePostUiState(sessions = sessions, preferences = it.preferences,
+                        isLoading = false, errorMessage = "投稿元のアカウント登録が変更されました") }
+                    return@collect
+                }
                 _uiState.update { state ->
                     val current = state.selectedSession
                     val updated = sessions.firstOrNull { it.sessionId == current?.sessionId }
@@ -315,7 +330,8 @@ class ComposePostViewModel(
     }
 
     private suspend fun stageMedia(uris: List<String>): MediaImportResult {
-        val result = draftMediaRepository.importMedia(uris.distinct()).getOrElse { error ->
+        val session = _uiState.value.selectedSession ?: return MediaImportResult()
+        val result = draftMediaRepository.importMedia(session.sessionId, uris.distinct()).getOrElse { error ->
             if (error is CancellationException) throw error
             MediaImportResult(rejected = uris.distinct().map {
                 RejectedMedia("attachment", null, MediaRejectionReason.Unreadable)
@@ -606,11 +622,16 @@ class ComposePostViewModel(
             _uiState.update { it.copy(altReminderVisible = true) }
             return
         }
-        viewModelScope.launch {
+        postingJob = viewModelScope.launch {
             _uiState.update { it.copy(isPosting = true, errorMessage = null) }
             val session = state.selectedSession
             scheduleAttachments()
             mediaTransfer.await(state.attachments.map { it.uri })
+            if (_uiState.value.selectedSession?.hasSameCredentials(session) != true ||
+                authRepository.getSessions().none { it.hasSameCredentials(session) }) {
+                _uiState.update { it.copy(isPosting = false) }
+                return@launch
+            }
             val attachments = _uiState.value.attachments
             if (attachmentValidationErrors().isNotEmpty()) {
                 scheduleAttachments()
@@ -649,6 +670,7 @@ class ComposePostViewModel(
                     ),
                 )
             }
+            currentCoroutineContext().ensureActive()
             result
                 .onSuccess {
                     idempotencyKey = UUID.randomUUID().toString()
@@ -678,6 +700,7 @@ class ComposePostViewModel(
             try {
                 preferencesStore.saveDraft(draft)
                 currentCoroutineContext().ensureActive()
+                if (authRepository.getSessions().none { it.hasSameCredentials(session) }) return@launch
                 stopMedia()
                 ReferenceKind.entries.forEach(::cancelTargetLoad)
                 preferencesStore.removeComposeBuffer(bufferKey)

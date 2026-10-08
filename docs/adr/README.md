@@ -23,6 +23,7 @@
 | 0013 | [本文を保存しないハイブリッドPush配送を採用](0013-adopt-hybrid-push-delivery.md) | accepted（移行条件は0015で置換、本番切替済み） |
 | 0014 | [AndroidのハイブリッドPushを永続世代と差分位置で補完](0014-android-hybrid-push-sync.md) | accepted（小通知の実FCM測定済み、大通知・欠落回復・対応APK配布は未完了） |
 | 0015 | [旧APKの大通知欠落を許容して本番Relayを直接切替](0015-production-hybrid-cutover.md) | accepted（0013の移行条件を置換） |
+| 0016 | [アカウント登録削除にローカルデータの回収を含める](0016-account-local-data-removal.md) | accepted |
 
 ## 記録方法
 

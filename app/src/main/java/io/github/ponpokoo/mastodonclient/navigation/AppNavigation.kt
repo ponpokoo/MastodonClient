@@ -133,7 +133,10 @@ fun AppNavigation(
     }
     val networkAvailability = remember { io.github.ponpokoo.mastodonclient.data.local.NetworkAvailability(context) }
     val accountDisplay = remember { io.github.ponpokoo.mastodonclient.data.repository.AccountDisplaySynchronizer(authStore) }
-    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource, homeTimelineLocalDataSource, accountDisplay) }
+    val authRepository = remember { DefaultAuthRepository(apiClientFactory, authStore, pushRuntime.control, notificationLocalDataSource, homeTimelineLocalDataSource, accountDisplay,
+        io.github.ponpokoo.mastodonclient.data.local.DefaultAccountDataLocalDataSource(preferences,
+            io.github.ponpokoo.mastodonclient.data.local.DraftMediaDataSource(context),
+            io.github.ponpokoo.mastodonclient.notification.SystemNotificationDataSource(context))) }
     val pushSettings: io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel = viewModel(
         factory = ScreenViewModelFactory { io.github.ponpokoo.mastodonclient.feature.settings.PushSettingsViewModel(pushRuntime.control, authRepository) },
     )

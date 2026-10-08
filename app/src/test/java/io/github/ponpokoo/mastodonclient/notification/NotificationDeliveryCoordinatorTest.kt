@@ -3,10 +3,32 @@ package io.github.ponpokoo.mastodonclient.notification
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class NotificationDeliveryCoordinatorTest {
+    @Test fun accountRemovalSerializesWithDeliveryAndPreventsLateHistoryAndMarkers() = runTest {
+        val ledger = mutableMapOf<String, List<String>>()
+        val coordinator = NotificationDeliveryCoordinator({ ledger[it].orEmpty() }, { id, ids -> ledger[id] = ids })
+        var registered = true
+        val visible = mutableSetOf<String>()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val delivering = async {
+            coordinator.deliver("a", "one", { gate.await(); registered }) { visible += "a"; true }
+        }
+        runCurrent()
+        val removing = async { coordinator.removeAccount { registered = false; ledger.remove("a"); visible.remove("a") } }
+        gate.complete(Unit)
+        delivering.await(); removing.await()
+        assertTrue(visible.isEmpty()); assertFalse(ledger.containsKey("a"))
+        assertFalse(coordinator.deliver("a", "late", { registered }) { error("Deleted account must not notify") })
+        coordinator.acknowledge("a", setOf("late"), { registered }) { error("Must not recreate ledger") }
+        coordinator.updateIfCurrent({ registered }) { error("Must not recreate polling marker") }
+        assertTrue(coordinator.deliver("b", "one", { true }) { visible += "b"; true })
+        assertEquals(setOf("b"), visible)
+    }
     @Test fun readNotificationIsNotDeliveredLateAndOtherNotificationsAreUnaffected() = runTest {
         val ledger = mutableMapOf<String, List<String>>()
         val coordinator = NotificationDeliveryCoordinator({ ledger[it].orEmpty() }, { session, ids -> ledger[session] = ids })

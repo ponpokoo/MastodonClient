@@ -17,6 +17,80 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
+    @Test fun accountRemovalRejectsLateEditablePostLoading() = runTest(dispatcher) {
+        val auth = Auth()
+        val editGate = CompletableDeferred<EditableStatus>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getEditableStatus(session: AccountSession, statusId: String) = Result.success(editGate.await())
+        }
+        val composer = own(ComposePostViewModel(null, "edited-post", repository, auth,
+            UserPreferencesStore(MemoryAuthPreferences()), {}, object : DraftMediaRepository {
+                override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(MediaImportResult())
+            }))
+        runCurrent()
+        auth.logout(); runCurrent()
+        editGate.complete(EditableStatus("edited-post", "private server text", "private warning", true)); runCurrent()
+        assertNull(composer.uiState.value.selectedSession)
+        assertEquals("", composer.uiState.value.text)
+        assertEquals("", composer.uiState.value.spoilerText)
+    }
+
+    @Test fun removedPostingAccountRejectsLatePostResultEvenWhenRequestIgnoresCancellation() = runTest(dispatcher) {
+        val auth = Auth()
+        val postGate = CompletableDeferred<TimelineStatus>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String) =
+                Result.success(withContext(NonCancellable) { postGate.await() })
+        }
+        val composer = own(ComposePostViewModel(null, null, repository, auth,
+            UserPreferencesStore(MemoryAuthPreferences()), {}, object : DraftMediaRepository {
+                override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(MediaImportResult())
+            }))
+        runCurrent()
+        composer.onTextChanged("private input")
+        composer.postIgnoringMissingAlt(); runCurrent()
+        assertTrue(composer.uiState.value.isPosting)
+        auth.logout(); runCurrent()
+        postGate.complete(testStatus()); runCurrent()
+        assertNull(composer.uiState.value.selectedSession)
+        assertEquals("", composer.uiState.value.text)
+        assertFalse(composer.uiState.value.posted)
+    }
+
+    @Test fun removingPostingAccountClearsInputAndStopsAttachmentUpload() = runTest(dispatcher) {
+        val auth = Auth()
+        val uploadGate = CompletableDeferred<UploadedMedia>()
+        var cancelled = false
+        var posts = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                posts++
+                return Result.success(testStatus())
+            }
+            override suspend fun uploadMedia(session: AccountSession, upload: MediaUpload): Result<UploadedMedia> {
+                try { return Result.success(uploadGate.await()) }
+                finally { cancelled = true }
+            }
+        }
+        val preferences = UserPreferencesStore(MemoryAuthPreferences())
+        val composer = own(ComposePostViewModel(null, null, repository, auth, preferences, {}, object : DraftMediaRepository {
+            override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(MediaImportResult(
+                uris.map { DraftAttachment(it, "photo.jpg", "image/jpeg") }))
+        }))
+        runCurrent()
+        composer.onTextChanged("private input")
+        composer.importMedia(listOf("file:///photo.jpg"))
+        advanceTimeBy(1_001); runCurrent()
+        composer.postIgnoringMissingAlt(); runCurrent()
+        auth.logout(); runCurrent()
+        assertNull(composer.uiState.value.selectedSession)
+        assertEquals("", composer.uiState.value.text)
+        assertTrue(composer.uiState.value.attachments.isEmpty())
+        assertTrue(cancelled)
+        assertEquals(0, posts)
+        composer.saveDraft(); runCurrent()
+        assertTrue(preferences.drafts.first().isEmpty())
+    }
     private class Auth : AuthRepository {
         val accounts = MutableStateFlow(listOf(testAccount, secondAccount))
         var activeId = testAccount.sessionId
@@ -87,7 +161,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
         }
         val preferences = UserPreferencesStore(MemoryAuthPreferences())
         val composer = own(ComposePostViewModel(null, null, repository, auth, preferences, {}, object : DraftMediaRepository {
-            override suspend fun importMedia(uris: List<String>) = Result.success(MediaImportResult(uris.map { DraftAttachment(it, "photo.jpg", "image/jpeg") }))
+            override suspend fun importMedia(sessionId: String, uris: List<String>) = Result.success(MediaImportResult(uris.map { DraftAttachment(it, "photo.jpg", "image/jpeg") }))
         }))
         runCurrent()
         composer.onTextChanged("saved draft")

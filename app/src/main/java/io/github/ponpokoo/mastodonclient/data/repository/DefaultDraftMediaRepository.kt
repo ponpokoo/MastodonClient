@@ -5,5 +5,5 @@ import io.github.ponpokoo.mastodonclient.data.local.DraftMediaDataSource
 import io.github.ponpokoo.mastodonclient.domain.repository.DraftMediaRepository
 
 class DefaultDraftMediaRepository(private val source: DraftMediaDataSource) : DraftMediaRepository {
-    override suspend fun importMedia(uris: List<String>) = runCatchingCancellable { source.importMedia(uris) }
+    override suspend fun importMedia(sessionId: String, uris: List<String>) = runCatchingCancellable { source.importMedia(sessionId, uris) }
 }

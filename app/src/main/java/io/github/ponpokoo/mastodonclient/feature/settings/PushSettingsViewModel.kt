@@ -37,6 +37,7 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
     }
     fun retry() { viewModelScope.launch { refreshNow() } }
     private suspend fun refreshNow() {
+        runCatchingCancellable { auth.retryAccountCleanup() }
         runCatchingCancellable { push.refresh() }.onSuccess { mutableError.value = null }
             .onFailure { mutableError.value = "通知設定を読み込めませんでした。再試行してください。" }
     }

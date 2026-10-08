@@ -26,7 +26,7 @@ fun AccountRemovalButton(account: AccountSession?, onRemove: (AccountSession) ->
                     val username = "@${account.username}"
                     Text(if (displayName == account.username) username else "$displayName ($username)")
                     Text(account.instanceUrl)
-                    Text("アプリから登録を削除します。")
+                    Text("このアカウントの下書き・添付・設定・履歴・通知をアプリから削除します。アプリ共通設定とサーバー上のアカウント・投稿は残ります。")
                 }
             },
             confirmButton = {

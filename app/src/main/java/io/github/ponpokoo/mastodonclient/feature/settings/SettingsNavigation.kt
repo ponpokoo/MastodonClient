@@ -29,7 +29,7 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Moderation("ミュート・ブロックの管理", "ワードミュート・ミュート中・ブロック中"),
     Accounts("アカウント管理", "登録済みアカウント・並び替え・追加・削除"),
     Storage("ストレージ", "画像キャッシュの削除"),
-    About("このアプリについて", "バージョン・ライセンス"),
+    About("このアプリについて", "バージョン・ライセンス・プライバシーポリシー"),
     Licenses("ライセンス", ""),
 }
 

@@ -86,7 +86,7 @@ class NotificationPollingJobService : JobService() {
                         }
                     }
             }
-            markers.edit().putString(markerKey, newestId).apply()
+            notifier.writePollingMarker(session, newestId)
         }
     }
 

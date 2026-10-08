@@ -4,6 +4,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 
 interface AuthRepository {
+    suspend fun retryAccountCleanup() = Unit
     suspend fun moveAccount(sessionId: String, beforeSessionId: String?): Result<Unit> = Result.failure(UnsupportedOperationException())
     /** Remove only the active credentials that the user confirmed. False means the target changed. */
     suspend fun logout(expected: AccountSession): Boolean {

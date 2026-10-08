@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as r
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import kotlinx.coroutines.flow.first
@@ -65,6 +66,8 @@ interface AuthStore {
     suspend fun getSession(): AccountSession?
     suspend fun setActiveSession(sessionId: String): AccountSession?
     suspend fun removeSession(sessionId: String)
+    suspend fun pendingAccountDeletions(): Set<String> = emptySet()
+    suspend fun completeAccountDeletion(sessionId: String) = Unit
 }
 
 class SecureAuthStore internal constructor(
@@ -149,6 +152,8 @@ class SecureAuthStore internal constructor(
 
     override suspend fun removeSession(sessionId: String) {
         dataStore.edit { preferences ->
+            // Commit the cleanup journal together with credential removal, including across crashes.
+            preferences[PENDING_DELETIONS] = preferences[PENDING_DELETIONS].orEmpty() + sessionId
             val remaining = sessionsFrom(preferences).filterNot { it.sessionId == sessionId }
             if (remaining.isEmpty()) {
                 preferences.remove(SESSIONS)
@@ -158,6 +163,15 @@ class SecureAuthStore internal constructor(
                 putSessions(preferences, remaining)
                 if (preferences[ACTIVE_SESSION_ID] == sessionId) preferences[ACTIVE_SESSION_ID] = remaining.first().sessionId
             }
+        }
+    }
+
+    override suspend fun pendingAccountDeletions(): Set<String> = dataStore.data.first()[PENDING_DELETIONS].orEmpty()
+
+    override suspend fun completeAccountDeletion(sessionId: String) {
+        dataStore.edit { preferences ->
+            val pending = preferences[PENDING_DELETIONS].orEmpty() - sessionId
+            if (pending.isEmpty()) preferences.remove(PENDING_DELETIONS) else preferences[PENDING_DELETIONS] = pending
         }
     }
 
@@ -208,6 +222,7 @@ class SecureAuthStore internal constructor(
     }
 
     private companion object {
+        val PENDING_DELETIONS = stringSetPreferencesKey("pending_account_deletions")
         val REGISTRATIONS = stringPreferencesKey("registrations")
         val PENDING = stringPreferencesKey("pending_oauth")
         val SESSION = stringPreferencesKey("account_session")

@@ -28,7 +28,7 @@ class SharedMediaReceptionDeviceTest {
             IncomingShareBus.accept(intent)
             val share = checkNotNull(IncomingShareBus.share.value)
             try {
-                val result = DraftMediaDataSource(context).importMedia(share.mediaUris)
+                val result = DraftMediaDataSource(context, isAccountPresent = { true }).importMedia("shared-media-test", share.mediaUris)
                 assertEquals(mime, result.attachments.single().mimeType)
                 assertTrue(result.rejected.isEmpty())
                 assertEquals(4L, File(Uri.parse(result.attachments.single().uri).path!!).length())
@@ -52,14 +52,14 @@ class SharedMediaReceptionDeviceTest {
         val share = checkNotNull(IncomingShareBus.share.value)
         try {
             assertEquals(listOf(first.toString(), second.toString(), mediaUri("jpeg-two").toString()), share.mediaUris)
-            val result = DraftMediaDataSource(context).importMedia(share.mediaUris)
+            val result = DraftMediaDataSource(context, isAccountPresent = { true }).importMedia("shared-media-test", share.mediaUris)
             assertEquals(listOf("image/jpeg", "audio/mpeg", "image/jpeg"), result.attachments.map { it.mimeType })
             result.attachments.forEach { File(Uri.parse(it.uri).path!!).delete() }
         } finally { IncomingShareBus.consume(share.requestId) }
     }
 
     @Test fun fallsBackOnlyForUnknownOrBroadMimeAndRetainsSuccessesOnReadFailures() = runBlocking {
-        val result = DraftMediaDataSource(context).importMedia(listOf(
+        val result = DraftMediaDataSource(context, isAccountPresent = { true }).importMedia("shared-media-test", listOf(
             "fallback", "broad", "wrong-extension", "no-metadata", "unknown", "broken", "denied",
         ).map { mediaUri(it).toString() })
         try {

@@ -34,7 +34,7 @@ class HybridPushDeviceTest {
         val fixture = instrumentation.context.assets.open("push/encrypted.json").bufferedReader().use { json.parseToJsonElement(it.readText()).jsonObject }
         val session = AccountSession("hybrid-device-${UUID.randomUUID()}", "https://example.test", "me", "me", "Me", "", "synthetic-token")
         val store = EncryptedPushRegistrationStore(context)
-        val local = SystemNotificationDataSource(context)
+        val local = SystemNotificationDataSource(context) { listOf(session) }
         val manager = context.getSystemService(NotificationManager::class.java)
         val inlineId = "123456789012345678901234567890"
         val newerId = "opaque-hybrid-new"
