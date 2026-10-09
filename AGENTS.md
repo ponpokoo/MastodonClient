@@ -31,6 +31,9 @@ adding, moving, or removing documentation entry points.
   that duplicate coverage, mirror implementation details, or only assert static text/layout values.
 - Run affected tests first. Expand to the full suite for shared infrastructure changes, release
   candidates, or evidence of wider impact. Do not repeat successful checks without relevant changes.
+- Local checks remain scoped to the change; push/PR CI runs the common checks selected by changed paths
+  in `docs/project-setup.md`. On later changes, check whether CI paths, commands, or tool versions need
+  updating and briefly record that judgment in the PR or commit description.
 
 ## Push and Relay
 

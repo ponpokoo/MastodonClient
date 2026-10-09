@@ -221,6 +221,45 @@ APK生成後に関連コードが変わっていなければ再ビルドしな�
 既存テストを削る場合は、重複先または不要になった仕様を確認する。件数だけを理由に削除しない。
 成功後の再実行は関連コードの変更、失敗、未解決の懸念がある場合に限る。
 
+### 変更範囲に応じたCI
+
+[GitHub ActionsのCI](../.github/workflows/ci.yml)は`main`へのpush、PR、Actions画面からの手動実行で起動する。
+ローカルの編集中は上表の最小確認を選び、CIでは変更範囲に対応する共通セットを実行する。
+[選択処理](../.github/scripts/ci-changes.mjs)はPRのmerge baseからの差分、push前後のコミット差分を対象にする。
+比較元を取得できない初回push等と手動実行では全ジョブを選ぶ。移動・削除も変更前後の範囲に含める。
+
+| 変更範囲 | 自動確認 |
+| --- | --- |
+| 全変更 | CI選択・結果判定の回帰テストと、コミット差分の`git diff --check` |
+| `app/`（`app/release/`を除く） | `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` |
+| `app/src/androidTest/`・`app/build.gradle.kts`・`tools/` | 本体の共通確認に加え`:app:assembleDebugAndroidTest` |
+| `release-tests/` | `:release-tests:assembleRelease`。端末での実行は行わない |
+| `transition-prototype/` | 試作のDebugアプリ・端末テストAPKの生成 |
+| ルートのGradle設定・Wrapper・`gradle/` | Androidの上記すべて |
+| `relay/workers/`（`bench/results/`を除く） | `npm ci`・`npm test`。旧配送・ハイブリッド・FCM・測定記録のテスト |
+| `relay/`のWorkers以外 | ローカル模擬Relayの`npm test`。外部依存のインストールは不要 |
+| CIのworkflow・スクリプト | 全ジョブ。CI自身の修正による実行漏れを確認する |
+
+Markdownのみの変更、保存済み成果物・Play素材・測定結果のみの変更では、全変更に共通する確認だけを行う。
+過去調査用のinit script付きテストは通常のCIには含めない。
+Ubuntu 24.04、Temurin JDK 25、SDK `platforms;android-37.0`／Build Tools 37.0.0、Node 24を使用し、GradleはWrapperの固定版を使う。
+Firebase設定・Relay本番設定・配布署名はCIへ渡さない。実FCM、負荷測定、端末テストの実行、Play／Workersへの配置は既存の必要時確認で行う。
+新規環境で依存を取得するためCIには`--offline`を付けない。lintはエラーで失敗し、既存の警告はレポートで確認する。
+
+Actionsの実行結果で選択・スキップされた範囲を確認する。Androidの単体テスト・lintレポートは`android-reports`に7日間保存する。
+必須チェックを設定する場合は、常に結果を集約する`CI result`を使用する。未選択のジョブはスキップを許容し、選択したジョブの失敗・キャンセル・予期しないスキップは成功扱いにしない。
+ブランチ保護の設定はGitHub側で別途行う。
+
+#### 次回以降の確認事項
+
+初回push後と、関連する次の変更で以下を確認し、CI変更が必要かをPR・コミットの説明へ短く残す。
+
+- GitHub上でSDK・依存関係の取得と各ジョブが成功し、文書のみ・Androidのみ・Relayのみの選択が期待どおりか。
+- 新しいモジュール、テスト配置、生成元ツール、共有設定が選択範囲から漏れていないか。
+- SDK・JDK・AGP／Gradle・Node・Actionsの更新時に、固定版・インストール手順・コマンドの変更が必要か。
+- 実行時間、キャッシュ、失敗の再現性を見て、タイムアウトや実行範囲の調整が必要か。
+- 端末テストの手動実行やnightlyを追加する根拠があるか。初期CIの成功だけでR8、実FCM、省電力、Play経由の更新確認を完了扱いにしない。
+
 `assembleDebugAndroidTest`は実機テスト用APKのビルドであり、実機テストの実行ではない。
 実行する場合は端末を接続し、`connectedDebugAndroidTest`で対象を絞るか、必要な操作を手動確認する。
 確認結果はPR・コミットの説明に対象・コマンド・結果を簡潔にまとめ、未実行項目を成功扱いにしない。

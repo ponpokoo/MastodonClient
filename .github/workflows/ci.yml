@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Changes and diff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.scope.outputs.android }}
+      android_test: ${{ steps.scope.outputs.android_test }}
+      release_tests: ${{ steps.scope.outputs.release_tests }}
+      prototype: ${{ steps.scope.outputs.prototype }}
+      workers: ${{ steps.scope.outputs.workers }}
+      relay: ${{ steps.scope.outputs.relay }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Test CI selection and result handling
+        run: node --test .github/scripts/ci-changes.test.mjs
+      - name: Check committed diff and select jobs
+        id: scope
+        run: node .github/scripts/ci-changes.mjs
+
+  android:
+    name: Android
+    needs: changes
+    if: >-
+      needs.changes.outputs.android == 'true' ||
+      needs.changes.outputs.release_tests == 'true' ||
+      needs.changes.outputs.prototype == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --licenses <<< "$(printf 'y\n%.0s' {1..20})" > /dev/null
+          sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
+      - name: App unit tests, lint and Debug build
+        if: needs.changes.outputs.android == 'true'
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+      - name: Compile app device tests
+        if: needs.changes.outputs.android_test == 'true'
+        run: ./gradlew --no-daemon :app:assembleDebugAndroidTest
+      - name: Compile independent Release checks
+        if: needs.changes.outputs.release_tests == 'true'
+        run: ./gradlew --no-daemon :release-tests:assembleRelease
+      - name: Build transition prototype and its device tests
+        if: needs.changes.outputs.prototype == 'true'
+        run: ./gradlew --no-daemon :transition-prototype:assembleDebug :transition-prototype:assembleDebugAndroidTest
+      - name: Save Android verification reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  workers:
+    name: Workers
+    needs: changes
+    if: needs.changes.outputs.workers == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: relay/workers
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: relay/workers/package-lock.json
+      - run: npm ci
+      - name: Test both Workers delivery implementations
+        run: npm test
+        env:
+          CI: 'true'
+          WRANGLER_SEND_METRICS: 'false'
+
+  relay:
+    name: Local Relay
+    needs: changes
+    if: needs.changes.outputs.relay == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: npm test
+
+  result:
+    name: CI result
+    needs: [changes, android, workers, relay]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Require every selected job to succeed
+        run: node .github/scripts/ci-changes.mjs --check-results
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
