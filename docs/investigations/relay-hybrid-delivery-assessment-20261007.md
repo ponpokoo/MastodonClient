@@ -48,7 +48,7 @@ DB／WAL全体のコピーは、通知や識別子など広いアプリ状態を
 この不足を合成データやMastodon最新版の実装から推測した数値で埋めない。
 
 利用者から匿名計測の許可を受け、
-[PushPayloadSizeStatisticsDeviceTest](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/PushPayloadSizeStatisticsDeviceTest.kt)
+[PushPayloadSizeStatisticsDeviceTest](relay-push-size-statistics/tests/PushPayloadSizeStatisticsDeviceTest.kt)
 を追加した。SQLiteは端末内で読み取り専用で開き、外へ出す値はカウンターだけ。
 保存済みPixel_10aのDebug 2.4.1／16で履歴集計は1件成功し、受信Workは0件だった。
 初回の計測プロセスは起動失敗し、再実行で成功した。失敗原因は特定していない。
@@ -74,6 +74,17 @@ ADB通信終了への対策として、観測カウンターだけを端末の�
 初回は計測APK側の保存先に書けず失敗し、対象アプリの外部キャッシュへ修正した。
 修正後の10秒観測は匿名結果の`phase=complete`を回収でき、新規受信0、計測用GET 0だった。
 この0件を利用者の5件の結果と混同しない。5件の確認には前述の57→62の履歴差を使う。
+
+この計測器は旧v1のinline／fetchを対象とする過去調査用コードとして保管し、通常のAndroidテストから外す。
+v2 `sync_required`は未対応扱いになるため、現在のハイブリッド方式のサイズ分布確認には使わない。
+旧方式の調査に必要な場合だけ、[専用init script](relay-push-size-statistics/investigation.init.gradle)を指定してテストAPKを生成する。
+
+```powershell
+.\gradlew.bat :app:assembleDebugAndroidTest --offline --no-configuration-cache `
+  --init-script docs/investigations/relay-push-size-statistics/investigation.init.gradle
+```
+
+計測を実行する際は、テストクラスと`pushSizeStats=retained`または`pushSizeStats=observe`を明示する。
 
 ## 2. サイズ判定と分布
 

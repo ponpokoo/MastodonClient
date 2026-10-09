@@ -275,6 +275,7 @@ $env:ANDROID_SERIAL = 'emulator-5560'
 
 ドメインの指定がなければ公開APIのテストはスキップする。指定時はサーバー情報の取得までで、
 OAuth認証・アプリ登録・投稿は行わない。サーバー側の障害や通信環境による失敗も区別して調べる。
+実サーバーへの接続確認はこの任意実行へ集約し、通常のDebugテストは模擬応答でログイン画面の操作を確認する。
 結果は`release-tests/build/reports/androidTests/connected/release/index.html`と
 `release-tests/build/outputs/androidTest-results/connected/release/`で確認する。
 

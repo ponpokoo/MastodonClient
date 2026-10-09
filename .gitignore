@@ -8,6 +8,8 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
 .DS_Store
 /build
 /captures
@@ -22,3 +24,9 @@ local.properties
 /.npm-cache/
 # Internal release notes are stored locally and backed up with release artifacts.
 /app/release/*-release-notes.md
+# Keep generated release binaries and IDE export metadata out of source control.
+/app/release/**/*.apk
+/app/release/**/*.aab
+/app/release/**/output-metadata.json
+/app/release/**/baselineProfiles/
+/app/release/branch-backups-*/

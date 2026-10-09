@@ -1,0 +1,9 @@
+// Historical v1 device investigation, excluded from normal Android test builds.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.sourceSets.getByName('androidTest').kotlin.srcDir(
+                new File(project.rootDir, 'docs/investigations/relay-push-size-statistics/tests'))
+        }
+    }
+}

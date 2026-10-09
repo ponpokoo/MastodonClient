@@ -20,7 +20,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
-/** Opt-in, device-local aggregation. Never exports Work data, identifiers, or ciphertext. */
+/** Historical v1 investigation. Opt-in; never exports Work data, identifiers, or ciphertext. */
 class PushPayloadSizeStatisticsDeviceTest {
     @Test fun observeNewReceiveWorkAndExportOnlySizeCounters() = runBlocking {
         assumeTrue(InstrumentationRegistry.getArguments().getString("pushSizeStats") == "observe")
