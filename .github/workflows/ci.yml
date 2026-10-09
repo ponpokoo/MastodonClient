@@ -59,8 +59,9 @@ jobs:
           cache: gradle
       - name: Install Android SDK packages
         run: |
-          sdkmanager --licenses <<< "$(printf 'y\n%.0s' {1..20})" > /dev/null
-          sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
+          sdk_manager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdk_manager" --licenses <<< "$(printf 'y\n%.0s' {1..20})" > /dev/null
+          "$sdk_manager" 'platforms;android-37.0' 'build-tools;37.0.0'
       - name: App unit tests, lint and Debug build
         if: needs.changes.outputs.android == 'true'
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
