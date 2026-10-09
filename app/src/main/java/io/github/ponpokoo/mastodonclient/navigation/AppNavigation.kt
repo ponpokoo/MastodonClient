@@ -42,6 +42,8 @@ import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultInstanceRepository
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultAuthRepository
@@ -188,12 +190,7 @@ fun AppNavigation(
             onNotificationOpenHandled(request)
             return@LaunchedEffect
         }
-        if (navController.currentBackStackEntry?.destination?.route != Route.Timeline::class.qualifiedName) {
-            navController.navigate(Route.Timeline) {
-                popUpTo(navController.graph.id) { inclusive = true }
-                launchSingleTop = true
-            }
-        }
+        navController.prepareNotificationTimeline()
         val targetEntryId = navController.currentBackStackEntry?.id ?: return@LaunchedEffect
         readyNotificationNavigation = PendingNotificationNavigation(
             request, request.copy(sessionId = sessionId), targetEntryId,
@@ -734,6 +731,15 @@ fun AppNavigation(
                 navController.navigate(Route.AccountProfile(accountId))
             },
         )
+    }
+}
+
+internal fun NavController.prepareNotificationTimeline() {
+    if (currentBackStackEntry?.destination?.hasRoute<Route.Timeline>() != true) {
+        navigate(Route.Timeline) {
+            popUpTo(graph.id) { inclusive = true }
+            launchSingleTop = true
+        }
     }
 }
 

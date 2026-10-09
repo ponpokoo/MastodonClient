@@ -1,6 +1,7 @@
 package io.github.ponpokoo.transitionprototype
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -56,6 +57,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.ScaleFactor
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.hideFromAccessibility
@@ -72,8 +74,8 @@ internal val ImageTransitionActive = SemanticsPropertyKey<Boolean>("ImageTransit
 internal val ImageCornerRadius = SemanticsPropertyKey<Float>("ImageCornerRadius")
 internal val RoundingBeforeClose = SemanticsPropertyKey<Boolean>("RoundingBeforeClose")
 internal val ImageFitFraction = SemanticsPropertyKey<Float>("ImageFitFraction")
-private const val TRANSITION_MS = 250
-private const val CLOSE_CORNERS_MS = 80
+private const val TRANSITION_MS = 350
+private const val CLOSE_CORNERS_MS = 110
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,6 +93,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun ImageTransitionPrototype() {
+    val context = LocalContext.current
     var viewerOpen by rememberSaveable { mutableStateOf(false) }
     var closeRequested by remember { mutableStateOf(false) }
     val cornerRadius = remember { Animatable(if (viewerOpen) 0f else 8f) }
@@ -153,6 +156,11 @@ private fun ImageTransitionPrototype() {
                         Text("画像遷移の試作", style = MaterialTheme.typography.headlineSmall)
                         Text("画像をタップして拡大。閉じると同じ位置に戻ります。")
                         Text("開く ${TRANSITION_MS} ms・閉じる 角丸→弱いバウンス", color = MaterialTheme.colorScheme.outline)
+                        Button(onClick = {
+                            context.startActivity(Intent(context, ReferenceGalleryActivity::class.java))
+                        }, modifier = Modifier.testTag("reference_sample")) {
+                            Text("公式サンプル＋Telephotoを試す")
+                        }
                     }
                 }
                 items(2, key = { "before-$it" }) { index ->
@@ -230,14 +238,17 @@ private fun ImageTransitionPrototype() {
     }
 }
 
-private fun <T> closeSpring(visibilityThreshold: T): SpringSpec<T> = spring(
+internal fun <T> closeSpring(
+    visibilityThreshold: T,
+    stiffness: Float = 900f,
+): SpringSpec<T> = spring(
     dampingRatio = Spring.DampingRatioLowBouncy,
-    stiffness = Spring.StiffnessMedium,
+    stiffness = stiffness,
     visibilityThreshold = visibilityThreshold,
 )
 
 /** Clip the visible picture itself, including the letterboxed picture in the full-screen frame. */
-private class ImageContentShape(
+internal class ImageContentShape(
     private val sourceSize: Size,
     private val imageScale: ContentScale,
     private val cornerRadiusDp: Float,
@@ -254,7 +265,7 @@ private class ImageContentShape(
 }
 
 /** Interpolate the image's endpoint scales, rather than blending two differently cropped images. */
-private class CropFitScale(
+internal class CropFitScale(
     private val fitFraction: Float,
     private val thumbnailSize: IntSize,
     private val viewerSize: IntSize,

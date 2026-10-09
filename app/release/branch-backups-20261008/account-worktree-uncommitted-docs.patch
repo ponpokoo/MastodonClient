@@ -1,0 +1,37 @@
+diff --git a/docs/index.md b/docs/index.md
+index 614075c..e128690 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -17,6 +17,8 @@
+ | [設計判断（ADR）](adr/README.md) | 重要な設計の背景、採用理由、制約、見直し条件を確認する |
+ | [ライセンスと第三者通知](third-party-licenses.md) | アプリ内のライセンス表示、Apache 2.0適用範囲、Release依存の収録内容と再生成・公開前確認を参照する |
+ | [更新・リリース計画](release-plan.md) | 2.4.1の変更・確認状況、事前検証用成果物との区別、今後の候補、リリース手順を確認する |
++| [Google Play公開までのワークフロー](google-play-publication-workflow.md) | 公開準備、必要な文書・申告、Play配布版の確認、限定テストと一般公開の判断を確認する |
++| [公開案内サイトとアプリ内の入口](publication-site.md) | 公開文案の下書き、実装上の根拠、未確定情報、アプリ内リンク・同意の接続案を確認する |
+ | [GitHub Issues](https://github.com/ponpokoo/MastodonClient/issues) | 移行済みの継続確認・改善候補と対応の進捗を確認する |
+ 
+ ## Push・Relay
+diff --git a/docs/relay-100-user-remeasurement-plan.md b/docs/relay-100-user-remeasurement-plan.md
+index ce8685c..370358d 100644
+--- a/docs/relay-100-user-remeasurement-plan.md
++++ b/docs/relay-100-user-remeasurement-plan.md
+@@ -193,4 +193,5 @@ Time TravelのFree履歴は7日で、別DBへの履歴複製には使えない
+ - [Workers制限](https://developers.cloudflare.com/workers/platform/limits/)
+ - [D1料金・日次枠](https://developers.cloudflare.com/d1/platform/pricing/)・[D1制限](https://developers.cloudflare.com/d1/platform/limits/)
+ - [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)
+-- 関連：[測定ツール](../relay/workers/bench/README.md)、[既存測定](investigations/relay-production-measurement-20261006.md)
++- 関連：[Play公開ワークフロー](google-play-publication-workflow.md#4-pushは限定テストと一般公開を分けて判断する)、
++  [測定ツール](../relay/workers/bench/README.md)、[既存測定](investigations/relay-production-measurement-20261006.md)
+diff --git a/docs/release-plan.md b/docs/release-plan.md
+index 9b91a2a..2226eb9 100644
+--- a/docs/release-plan.md
++++ b/docs/release-plan.md
+@@ -163,7 +163,7 @@ Google Play公開に向けた整備として実装した。既存の2.4.1配布
+ Mastodon上のアカウント・投稿は削除しない説明を表示する。確認後の切替や認証変更でも別の登録を削除しないよう、実行時に対象を照合する。
+ 設定の上下ボタンで登録順を保存し、閲覧・投稿元・管理画面等のアカウント一覧へ共通反映する。
+ 新規登録は末尾、再ログイン・再認証は元の位置、削除後は残る登録の相対順を保持する。順序変更では選択・閲覧世代・ストリームを保つ。
+-現行仕様は[アカウント管理](ui-guidelines.md#登録済みアカウントの管理)を参照する。
++現行仕様は[アカウント管理](ui-guidelines.md#登録済みアカウントの管理)、公開前の操作確認は[Play公開ワークフロー](google-play-publication-workflow.md#手順4play配布版の主要操作を確認する)を参照する。
+ 
+ 関連単体テストから開始し、最終コードで`:app:testDebugUnitTest --offline`が成功した。
+ 単体全体368件（今回追加13件を含む）の失敗・エラー・スキップは0件。

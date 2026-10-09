@@ -27,6 +27,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.foundation:foundation")
+    implementation(libs.coil.compose)
+    implementation(libs.telephoto.zoomable.image.coil3)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)

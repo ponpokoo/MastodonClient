@@ -1,0 +1,18 @@
+Reference gallery sources
+
+AndroidX caller-managed shared element visibility (Apache-2.0):
+https://developer.android.com/develop/ui/compose/animation/shared-elements/additional-samples
+https://github.com/androidx/androidx/blob/androidx-main/compose/animation/animation/integration-tests/animation-demos/src/main/java/androidx/compose/animation/demos/sharedelement/CallerManagedVisibilityDemo.kt
+
+Jetsnack: stable shared image keys (Apache-2.0):
+https://github.com/android/compose-samples/pull/1314
+
+Telephoto 0.19.0: library and gallery/viewer patterns (Apache-2.0):
+Copyright 2025 Saket Narayan. License included in telephoto-LICENSE.txt.
+https://github.com/saket/telephoto/tree/0.19.0
+https://github.com/saket/telephoto/blob/0.19.0/sample/src/androidMain/kotlin/me/saket/telephoto/sample/viewer/MediaViewerScreen.kt
+https://saket.github.io/telephoto/zoomable/recipes/#resetting-zoom
+
+This prototype uses local vector fixtures, image-only sharedElement transitions,
+and resets zoom before closing. Its crop/fit interpolation and corner-first
+weak spring bounce reuse the existing transition prototype helpers.

@@ -20,3 +20,5 @@ local.properties
 # Per-developer Firebase project configuration.
 /app/google-services.json
 /.npm-cache/
+# Internal release notes are stored locally and backed up with release artifacts.
+/app/release/*-release-notes.md
