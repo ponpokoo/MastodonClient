@@ -9,7 +9,7 @@ Mastodon Web Pushを受け、暗号文をFCM HTTP v1のdataメッセージでNag
 契約と移行判断は[ADR 0010](../../docs/adr/0010-relay-subscription-key-binding.md)を参照する。
 2026-10-07に[ハイブリッド配送](hybrid.md)を採用した（[ADR 0013](../../docs/adr/0013-adopt-hybrid-push-delivery.md)）。
 別入口での実装・短時間測定とAndroid同期の実装は完了。2026-10-08に本番を直接切替した。
-本番は小通知inline・大通知sync_required・日次清掃。[小通知5件の実FCM測定](../../docs/investigations/relay-live-fcm-measurement-20261008.md)を完了。大通知・欠落回復の実測と対応APKの配布は未完了。
+本番は小通知inline・大通知sync_required・日次清掃。今回のPush試験は2026-10-09で終了し、残る確認は[実運用へ引き継ぐ](hybrid.md#採用後の対応と確認)。対応APKの配布状況は別途確認する。
 旧APKの大通知欠落は許容済み。[切替記録と差し戻し先](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
 テストの配置・実行方法・測定記録は[testing.md](testing.md)へ集約した。
 以下の保存・fetch・再送・毎分Cronの説明は、回帰確認・差し戻し用に残す旧入口`src/worker.mjs`／`wrangler.jsonc`に適用する。

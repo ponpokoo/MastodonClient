@@ -37,3 +37,20 @@
    必要な匿名結果を保存し、計測APK・試験資格・不要な専用環境を片付ける。
 
 既存本番の直接切替・差し戻しは[本番記録](../../docs/investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
+
+## 合成大通知の実FCM確認
+
+[LargePushLiveDeviceTest](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/LargePushLiveDeviceTest.kt)は、APKに設定したハイブリッドRelayへ一時登録を作り、4KiBの合成本文を1件送る。実FCMでv2 `sync_required`を受信した後、受信したエンベロープを試験用のリポジトリへ渡し、実Mastodon APIから取得した既存通知1件のOS表示と重複抑止を確認する。
+元のアカウント・Push購読は書き換えず、試験用のローカル登録・表示履歴とRelay登録を終了時に削除する。Relayには削除墓標が残る。
+
+Firebase設定済みのDebug APKとandroidTest APK、ログイン済みアカウント、APIから取得できる通知1件以上、OS通知許可が必要。通知音量を0にしてから明示的に実行する。端末IDは対象に合わせる。
+
+```powershell
+adb -s emulator-5554 shell cmd media_session volume --stream 5 --set 0 --get
+adb -s emulator-5554 shell am instrument -w -e class io.github.ponpokoo.mastodonclient.LargePushLiveDeviceTest -e largePushLive true io.github.ponpokoo.mastodonclient.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+追加・変更したテストAPKは事前に`:app:assembleDebugAndroidTest --offline`で生成してインストールする。`largePushLive=true`を指定しなければ外部試験は実行しない。
+件数・サイズ・固定ラベルだけを端末の外部cacheの`large-push-live.json`とinstrumentation結果へ保存する。本文・個別通知ID・認証情報・配送endpointは出力しない。
+
+本文はサイズ分岐用の合成バイト列で、Web Push暗号文の生成・復号は対象外。この試験では受信後の同期を隔離した処理で実行する。通常購読のワーカーによる自動同期、Mastodonが生成する大通知、送信からの遅延・電池・長時間運用の実測結果としては扱わない。

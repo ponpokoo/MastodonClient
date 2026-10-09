@@ -39,7 +39,7 @@
 
 ## 1. 全通知を取得してからメンションを探している
 
-[MastodonApi.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/remote/MastodonApi.kt) 211行の通知取得には`max_id`と`limit`しかなく、`types[]`はない。[DefaultTimelineRepository.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultTimelineRepository.kt) 369行から全件を変換し、[SocialScreens.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/SocialScreens.kt) 118・204行で`mention`または`reply`を表示対象にする。メンションタブの選択によってHTTP要求は変わらない。
+[MastodonApi.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/remote/MastodonApi.kt) 211行の通知取得には`max_id`と`limit`しかなく、`types[]`はない。[DefaultTimelineRepository.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultTimelineRepository.kt) 369行から全件を変換し、[SocialScreens.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/SocialScreens.kt) 118・204行で`mention`または`reply`を表示対象にする。メンションタブの選択によってHTTP要求は変わらない。
 
 例えば、直近のメンションより新しいお気に入り・ブースト等が400件あると、80件ずつ返る場合でもメンション到達には6ページ必要になる。これは説明用の条件であり、利用者の実件数ではない。サーバーがページ件数を制限すればさらに増える。各ページは直前ページのカーソルが必要なので逐次通信になる。
 
@@ -47,17 +47,17 @@
 
 ## 2. 初回更新で保存済みメンションが表示から外れる
 
-[NotificationsViewModel.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/notifications/NotificationsViewModel.kt) 98行でDBを先に表示し、130行で初回の通信結果へ置き換える。取得中のStreaming新着以外は、保存済み履歴をそのまま残さない。
+[NotificationsViewModel.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/notifications/NotificationsViewModel.kt) 98行でDBを先に表示し、130行で初回の通信結果へ置き換える。取得中のStreaming新着以外は、保存済み履歴をそのまま残さない。
 
 「DBに古いメンションがある → 最初に見える → 最新全通知80件がすべてお気に入り → メンション一覧が空になる → 追加ページで再び現れる」という条件が成立する。履歴の未取得区間を飛ばさないための現行仕様であり、単純に古いキャッシュを結合すると順序・履歴の連続性を壊す。修正するなら種類別の取得位置を管理する必要がある。[通知の保存・更新仕様](../ui-guidelines.md#通知の表示更新既読位置)
 
-ログアウトは対象アカウントの通知キャッシュと既読位置を削除する（[DefaultAuthRepository.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultAuthRepository.kt) 125行）。再ログインしても全通知から探す方式は変わらず、保存済み表示による補助も失われる。このため再ログインで改善しない症状と整合する。
+ログアウトは対象アカウントの通知キャッシュと既読位置を削除する（[DefaultAuthRepository.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultAuthRepository.kt) 125行）。再ログインしても全通知から探す方式は変わらず、保存済み表示による補助も失われる。このため再ログインで改善しない症状と整合する。
 
 ## 3. 通知APIが終わっていても既読位置を待つ
 
 NotificationsViewModel 93・96行では`GET /api/v1/markers`と`GET /api/v1/notifications`を並行開始する。しかし107行の`markerRequest.await()`が108行の通知応答反映より前にある。キャッシュがない場合、通知APIが成功していても既読位置の要求が終了するまで読み込み表示が残る。通知APIが失敗した場合のエラー表示も同じ待機の後になる。
 
-既読位置の失敗は保存値へフォールバックするが、終了を待つ点は変わらない。両APIとDB読取りが独立に進む条件では、最初の通知反映は最も遅い処理に依存する。[ApiClientFactory.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/core/network/ApiClientFactory.kt)の通常クライアントには、アプリ独自の通信全体の`callTimeout`や既読位置専用の期限設定がない。実際の待ち時間は未計測。
+既読位置の失敗は保存値へフォールバックするが、終了を待つ点は変わらない。両APIとDB読取りが独立に進む条件では、最初の通知反映は最も遅い処理に依存する。[ApiClientFactory.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/core/network/ApiClientFactory.kt)の通常クライアントには、アプリ独自の通信全体の`callTimeout`や既読位置専用の期限設定がない。実際の待ち時間は未計測。
 
 この待機は初回・セッション切替後・再ログイン後に発生し、初回成功後の通常の手動更新では既読位置を再取得しない。すべての更新が遅い場合には、この条件だけでは説明できない。既読位置は一覧取得の必須データではなく、未読判定用の別APIである。[Mastodon公式Markers API](https://docs.joinmastodon.org/methods/markers/)
 
@@ -65,7 +65,7 @@ NotificationsViewModel 93・96行では`GET /api/v1/markers`と`GET /api/v1/noti
 
 NotificationsViewModel 78行の`hasLoaded`判定により、一度成功した後の`onNotificationsVisible()`では再取得を省く。手動更新、アプリの前景復帰、Android通知タップでは強制取得する。通常のタブ切替では一覧と閲覧位置を保持する仕様。[通知の更新仕様](../ui-guidelines.md#設定と初期値)
 
-[MainSessionViewModel.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/main/MainSessionViewModel.kt)はStreamingオフ・Wi-Fi条件不成立・設定に従った背景移行時に接続しない。切断時は2秒から最大30秒の待機で再接続するが、再接続成功時のREST取得はない。再接続の待機時間と欠落した通知の補完時間は別問題である。[MastodonStreamingDataSource.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/remote/MastodonStreamingDataSource.kt)はSSEのみを使い、受信後のDTO変換失敗はRepositoryで`getOrNull()`により破棄される。
+[MainSessionViewModel.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/main/MainSessionViewModel.kt)はStreamingオフ・Wi-Fi条件不成立・設定に従った背景移行時に接続しない。切断時は2秒から最大30秒の待機で再接続するが、再接続成功時のREST取得はない。再接続の待機時間と欠落した通知の補完時間は別問題である。[MastodonStreamingDataSource.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/remote/MastodonStreamingDataSource.kt)はSSEのみを使い、受信後のDTO変換失敗はRepositoryで`getOrNull()`により破棄される。
 
 公式APIはSSEとWebSocketを記載しているため、公開された`wss://mstdn.jp`をHTTPSへ変換するコードだけで不具合と断定できない。認証付き接続の成立・実イベント受信は未確認。[Mastodon公式Streaming API](https://docs.joinmastodon.org/methods/streaming/)
 

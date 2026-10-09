@@ -3,7 +3,7 @@
 2026-10-07の作業ツリーを対象とした、実装変更前の原因と修正案の調査記録。
 依頼の対象は自アカウントのアイコンとヘッダー。添付文書の実装手順には着手せず、原因調査と最小修正案までを扱った。
 
-最小修正案は2026-10-08に実装した。現行動作は[UI・機能仕様](../ui-guidelines.md#登録済み自アカウントの表示情報)を参照する。以下の原因・経路は調査時点の記録として残す。
+状態：解決済み。2026-10-08に修正を実装し、2026-10-09の利用者報告により点滅の問題は解決済みとして扱う。現行動作は[UI・機能仕様](../ui-guidelines.md#登録済み自アカウントの表示情報)を参照する。以下の原因・経路・確認案は調査時点の記録として残す。
 
 ## 結論
 
@@ -17,7 +17,7 @@
 通常のPull-to-RefreshはUserProfileをnullへ戻さない。Composable全体の破棄が毎回の点滅を起こすという根拠は見つからなかった。
 実機での点滅の再現・時間計測は未実施であり、原因はコードと利用中のCoil実装から確認したもの。
 
-## 現在の経路
+## 調査時点の経路
 
 | 対象 | 呼出しと表示 | 確認した動作 |
 | --- | --- | --- |
@@ -32,7 +32,7 @@
 
 - [AccountAvatar.kt:19](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/common/AccountAvatar.kt#L19)：URL・更新番号をキーとしてImageRequestを生成。
 - [SecureAuthStore.kt:81](../../app/src/main/java/io/github/ponpokoo/mastodonclient/core/security/SecureAuthStore.kt#L81)：表示情報が同じでもavatarRevisionを加算。
-- [SocialScreens.kt:407](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/SocialScreens.kt#L407)：固定キーprofile_header内のヘッダーとアイコン。
+- [修正前のSocialScreens.kt:407](https://github.com/ponpokoo/MastodonClient/blob/cd75da317a7f3d7bdd82dc51f45df1095ddd888b/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/SocialScreens.kt#L407)：削除された同名ファイルの参照用。修正前コミットの固定キーprofile_header内のヘッダーとアイコンを示し、調査時の未コミット変更を含む作業ツリー全体を示すものではない。
 - [OwnProfileViewModel.kt:174](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/OwnProfileViewModel.kt#L174)：再取得したprofileへの置換。
 - [AccountProfileViewModel.kt:156](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/AccountProfileViewModel.kt#L156)：別画面での同じ置換。
 - [DefaultTimelineRepository.kt:203](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultTimelineRepository.kt#L203)：Account取得と登録表示情報の同期。
@@ -93,13 +93,13 @@ placeholderMemoryCacheKeyだけに頼る案も、キャッシュ追い出し・�
 他人の画像、投稿添付、絵文字の画像、メディアビューアー全体への適用は別判断。
 ヘッダーの拡大経路には更新番号が渡されていないため、実際のヘッダー変更確認では拡大表示との整合も確認する。
 
-## 既存テストの限界と次の確認
+## 調査時点のテスト評価と確認案
 
 AccountDisplayRepositoryTestは各プロフィール取得経路での番号更新・応答再利用を確認する。
 AccountDisplayAvatarDeviceTestは同一URLの最終色が新画像へ変わることと拡大表示を確認する。
 いずれも新画像が届くまでの各フレーム、読込失敗時の旧画像、ヘッダーの同一URL更新は確認していない。
 
-修正後は遅延応答を制御できる画像配信を使い、以下を確認する。
+調査時点では、修正後の確認案として遅延応答を制御できる画像配信を使い、以下を確認する方針だった。
 
 | 条件 | 期待する表示 |
 | --- | --- |
@@ -115,5 +115,5 @@ AccountDisplayAvatarDeviceTestは同一URLの最終色が新画像へ変わる�
 
 今回実施したのはアプリコード、依存のソース、既存テスト内容の確認と文書・参照先チェック。
 アプリ実装・テスト変更、Gradle実行、エミュレーターでの再現、実サーバー画像の観測は行っていない。
-既存の[表示同期仕様](../ui-guidelines.md#登録済み自アカウントの表示情報)、[開発ガイド](../project-setup.md#登録済みアカウント情報の同期)、
-[ADR 0011](../adr/0011-account-display-synchronization.md)は現行動作のまま。修正を実装する際に整合を更新する。
+調査時点では[表示同期仕様](../ui-guidelines.md#登録済み自アカウントの表示情報)、[開発ガイド](../project-setup.md#登録済みアカウント情報の同期)、
+[ADR 0011](../adr/0011-account-display-synchronization.md)を変更せず、修正実装時に整合を更新する方針だった。現行動作は冒頭のリンクを参照する。

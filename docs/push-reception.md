@@ -10,8 +10,8 @@ RelayとAndroidの責務を分ける背景は、
 
 2026-10-07にハイブリッド方式を採用し、Androidにinline／旧fetch／v2 `sync_required`の受信を実装した。
 2026-10-08に旧APKの大通知欠落を許容して本番Relayを直接切替済み。
-[小通知5件の実FCM測定](investigations/relay-live-fcm-measurement-20261008.md)を完了し、配布APKの移行・大通知と欠落回復の実FCM確認は未完了。
-追加する責務・確認事項は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、
+[小通知5件の実FCM測定](investigations/relay-live-fcm-measurement-20261008.md)に続き、合成大通知の実FCM受信と隔離した同期処理を確認した。今回のPush試験は2026-10-09で終了し、残る通常経路・欠落回復・端末負担・購読移行は実運用で確認する。
+確認済みの範囲と実運用での確認事項は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、
 Relay側のテストと測定記録は[検証ガイド](../relay/workers/testing.md)を参照する。
 
 ## ビルド設定
@@ -34,7 +34,8 @@ Google Services Gradle plugin、Firebase Messaging、WorkManagerを接続する�
 通信エラー時は再試行し、上限到達後は次回起動・トークン変更で再開する。
 
 Relay登録v2も`fcmToken`を使用し、端末の登録トークン方式を維持する。
-v2対応Relayを先に配置する。FCMのStringエンベロープと暗号文取得はv1を維持し、
+登録v2対応Relayを先に配置する。登録APIの版と配送エンベロープの版は別に扱う。
+現行の本番配送はStringエンベロープのv1 inlineとv2 sync_requiredを使う。Androidは旧v1 fetchの受信・本文取得にも対応するが、本番ハイブリッドの本文GETは404を返す。
 購読ごとの公開鍵の確定は[購読管理](push-settings.md#mastodonとの接続順序)に従う。
 FIDを登録トークンとして送信する実装にはしていない。
 宛先指定方式の変更にはRelay契約と送信側を合わせた変更が必要となる。

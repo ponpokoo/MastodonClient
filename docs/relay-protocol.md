@@ -1,4 +1,4 @@
-# Nagisa Relay通信契約（登録v2・現行配送v1／採用方式v2）
+# Nagisa Relay通信契約（登録v2・本番ハイブリッド配送v1／v2）
 
 Android、Node.jsローカル模擬Relay、Workers版Relayが使用する登録・解除・Push受付・暗号文取得・FCMエンベロープの契約を定義する。
 Mastodon購読の接続順序と再開・ログアウト処理は[購読管理](push-settings.md)を参照する。
@@ -88,6 +88,10 @@ IDは解除後に再利用せず、再有効化では新しい組を発行する
 
 ## Push受付と暗号文取得
 
+以下の保存・本文取得は、ローカル模擬RelayとWorkersの旧保存方式の契約。
+現行の本番ハイブリッドは正のTTLでFCM受付成功後に201を返し、本文を保存せず、本文GETは404を返す。
+詳細は[ハイブリッド配送契約](#採用したハイブリッド方式の配送契約)を参照する。
+
 - `POST /push/{deliveryId}`: `TTL`、`Content-Encoding`とバイナリ本文を受け付け、保存後201。
   未知・無効・解除済みendpointは410。受付は端末への配信完了を意味しない。
 - `GET /v1/registrations/{id}/messages/{messageId}`: 管理用Bearerで暗号文を取得。
@@ -101,6 +105,9 @@ TTL 0は保存・送信せず破棄し、期限切れは配送せず取得も拒
 VAPIDの認証条件と保存・再送の挙動は各Relay実装のREADMEを参照する。
 
 ## FCMエンベロープ
+
+以下は配送v1の契約。ローカル模擬RelayとWorkersの旧保存方式では、大通知をfetchで配送する。
+現行の本番ハイブリッドは小通知にv1 inline、大通知に[v2 sync_required](#採用したハイブリッド方式の配送契約)を使う。
 
 dataは全値Stringの独自エンベロープ：
 

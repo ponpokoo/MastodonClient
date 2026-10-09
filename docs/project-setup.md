@@ -9,7 +9,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| リリース準備の対象版 | `2.4.3`（versionCode 18）。対象版・確認結果は[更新・リリース計画](release-plan.md)、公開状況は同計画書からリンクするGitHub Releaseを参照 |
+| リリース準備の対象版 | `2.4.3`（versionCode 19、R8設定変更版）。対象版と記録方法は[更新・リリース計画](release-plan.md)、提出・配布・公開状況はPlay Consoleで確認する |
 | 旧事前検証用成果物の版番号 | Relay移行の事前検証APK/AABは`2.4.0`（versionCode 15）。2.4.3の配布候補とは区別する |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | Namespace・application ID | `io.github.ponpokoo.mastodonclient` |
@@ -19,7 +19,8 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | JVMバイトコード | Java 11（Gradle実行用JDKとは別） |
 | ビルド設定 | Kotlin DSL・`gradle/libs.versions.toml` |
 
-本体は`app`モジュールを使用する。調査用の独立した`transition-prototype`モジュールもあるが、本体への採用は未確定。依存関係はVersion Catalogに固定する。
+本体は`app`モジュールを使用し、独立した`release-tests`モジュールでR8適用済みReleaseの画面を確認する。
+調査用の独立した`transition-prototype`モジュールもあるが、本体への採用は未確定。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。
@@ -52,17 +53,18 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 | Node.jsローカル模擬Relayの起動・保存・制限・テスト | [ローカルRelay](../relay/README.md) |
 | Workers版Relayの開発・配送・保存・制限 | [Workers版Relay](../relay/workers/README.md) |
 | Relayのテスト配置・測定履歴・実行方法 | [Relay検証ガイド](../relay/workers/testing.md) |
-| 採用したハイブリッド配送と未完了作業 | [ハイブリッド仕様](../relay/workers/hybrid.md) |
+| 採用したハイブリッド配送と実運用での確認事項 | [ハイブリッド仕様](../relay/workers/hybrid.md) |
 | Workersの公開配置・変数・Secrets・監視・停止 | [配置・運用手順](../relay/workers/setup.md) |
 
 通常の修正の検証結果はPR・コミットの説明に簡潔に残し、各技術文書へ履歴を追記しない。
-リリース準備の確認は[更新・リリース計画](release-plan.md)、運用や移行の再現に必要な証跡は該当する記録に一度だけ残す。
+リリース準備と公開後の確認結果は[内部リリースノート](release-plan.md#内部リリースノートの保管)、運用や移行の再現に必要な証跡は該当する記録に一度だけ残す。
 過去の結果を現在の作業ツリーや配布APKの確認結果として扱わない。
 
 ## 通信・認証・保存の境界
 
 - インスタンス入力をHTTPSのベースURLに正規化する。認証情報・パス・クエリ・フラグメントを拒否する。
-- サーバー情報は`/api/v2/instance`で取得する。特定のインスタンスや均一なサーバーバージョンを前提にしない。
+- ログイン時の接続確認は`/api/v2/instance`で行い、この経路ではv1へフォールバックしない。
+  投稿設定と通知の能力確認はv2が404の場合にv1へフォールバックする。特定のインスタンスや均一なサーバーバージョンを前提にしない。
 - アプリ登録、PKCE（S256）、OAuth state検証、トークン交換、認証情報検証を行う。
   現在の要求スコープは`read write`。古い権限のセッションでは必要に応じて再認証する。
 - OAuth登録名の変更は新規登録から反映される。保存済みのアプリ登録を使う既存アカウントの投稿元名は変わらない。
@@ -240,6 +242,46 @@ Debug版とRelease版は署名が異なるため、同じapplication IDのまま
 このタスクでは単体・端末テストを実行しない。生成後は上記の出力先から最新APKを取得する。
 Android Studioの署名APK出力先 `app/release/` は、Gradleの出力先とは別であり、コマンド実行だけでは自動更新されない。
 確認用APKを同ディレクトリへ渡すときは、最新の出力からコピーし、日時付きのファイル名とSHA-256で区別する。
+
+### R8適用済みReleaseの自動確認
+
+公開前の起動・入力・Intent・公開APIの確認には、独立した`release-tests`モジュールを使う。
+`:app`の`release`を対象に、UI Automatorで実際の画面を操作する。テストランナーは別プロセスで動き、
+アプリ内部のクラスを参照しない。配布APKのR8設定やkeepルールをテストのために緩めない。
+Room・Worker・JSON変換などアプリ内部を直接呼ぶ既存の`app/src/androidTest`はDebugで実行する。
+それらを単に`testBuildType = "release"`へ切り替えると、R8が削除・変更したクラスをテストが必要として起動に失敗し得る。
+
+専用のログアウト済みエミュレーターまたはテスト端末を用意し、`adb devices`でシリアルを確認する。
+Release署名設定も必要。Debug版との署名衝突は、専用端末を初期状態で用意して避ける。
+このテストはアプリを強制終了・再起動し、Android 13以降では通知権限を付与する。
+Gradleは終了後に対象APKとテストAPKをアンインストールするため、普段使う端末では実行しない。
+ログイン画面が出なければ失敗する。自動テスト後に手動確認する場合は、署名済みRelease APKを再インストールする。
+
+```powershell
+$env:ANDROID_SERIAL = 'emulator-5560'
+.\gradlew.bat :release-tests:connectedReleaseAndroidTest
+```
+
+端末は`ANDROID_SERIAL`で限定する。AGP 9.4.1では、このタスクの`--serial`指定が端末選別処理で例外になるため使用しない。
+このタスクは対象のRelease APKとテストAPKをビルド・インストールして実行する。
+`:release-tests:assembleRelease`だけではテストを実行しない。
+通常は起動、HTTP入力の拒否と修正後の再試行、プロセス再起動、未登録アカウントへの通知Intentを確認する。
+公開APIの接続・JSON変換も確認するときは、確認先サーバーのドメインを明示する。
+
+```powershell
+$env:ANDROID_SERIAL = 'emulator-5560'
+.\gradlew.bat :release-tests:connectedReleaseAndroidTest '-Pnagisa.releaseTestServer=確認先のドメイン'
+```
+
+ドメインの指定がなければ公開APIのテストはスキップする。指定時はサーバー情報の取得までで、
+OAuth認証・アプリ登録・投稿は行わない。サーバー側の障害や通信環境による失敗も区別して調べる。
+結果は`release-tests/build/reports/androidTests/connected/release/index.html`と
+`release-tests/build/outputs/androidTest-results/connected/release/`で確認する。
+
+この確認はログアウト状態の基礎的な経路を対象とする。公開候補では、別途テスト用アカウントを使い、
+Releaseのログイン・復元・アカウント切替、Roomの更新／移行、投稿・添付、通知タップを確認する。
+Pushの試験終了と残る実運用での確認は[採用済みの方針](../relay/workers/hybrid.md#採用後の対応と確認)に従う。
+実機の省電力・バックグラウンド動作と、Playの内部テストで配布された版のインストール・更新は端末で確認する。
 
 既存の回帰テストはアカウント切替・ログアウト後の遅延応答、検索のやり直し、
 プロフィールのタブ切替、通知再取得と追加取得の競合、既読位置の分離、
