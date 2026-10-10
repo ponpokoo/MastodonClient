@@ -20,7 +20,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | ビルド設定 | Kotlin DSL・`gradle/libs.versions.toml` |
 
 本体は`app`モジュールを使用し、独立した`release-tests`モジュールでR8適用済みReleaseの画面を確認する。
-調査用の独立した`transition-prototype`モジュールもあるが、本体への採用は未確定。依存関係はVersion Catalogに固定する。
+独立した[UI試作アプリ](../ui-prototype/README.md)の`ui-prototype`モジュールで、ローカルのダミーデータを使ってデザイン・画面遷移・表示部品の操作感を確認する。本体への採用は試作ごとに判断する。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。
@@ -234,7 +234,7 @@ APK生成後に関連コードが変わっていなければ再ビルドしな�
 | `app/`（`app/release/`を除く） | `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` |
 | `app/src/androidTest/`・`app/build.gradle.kts`・`tools/` | 本体の共通確認に加え`:app:assembleDebugAndroidTest` |
 | `release-tests/` | `:release-tests:assembleRelease`。端末での実行は行わない |
-| `transition-prototype/` | 試作のDebugアプリ・端末テストAPKの生成 |
+| `ui-prototype/` | UI試作のDebugアプリ・端末テストAPKの生成 |
 | ルートのGradle設定・Wrapper・`gradle/` | Androidの上記すべて |
 | `relay/workers/`（`bench/results/`を除く） | `npm ci`・`npm test`。旧配送・ハイブリッド・FCM・測定記録のテスト |
 | `relay/`のWorkers以外 | ローカル模擬Relayの`npm test`。外部依存のインストールは不要 |

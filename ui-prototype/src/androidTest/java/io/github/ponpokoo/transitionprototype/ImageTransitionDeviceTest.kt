@@ -17,7 +17,7 @@ import org.junit.Rule
 import org.junit.Test
 
 class ImageTransitionDeviceTest {
-    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+    @get:Rule val rule = createAndroidComposeRule<ImageTransitionActivity>()
 
     @Test
     fun openingAndClosingActuallyMatchSharedImage() {
@@ -41,7 +41,17 @@ class ImageTransitionDeviceTest {
                 !it.config[ImageTransitionActive]
         })
         capture("04-rounding-before-close")
-        rule.mainClock.advanceTimeBy(112)
+        // Coroutine completion and the next layout can span another frame.
+        // Observe the start of shrinking instead of assuming a fixed scheduling delay.
+        var startedShrinking = false
+        for (frame in 0 until 30) {
+            rule.mainClock.advanceTimeBy(16)
+            if (rule.onNodeWithTag("prototype").fetchSemanticsNode().config[ImageTransitionActive]) {
+                startedShrinking = true
+                break
+            }
+        }
+        assertTrue("The shared close transition starts after rounding", startedShrinking)
         assertSharedTransition()
         rule.onNodeWithTag("prototype").assert(SemanticsMatcher.expectValue(RoundingBeforeClose, false))
         capture("04-closing")

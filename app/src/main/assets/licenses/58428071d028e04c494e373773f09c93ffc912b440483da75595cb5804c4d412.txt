@@ -1,4 +1,4 @@
-Scope: This license applies only to original source code and resources in the Android application module under `app/` that are copyrightable by ponpokoo. It does not relicense third-party components, generated files, or material identified by a separate license. It does not apply to `relay/`, `transition-prototype/`, or documentation.
+Scope: This license applies only to original source code and resources in the Android application module under `app/` that are copyrightable by ponpokoo. It does not relicense third-party components, generated files, or material identified by a separate license. It does not apply to `relay/`, `ui-prototype/`, or documentation.
 
 Copyright 2026 ponpokoo
 
@@ -199,7 +199,7 @@ Nagisa (Mastodon Client Android application)
 Copyright 2026 ponpokoo
 
 This notice applies to the Android application module under `app/`, as scoped in
-the root `LICENSE` file. It does not apply to `relay/`, `transition-prototype/`,
+the root `LICENSE` file. It does not apply to `relay/`, `ui-prototype/`,
 or documentation.
 
 The Android application includes third-party components under separate terms.

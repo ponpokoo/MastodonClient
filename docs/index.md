@@ -49,7 +49,7 @@
 | 文書 | 読むとき |
 | --- | --- |
 | [段階的リファクタリング計画](refactoring-plan.md) | 調査で挙げた9候補の実装順、最小変更範囲、過剰設計を避ける制約、検証・完了条件を確認する（実装・実機確認完了） |
-| [画像共有遷移の最小試作](../transition-prototype/README.md) | Issue #3の独立した試作アプリ、静止画1枚の開閉、ビルド手順、確認範囲を確認する |
+| [UI試作アプリ](../ui-prototype/README.md) | 本体と独立した操作感の試作、単一画像・複数画像とズームの選択、ビルド手順、画像遷移の過去の確認範囲を確認する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 原因未確定。サーバー側の仕様によるものかも未確定として、調査結果・再現条件・原因特定の限界を確認する |
 | [アカウント削除後の残留データ](investigations/account-removal-data-retention.md) | 削除対象・再試行の判断、統合前の検証記録、旧孤立添付やPush解除待ちの制約を確認する |
 | [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |

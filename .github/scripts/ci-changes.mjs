@@ -23,7 +23,7 @@ export function classifyPaths(paths, forceAll = false) {
       if (path.startsWith('app/src/androidTest/') || path === 'app/build.gradle.kts') selected.android_test = true;
     } else if (path.startsWith('release-tests/')) {
       selected.release_tests = true;
-    } else if (path.startsWith('transition-prototype/')) {
+    } else if (path.startsWith('ui-prototype/')) {
       selected.prototype = true;
     } else if (path.startsWith('relay/workers/')) {
       selected.workers = true;

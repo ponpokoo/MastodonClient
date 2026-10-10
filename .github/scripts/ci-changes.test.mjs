@@ -61,6 +61,17 @@ test('Relay implementations remain independent and mixed changes select both', (
   assert.equal(both.android, false);
 });
 
+test('UI prototype sources and device tests select only the prototype build', () => {
+  for (const path of ['ui-prototype/src/main/Example.kt', 'ui-prototype/src/androidTest/RegressionTest.kt']) {
+    const selected = classifyPaths([path]);
+    assert.equal(selected.prototype, true);
+    for (const flag of ['android', 'android_test', 'release_tests', 'workers', 'relay']) {
+      assert.equal(selected[flag], false);
+    }
+  }
+  assert.ok(Object.values(classifyPaths(['ui-prototype/README.md'])).every(value => value === false));
+});
+
 test('CI changes and manual dispatch select every job', () => {
   assert.ok(Object.values(classifyPaths(['.github/workflows/ci.yml'])).every(Boolean));
   assert.ok(Object.values(classifyPaths([], true)).every(Boolean));

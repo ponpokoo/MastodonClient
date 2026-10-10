@@ -217,7 +217,11 @@ private fun ReferenceGallery(onExit: () -> Unit) {
             ) {
                 Text("参考実装の画像ビューア", style = MaterialTheme.typography.headlineSmall)
                 Text("画像を開く → 左右で切り替え → ピンチ／ダブルタップで拡大")
-                Button(onClick = onExit, enabled = phase == ViewerPhase.Gallery) { Text("最初の試作に戻る") }
+                Button(
+                    onClick = onExit,
+                    enabled = phase == ViewerPhase.Gallery,
+                    modifier = Modifier.testTag("prototype_exit"),
+                ) { Text("試作一覧に戻る") }
                 referenceImages.forEachIndexed { index, image ->
                     val painter = painters[index]
                     val selected = index == transitionIndex
