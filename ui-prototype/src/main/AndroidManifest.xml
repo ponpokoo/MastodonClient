@@ -4,8 +4,6 @@
         android:allowBackup="false"
         android:label="UIの試作"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".ReferenceGalleryActivity" android:exported="false" />
-        <activity android:name=".ImageTransitionActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

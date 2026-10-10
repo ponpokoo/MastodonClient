@@ -20,7 +20,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | ビルド設定 | Kotlin DSL・`gradle/libs.versions.toml` |
 
 本体は`app`モジュールを使用し、独立した`release-tests`モジュールでR8適用済みReleaseの画面を確認する。
-独立した[UI試作アプリ](../ui-prototype/README.md)の`ui-prototype`モジュールで、ローカルのダミーデータを使ってデザイン・画面遷移・表示部品の操作感を確認する。本体への採用は試作ごとに判断する。依存関係はVersion Catalogに固定する。
+独立した[UI試作アプリ](../ui-prototype/README.md)の`ui-prototype`モジュールで、本体と同じ4画面構成とローカルのダミーデータを使い、デザイン・画面遷移・表示部品の操作感を確認する。本体への採用は変更ごとに判断する。依存関係はVersion Catalogに固定する。
 Compose、Navigation、Lifecycle、Retrofit、OkHttp、Serialization、Coroutines、Coil、
 DataStore、Custom Tabs、ZXing、Firebase Messaging、WorkManagerを使用する。
 FirebaseとRelayの設定は[Android接続手順](push-reception.md#ビルド設定)を参照。

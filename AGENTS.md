@@ -24,6 +24,12 @@ adding, moving, or removing documentation entry points.
 - Prefer current, non-deprecated Mastodon endpoints (for example `/api/v2/media`).
 - Follow `docs/ui-guidelines.md` for phone navigation, status rendering, theming, and timeline
   customization. Tablet-specific UI is out of scope for the MVP.
+- In `ui-prototype`, reproduce the production app's current UI behavior within the requested
+  scope. Check the corresponding app code, UI specification, and tests before implementing;
+  preserve gestures, transitions, state, and system-bar behavior rather than simplifying them
+  for convenience. Keep the prototype independent with fixtures and local state. Different
+  behavior is an experiment only when requested by the user; document it and any remaining
+  mismatches in [`ui-prototype/README.md`](ui-prototype/README.md#本アプリと同じ動作を基準にするルール).
 - Keep the project compiling and existing tests valid. Choose validation by change scope using
   `docs/project-setup.md`; do not run the full suite after every small edit.
 - Documentation-only edits need content/link/diff checks, not Gradle builds or tests.
