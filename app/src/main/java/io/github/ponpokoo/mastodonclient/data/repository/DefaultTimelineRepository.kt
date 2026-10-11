@@ -49,6 +49,8 @@ import java.util.Collections
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import io.github.ponpokoo.mastodonclient.data.remote.dto.toDomain
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -81,27 +83,68 @@ class DefaultTimelineRepository(
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
     private val networkAvailable: () -> Boolean = { true },
     private val configurationClock: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val wordMuteRepository: io.github.ponpokoo.mastodonclient.domain.repository.WordMuteRepository? = null,
     private val accountDisplay: AccountDisplaySynchronizer? = null,
+    private val settingsStore: io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore? = null,
+    private val settingsScope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO),
 ) : TimelineRepository {
-    override val wordMutes get() = wordMuteRepository?.words ?: super.wordMutes
+    private val settingsRepository by lazy { DefaultServerAccountSettingsRepository(apiClientFactory, settingsStore, settingsScope,
+        accountDisplay, ::getModerationAccounts, ::applyModerationSnapshot, { session ->
+            synchronized(statusCache) { statusCache.keys.removeAll { it.sessionId == session.sessionId && it.instanceUrl == session.instanceUrl.trimEnd('/') } }
+        }) }
+    override val serverSettings get() = settingsRepository.serverSettings
+    override suspend fun savePostingVisibility(session: AccountSession, visibility: String) = settingsRepository.savePostingVisibility(session, visibility)
+    override suspend fun prepareServerSettings(session: AccountSession) = settingsRepository.prepareServerSettings(session)
+    override suspend fun activateServerSettings(session: AccountSession) = settingsRepository.activateServerSettings(session)
+    override suspend fun syncServerSettings(session: AccountSession, items: Set<io.github.ponpokoo.mastodonclient.domain.model.ServerSetting>) = settingsRepository.syncServerSettings(session, items)
+    override suspend fun saveServerFilter(session: AccountSession, original: io.github.ponpokoo.mastodonclient.domain.model.ServerFilter?, edit: io.github.ponpokoo.mastodonclient.domain.model.FilterEdit) = settingsRepository.saveServerFilter(session, original, edit)
+    override suspend fun deleteServerFilter(session: AccountSession, id: String) = settingsRepository.deleteServerFilter(session, id)
+    override suspend fun updateFilterDisplay(session: AccountSession, screen: String, expectedFilters: List<io.github.ponpokoo.mastodonclient.domain.model.ServerFilter>, success: Boolean?) = settingsRepository.updateFilterDisplay(session, screen, expectedFilters, success)
+
+    private suspend fun applyModerationSnapshot(session: AccountSession, kind: io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind,
+        accounts: List<io.github.ponpokoo.mastodonclient.domain.model.ModerationAccount>) {
+        accounts.forEach { rememberModerationAuthor(session, it.account) }
+        mutableModeration.update { old ->
+            val ids = accounts.associateBy { it.account.id }
+            var result = old
+            val affected = old.relationships.keys.filter { it.sessionId == session.sessionId && it.instanceUrl == session.instanceUrl.trimEnd('/') }.map { it.accountId }.toSet() + ids.keys
+            affected.forEach { id ->
+                val previous = result.relationship(session, id) ?: AccountRelationship()
+                val row = ids[id]?.relationship
+                val relationship = if (kind == io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind.Mutes)
+                    previous.copy(muting = row?.muting == true, mutingNotifications = row?.mutingNotifications, blocking = previous.blocking || row?.blocking == true)
+                else previous.copy(blocking = row?.blocking == true, muting = previous.muting || row?.muting == true,
+                    mutingNotifications = if (previous.muting) previous.mutingNotifications else row?.mutingNotifications)
+                result = result.changed(session, id, relationship)
+            }
+            result
+        }
+        invalidateModerationCaches(session)
+    }
+
+    private suspend fun invalidateModerationCaches(session: AccountSession) {
+        val state = mutableModeration.value
+        synchronized(statusCache) { statusCache.entries.removeAll { (key, status) -> key.sessionId == session.sessionId && key.instanceUrl == session.instanceUrl.trimEnd('/') && state.hides(session, status) } }
+        homeTimelineLocalDataSource?.applyModeration(session, state)
+        notificationLocalDataSource?.applyModeration(session, state)
+    }
 
     override suspend fun getModerationAccounts(session: AccountSession, kind: io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind, maxId: String?) = runCatching {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val response = if (kind == io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind.Mutes) api.getMutes(maxId) else api.getBlocks(maxId)
         if (!response.isSuccessful) throw HttpException(response)
-        val accounts = response.body().orEmpty()
+        val accounts = requireNotNull(response.body()) { "一覧の応答が空です" }
         val relationships = if (accounts.isEmpty()) emptyMap() else api.getRelationships(accounts.map { it.id }).associateBy { it.id }
         io.github.ponpokoo.mastodonclient.domain.model.ModerationAccountsPage(accounts.map { account ->
             val relation = requireNotNull(relationships[account.id]) { "関係状態を取得できませんでした" }.toDomain()
-            io.github.ponpokoo.mastodonclient.domain.model.ModerationAccount(account.toDomain(), relation, account.muteExpiresAt)
+            io.github.ponpokoo.mastodonclient.domain.model.ModerationAccount(rememberModerationAuthor(session, account.toDomain()), relation, account.muteExpiresAt)
         }, nextAccountListCursor(response.headers()["Link"]))
     }
 
     override suspend fun restoreMute(session: AccountSession, accountId: String, notifications: Boolean, durationSeconds: Long?) = runCatching {
         moderationMutex.withLock {
             apiClientFactory.create(session.instanceUrl, session.accessToken).mute(accountId, notifications, durationSeconds).toDomain()
-                .also { applyModeration(session, accountId, it) }
+                .also { applyModeration(session, accountId, it, updateMuteExpiry = true,
+                    muteExpiresAt = durationSeconds?.let { seconds -> java.time.Instant.now().plusSeconds(seconds).toString() }) }
         }
     }
     private val mutableModeration = kotlinx.coroutines.flow.MutableStateFlow(io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState())
@@ -135,6 +178,15 @@ class DefaultTimelineRepository(
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, TimelineStatus>?) = size > 500
         },
     )
+
+    private val moderationAuthors = Collections.synchronizedMap(
+        object : LinkedHashMap<StatusCacheKey, StatusAuthor>(128, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, StatusAuthor>?) = size > 500
+        },
+    )
+    private fun rememberModerationAuthor(session: AccountSession, author: StatusAuthor): StatusAuthor = author.also {
+        moderationAuthors[cacheKey(session, author.id)] = author
+    }
 
     override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? =
         statusCache[cacheKey(session, statusId)]?.takeUnless { moderation.value.hides(session, it) }
@@ -178,7 +230,7 @@ class DefaultTimelineRepository(
         pinned.forEach { cacheStatus(session, it) }
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
         account.toProfile(
-            author = account.toDomain().withAccountDisplay(registered),
+            author = rememberModerationAuthor(session, account.toDomain().withAccountDisplay(registered)),
             statuses = statuses, pinnedStatuses = pinned,
             nextMaxId = statuses.lastOrNull()?.statusId, endReached = statuses.size < 20,
             isOwnProfile = account.id == session.accountId,
@@ -190,7 +242,7 @@ class DefaultTimelineRepository(
         val account = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccount(accountId)
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         account.toProfile(
-            author = account.toDomain().withAccountDisplay(registered),
+            author = rememberModerationAuthor(session, account.toDomain().withAccountDisplay(registered)),
             statuses = emptyList(), pinnedStatuses = emptyList(), nextMaxId = null,
             endReached = false, isOwnProfile = account.id == session.accountId,
         )
@@ -281,7 +333,7 @@ class DefaultTimelineRepository(
         moderationMutex.withLock {
             apiClientFactory.create(session.instanceUrl, session.accessToken)
                 .let { if (muted) it.mute(accountId) else it.unmute(accountId) }.toDomain()
-                .also { applyModeration(session, accountId, it) }
+                .also { applyModeration(session, accountId, it, updateMuteExpiry = muted) }
         }
     }
 
@@ -293,9 +345,14 @@ class DefaultTimelineRepository(
         }
     }
 
-    private suspend fun applyModeration(session: AccountSession, accountId: String, relationship: AccountRelationship) =
+    private suspend fun applyModeration(session: AccountSession, accountId: String, relationship: AccountRelationship,
+        updateMuteExpiry: Boolean = false, muteExpiresAt: String? = null) =
         kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
             // Once the server accepted a change, finish local invalidation even if its screen closes.
+            val author = moderationAuthors[cacheKey(session, accountId)] ?: synchronized(statusCache) { statusCache.entries.firstOrNull { (key, status) -> key.sessionId == session.sessionId && key.instanceUrl == session.instanceUrl.trimEnd('/') && status.author.id == accountId }?.value?.author }
+                ?: io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor(accountId, accountId, accountId, "")
+            val settingsSaved = io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable { settingsRepository.recordRelationship(session, author, relationship, updateMuteExpiry, muteExpiresAt) }
+            val updateLocal: suspend () -> Unit = {
             mutableModeration.value = mutableModeration.value.changed(session, accountId, relationship)
             val state = mutableModeration.value
             synchronized(statusCache) {
@@ -305,7 +362,9 @@ class DefaultTimelineRepository(
             }
             val home = runCatching { homeTimelineLocalDataSource?.applyModeration(session, state) }
             val notifications = runCatching { notificationLocalDataSource?.applyModeration(session, state) }
-            if (home.isFailure || notifications.isFailure) mutableModeration.value = state.cleanupFailed(session, accountId)
+            if (settingsSaved.isFailure || home.isFailure || notifications.isFailure) mutableModeration.value = state.cleanupFailed(session, accountId)
+            }
+            if (accountDisplay == null) updateLocal() else accountDisplay.withRegistration(session, block = updateLocal)
         }
 
     override suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean) = runCatching {
@@ -340,7 +399,7 @@ class DefaultTimelineRepository(
         )
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         account.toProfile(
-            author = account.toDomain().withAccountDisplay(registered),
+            author = rememberModerationAuthor(session, account.toDomain().withAccountDisplay(registered)),
             statuses = emptyList(), pinnedStatuses = emptyList(), nextMaxId = null,
             endReached = false, isOwnProfile = true,
         )
@@ -473,6 +532,8 @@ class DefaultTimelineRepository(
         emitAll(
             streamingDataSource.observeUser(streamingUrl, session.accessToken).mapNotNull { message ->
                 when (message.event) {
+                    "filters_changed" -> TimelineStreamEvent.FiltersChanged
+                    "connected" -> TimelineStreamEvent.Connected
                     "update", "status.update" -> runCatching {
                         TimelineStreamEvent.StatusAdded(cacheStatus(session, json.decodeFromString<StatusDto>(message.payload).toDomain()), isEdit = message.event == "status.update")
                             .takeUnless { moderation.value.hides(session, it.status) }
@@ -670,6 +731,7 @@ class DefaultTimelineRepository(
             sensitive = request.sensitive,
             visibility = request.visibility,
             language = request.language?.ifBlank { null },
+            quoteApprovalPolicy = request.quotePolicy,
             pollOptions = request.pollOptions.ifEmpty { null },
             pollExpiresInSeconds = request.pollExpiresInSeconds,
             pollMultiple = request.pollMultiple.takeIf { request.pollOptions.isNotEmpty() },
@@ -836,6 +898,8 @@ internal fun StatusDto.toDomain(): TimelineStatus {
         customEmojis = displayed.emojis.associate { it.shortcode to it.url },
         mentions = displayed.mentions.map { io.github.ponpokoo.mastodonclient.domain.model.StatusMention(it.id, it.acct, it.url) },
         quoteApproval = displayed.quoteApproval?.currentUser,
+        filtered = if (displayed.filtered == null && filtered == null) null else (displayed.filtered.orEmpty() + if (reblog != null) filtered.orEmpty() else emptyList())
+            .map { it.toDomain() },
         inReplyToId = displayed.inReplyToId,
         inReplyToAccountId = displayed.inReplyToAccountId,
         spoilerText = displayed.spoilerText,

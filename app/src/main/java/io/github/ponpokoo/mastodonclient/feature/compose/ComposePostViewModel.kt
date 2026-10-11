@@ -49,6 +49,8 @@ data class ComposePostUiState(
     val visibility: PostVisibility = PostVisibility.Public,
     val sensitive: Boolean = false,
     val language: String? = null,
+    val quotePolicy: String? = null,
+    val quotePolicySupported: Boolean = false,
     val attachments: List<DraftAttachment> = emptyList(),
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
@@ -167,6 +169,7 @@ class ComposePostViewModel(
         viewModelScope.launch {
             val sessions = authRepository.getSessions()
             val selected = authRepository.restoreSession() ?: sessions.firstOrNull()
+            selected?.let { timelineRepository.prepareServerSettings(it) }
             val preferences = preferencesStore.preferences.first()
             _uiState.update {
                 it.copy(
@@ -179,7 +182,7 @@ class ComposePostViewModel(
                     isLoading = selected != null,
                     quotingNative = activeQuoteStatusId != null && activeNativeQuote,
                     quoteStatusId = activeQuoteStatusId,
-                )
+                ).withFreshDefaults(selected, preferences)
             }
             selected?.let { session ->
                 observeAccountDisplay()
@@ -277,6 +280,13 @@ class ComposePostViewModel(
     }
 
     fun onSpoilerChanged(text: String) = change { it.copy(spoilerText = text) }
+
+    private fun ComposePostUiState.withFreshDefaults(session: AccountSession?, preferences: AppPreferences): ComposePostUiState {
+        val defaults = session?.let { timelineRepository.serverSettings.value[it.sessionId]?.takeIf { saved -> saved.belongsTo(it) }?.defaults }
+        return copy(visibility = defaults?.visibility?.let(PostVisibility::fromApi) ?: preferences.forAccount(session?.sessionId).defaultVisibility,
+            language = defaults?.language, quotePolicy = defaults?.quotePolicy, quotePolicySupported = defaults?.quotePolicySupported == true)
+    }
+
     fun setVisibility(value: PostVisibility) = change { it.copy(visibility = value) }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
     fun setLanguage(value: String?) {
@@ -575,6 +585,8 @@ class ComposePostViewModel(
             retainInput()
             restoredDraftKey = null
             val selected = _uiState.value.sessions.firstOrNull { it.sessionId == sessionId } ?: return@launch
+            timelineRepository.activateServerSettings(selected)
+            timelineRepository.prepareServerSettings(selected)
             val preferences = preferencesStore.preferences.first()
             _uiState.update {
                 ComposePostUiState(
@@ -586,8 +598,9 @@ class ComposePostViewModel(
                     drafts = preferencesStore.drafts.first().filter { draft -> draft.sessionId == selected.sessionId }
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
                     isLoading = true,
-                )
+                ).withFreshDefaults(selected, preferences)
             }
+            viewModelScope.launch { timelineRepository.syncServerSettings(selected) }
             loadAccountData(selected, restoreBuffer = replyText == null)
         }
     }
@@ -652,6 +665,7 @@ class ComposePostViewModel(
                 sensitive = state.sensitive || state.spoilerText.isNotBlank(),
                 visibility = state.visibility.apiValue,
                 language = state.language,
+                quotePolicy = state.quotePolicy.takeIf { state.quotePolicySupported }?.let { if (state.visibility in setOf(PostVisibility.FollowersOnly, PostVisibility.Direct)) "nobody" else it },
                 pollOptions = state.pollOptions.map(String::trim).filter(String::isNotEmpty),
                 pollExpiresInSeconds = state.pollExpiresInSeconds.takeIf { state.pollOptions.isNotEmpty() },
                 pollMultiple = state.pollMultiple,
@@ -721,7 +735,7 @@ class ComposePostViewModel(
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
                     isLoading = false,
                     actionMessage = "下書きに保存しました",
-                ) }
+                ).withFreshDefaults(session, current.preferences) }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -843,6 +857,7 @@ class ComposePostViewModel(
         visibility = visibility,
         sensitive = sensitive,
         language = language,
+        quotePolicy = quotePolicy,
         attachmentUris = attachments.map(DraftAttachment::uri),
         attachmentFileNames = attachments.associate { it.uri to it.fileName },
         attachmentMimeTypes = attachments.associate { it.uri to it.mimeType },
@@ -923,6 +938,7 @@ class ComposePostViewModel(
         visibility = draft.visibility,
         sensitive = draft.sensitive,
         language = draft.language,
+        quotePolicy = draft.quotePolicy,
         attachments = draft.attachmentUris.map { uri ->
             DraftAttachment(
                 uri = uri,

@@ -32,6 +32,9 @@ data class TimelineStatus(
     val quoteApproval: String? = null,
     val inReplyToId: String? = null,
     val inReplyToAccountId: String? = null,
+    val filtered: List<StatusFilterResult>? = null,
+    @kotlinx.serialization.Transient val filterDisplay: FilterPresentation = FilterPresentation(),
+    @kotlinx.serialization.Transient val filterScope: String = "",
 )
 
 @Serializable

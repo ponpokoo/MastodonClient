@@ -45,4 +45,26 @@ class ModerationManagementRepositoryTest {
             assertEquals("notifications=false&duration=59", request.body.readUtf8())
         }
     }
+    @Test fun undoKeepsAccountMetadataAndRestoredExpiryInSettingsCache() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultTimelineRepository(ApiClientFactory(), settingsScope = backgroundScope)
+            val session = testAccount.copy(instanceUrl = server.url("/").toString())
+            server.enqueue(MockResponse().setBody("""[{"id":"opaque","username":"target","acct":"target@remote.example","display_name":"Known author","mute_expires_at":"2030-01-01T00:00:00Z"}]"""))
+            server.enqueue(MockResponse().setBody("""[{"id":"opaque","muting":true,"muting_notifications":false}]"""))
+            repository.syncServerSettings(session, setOf(ServerSetting.Mutes)).getOrThrow()
+            server.enqueue(MockResponse().setBody("""{"id":"opaque","muting":false}"""))
+            repository.setMuted(session, "opaque", false).getOrThrow()
+            val before = java.time.Instant.now()
+            server.enqueue(MockResponse().setBody("""{"id":"opaque","muting":true,"muting_notifications":false}"""))
+            repository.restoreMute(session, "opaque", false, 59).getOrThrow()
+            val restored = repository.serverSettings.value.getValue(session.sessionId).mutes!!.single()
+            assertEquals("Known author", restored.account.displayName)
+            assertEquals("target@remote.example", restored.account.accountName)
+            assertEquals(false, restored.relationship.mutingNotifications)
+            val expiry = java.time.Instant.parse(restored.muteExpiresAt)
+            assertFalse(expiry.isBefore(before.plusSeconds(59)))
+            assertFalse(expiry.isAfter(java.time.Instant.now().plusSeconds(59)))
+            assertEquals(4, server.requestCount)
+        }
+    }
 }

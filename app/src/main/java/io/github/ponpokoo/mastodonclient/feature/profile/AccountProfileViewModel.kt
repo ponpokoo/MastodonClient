@@ -65,6 +65,11 @@ class AccountProfileViewModel(
     fun setProfileMuted(enabled: Boolean) = moderationMenu.mute(accountId, enabled)
     fun setProfileBlocked(enabled: Boolean) = moderationMenu.block(accountId, enabled)
     init {
+        io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, timelineRepository, { session }, "account:$accountId") {
+            tabJobs.values.toList().forEach { it.join() }; refresh()
+            tabJobs.values.toList().forEach { it.join() }
+            _uiState.value.profileTabs[_uiState.value.selectedTab]?.error == null
+        }
         viewModelScope.launch {
             authRepository.observeSessions().collect { sessions ->
                 val current = session ?: return@collect

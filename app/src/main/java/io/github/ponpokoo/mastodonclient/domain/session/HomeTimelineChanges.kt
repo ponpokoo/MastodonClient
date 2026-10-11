@@ -20,6 +20,7 @@ fun List<TimelineStatus>.applyHomeChange(change: BrowsingSession.Change, include
             includeNew -> listOf(event.status) + this
             else -> this
         }
+        is TimelineStreamEvent.FiltersChanged, is TimelineStreamEvent.Connected -> this
         is TimelineStreamEvent.NotificationReceived -> this
     }
 }

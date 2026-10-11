@@ -9,7 +9,6 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
-import io.github.ponpokoo.mastodonclient.feature.common.matchesWordMute
 import io.github.ponpokoo.mastodonclient.feature.settings.*
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,14 +28,16 @@ class ModerationManagementDeviceTest {
         override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
         override suspend fun completeAuthorization(callbackUrl: String) = Result.success(session)
     }
-    private class Words : WordMuteRepository {
-        override val words = MutableStateFlow<Map<String, List<String>>>(mapOf("A" to listOf("ネタバレ")))
-        override suspend fun add(sessionId: String, word: String) { words.value = words.value + (sessionId to (words.value[sessionId].orEmpty() + word)) }
-        override suspend fun remove(sessionId: String, word: String) { words.value = words.value + (sessionId to (words.value[sessionId].orEmpty() - word)) }
-        override suspend fun restore(sessionId: String, word: String, index: Int) { words.value = words.value + (sessionId to (words.value[sessionId].orEmpty() + word)) }
-    }
     private inner class Repository : TimelineRepository {
+        override val serverSettings = MutableStateFlow(listOf(session, second).associate { account -> account.sessionId to ServerAccountSettings(account.instanceUrl, account.accountId,
+            mutes = listOf(ModerationAccount(author, AccountRelationship(muting = true, blocking = true))), blocks = listOf(ModerationAccount(author, AccountRelationship(muting = true, blocking = true))),
+            fetch = mapOf(ServerSetting.Mutes to SettingFetch(fetchedAt = 1), ServerSetting.Blocks to SettingFetch(fetchedAt = 1))) })
         var relation = AccountRelationship(muting = true, blocking = true)
+        val syncs = mutableListOf<Pair<String, Set<ServerSetting>>>()
+        override suspend fun syncServerSettings(session: AccountSession, items: Set<ServerSetting>): Result<Unit> {
+            syncs += session.sessionId to items
+            return Result.success(Unit)
+        }
         override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) = Result.success(TimelinePage(emptyList(), null, true))
         override suspend fun getModerationAccounts(session: AccountSession, kind: ModerationListKind, maxId: String?) =
             Result.success(ModerationAccountsPage(listOf(ModerationAccount(author, relation)), null))
@@ -45,9 +46,9 @@ class ModerationManagementDeviceTest {
         }
     }
     @Test fun releaseUndoAndTimedSnackbarAndAccountPickerWorkInBothThemes() {
-        val repository = Repository(); val words = Words(); val store = ViewModelStore()
+        val repository = Repository(); val store = ViewModelStore()
         lateinit var model: ModerationManagementViewModel
-        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth, words); store.put("management", model) }
+        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth); store.put("management", model) }
         val preferences = UserPreferencesStore(object : androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences> {
             override val data = MutableStateFlow(androidx.datastore.preferences.core.emptyPreferences())
             override suspend fun updateData(transform: suspend (androidx.datastore.preferences.core.Preferences) -> androidx.datastore.preferences.core.Preferences) = transform(data.value).also { data.value = it }
@@ -63,7 +64,13 @@ class ModerationManagementDeviceTest {
                 SettingsScreen(preferences, session, listOf(session, second), maintenance, {}, {}, {}, moderation = model)
             } }
             rule.onNodeWithTag("settings_category_Moderation").performScrollTo().performClick()
+            rule.onNodeWithTag("management_account_switcher").assertIsDisplayed()
+            rule.onNodeWithContentDescription("一覧を更新").assertDoesNotExist()
+            rule.onNodeWithText("ワードミュート", useUnmergedTree = true).assertDoesNotExist()
             rule.onNodeWithText("ミュート中", useUnmergedTree = true).performClick()
+            rule.onNodeWithTag("management_account_switcher").assertDoesNotExist()
+            rule.onNodeWithContentDescription("一覧を更新").performClick()
+            rule.runOnIdle { assertEquals(session.sessionId to setOf(ServerSetting.Mutes, ServerSetting.Blocks), repository.syncs.last()) }
             capture("management-dark")
             rule.onNodeWithText("解除", useUnmergedTree = true).performClick()
             rule.onNodeWithText("ブロックは引き続き有効です。投稿の非表示も続きます。").assertIsDisplayed()
@@ -76,28 +83,30 @@ class ModerationManagementDeviceTest {
             rule.onNodeWithText("解除", useUnmergedTree = true).assertIsDisplayed()
             rule.runOnIdle { theme.value = ThemeMode.Light }
             capture("management-light")
-            rule.onNodeWithContentDescription("戻る").performClick()
-            rule.onNodeWithText("ワードミュート", useUnmergedTree = true).performClick()
-            rule.onNodeWithContentDescription("ネタバレ を削除").performClick()
-            rule.onNodeWithText("削除", useUnmergedTree = true).performClick()
+            rule.onNodeWithText("解除", useUnmergedTree = true).performClick()
+            rule.onNode(hasText("解除") and hasAnyAncestor(isDialog()), useUnmergedTree = true).performClick()
             rule.onNodeWithText("取り消し").assertIsDisplayed()
             rule.waitUntil(timeoutMillis = 4_000) { rule.onAllNodesWithText("取り消し").fetchSemanticsNodes().isEmpty() }
-            rule.onNodeWithText("登録したワードはありません").assertIsDisplayed()
+            rule.onNodeWithContentDescription("戻る").performClick()
             rule.onNodeWithTag("management_account_switcher").performClick()
             rule.onNodeWithText("別アカウント").performClick()
             rule.onNodeWithText("@me · two.example").assertIsDisplayed()
+            listOf("ブロック中", "サーバーのフィルター").forEach { label ->
+                rule.onNodeWithText(label, useUnmergedTree = true).performClick()
+                rule.onNodeWithTag("management_account_switcher").assertDoesNotExist()
+                rule.onNodeWithContentDescription("一覧を更新").performClick()
+                rule.runOnIdle {
+                    val items = if (label == "サーバーのフィルター") setOf(ServerSetting.Filters) else setOf(ServerSetting.Mutes, ServerSetting.Blocks)
+                    assertEquals(second.sessionId to items, repository.syncs.last())
+                }
+                rule.runOnIdle { assertEquals(second.sessionId, model.state.value.selected?.sessionId) }
+                rule.onNodeWithContentDescription("戻る").performClick()
+                rule.onNodeWithText("@me · two.example").assertIsDisplayed()
+            }
         } finally { rule.runOnIdle { store.clear() } }
     }
     private fun capture(name: String) {
         val file = java.io.File(rule.activity.getExternalFilesDir(null), "$name.png")
         file.outputStream().use { rule.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-    }
-    @Test fun wordMatcherUsesVisibleHtmlAndCwWithoutMatchingMarkupAttributes() {
-        val post = TimelineStatus("row", "post", "", author, null,
-            "<p><a href=\"https://example.com/spoiler\">Spo<b>il</b>er &amp; &#x79D8;密</a></p>", "CW注意", false, "public", null, 0, 0, 0, mediaAttachments = emptyList())
-        assertTrue(post.matchesWordMute(listOf("spoiler & 秘密")))
-        assertTrue(post.matchesWordMute(listOf("cw注意")))
-        assertFalse(post.matchesWordMute(listOf("https://example.com")))
-        assertFalse(post.matchesWordMute(listOf(" ")))
     }
 }

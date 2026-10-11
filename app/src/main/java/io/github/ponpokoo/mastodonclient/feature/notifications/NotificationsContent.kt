@@ -71,6 +71,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.ContentWarning
+import io.github.ponpokoo.mastodonclient.feature.common.FilterWarning
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -312,6 +314,10 @@ private fun NotificationStatusQuote(
     onMoreClick: (TimelineStatus) -> Unit,
     preferences: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences,
 ) {
+    if (status.filterDisplay.hidden) return
+    var filterRevealed by androidx.compose.runtime.saveable.rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { androidx.compose.runtime.mutableStateOf(false) }
+    var cwRevealed by androidx.compose.runtime.saveable.rememberSaveable(status.filterScope, status.statusId, status.spoilerText) { androidx.compose.runtime.mutableStateOf(false) }
+    val visible = status.filterDisplay.warnings.isEmpty() || filterRevealed
     val plainContent = remember(status.contentHtml) {
         androidx.core.text.HtmlCompat.fromHtml(
             status.contentHtml,
@@ -319,7 +325,7 @@ private fun NotificationStatusQuote(
         ).toString().trim()
     }
     Surface(
-        onClick = { onStatusClick(status.statusId) },
+        onClick = { if (visible) onStatusClick(status.statusId) },
         modifier = Modifier.fillMaxWidth().padding(start = 58.dp, end = 16.dp, bottom = 10.dp)
             .testTag("notification_status_quote"),
         shape = RoundedCornerShape(6.dp),
@@ -356,6 +362,28 @@ private fun NotificationStatusQuote(
                 }
             }
             Spacer(Modifier.height(3.dp))
+            if (status.filterDisplay.warnings.isNotEmpty()) FilterWarning(
+                status.filterDisplay.warnings, filterRevealed, { filterRevealed = !filterRevealed },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = preferences.fontSize.spValue(),
+                    lineHeight = preferences.lineHeightSp().sp,
+                ),
+            )
+            if (!visible) return@Column
+            if (status.spoilerText.isNotBlank()) {
+                ContentWarning(expanded = cwRevealed, onToggle = { cwRevealed = !cwRevealed }) {
+                    CustomEmojiText(
+                        text = status.spoilerText,
+                        emojis = status.customEmojis,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = preferences.fontSize.spValue(),
+                            lineHeight = preferences.lineHeightSp().sp,
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (!cwRevealed) return@Column
+            }
             CustomEmojiText(
                 text = plainContent,
                 emojis = status.customEmojis,

@@ -1,12 +1,35 @@
 package io.github.ponpokoo.mastodonclient.core.preferences
 
 import io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences
+import io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings
+import io.github.ponpokoo.mastodonclient.domain.model.ServerFilter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
 class AccountDataRemovalTest {
+    @Test fun obsoleteWordMutesAreIgnoredAndRemovedOnSaveWithoutResettingOtherData() = runTest {
+        val data = MemoryAuthPreferences()
+        val settingsKey = androidx.datastore.preferences.core.stringPreferencesKey("app_preferences_v2")
+        data.updateData { it.toMutablePreferences().apply {
+            this[settingsKey] = """{"themeMode":"Dark","openLinksInApp":false,"wordMutes":{"a":["spoiler"]},"accountPreferences":{"a":{"defaultVisibility":"Direct"}},"serverSettings":{"a":{"instanceUrl":"https://a.example","accountId":"a","filters":[{"id":"filter","title":"server","context":["home"],"action":"warn"}]}}}"""
+        } }
+        val store = UserPreferencesStore(data)
+        store.saveDraft(ComposeDraft("draft", "a", text = "spoiler"))
+        val before = store.preferences.first()
+        assertEquals(ThemeMode.Dark, before.themeMode)
+        assertFalse(before.openLinksInApp)
+        assertEquals(PostVisibility.Direct, before.forAccount("a").defaultVisibility)
+        assertEquals("filter", before.serverSettings.getValue("a").filters!!.single().id)
+        store.setThemeMode(ThemeMode.Light)
+        val restored = UserPreferencesStore(data)
+        assertEquals(before.copy(themeMode = ThemeMode.Light), restored.preferences.first())
+        assertEquals("spoiler", restored.drafts.first().single().text)
+        val saved = kotlinx.serialization.json.Json.parseToJsonElement(data.data.first()[settingsKey]!!)
+        assertFalse((saved as kotlinx.serialization.json.JsonObject).containsKey("wordMutes"))
+    }
+
     @Test fun removesOnlySelectedAccountAndRejectsLateWritesAfterRecreation() = runTest {
         val data = MemoryAuthPreferences()
         val accounts = mutableSetOf("a", "b")
@@ -16,7 +39,8 @@ class AccountDataRemovalTest {
         preferences.setOpenLinksInApp(false)
         for (id in accounts) {
             preferences.setAccountPreferences(id, AccountPreferences(PostVisibility.Direct, StreamingPolicy.Off))
-            preferences.editWordMutes(id) { listOf("private-$id") }
+            preferences.saveServerSettings(id, ServerAccountSettings("https://$id.example", id,
+                filters = listOf(ServerFilter("filter-$id", "private-$id", setOf("home")))))
             preferences.recordReaction(id, "reaction-$id")
             preferences.recordComposerEmoji(id, "emoji-$id")
             preferences.saveDraft(ComposeDraft(id, id, text = "draft-$id", attachmentUris = listOf("file:///$id")))
@@ -31,13 +55,14 @@ class AccountDataRemovalTest {
         assertNull(preferences.getComposeBuffer("late"))
         val restored = store()
         restored.setAccountPreferences("a", AccountPreferences())
-        restored.editWordMutes("a") { listOf("late") }
+        restored.saveServerSettings("a", ServerAccountSettings("https://a.example", "a", filters = emptyList()))
         restored.recordReaction("a", "late")
         restored.setReactionHistory("a", listOf("late"))
         restored.recordComposerEmoji("a", "late")
         restored.setComposerEmojiHistory("a", listOf("late"))
         assertTrue(runCatching { restored.saveDraft(ComposeDraft("late", "a", text = "late")) }.isFailure)
-        assertEquals(before.copy(accountPreferences = before.accountPreferences - "a", wordMutes = before.wordMutes - "a"), restored.preferences.first())
+        assertEquals(before.copy(accountPreferences = before.accountPreferences - "a",
+            serverSettings = before.serverSettings - "a"), restored.preferences.first())
         assertEquals(listOf("b"), restored.drafts.first().map { it.sessionId })
         assertEquals(mapOf("b" to listOf("reaction-b")), restored.reactionHistory.first())
         assertEquals(mapOf("b" to listOf("emoji-b")), restored.composerEmojiHistory.first())

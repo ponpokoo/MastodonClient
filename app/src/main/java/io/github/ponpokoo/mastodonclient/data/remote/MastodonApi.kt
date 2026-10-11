@@ -35,6 +35,22 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.ListDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusSourceDto
 
 interface MastodonApi {
+    @FormUrlEncoded
+    @PATCH("api/v1/accounts/update_credentials")
+    suspend fun updatePostingVisibility(@Field("source[privacy]") visibility: String): AccountDto
+
+    @GET("api/v1/preferences") suspend fun getPreferences(): kotlinx.serialization.json.JsonObject
+    @GET("api/v2/filters") suspend fun getFilters(): List<io.github.ponpokoo.mastodonclient.data.remote.dto.FilterDto>
+    @FormUrlEncoded
+    @POST("api/v2/filters")
+    suspend fun createFilter(@retrofit2.http.FieldMap fields: Map<String, String>,
+        @Field("context[]") contexts: List<String>): io.github.ponpokoo.mastodonclient.data.remote.dto.FilterDto
+
+    @FormUrlEncoded
+    @PUT("api/v2/filters/{id}")
+    suspend fun updateFilter(@Path("id") id: String, @retrofit2.http.FieldMap fields: Map<String, String>,
+        @Field("context[]") contexts: List<String>): io.github.ponpokoo.mastodonclient.data.remote.dto.FilterDto
+    @DELETE("api/v2/filters/{id}") suspend fun deleteFilter(@Path("id") id: String): retrofit2.Response<Unit>
     @GET("api/v1/trends/statuses")
     suspend fun getTrendingStatuses(@Query("limit") limit: Int = 20, @Query("offset") offset: Int = 0): List<StatusDto>
 
@@ -299,6 +315,7 @@ interface MastodonApi {
         @Field("sensitive") sensitive: Boolean = false,
         @Field("visibility") visibility: String = "public",
         @Field("language") language: String? = null,
+        @Field("quote_approval_policy") quoteApprovalPolicy: String? = null,
         @Field("poll[options][]") pollOptions: List<String>? = null,
         @Field("poll[expires_in]") pollExpiresInSeconds: Long? = null,
         @Field("poll[multiple]") pollMultiple: Boolean? = null,

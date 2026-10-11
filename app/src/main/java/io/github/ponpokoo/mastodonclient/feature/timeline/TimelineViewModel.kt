@@ -479,6 +479,16 @@ class TimelineViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.FiltersChanged) {
+            val snapshot = currentSnapshot() ?: return
+            requestScope.launch {
+                io.github.ponpokoo.mastodonclient.feature.common.trackServerFilterDisplay(timelineRepository, snapshot.account!!, "timeline") {
+                    timelineJob?.join(); refresh(); timelineJob?.join()
+                    _uiState.value.errorMessage == null && !_uiState.value.isShowingSavedStatuses
+                }
+            }
+            return
+        }
         if (change is BrowsingSession.Change.TagUpdated) return
         homeChangesDuringRequest?.add(change)
         if (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived) currentSnapshot()?.let { snapshot -> requestScope.launch {
@@ -520,6 +530,7 @@ class TimelineViewModel(
                         }
                     } else current
                     is TimelineStreamEvent.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == event.statusId || it.timelineId == event.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == event.statusId || it.timelineId == event.statusId }.map { it.timelineId }.toSet())
+                    is TimelineStreamEvent.FiltersChanged, is TimelineStreamEvent.Connected -> current
                     is TimelineStreamEvent.NotificationReceived -> current
                 }
             }

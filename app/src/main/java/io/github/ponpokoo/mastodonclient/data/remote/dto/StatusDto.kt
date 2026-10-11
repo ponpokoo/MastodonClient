@@ -32,6 +32,7 @@ data class StatusDto(
     val poll: PollDto? = null,
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
     val reblog: StatusDto? = null,
+    val filtered: List<FilterResultDto>? = null,
 )
 
 @Serializable

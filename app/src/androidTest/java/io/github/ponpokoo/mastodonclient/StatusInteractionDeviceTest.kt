@@ -260,6 +260,9 @@ class StatusInteractionDeviceTest {
         composeRule.onNodeWithText("内容を表示").performClick()
         composeRule.onNodeWithText("結末の本文").assertExists()
         composeRule.onNodeWithText("記事の見出し").assertExists()
+        composeRule.onNodeWithText("内容を隠す").performClick()
+        composeRule.onNodeWithText("結末の本文").assertDoesNotExist()
+        composeRule.onNodeWithText("記事の見出し").assertDoesNotExist()
     }
 
     @Test

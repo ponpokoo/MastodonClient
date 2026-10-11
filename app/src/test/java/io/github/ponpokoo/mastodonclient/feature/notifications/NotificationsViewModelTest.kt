@@ -16,6 +16,8 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationsViewModelTest : ScreenViewModelTestBase() {
+    // Presentation belongs to the viewing account; persistent cache keeps the server models.
+    private fun List<TimelineNotification>.withoutDisplayScope() = map { it.copy(status = it.status?.copy(filterScope = "")) }
     @Test fun streamReceivedDuringDiskReadIsPersistedEvenWhenNetworkRefreshFails() = runTest(dispatcher) {
         val disk = CompletableDeferred<Result<CachedNotifications>>()
         var saved = emptyList<TimelineNotification>()
@@ -37,7 +39,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         disk.complete(Result.success(CachedNotifications(listOf(testNotification("live"), testNotification("old")))))
         advanceUntilIdle()
         assertEquals(listOf("live", "old"), saved.map { it.id })
-        assertEquals(saved, viewModel.uiState.value.notifications)
+        assertEquals(saved, viewModel.uiState.value.notifications.withoutDisplayScope())
         assertEquals(setOf("live"), viewModel.uiState.value.pendingNewNotificationIds)
     }
 
@@ -101,7 +103,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         assertEquals(listOf("live", "new", "read"), viewModel.uiState.value.notifications.map { it.id })
         assertEquals(setOf("live", "new"), viewModel.uiState.value.pendingNewNotificationIds)
-        assertEquals(viewModel.uiState.value.notifications, saved.last())
+        assertEquals(viewModel.uiState.value.notifications.withoutDisplayScope(), saved.last())
         viewModel.loadNextNotifications()
         advanceUntilIdle()
         assertEquals(listOf("live", "new", "read", "older"), saved.last().map { it.id })

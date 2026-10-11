@@ -208,6 +208,17 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.FiltersChanged) {
+            val snapshot = currentSnapshot() ?: return
+            requestScope.launch {
+                io.github.ponpokoo.mastodonclient.feature.common.trackServerFilterDisplay(timelineRepository, snapshot.account!!, "own-profile") {
+                    profileJob?.join(); tabJobs.values.toList().forEach { it.join() }; refreshProfile()
+                    profileJob?.join(); tabJobs.values.toList().forEach { it.join() }
+                    _uiState.value.profileError == null && _uiState.value.profileTabs[_uiState.value.profileSelectedTab]?.error == null
+                }
+            }
+            return
+        }
         val deleted = when (change) {
             is BrowsingSession.Change.StatusDeleted -> change.statusId
             is BrowsingSession.Change.Stream -> (change.event as? TimelineStreamEvent.StatusDeleted)?.statusId

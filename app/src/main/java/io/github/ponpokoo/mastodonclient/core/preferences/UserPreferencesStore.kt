@@ -90,7 +90,7 @@ data class AppPreferences(
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val hiddenComposerActions: Set<ComposerAction> = emptySet(),
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
-    val wordMutes: Map<String, List<String>> = emptyMap(),
+    val serverSettings: Map<String, io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
 }
@@ -108,6 +108,7 @@ data class ComposeDraft(
     val visibility: PostVisibility = PostVisibility.Public,
     val sensitive: Boolean = false,
     val language: String? = null,
+    val quotePolicy: String? = null,
     val attachmentUris: List<String> = emptyList(),
     val attachmentFileNames: Map<String, String> = emptyMap(),
     val attachmentMimeTypes: Map<String, String> = emptyMap(),
@@ -144,8 +145,8 @@ class UserPreferencesStore(
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
 
-    suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update(sessionId) {
-        it.copy(wordMutes = it.wordMutes + (sessionId to transform(it.wordMutes[sessionId].orEmpty())))
+    suspend fun saveServerSettings(sessionId: String, value: io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings) = update(sessionId) {
+        it.copy(serverSettings = it.serverSettings + (sessionId to value.copy(fetch = value.fetch.mapValues { (_, state) -> state.copy(loading = false) })))
     }
 
     val reactionHistory: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->
@@ -287,7 +288,7 @@ class UserPreferencesStore(
             val settings = stored[APP_PREFERENCES]?.let(::decodeAppPreferences)
             if (settings != null) stored[APP_PREFERENCES] = json.encodeToString(settings.copy(
                 accountPreferences = settings.accountPreferences - sessionId,
-                wordMutes = settings.wordMutes - sessionId,
+                serverSettings = settings.serverSettings - sessionId,
             ))
             for (key in listOf(REACTION_HISTORY, COMPOSER_EMOJI_HISTORY)) {
                 val history = stored[key]?.let { json.decodeFromString<Map<String, List<String>>>(it) }.orEmpty() - sessionId

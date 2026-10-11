@@ -8,35 +8,32 @@ import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailUiState
 import io.github.ponpokoo.mastodonclient.feature.search.*
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineUiState
 
-internal fun TimelineStatus.matchesWordMute(words: List<String>): Boolean {
-    if (words.isEmpty()) return false
-    val text = if ('<' in contentHtml || '&' in contentHtml)
-        androidx.core.text.HtmlCompat.fromHtml(contentHtml, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
-    else contentHtml
-    return words.any { it.isNotBlank() && (text.contains(it, ignoreCase = true) || spoilerText.contains(it, ignoreCase = true)) }
-}
-private fun List<TimelineStatus>.visible(m: AccountModerationState, s: AccountSession) =
-    filterNot { m.hides(s, it) || it.matchesWordMute(m.wordMutes[s.sessionId].orEmpty()) }
+private fun TimelineStatus.present(m: AccountModerationState, s: AccountSession, context: String?): TimelineStatus =
+    if (!m.applyServerFilters || context == null) this else copy(filterDisplay = filterPresentation(context, current = m.serverFilters[s.sessionId]), filterScope = s.sessionId + s.instanceUrl)
+private fun List<TimelineStatus>.visible(m: AccountModerationState, s: AccountSession, context: String? = null) =
+    filterNot { m.hides(s, it) }
+        .map { it.present(m, s, context) }.filterNot { m.applyServerFilters && context != null && it.filterDisplay.hidden }
 private fun UserProfile.visible(m: AccountModerationState, s: AccountSession) =
-    copy(statuses = statuses.visible(m, s), pinnedStatuses = pinnedStatuses.visible(m, s))
+    copy(statuses = statuses.visible(m, s, "account"), pinnedStatuses = pinnedStatuses.visible(m, s, "account"))
 private fun Map<ProfileStatusTab, ProfileTabUiState>.visible(m: AccountModerationState, s: AccountSession) =
-    mapValues { (_, tab) -> tab.copy(statuses = tab.statuses.visible(m, s)) }
+    mapValues { (_, tab) -> tab.copy(statuses = tab.statuses.visible(m, s, "account")) }
 
 internal fun TimelineUiState.withModeration(m: AccountModerationState, s: AccountSession): TimelineUiState {
-    val visible = statuses.visible(m, s)
+    val visible = statuses.visible(m, s, if (selectedFeed == TimelineFeed.Home) "home" else "public")
     val ids = visible.mapTo(mutableSetOf()) { it.timelineId }
     return copy(statuses = visible, unseenStreamIds = unseenStreamIds.intersect(ids))
 }
 
 internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession): NotificationsUiState {
-    val words = m.wordMutes[s.sessionId].orEmpty()
-    val hidden = { notification: TimelineNotification ->
-        m.hides(s, notification) || notification.status?.matchesWordMute(words) == true
-    }
-    val visible = notifications.filterNot(hidden)
-    val filteredLists = lists.mapValues { (_, list) -> list.copy(notifications = list.notifications.filterNot(hidden)) }
+    fun present(rows: List<TimelineNotification>) = rows.filterNot { m.hides(s, it) }.map { notification ->
+        notification.copy(status = notification.status?.present(m, s, "notifications"))
+    }.filterNot { m.applyServerFilters && it.status?.filterDisplay?.hidden == true }
+    val visible = present(notifications)
+    val filteredLists = lists.mapValues { (_, list) -> list.copy(notifications = present(list.notifications)) }
     if (visible == notifications && filteredLists == lists) return this
     val ids = (visible + filteredLists.values.flatMap { it.notifications }).mapTo(mutableSetOf()) { it.id }
+    val originalIds = (notifications + lists.values.flatMap { it.notifications }).mapTo(mutableSetOf()) { it.id }
+    if (ids == originalIds) return copy(notifications = visible, lists = filteredLists)
     val pending = pendingNewNotificationIds.intersect(ids)
     return copy(notifications = visible, lists = filteredLists, pendingNewNotificationIds = pending,
         highlightedNotificationIds = highlightedNotificationIds.intersect(ids),
@@ -61,8 +58,8 @@ internal fun AccountProfileUiState.withModeration(m: AccountModerationState, s: 
     }
     return copy(profile = profile?.visible(m, s), profileTabs = profileTabs.visible(m, s), relationship = relationship)
 }
-internal fun SavedTimelinesUiState.withModeration(m: AccountModerationState, s: AccountSession) =
-    copy(statuses = statuses.visible(m, s))
+internal fun SavedTimelinesUiState.withModeration(m: AccountModerationState, s: AccountSession, context: String? = null) =
+    copy(statuses = statuses.visible(m, s, context))
 internal fun HashtagTimelineUiState.withModeration(m: AccountModerationState, s: AccountSession) =
     copy(statuses = statuses.visible(m, s))
 internal fun SearchUiState.withModeration(m: AccountModerationState, s: AccountSession) =
@@ -77,7 +74,7 @@ internal fun StatusDetailUiState.withModeration(m: AccountModerationState, s: Ac
     val current = detail ?: return this
     if (m.hides(s, current.status)) return copy(detail = null, isLoading = false,
         errorMessage = "ミュートまたはブロック中のアカウントの投稿です")
-    if (current.status.matchesWordMute(m.wordMutes[s.sessionId].orEmpty())) return copy(detail = null, isLoading = false,
-        errorMessage = "ワードミュートに一致する投稿です")
-    return copy(detail = current.copy(ancestors = current.ancestors.visible(m, s), descendants = current.descendants.visible(m, s)))
+    val status = current.status.present(m, s, "thread")
+    if (m.applyServerFilters && status.filterDisplay.hidden) return copy(detail = null, isLoading = false, errorMessage = "フィルターで非表示の投稿です")
+    return copy(detail = current.copy(status = status, ancestors = current.ancestors.visible(m, s, "thread"), descendants = current.descendants.visible(m, s, "thread")))
 }

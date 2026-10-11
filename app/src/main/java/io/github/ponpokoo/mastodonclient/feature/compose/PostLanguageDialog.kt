@@ -30,8 +30,8 @@ internal fun PostLanguageDialog(
     onSelect: (String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val languages = remember {
-        Locale.getISOLanguages().map { code ->
+    val languages = remember(selected) {
+        (Locale.getISOLanguages().toList() + listOfNotNull(selected)).distinct().map { code ->
             code to Locale.forLanguageTag(code).getDisplayLanguage(Locale.JAPANESE)
         }.sortedBy { it.second }
     }

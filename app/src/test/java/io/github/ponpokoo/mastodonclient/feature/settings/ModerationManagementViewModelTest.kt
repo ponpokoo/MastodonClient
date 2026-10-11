@@ -6,12 +6,91 @@ import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
+    @Test fun filterDisplayPendingUsesNoticeOncePerTransitionAndDoesNotReplaceOperationNotice() = runTest(dispatcher) {
+        val repository = Repository()
+        val model = model(repository); advanceUntilIdle(); model.open(ModerationPage.Filters)
+        fun pending(value: Boolean) {
+            repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) -> saved.copy(displayPending = value) }
+        }
+        pending(true); advanceUntilIdle()
+        val notice = model.state.value.notice!!
+        assertFalse(notice.canUndo)
+        model.consumeNotice(notice.id)
+        repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) -> saved.copy(displayChecks = mapOf("home" to false)) }
+        advanceUntilIdle(); assertNull(model.state.value.notice)
+        pending(false); advanceUntilIdle(); pending(true); advanceUntilIdle()
+        assertTrue(model.state.value.notice!!.id > notice.id)
+        model.consumeNotice(model.state.value.notice!!.id)
+        model.open(ModerationPage.Mutes); model.release(entry); advanceUntilIdle()
+        val releaseNotice = model.state.value.notice!!
+        pending(false); advanceUntilIdle(); pending(true); advanceUntilIdle()
+        assertEquals(releaseNotice, model.state.value.notice)
+        assertTrue(model.state.value.notice!!.canUndo)
+    }
+
+    @Test fun manualFilterRefreshTargetsOnlyFiltersAndFailureCanRetryWithoutLosingCache() = runTest(dispatcher) {
+        val original = ServerFilter("old", "保存済み", setOf("notifications"))
+        val updated = original.copy(title = "別クライアントで変更")
+        val gate = CompletableDeferred<Result<Unit>>()
+        val syncs = mutableListOf<Pair<String, Set<ServerSetting>>>()
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(
+                testAccount.instanceUrl, testAccount.accountId, filters = listOf(original))))
+            override suspend fun syncServerSettings(session: AccountSession, items: Set<ServerSetting>): Result<Unit> {
+                syncs += session.sessionId to items
+                if (syncs.size == 1) return gate.await()
+                serverSettings.value = serverSettings.value.mapValues { (_, saved) -> saved.copy(filters = listOf(updated)) }
+                return Result.success(Unit)
+            }
+        }
+        val model = own(ModerationManagementViewModel(repository, auth)); advanceUntilIdle()
+        model.refresh(); advanceUntilIdle(); assertTrue(syncs.isEmpty())
+        model.open(ModerationPage.Filters); advanceUntilIdle(); assertTrue(syncs.isEmpty())
+        model.refresh(); runCurrent(); model.refresh(); runCurrent()
+        assertEquals(listOf(testAccount.sessionId to setOf(ServerSetting.Filters)), syncs)
+        assertTrue(model.state.value.busy)
+        gate.complete(Result.failure(java.io.IOException("offline"))); advanceUntilIdle()
+        assertEquals(listOf(original), model.state.value.server!!.filters)
+        assertNotNull(model.state.value.error); assertFalse(model.state.value.busy)
+        model.retry(); advanceUntilIdle()
+        assertEquals(2, syncs.size)
+        assertTrue(syncs.all { it == testAccount.sessionId to setOf(ServerSetting.Filters) })
+        assertEquals(listOf(updated), model.state.value.server!!.filters)
+        assertNull(model.state.value.error); assertFalse(model.state.value.busy)
+    }
+    @Test fun filterFailurePreservesInputAndUncertainCreationCannotBeResentUntilConfirmed() = runTest(dispatcher) {
+        val edit = FilterEdit(" warning ", setOf("notifications"), "warn", listOf(FilterKeyword(keyword = "word")), expiresIn = 3600, changeExpiry = true)
+        val saved = ServerFilter("new", "warning", edit.context, action = edit.action, keywords = edit.keywords)
+        var calls = 0
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(testAccount.instanceUrl, testAccount.accountId, filters = emptyList())))
+            override suspend fun saveServerFilter(session: AccountSession, original: ServerFilter?, edit: FilterEdit): Result<ServerFilter> {
+                if (++calls == 1) return Result.failure(retrofit2.HttpException(retrofit2.Response.error<Any>(403, "forbidden".toResponseBody())))
+                serverSettings.value = serverSettings.value.mapValues { (_, value) -> value.copy(pendingCreation = edit) }
+                return Result.failure(java.io.IOException("response lost"))
+            }
+        }
+        val model = own(ModerationManagementViewModel(repository, auth)); advanceUntilIdle()
+        model.editFilter(null); model.changeFilter(edit); model.saveFilter(); advanceUntilIdle()
+        assertEquals(edit, model.state.value.editor!!.edit)
+        assertFalse(model.state.value.editor!!.awaitingConfirmation)
+        assertNotNull(model.state.value.error)
+        model.retry(); advanceUntilIdle()
+        assertTrue(model.state.value.editor!!.awaitingConfirmation)
+        model.saveFilter(); model.retry(); advanceUntilIdle(); assertEquals(2, calls)
+        repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, value) -> value.copy(filters = listOf(saved), pendingCreation = null) }
+        advanceUntilIdle()
+        assertNull(model.state.value.editor); assertNull(model.state.value.error)
+        assertEquals("フィルターの作成を確認しました", model.state.value.notice!!.message)
+        assertEquals(2, calls)
+    }
     @Test fun sharedAccountOrderKeepsManagementSelectionAndPendingPage() = runTest(dispatcher) {
         val sessions = MutableStateFlow(listOf(testAccount, secondAccount))
         val liveAuth = object : AuthRepository by auth {
@@ -21,7 +100,7 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
         val repository = Repository()
         val gate = CompletableDeferred<Result<ModerationAccountsPage>>()
         repository.request = { _, _ -> gate.await() }
-        val model = own(ModerationManagementViewModel(repository, liveAuth, Words()))
+        val model = own(ModerationManagementViewModel(repository, liveAuth))
         runCurrent(); model.selectAccount(secondAccount.sessionId); model.open(ModerationPage.Mutes); runCurrent()
         sessions.value = listOf(secondAccount, testAccount)
         runCurrent()
@@ -40,13 +119,20 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
         override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
         override suspend fun completeAuthorization(callbackUrl: String) = Result.success(testAccount)
     }
-    private class Words : WordMuteRepository {
-        override val words = MutableStateFlow<Map<String, List<String>>>(emptyMap())
-        override suspend fun add(sessionId: String, word: String) { words.value = words.value + (sessionId to (words.value[sessionId].orEmpty() + word)) }
-        override suspend fun remove(sessionId: String, word: String) { words.value = words.value + (sessionId to (words.value[sessionId].orEmpty() - word)) }
-        override suspend fun restore(sessionId: String, word: String, index: Int) { words.value = words.value + (sessionId to words.value[sessionId].orEmpty().toMutableList().apply { add(index.coerceIn(0, size), word) }) }
-    }
     private inner class Repository : ScreenRepositoryFake() {
+        override val serverSettings = MutableStateFlow(listOf(testAccount, secondAccount).associate { account -> account.sessionId to ServerAccountSettings(
+            account.instanceUrl, account.accountId, mutes = listOf(entry), blocks = listOf(entry),
+            fetch = mapOf(ServerSetting.Mutes to SettingFetch(fetchedAt = 1), ServerSetting.Blocks to SettingFetch(fetchedAt = 1))) })
+        val syncs = mutableListOf<Set<ServerSetting>>()
+        override suspend fun syncServerSettings(session: AccountSession, items: Set<ServerSetting>): Result<Unit> {
+            syncs += items
+            serverSettings.value = serverSettings.value + (session.sessionId to serverSettings.value.getValue(session.sessionId).let { it.copy(fetch = it.fetch.mapValues { (_, fetch) -> fetch.copy(loading = true) }) })
+            val rows = getModerationAccounts(session, ModerationListKind.Mutes, null)
+            currentCoroutineContext().ensureActive()
+            rows.onSuccess { page -> serverSettings.value = serverSettings.value + (session.sessionId to serverSettings.value.getValue(session.sessionId).let { it.copy(mutes = page.accounts, blocks = page.accounts,
+                fetch = it.fetch.mapValues { (_, fetch) -> fetch.copy(loading = false) }) }) }
+            return rows.map { Unit }
+        }
         var relation = entry.relationship
         var fail = false
         var request: (suspend (AccountSession, String?) -> Result<ModerationAccountsPage>)? = null
@@ -71,7 +157,7 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
             return setMuted(session, accountId, true)
         }
     }
-    private fun model(repository: Repository, words: Words = Words()) = own(ModerationManagementViewModel(repository, auth, words) { Instant.parse("2026-10-05T00:00:00Z") })
+    private fun model(repository: Repository) = own(ModerationManagementViewModel(repository, auth) { Instant.parse("2026-10-05T00:00:00Z") })
 
     @Test fun unmuteUndoRestoresOnlyMuteAndPreservesNotificationsAndExpiry() = runTest(dispatcher) {
         val repository = Repository(); val model = model(repository); advanceUntilIdle()
@@ -97,29 +183,14 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
         assertEquals(1, model.state.value.lists.getValue(ModerationListKind.Blocks).accounts.size)
         assertTrue(repository.relation.blocking)
     }
-    @Test fun wordsAreAccountScopedAndExpiredOrSwitchedNoticeCannotUndo() = runTest(dispatcher) {
-        val words = Words(); val model = model(Repository(), words); advanceUntilIdle()
-        model.open(ModerationPage.Words); model.addWord("ネタバレ"); advanceUntilIdle()
-        val oldNotice = model.state.value.notice!!.id
-        model.selectAccount(secondAccount.sessionId); advanceUntilIdle(); model.undoNotice(oldNotice); advanceUntilIdle()
-        assertTrue(model.state.value.words.isEmpty())
-        model.selectAccount(testAccount.sessionId); advanceUntilIdle(); assertEquals(listOf("ネタバレ"), model.state.value.words)
-        model.removeWord("ネタバレ"); advanceUntilIdle(); model.undoNotice(model.state.value.notice!!.id); advanceUntilIdle()
-        assertEquals(listOf("ネタバレ"), model.state.value.words)
-        model.addWord("期限"); advanceUntilIdle(); val expired = model.state.value.notice!!.id
-        model.consumeNotice(expired); model.undoNotice(expired); advanceUntilIdle()
-        assertEquals(listOf("ネタバレ", "期限"), model.state.value.words)
-    }
-    @Test fun paginationUsesOpaqueCursorDeduplicatesAndRetainsRowsOnFailure() = runTest(dispatcher) {
-        val repository = Repository(); var fail = true
-        repository.request = { _, cursor -> if (cursor == null) Result.success(ModerationAccountsPage(listOf(entry), "opaque-cursor"))
-            else if (fail) Result.failure(IllegalStateException("offline")) else Result.success(ModerationAccountsPage(listOf(entry, entry.copy(account = entry.account.copy(id = "second"))), null)) }
+    @Test fun openingAndPagingCachedListsDoesNotFetchSettings() = runTest(dispatcher) {
+        val repository = Repository()
+        repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) -> saved.copy(mutes = (1..85).map { entry.copy(account = entry.account.copy(id = "account-" + it)) }) }
         val model = model(repository); advanceUntilIdle(); model.open(ModerationPage.Mutes); advanceUntilIdle()
-        model.loadMore(); advanceUntilIdle(); assertEquals(1, model.state.value.lists.getValue(ModerationListKind.Mutes).accounts.size)
-        fail = false; model.retry(); advanceUntilIdle()
-        assertEquals(listOf(null, "opaque-cursor", "opaque-cursor"), repository.requests.map { it.second })
-        assertEquals(2, model.state.value.lists.getValue(ModerationListKind.Mutes).accounts.size)
-        assertNull(model.state.value.lists.getValue(ModerationListKind.Mutes).nextMaxId)
+        assertEquals(40, model.state.value.lists.getValue(ModerationListKind.Mutes).accounts.size)
+        model.loadMore(); advanceUntilIdle(); assertEquals(80, model.state.value.lists.getValue(ModerationListKind.Mutes).accounts.size)
+        assertTrue(repository.requests.isEmpty()); assertTrue(repository.syncs.isEmpty())
+        model.refresh(); advanceUntilIdle(); assertEquals(setOf(ServerSetting.Mutes, ServerSetting.Blocks), repository.syncs.single())
     }
     @Test fun delayedUncancellableListDoesNotLeakAcrossAtoBtoA() = runTest(dispatcher) {
         val repository = Repository(); val gate = CompletableDeferred<Result<ModerationAccountsPage>>()
@@ -156,7 +227,7 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
     }
     @Test fun expiredMuteIsNotRecreatedByUndo() = runTest(dispatcher) {
         val expired = entry.copy(muteExpiresAt = "2026-10-04T00:00:00Z")
-        val repository = Repository().also { it.request = { _, _ -> Result.success(ModerationAccountsPage(listOf(expired), null)) } }
+        val repository = Repository().also { repo -> repo.serverSettings.value = repo.serverSettings.value.mapValues { (_, saved) -> saved.copy(mutes = listOf(expired)) } }
         val model = model(repository); advanceUntilIdle(); model.open(ModerationPage.Mutes); advanceUntilIdle()
         model.release(expired); advanceUntilIdle(); model.undoNotice(model.state.value.notice!!.id); advanceUntilIdle()
         assertNull(repository.restored); assertFalse(repository.relation.muting)
@@ -170,7 +241,7 @@ class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
                 return auth.getSessions()
             }
         }
-        val model = own(ModerationManagementViewModel(Repository(), flakyAuth, Words()))
+        val model = own(ModerationManagementViewModel(Repository(), flakyAuth))
         advanceUntilIdle(); assertNotNull(model.state.value.error); assertNull(model.state.value.selected)
         fail = false; model.retry(); advanceUntilIdle()
         assertEquals(testAccount, model.state.value.selected); assertNull(model.state.value.error)

@@ -364,6 +364,19 @@ class NotificationsViewModel(
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.FiltersChanged) {
+            val snapshot = currentSnapshot() ?: return
+            if (requestedCategories.isEmpty()) return
+            requestScope.launch {
+                io.github.ponpokoo.mastodonclient.feature.common.trackServerFilterDisplay(timelineRepository, snapshot.account!!, "notifications") {
+                    pageJobs.values.toList().forEach { it.join() }
+                    requestedCategories.toList().forEach { loadCategory(it, force = true) }
+                    pageJobs.values.toList().forEach { it.join() }
+                    requestedCategories.all { _uiState.value.list(it).error == null }
+                }
+            }
+            return
+        }
         if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.NotificationReceived) {
             val notification = change.event.notification
             val known = NotificationCategory.entries.any { category -> _uiState.value.list(category).notifications.any { it.id == notification.id } }

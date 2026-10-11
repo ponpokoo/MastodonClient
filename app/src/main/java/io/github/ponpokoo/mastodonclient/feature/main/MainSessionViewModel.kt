@@ -49,6 +49,10 @@ class MainSessionViewModel(
     private var accountChangeJob: Job? = null
     private var streamingJob: Job? = null
     private var displayRefreshJob: Job? = null
+    private var settingsJob: Job? = null
+    private var filterSyncJob: Job? = null
+    private var filtersDirty = false
+    private var streamingSnapshot: BrowsingSession.Snapshot? = null
     private var preferencesReady = preferencesStore == null
     @Volatile private var isForeground = true
     private var foregroundLifecycle: androidx.lifecycle.Lifecycle? = null
@@ -72,6 +76,17 @@ class MainSessionViewModel(
 
     init {
         recoverPush()
+        viewModelScope.launch {
+            var previous = emptyMap<String, List<io.github.ponpokoo.mastodonclient.domain.model.ServerFilter>?>()
+            timelineRepository.serverSettings.collect { settings ->
+                val snapshot = browsing.snapshot.value
+                val account = snapshot.account
+                if (account != null && settings[account.sessionId]?.belongsTo(account) == true && previous.containsKey(account.sessionId) && settings[account.sessionId]?.filters != null && previous[account.sessionId] != settings[account.sessionId]?.filters) {
+                    browsing.publish(snapshot, BrowsingSession.Change.Stream(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.FiltersChanged))
+                }
+                previous = settings.mapValues { it.value.filters }
+            }
+        }
         viewModelScope.launch {
             authRepository.observeSessions().collect { sessions ->
                 mutableState.update { state ->
@@ -144,6 +159,8 @@ class MainSessionViewModel(
         restoreJob?.cancel()
         displayRefreshJob?.cancel()
         streamingJob?.cancel()
+        settingsJob?.cancel()
+        filterSyncJob?.cancel()
         browsing.activate(null)
         accountChangeJob = viewModelScope.launch {
             runCatchingCancellable {
@@ -170,17 +187,22 @@ class MainSessionViewModel(
         viewModelScope.launch { runCatchingCancellable { pushSync?.recover(null, false) } }
     }
 
-    private fun activate(account: AccountSession?, sessions: List<AccountSession>) {
+    private suspend fun activate(account: AccountSession?, sessions: List<AccountSession>) {
         if (account != null && account.hasSameCredentials(browsing.snapshot.value.account)) {
             mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = false, errorMessage = null) }
             refreshAccountDisplay(account)
             return
         }
         streamingJob?.cancel()
+        streamingSnapshot = null
+        settingsJob?.cancel()
+        filterSyncJob?.cancel()
+        account?.let { runCatchingCancellable { timelineRepository.activateServerSettings(it); timelineRepository.prepareServerSettings(it) } }
         browsing.activate(account)
         mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = account == null, errorMessage = null) }
         startStreaming()
         refreshAccountDisplay(account)
+        if (account != null) settingsJob = viewModelScope.launch { timelineRepository.syncServerSettings(account) }
     }
 
     fun moveAccount(sessionId: String, beforeSessionId: String?) {
@@ -211,12 +233,19 @@ class MainSessionViewModel(
     }
 
     private fun startStreaming() {
-        streamingJob?.cancel()
         if (!preferencesReady) return
         val snapshot = browsing.snapshot.value
         val account = snapshot.account ?: return
         val preferences = uiState.value.preferences
-        if (!isForeground && preferences.pauseStreamingInBackground) return
+        val allowed = (isForeground || !preferences.pauseStreamingInBackground) && when (preferences.forAccount(account.sessionId).streaming) {
+            StreamingPolicy.Off -> false
+            StreamingPolicy.WifiOnly -> networkIsWifi()
+            StreamingPolicy.On -> true
+        }
+        if (!allowed) { streamingJob?.cancel(); streamingSnapshot = null; return }
+        if (streamingJob?.isActive == true && streamingSnapshot == snapshot) return
+        streamingJob?.cancel()
+        streamingSnapshot = snapshot
         when (preferences.forAccount(account.sessionId).streaming) {
             StreamingPolicy.Off -> return
             StreamingPolicy.WifiOnly -> if (!networkIsWifi()) return
@@ -229,6 +258,11 @@ class MainSessionViewModel(
                     true
                 }.collect { event ->
                     currentCoroutineContext().ensureActive()
+                    if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.FiltersChanged ||
+                        event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.Connected) {
+                        if (browsing.snapshot.value == snapshot) requestFilterSync(snapshot)
+                        return@collect
+                    }
                     browsing.publish(snapshot, BrowsingSession.Change.Stream(event))
                     if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.NotificationReceived &&
                         isForeground && uiState.value.preferences.foregroundNotificationsEnabled && browsing.snapshot.value == snapshot
@@ -248,5 +282,25 @@ class MainSessionViewModel(
 
     private fun showError(error: Throwable) {
         mutableState.update { it.copy(errorMessage = error.message ?: "アカウントを読み込めませんでした") }
+    }
+
+    private fun requestFilterSync(snapshot: BrowsingSession.Snapshot) {
+        filtersDirty = true
+        if (filterSyncJob?.isActive == true) return
+        filterSyncJob = viewModelScope.launch {
+            val account = snapshot.account ?: return@launch
+            while (filtersDirty && browsing.snapshot.value == snapshot) {
+                delay(200)
+                filtersDirty = false
+                val before = timelineRepository.serverSettings.value[account.sessionId]?.filters
+                // Await an earlier startup fetch, then fetch after connection/event receipt to recover missed changes.
+                settingsJob?.join()
+                timelineRepository.syncServerSettings(account, setOf(io.github.ponpokoo.mastodonclient.domain.model.ServerSetting.Filters))
+                ensureActive()
+                val after = timelineRepository.serverSettings.value[account.sessionId]
+                if (after?.filters == before && after?.displayPending == true) browsing.publish(snapshot,
+                    BrowsingSession.Change.Stream(io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.FiltersChanged))
+            }
+        }
     }
 }

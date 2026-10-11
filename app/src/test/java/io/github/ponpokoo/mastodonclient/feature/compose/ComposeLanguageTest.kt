@@ -39,6 +39,36 @@ class ComposeLanguageTest : ScreenViewModelTestBase() {
         }),
     )
 
+    @Test fun serverDefaultsApplyOnceAndLaterSyncCannotChangeCurrentInput() = runTest(dispatcher) {
+        val cached = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(testAccount.instanceUrl, testAccount.accountId,
+            defaults = PostingDefaults("unlisted", "followers", "ja", true, true))))
+        val posts = mutableListOf<CreateStatusRequest>()
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = cached
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> { posts += request; return Result.success(testStatus()) }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences())); advanceUntilIdle()
+        assertEquals("unlisted", vm.uiState.value.visibility.apiValue); assertEquals("followers", vm.uiState.value.quotePolicy); assertEquals("ja", vm.uiState.value.language)
+        cached.value = cached.value.mapValues { (_, value) -> value.copy(defaults = PostingDefaults("private", "nobody", "de", true, true)) }
+        advanceUntilIdle(); assertEquals("ja", vm.uiState.value.language); assertEquals("followers", vm.uiState.value.quotePolicy)
+        vm.onTextChanged("hello"); vm.setLanguage("en"); vm.post(); advanceUntilIdle()
+        assertEquals("en", posts.single().language); assertEquals("followers", posts.single().quotePolicy); assertEquals("unlisted", posts.single().visibility)
+    }
+    @Test fun restoredDefaultLanguageAndLegacyQuotePolicyRemainNullDespiteServerDefaults() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(testAccount.instanceUrl, testAccount.accountId,
+                defaults = PostingDefaults("unlisted", "followers", "ja", true, true))))
+        }
+        val local = UserPreferencesStore(MemoryPreferences())
+        val vm = model(repository, local); advanceUntilIdle()
+        vm.onTextChanged("draft"); vm.setLanguage(null); vm.saveDraft(); advanceUntilIdle()
+        assertEquals("ja", vm.uiState.value.language)
+        val draft = local.drafts.first().single()
+        assertEquals("followers", draft.quotePolicy)
+        // Older drafts have no stored quote policy; retain that value when restoring them.
+        vm.restoreDraft(draft.copy(quotePolicy = null)); advanceUntilIdle()
+        assertNull(vm.uiState.value.language); assertNull(vm.uiState.value.quotePolicy)
+    }
     @Test fun selectedLanguageSurvivesDraftRestoreAndReachesPostRequest() = runTest(dispatcher) {
         val posts = mutableListOf<CreateStatusRequest>()
         val repository = object : ScreenRepositoryFake() {

@@ -42,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +68,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
@@ -91,6 +93,7 @@ internal fun SettingsPageContent(
     onMoveAccount: (String, String?) -> Unit = { _, _ -> },
     changingAccountOrder: Boolean = false,
     accountOrderError: String? = null,
+    posting: PostingSettingsViewModel? = null,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
@@ -99,6 +102,11 @@ internal fun SettingsPageContent(
         scope.launch { store.setTimelineDisplay(value) }
     }
     val accountPreferences = preferences.forAccount(activeSession?.sessionId)
+    val postingState = posting?.state?.collectAsStateWithLifecycle()?.value
+        ?.takeIf { it.account?.hasSameCredentials(activeSession) == true }
+    val savedVisibility = activeSession?.let { session ->
+        preferences.serverSettings[session.sessionId]?.takeIf { it.belongsTo(session) }?.defaults?.visibility
+    }?.let { value -> PostVisibility.entries.firstOrNull { it.apiValue == value } }
     val updateAccount = { value: AccountPreferences ->
         activeSession?.let { session -> scope.launch { store.setAccountPreferences(session.sessionId, value) } }
     }
@@ -312,9 +320,14 @@ internal fun SettingsPageContent(
                     }
                 }
                 item {
-                    ChoiceRow("既定の公開範囲", accountPreferences.defaultVisibility, PostVisibility.entries, activeSession == null) {
-                        updateAccount(accountPreferences.copy(defaultVisibility = it))
+                    key(activeSession?.sessionId) {
+                        ChoiceRow("公開範囲", postingState?.visibility ?: savedVisibility ?: accountPreferences.defaultVisibility,
+                            PostVisibility.entries.filterNot { it == PostVisibility.Direct }, postingState == null || postingState.saving) {
+                            posting?.setVisibility(it)
+                        }
                     }
+                    if (postingState?.saving == true) Text("保存中…", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                    postingState?.error?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 }
                 item {
                     SwitchRow("代替テキスト未入力時に確認", preferences.altTextReminder) {

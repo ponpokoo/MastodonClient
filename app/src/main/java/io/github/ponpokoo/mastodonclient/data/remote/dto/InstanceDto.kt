@@ -8,6 +8,7 @@ data class InstanceDto(
     val domain: String? = null,
     val title: String? = null,
     val version: String? = null,
+    @SerialName("api_versions") val apiVersions: Map<String, Int>? = null,
     val configuration: InstanceConfigurationDto? = null,
     val urls: InstanceUrlsDto? = null,
     @SerialName("fedibird_capabilities") val fedibirdCapabilities: List<String>? = null,

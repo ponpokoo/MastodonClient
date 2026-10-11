@@ -26,7 +26,7 @@ internal enum class SettingsPage(val title: String, val description: String) {
     Connection("タイムラインと通信", "ストリーミング・更新時の動作"),
     Notifications("通知", "通知の受け取り方・Android通知の表示"),
     Composer("投稿", "公開範囲・ALT確認・ボタンの並び"),
-    Moderation("ミュート・ブロックの管理", "ワードミュート・ミュート中・ブロック中"),
+    Moderation("ミュート・ブロックの管理", "ミュート中・ブロック中・サーバーのフィルター"),
     Accounts("アカウント管理", "登録済みアカウント・並び替え・追加・削除"),
     Storage("ストレージ", "画像キャッシュの削除"),
     About("このアプリについて", "バージョン・ライセンス・プライバシーポリシー"),
@@ -48,6 +48,7 @@ fun SettingsScreen(
     changingAccountOrder: Boolean = false,
     accountOrderError: String? = null,
     licenses: LicensesViewModel? = null,
+    posting: PostingSettingsViewModel? = null,
 ) {
     val nav = rememberNavController()
     NavHost(
@@ -80,6 +81,7 @@ fun SettingsScreen(
                         onMoveAccount = onMoveAccount,
                         changingAccountOrder = changingAccountOrder,
                         accountOrderError = accountOrderError,
+                        posting = posting,
                     )
                 }
             }

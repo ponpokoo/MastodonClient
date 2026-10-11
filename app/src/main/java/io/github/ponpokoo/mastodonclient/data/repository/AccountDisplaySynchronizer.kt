@@ -34,6 +34,16 @@ class AccountDisplaySynchronizer(private val store: AuthStore) {
         Request(session, epoch, ++sequence).also { latest[session.sessionId] = it.sequence }
     }
 
+    suspend fun registrationEpoch(): Long = mutex.withLock { epoch }
+
+    /** Serialize settings writes with registration removal/replacement, including credential checks. */
+    suspend fun withRegistration(session: AccountSession, expectedEpoch: Long? = null, block: suspend () -> Unit): Boolean = mutex.withLock {
+        currentCoroutineContext().ensureActive()
+        if (expectedEpoch != null && expectedEpoch != epoch || store.getSessions().none { it.hasSameCredentials(session) }) return@withLock false
+        block()
+        true
+    }
+
     suspend fun commit(request: Request?, author: StatusAuthor): AccountSession? {
         if (request == null || author.id != request.session.accountId) return null
         currentCoroutineContext().ensureActive()

@@ -39,6 +39,7 @@ data class CreateStatusRequest(
     val sensitive: Boolean = false,
     val visibility: String = "public",
     val language: String? = null,
+    val quotePolicy: String? = null,
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long? = null,
     val pollMultiple: Boolean = false,

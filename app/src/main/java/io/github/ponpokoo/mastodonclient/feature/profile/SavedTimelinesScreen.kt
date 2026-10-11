@@ -50,6 +50,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -75,11 +76,15 @@ class SavedTimelinesViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(SavedTimelinesUiState())
     val state = _state.moderated(viewModelScope, repository, { session }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, if (kind == SavedTimelineKind.List) "home" else null)
     }
     private var session: AccountSession? = null
 
     init {
+        io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, repository, { session.takeIf { kind == SavedTimelineKind.List } }, "list:$listId") {
+            _state.first { !it.loading && !it.loadingMore }; load().join()
+            _state.value.error == null
+        }
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
                 val current = session ?: return@collect

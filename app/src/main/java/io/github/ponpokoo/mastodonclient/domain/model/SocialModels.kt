@@ -31,6 +31,7 @@ data class UserProfile(
 
 data class ProfileField(val name: String, val valueHtml: String, val verifiedAt: String?)
 
+@kotlinx.serialization.Serializable
 data class AccountRelationship(
     val following: Boolean = false,
     val followedBy: Boolean = false,
@@ -108,6 +109,8 @@ enum class SearchFailure { Timeout, Connection, Authentication, RateLimited, Ser
 class SearchException(val failure: SearchFailure, cause: Throwable) : Exception(cause)
 
 sealed interface TimelineStreamEvent {
+    data object FiltersChanged : TimelineStreamEvent
+    data object Connected : TimelineStreamEvent
     data class StatusAdded(val status: TimelineStatus, val isEdit: Boolean = false) : TimelineStreamEvent
     data class StatusDeleted(val statusId: String) : TimelineStreamEvent
     data class NotificationReceived(val notification: TimelineNotification) : TimelineStreamEvent

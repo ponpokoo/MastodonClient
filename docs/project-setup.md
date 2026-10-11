@@ -152,6 +152,17 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 画像更新番号は暗号化保存し、旧保存形式では0を既定値にする。対象アイコンのCoilメモリ・ディスクキーを更新し、新規取得には`Cache-Control: no-cache`を指定する。
 共有境界、代替案と受け入れる費用は[ADR 0011](adr/0011-account-display-synchronization.md)、利用者向け仕様は[UI・機能仕様](ui-guidelines.md#登録済み自アカウントの表示情報)を参照する。
 
+### サーバー保存設定の同期
+
+ServerAccountSettingsRepositoryがアカウント別の設定スナップショット・項目別取得状態を公開し、data実装が既存のMastodonApiとUserPreferencesStoreへ接続する。認証情報を設定キャッシュへ複製しない。起動・切り替え、ミュート・ブロック／フィルターの各設定内手動更新、Streamingによるフィルター取得の窓口を共有する。
+アカウント・項目・認証情報・登録世代・選択世代が一致する進行中要求を共有し、切り替えでは要求をキャンセルする。結果反映前にキャンセル状態を確認し、保存・登録削除・認証置換はAccountDisplaySynchronizerの登録変更Mutexと登録済み認証情報の照合で隔離する。選択が変わっても成功済み操作は元アカウントの確定状態へ保存し、別アカウントのUIへ流用しない。
+ミュート・ブロックは全ページ成功まで旧一覧を保持する。操作で進めた項目の世代を照合し、進行中の古い一覧で新しい操作を上書きしない。HTTP失敗・未対応・欠落項目を設定なしへ変換しない。
+設定はUserPreferencesStoreの通常設定として保存し、アカウント削除の既存回収へ含める。従来の通常設定のバックアップ方針を維持し、復元時も登録アカウントとインスタンス・自アカウントIDの一致を確認する。
+投稿初期値は新規入力時にキャッシュを一度読む。設定Flowによる投稿入力・下書きの書き換え、自動保存は加えない。公式フィルターの一致情報は投稿のdomainモデルに保持し、画面用の判定・展開状態は永続投稿キャッシュへ保存しない。
+設定の公開範囲変更はPostingSettingsViewModelからServerAccountSettingsRepositoryへ渡し、`source[privacy]`だけをサーバーへ保存する。確認済みの応答で設定キャッシュを更新し、先行するpreferences取得を世代で無効化する。UIは取得済み・保存成功済みの値を表示し、アカウント切り替え時は既存のSessionScopedViewModelのキャンセル・世代照合を使う。
+端末内ワードミュートの保存モデル・Repository・表示判定は廃止し、旧項目は読み飛ばして通常の設定保存時に除去する。保存互換性と非対応サーバーの制約は[ADR 0017](adr/0017-retire-local-word-mutes.md)に従う。
+取得契機と互換性の判断は[調査書](investigations/server-account-settings-sync.md)、表示と管理は[UI仕様](ui-guidelines.md#サーバー保存設定と公式フィルター)を参照する。
+
 ### アカウントの削除確認と保存順
 
 削除確認は対象の`AccountSession`を渡し、`DefaultAuthRepository`が選択中の認証情報と照合してから処理する。

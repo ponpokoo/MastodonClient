@@ -3,6 +3,10 @@ package io.github.ponpokoo.mastodonclient
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.runtime.mutableStateOf
+import io.github.ponpokoo.mastodonclient.domain.model.FilterPresentation
+import io.github.ponpokoo.mastodonclient.domain.model.ServerFilter
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -78,4 +82,46 @@ class NotificationContentDeviceTest {
         composeRule.onNodeWithTag("notification_status_quote", useUnmergedTree = true).performClick()
         composeRule.runOnIdle { assertEquals("status-1", openedStatusId.get()) }
     }
+    @Test fun compactFilterWarningHidesBodyAndAuthorCwUntilBothAreRevealed() = warningScenario("favourite")
+    @Test fun replyFilterWarningHidesBodyAndAuthorCwUntilBothAreRevealed() = warningScenario("mention")
+    private fun warningScenario(type: String) {
+        val opened = AtomicReference<String?>(null)
+        val author = StatusAuthor("author", "投稿者", "author@example.social", "")
+        val filter = ServerFilter("filter", "ネタバレ", setOf("notifications"))
+        val status = TimelineStatus("post", "post", "2026-10-11T00:00:00Z", author, null,
+            "<p>折りたたむ本文</p>", "投稿者の注意文", false, "public", null, 0, 0, 0, mediaAttachments = emptyList(),
+            filterDisplay = FilterPresentation(warnings = listOf(filter)), filterScope = "account-a")
+        val current = mutableStateOf(status)
+        composeRule.setContent {
+            MaterialTheme {
+                NotificationsContent(state = NotificationsUiState(notifications = listOf(TimelineNotification("notice", type, status.createdAt, author, current.value)), notificationsEndReached = true),
+                    padding = androidx.compose.foundation.layout.PaddingValues(), onRefresh = {}, onLoadMore = {}, onStatusClick = opened::set,
+                    onOpenLink = {}, onReply = {}, onBoost = {}, onFavourite = {}, onBookmark = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> }, preferences = AppPreferences(),
+                    listStates = listOf(rememberLazyListState(), rememberLazyListState(), rememberLazyListState()), selectedFilter = NotificationFilter.All,
+                    onSelectFilter = {}, newNoticeMessage = null, onNewNoticeClick = null)
+            }
+        }
+        composeRule.onNodeWithText("折りたたむ本文").assertDoesNotExist()
+        composeRule.onNodeWithText("投稿者の注意文").assertDoesNotExist()
+        composeRule.onNodeWithTag("filter_reveal").performClick()
+        composeRule.runOnIdle { assertEquals(null, opened.get()) }
+        composeRule.onNodeWithText("投稿者の注意文").assertExists()
+        composeRule.onNodeWithText("折りたたむ本文").assertDoesNotExist()
+        composeRule.onNodeWithText("内容を表示").performClick()
+        composeRule.onNodeWithText("折りたたむ本文").assertExists()
+        composeRule.runOnIdle { assertEquals(null, opened.get()) }
+        // The shared warning surface handles taps, even when the parent status is clickable.
+        composeRule.onNodeWithText("フィルター：ネタバレ").performClick()
+        composeRule.onNodeWithText("折りたたむ本文").assertDoesNotExist()
+        composeRule.onNodeWithText("投稿者の注意文").assertDoesNotExist()
+        composeRule.onNodeWithTag("filter_reveal").performClick()
+        composeRule.onNodeWithText("折りたたむ本文").assertExists()
+        composeRule.onNodeWithText("投稿者の注意文").performClick()
+        composeRule.onNodeWithText("折りたたむ本文").assertDoesNotExist()
+        composeRule.onNodeWithText("投稿者の注意文").assertExists()
+        composeRule.runOnIdle { assertEquals(null, opened.get()) }
+        composeRule.runOnIdle { current.value = status.copy(filterScope = "account-b") }
+        composeRule.onNodeWithText("投稿者の注意文").assertDoesNotExist()
+    }
+
 }

@@ -35,6 +35,9 @@ class ComposerToolbarDeviceTest {
         lateinit var model: ComposePostViewModel
         rule.runOnIdle {
             model = ComposePostViewModel(null, null, object : TimelineRepository {
+                override val serverSettings = MutableStateFlow(mapOf(session.sessionId to ServerAccountSettings(
+                    session.instanceUrl, session.accountId, defaults = PostingDefaults(quotePolicy = "followers", quotePolicySupported = true),
+                )))
                 override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
                     Result.success(TimelinePage(emptyList(), null, true))
             }, object : AuthRepository {
@@ -50,6 +53,7 @@ class ComposerToolbarDeviceTest {
         try {
             rule.setContent { MaterialTheme { ComposePostScreen(model, onClose = {}, onPosted = {}) } }
             rule.waitUntil(5_000) { !model.uiState.value.isLoading }
+            rule.onNodeWithText("引用許可").assertDoesNotExist()
             rule.onNodeWithContentDescription("投稿の言語：デフォルト").performScrollTo().performClick()
             rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("日本語 (ja)"))
             rule.onNodeWithText("日本語 (ja)").performClick()
@@ -61,7 +65,10 @@ class ComposerToolbarDeviceTest {
             rule.onNodeWithTag("compose_text").performTextInput("前後")
             rule.onNodeWithTag("compose_text").performTextInputSelection(TextRange(1))
             rule.onNodeWithContentDescription("ハッシュタグを挿入").performScrollTo().performClick()
-            rule.runOnIdle { assertEquals("前#後", model.uiState.value.text) }
+            rule.runOnIdle {
+                assertEquals("前#後", model.uiState.value.text)
+                assertEquals("followers", model.uiState.value.quotePolicy)
+            }
         } finally {
             rule.runOnIdle { model.viewModelScope.cancel() }
         }

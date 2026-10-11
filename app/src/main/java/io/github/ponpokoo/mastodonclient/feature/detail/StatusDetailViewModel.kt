@@ -19,6 +19,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +59,10 @@ class StatusDetailViewModel(
     val moderationMenuState = moderationMenu.state
     fun loadModerationMenu(accountId: String?) = moderationMenu.load(accountId)
     init {
+        io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, timelineRepository, { session }, "detail:$statusId") {
+            _uiState.first { !it.isLoading }; load().join()
+            _uiState.value.errorMessage == null
+        }
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
                 val current = session ?: return@collect
@@ -187,8 +192,7 @@ class StatusDetailViewModel(
         _uiState.update { it.copy(actionMessage = error.message ?: fallback) }
     }
 
-    private fun load() {
-        viewModelScope.launch {
+    private fun load() = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             val current = authRepository.restoreSession()
             if (current == null) {
@@ -210,7 +214,6 @@ class StatusDetailViewModel(
                     }
                 }
         }
-    }
 
     private fun loadAccounts(
         title: String,

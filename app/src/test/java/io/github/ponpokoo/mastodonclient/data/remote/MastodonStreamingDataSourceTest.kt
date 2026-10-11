@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.data.remote
 
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.take
@@ -11,6 +12,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MastodonStreamingDataSourceTest {
+    @Test fun acceptsPayloadlessFilterNotificationsAfterConnection() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream")
+                .setBody("event: filters_changed\n\nevent: filters_changed\ndata:\n\nevent: update\ndata: {}\n\n"))
+            val messages = MastodonStreamingDataSource().observeUser(server.url("/").toString(), "test-token").take(4).toList()
+            assertEquals(listOf("connected", "filters_changed", "filters_changed", "update"), messages.map { it.event })
+            assertEquals(listOf("", "", "", "{}"), messages.map { it.payload })
+        }
+    }
     @Test
     fun receivesUpdateAfterQuietConnectionLongerThanDefaultHttpTimeout() = runTest {
         MockWebServer().use { server ->
@@ -22,7 +32,7 @@ class MastodonStreamingDataSourceTest {
             )
             val message = MastodonStreamingDataSource()
                 .observeUser(server.url("/").toString(), "test-token")
-                .first()
+                .first { it.event != "connected" }
             assertEquals("update", message.event)
             assertEquals("{\"id\":\"after-idle\"}", message.payload)
             assertEquals(1, server.requestCount)
@@ -39,7 +49,7 @@ class MastodonStreamingDataSourceTest {
 
             val message = MastodonStreamingDataSource()
                 .observeUser(server.url("/").toString(), "secret-token")
-                .first()
+                .first { it.event != "connected" }
 
             assertEquals("update", message.event)
             assertEquals("{\"id\":\"42\"}", message.payload)
@@ -65,6 +75,7 @@ class MastodonStreamingDataSourceTest {
 
             val messages = MastodonStreamingDataSource()
                 .observeUser(server.url("/").toString(), "secret-token")
+                .filter { it.event != "connected" }
                 .retry(1)
                 .take(2)
                 .toList()

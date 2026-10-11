@@ -15,7 +15,7 @@
 | 0005 | [管理アカウントの隔離とローカルワードミュート](0005-moderation-management-word-mutes.md) | superseded by 0008 |
 | 0006 | [スワイプの選択表示とデータ取得の分離](0006-shared-swipe-tabs.md) | accepted |
 | 0007 | [種類別通知ページと独立した閲覧記録](0007-notification-category-pages-and-read-state.md) | accepted |
-| 0008 | [通知欄のワードミュートとAndroid通知の適用範囲](0008-word-mutes-in-notification-lists.md) | accepted |
+| 0008 | [通知欄のワードミュートとAndroid通知の適用範囲](0008-word-mutes-in-notification-lists.md) | superseded by 0017 |
 | 0009 | [小規模Relayの実装・検証先としてWorkersとD1を継続利用](0009-relay-cloudflare-deployment.md) | accepted（配送保存方針は0013で置換、Free公開可否は未判定） |
 | 0010 | [Relay登録v2で購読ごとのVAPID鍵を確定](0010-relay-subscription-key-binding.md) | accepted（本番互換更新済み、全購読移行は未完了） |
 | 0011 | [登録済み自アカウントの表示情報と認証セッションを分離](0011-account-display-synchronization.md) | accepted |
@@ -24,6 +24,7 @@
 | 0014 | [AndroidのハイブリッドPushを永続世代と差分位置で補完](0014-android-hybrid-push-sync.md) | accepted（実装済み。今回のPush試験は終了、残りは実運用で確認） |
 | 0015 | [旧APKの大通知欠落を許容して本番Relayを直接切替](0015-production-hybrid-cutover.md) | accepted（0013の移行条件を置換） |
 | 0016 | [アカウント登録削除にローカルデータの回収を含める](0016-account-local-data-removal.md) | accepted |
+| 0017 | [端末内ワードミュートを廃止して公式フィルターに集約](0017-retire-local-word-mutes.md) | accepted |
 
 ## 記録方法
 

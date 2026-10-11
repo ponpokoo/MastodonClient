@@ -91,6 +91,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.ContentWarning
+import io.github.ponpokoo.mastodonclient.feature.common.FilterWarning
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.FontSizePreset
 import io.github.ponpokoo.mastodonclient.core.preferences.LineSpacingPreset
@@ -136,11 +138,15 @@ internal fun StatusCard(
     afterActions: (@Composable () -> Unit)? = null,
     authorAvatarResource: Int? = null,
 ) {
-    var contentExpanded by rememberSaveable(status.statusId) {
+    if (status.filterDisplay.hidden) return
+    var filterRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { mutableStateOf(false) }
+    var filterMediaRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.mediaWarnings) { mutableStateOf(false) }
+    val filterContentVisible = status.filterDisplay.warnings.isEmpty() || filterRevealed
+    var contentExpanded by rememberSaveable(status.filterScope, status.statusId, status.spoilerText) {
         mutableStateOf(status.spoilerText.isBlank())
     }
-    var mediaRevealed by rememberSaveable(status.statusId) { mutableStateOf(!status.sensitive) }
-    var reactionPickerOpen by rememberSaveable(status.statusId) { mutableStateOf(false) }
+    var mediaRevealed by rememberSaveable(status.filterScope, status.statusId) { mutableStateOf(!status.sensitive) }
+    var reactionPickerOpen by rememberSaveable(status.filterScope, status.statusId) { mutableStateOf(false) }
     val reactionListOpener = LocalReactionListOpener.current
     val favouriteListOpener = LocalFavouriteListOpener.current
     val context = LocalContext.current
@@ -154,7 +160,7 @@ internal fun StatusCard(
 
     Column(
         modifier = Modifier.fillMaxWidth()
-            .then(if (onStatusClick == null) Modifier else Modifier.clickable { onStatusClick(status.statusId) })
+            .then(if (onStatusClick == null || !filterContentVisible) Modifier else Modifier.clickable { onStatusClick(status.statusId) })
             .padding(start = 8.dp, top = 12.dp, end = 16.dp, bottom = 2.dp)
             .testTag("timeline_status"),
     ) {
@@ -249,6 +255,14 @@ internal fun StatusCard(
         }
 
         Column(modifier = Modifier.padding(start = if (fullWidthContent) 8.dp else contentStart)) {
+            if (status.filterDisplay.warnings.isNotEmpty()) FilterWarning(
+                status.filterDisplay.warnings, filterRevealed, { filterRevealed = !filterRevealed },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = displayPreferences.fontSize.spValue(),
+                    lineHeight = displayPreferences.lineHeightSp().sp,
+                ),
+            )
+            if (!filterContentVisible) return@Column
             status.replyToAccountName()?.let { accountName ->
                 Text(
                     text = "返信先: @$accountName",
@@ -265,43 +279,19 @@ internal fun StatusCard(
                 )
             }
             if (status.spoilerText.isNotBlank()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                ContentWarning(
+                    expanded = contentExpanded,
+                    onToggle = { contentExpanded = !contentExpanded },
                 ) {
-                    Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "CW",
-                                modifier = Modifier.clip(RoundedCornerShape(5.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "内容警告",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { contentExpanded = !contentExpanded }) {
-                                Text(if (contentExpanded) "内容を隠す" else "内容を表示")
-                            }
-                        }
-                        CustomEmojiText(
-                            text = status.spoilerText,
-                            emojis = status.customEmojis,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = displayPreferences.fontSize.spValue(),
-                                lineHeight = displayPreferences.lineHeightSp().sp,
-                            ),
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                    CustomEmojiText(
+                        text = status.spoilerText,
+                        emojis = status.customEmojis,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = displayPreferences.fontSize.spValue(),
+                            lineHeight = displayPreferences.lineHeightSp().sp,
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
             if (contentExpanded && status.contentHtml.isNotBlank()) {
@@ -329,7 +319,14 @@ internal fun StatusCard(
             }
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
                 Spacer(Modifier.height(8.dp))
-                if (mediaRevealed) {
+                if (status.filterDisplay.mediaWarnings.isNotEmpty()) FilterWarning(
+                    status.filterDisplay.mediaWarnings, filterMediaRevealed, { filterMediaRevealed = !filterMediaRevealed }, media = true,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = displayPreferences.fontSize.spValue(),
+                        lineHeight = displayPreferences.lineHeightSp().sp,
+                    ),
+                )
+                if (mediaRevealed && (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed)) {
                     if (status.sensitive) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = { mediaRevealed = false }) {
@@ -345,7 +342,7 @@ internal fun StatusCard(
                         videoAutoplay,
                         audioAuthorAvatarUrl = status.author.avatarUrl,
                     )
-                } else {
+                } else if (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(144.dp)
                             .clickable { mediaRevealed = true },

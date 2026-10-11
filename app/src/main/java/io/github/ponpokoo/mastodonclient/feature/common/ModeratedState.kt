@@ -17,11 +17,15 @@ internal fun <T> MutableStateFlow<T>.moderated(
     val source = this
     fun visible(value: T, moderation: AccountModerationState): T =
         session()?.let { filter(value, moderation, it) } ?: value
-    fun presentation() = repository.moderation.value.copy(wordMutes = repository.wordMutes.value)
-    val derived = combine(source, repository.moderation, repository.wordMutes) { value, moderation, words ->
-        visible(value, moderation.copy(wordMutes = words))
+    fun filters(settings: Map<String, io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings> = repository.serverSettings.value): Map<String, List<io.github.ponpokoo.mastodonclient.domain.model.ServerFilter>> {
+        val account = session() ?: return emptyMap()
+        return settings[account.sessionId]?.takeIf { it.belongsTo(account) }?.filters?.let { mapOf(account.sessionId to it) } ?: emptyMap()
     }
-        .onEach { source.update { visible(it, repository.moderation.value) } }
+    fun presentation() = repository.moderation.value.copy(serverFilters = filters())
+    val derived = combine(source, repository.moderation, repository.serverSettings) { value, moderation, settings ->
+        visible(value, moderation.copy(serverFilters = filters(settings)))
+    }
+        .onEach { source.update { visible(it, repository.moderation.value.copy(applyServerFilters = false)) } }
         .stateIn(scope, SharingStarted.Eagerly, visible(source.value, presentation()))
     return object : StateFlow<T> by derived {
         override val value: T get() = visible(source.value, presentation())
