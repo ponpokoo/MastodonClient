@@ -73,7 +73,9 @@ jobs:
         run: ./gradlew --no-daemon :release-tests:assembleRelease
       - name: Build UI prototype and its device tests
         if: needs.changes.outputs.prototype == 'true'
-        run: ./gradlew --no-daemon :ui-prototype:assembleDebug :ui-prototype:assembleDebugAndroidTest
+        run: |
+          python3 -m unittest discover -s ui-prototype/tests
+          ./gradlew --no-daemon :ui-prototype:assembleDebug :ui-prototype:assembleDebugAndroidTest
       - name: Save Android verification reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

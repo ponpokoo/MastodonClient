@@ -1,0 +1,45 @@
+package io.github.ponpokoo.mastodonclient.feature.common
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+private val AppPullToRefreshThreshold = 56.dp
+private val AppPullToRefreshIndicatorDistance = 48.dp
+private const val AppPullToRefreshDragSpeed = 1.5f
+
+/** Pull-to-refresh with separate app-wide trigger and indicator travel distances. */
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+fun AppPullToRefreshBox(
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val state = rememberPullToRefreshState()
+    Box(
+        modifier = modifier.pullToRefresh(
+            isRefreshing = isRefreshing,
+            state = state,
+            // Keep indicator travel unchanged, reaching it with less finger movement.
+            threshold = AppPullToRefreshThreshold / AppPullToRefreshDragSpeed,
+            onRefresh = onRefresh,
+        ),
+    ) {
+        content()
+        PullToRefreshDefaults.Indicator(
+            state = state,
+            isRefreshing = isRefreshing,
+            maxDistance = AppPullToRefreshIndicatorDistance,
+            modifier = Modifier.align(Alignment.TopCenter),
+        )
+    }
+}

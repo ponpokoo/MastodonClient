@@ -5,6 +5,12 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -14,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
@@ -28,13 +35,29 @@ class PrototypeAppDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
     @Test
+    fun bundledImagesAreDecodedByTheProductionImageLoader() {
+        val thumbnail = rule.onNodeWithTag("toot_single_media_0")
+        rule.waitUntil(10_000) {
+            val pixels = thumbnail.captureToImage().toPixelMap()
+            (1..4).sumOf { x -> (1..4).count { y ->
+                val color = pixels[pixels.width * x / 5, pixels.height * y / 5]
+                maxOf(color.red, color.green, color.blue) - minOf(color.red, color.green, color.blue) > 0.12f
+            } } >= 4
+        }
+    }
+
+    @Test
     fun tabsKeepPostActionsScrollAndSearchInput() {
-        rule.onNodeWithTag("toot_single_favourite").performClick().assertIsSelected()
+        favourite().performClick()
+        favouriteCount().assertExists()
         rule.onNodeWithTag("timeline_list").performTouchInput { swipeUp() }
         val position = timelinePosition()
+        val beforeBounds = rule.onNodeWithTag("toot_gallery_media_0").fetchSemanticsNode().boundsInRoot
         assertTrue(position > 0f)
         rule.onNodeWithTag("main_tab_explore").performClick().assertIsSelected()
+        rule.onNodeWithTag("search_open").performClick()
         rule.onNodeWithTag("search_input").performTextInput("lake")
+        rule.onNodeWithTag("search_input").performImeAction()
         rule.onNodeWithTag("main_tab_notifications").performClick().assertIsSelected()
         rule.onNodeWithTag("notifications_screen").assertIsDisplayed()
         rule.onNodeWithTag("main_tab_profile").performClick().assertIsSelected()
@@ -42,25 +65,63 @@ class PrototypeAppDeviceTest {
         rule.onNodeWithTag("main_tab_explore").performClick()
         rule.onNodeWithText("lake").assertExists()
         rule.onNodeWithTag("main_tab_home").performClick()
+        val afterBounds = rule.onNodeWithTag("toot_gallery_media_0").fetchSemanticsNode().boundsInRoot
         assertEquals(position, timelinePosition(), 1f)
+        assertEquals(beforeBounds.top, afterBounds.top, 1f)
         rule.onNodeWithTag("main_tab_home").performClick()
         rule.waitForIdle()
         assertEquals(0f, timelinePosition(), 0.01f)
-        rule.onNodeWithTag("toot_single_favourite").assertIsSelected()
-        rule.onNodeWithTag("toot_single_boost").assertIsNotSelected()
+        favouriteCount().assertExists()
     }
 
     @Test
     fun mainTabsUseNavigationAndAuthorOpensProfile() {
         rule.onNodeWithTag("timeline_list").performTouchInput { swipeLeft() }
         rule.onNodeWithTag("main_tab_home").assertIsSelected()
-        rule.onNodeWithTag("toot_single_favourite").performClick()
-        rule.onNodeWithTag("toot_single_author").performClick()
+        favourite().performClick()
+        rule.onAllNodesWithTag("status_author_avatar")[0].performClick()
         rule.onNodeWithTag("account_profile").assertIsDisplayed()
         rule.onNodeWithTag("prototype_media_viewer").assertDoesNotExist()
         back()
         rule.onNodeWithTag("main_tab_home").assertIsSelected()
-        rule.onNodeWithTag("toot_single_favourite").assertIsSelected()
+        favouriteCount().assertExists()
+    }
+
+    @Test
+    fun postActionsAreSharedBetweenTimelineAndAccountProfile() {
+        favourite().performClick()
+        favouriteCount().assertExists()
+        rule.onAllNodesWithTag("status_author_avatar")[0].performClick()
+        rule.onNodeWithTag("profile_status_pager").performTouchInput { swipeUp() }
+        rule.onNode(hasContentDescription("お気に入り", substring = true) and hasAnyAncestor(hasTestTag("account_profile"))).performClick()
+        rule.onNode(hasText("12") and hasAnyAncestor(hasTestTag("account_profile"))).assertExists()
+        back()
+        rule.onNode(hasText("12") and hasAnyAncestor(hasTestTag("timeline_list"))).assertExists()
+    }
+
+    @Test
+    fun imageTransitionUsesTheThumbnailInTheScreenThatWasTapped() {
+        rule.onAllNodesWithTag("status_author_avatar")[0].performClick()
+        rule.onNodeWithTag("profile_status_pager").performTouchInput { swipeUp() }
+        val profileImage = rule.onNode(hasTestTag("toot_single_media_0") and hasAnyAncestor(hasTestTag("account_profile")))
+        val profileBounds = profileImage.fetchSemanticsNode().boundsInRoot
+        rule.mainClock.autoAdvance = false
+        profileImage.performClick()
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(profileBounds, rule.onNodeWithTag("prototype_media_motion").fetchSemanticsNode().config[PrototypeImageBounds])
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        back()
+        back()
+        val homeImage = rule.onNode(hasTestTag("toot_single_media_0") and hasAnyAncestor(hasTestTag("timeline_list")))
+        val homeBounds = homeImage.fetchSemanticsNode().boundsInRoot
+        rule.mainClock.autoAdvance = false
+        homeImage.performClick()
+        rule.mainClock.advanceTimeByFrame()
+        assertEquals(homeBounds, rule.onNodeWithTag("prototype_media_motion").fetchSemanticsNode().config[PrototypeImageBounds])
+        rule.mainClock.autoAdvance = true
+        rule.waitForIdle()
+        back()
     }
 
     @Test
@@ -148,6 +209,8 @@ class PrototypeAppDeviceTest {
         .config[SemanticsProperties.VerticalScrollAxisRange].value()
 
     private fun viewerPage() = rule.onNodeWithTag("prototype_media_viewer").fetchSemanticsNode().config[PrototypeViewerPage]
+    private fun favourite() = rule.onAllNodes(hasContentDescription("お気に入り", substring = true) and hasAnyAncestor(hasTestTag("timeline_list")))[0]
+    private fun favouriteCount() = rule.onNode(hasText("13") and hasAnyAncestor(hasTestTag("timeline_list")))
     private fun viewerScale() = rule.onNodeWithTag("prototype_media_viewer").fetchSemanticsNode().config[PrototypeViewerScale]
     private fun back() {
         Espresso.pressBackUnconditionally()

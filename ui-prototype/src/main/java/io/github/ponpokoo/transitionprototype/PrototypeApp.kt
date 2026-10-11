@@ -1,232 +1,97 @@
 package io.github.ponpokoo.transitionprototype
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import kotlinx.coroutines.launch
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
+import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
+import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
+import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 
-private enum class PrototypeDestination(val label: String, val icon: ImageVector) {
-    Home("ホーム", Icons.Outlined.Home),
-    Explore("探索", Icons.Outlined.Search),
-    Notifications("通知", Icons.Outlined.NotificationsNone),
-    Profile("プロフィール", Icons.Outlined.PersonOutline),
+internal class PrototypeEnvironment : ViewModel() {
+    val auth = FixtureAuthRepository()
+    val timeline = FixtureTimelineRepository()
+    val statusActions = StatusActionManager(timeline)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Production screens and ViewModels are wired to local fixture repositories here. */
 @Composable
 internal fun PrototypeApp() {
-    var destinationName by rememberSaveable { mutableStateOf(PrototypeDestination.Home.name) }
-    val destination = PrototypeDestination.valueOf(destinationName)
-    var feed by rememberSaveable { mutableStateOf("ホーム") }
-    var feedMenu by remember { mutableStateOf(false) }
+    val environment = viewModel { PrototypeEnvironment() }
+    val main = viewModel { MainSessionViewModel(environment.auth, environment.timeline) }
+    val timeline = viewModel { TimelineViewModel(environment.timeline, main.browsing) }
+    val search = viewModel { SearchViewModel(environment.timeline, main.browsing) }
+    val notifications = viewModel { NotificationsViewModel(environment.timeline, main.browsing) }
+    val profile = viewModel { OwnProfileViewModel(environment.timeline, main.browsing, environment.auth) }
+    val actions = viewModel { StatusActionsViewModel(environment.timeline, main.browsing, environment.statusActions) }
+    val mainState by main.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(main) { main.restore() }
     var authorId by rememberSaveable { mutableStateOf<String?>(null) }
-    var previewTootId by rememberSaveable { mutableStateOf<String?>(null) }
-    var previewIndex by rememberSaveable { mutableIntStateOf(0) }
-    var favourites by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var boosts by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    val timelineState = rememberLazyListState()
-    val profileState = rememberScrollState()
-    val savedScreens = rememberSaveableStateHolder()
-    val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    val onAction: (String) -> Unit = { label -> scope.launch { snackbar.showSnackbar("${label}をタップしました") } }
-    val openedAuthor = PrototypeToots.map { it.author }.firstOrNull { it.id == authorId }
-    BackHandler(enabled = openedAuthor != null) { authorId = null }
-
-    // Recreate the scaffold layout when the top bar changes. A transient taller viewport
-    // would otherwise clamp the saved position of this short fixture timeline.
-    key(destinationName, authorId) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize().testTag("prototype_app"),
-            containerColor = MaterialTheme.colorScheme.surface,
-            topBar = {
-                when {
-                    openedAuthor != null -> TopAppBar(
-                        title = { Text(openedAuthor.name) },
-                        navigationIcon = {
-                            IconButton(onClick = { authorId = null }) {
-                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る")
-                            }
-                        },
-                    )
-                    destination == PrototypeDestination.Home -> TopAppBar(
-                        title = {
-                            Box {
-                                Row(Modifier.clickable { feedMenu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                    Text(feed)
-                                    Icon(Icons.Outlined.ArrowDropDown, "フィードを切り替える")
-                                }
-                                DropdownMenu(expanded = feedMenu, onDismissRequest = { feedMenu = false }) {
-                                    listOf("ホーム", "ローカル", "連合").forEach { label ->
-                                        DropdownMenuItem(text = { Text(label) }, onClick = {
-                                            feed = label
-                                            feedMenu = false
-                                            scope.launch { timelineState.scrollToItem(0) }
-                                        })
-                                    }
-                                }
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { onAction("アカウントを切り替える") }) {
-                                Image(painterResource(PrototypeOwnAuthor.avatar), "アカウントを切り替える",
-                                    Modifier.size(30.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                            }
-                            IconButton(onClick = { onAction("サーバーからのお知らせ") }) {
-                                Icon(Icons.Outlined.Campaign, "サーバーからのお知らせ")
-                            }
-                            IconButton(onClick = { onAction("設定") }) { Icon(Icons.Outlined.Settings, "設定") }
-                        },
-                    )
-                    destination != PrototypeDestination.Explore -> TopAppBar(title = { Text(destination.label) })
-                }
-            },
-            bottomBar = {
-                if (openedAuthor == null) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
-                        PrototypeDestination.entries.forEach { item ->
-                            NavigationBarItem(
-                                modifier = Modifier.testTag("main_tab_${item.name.lowercase()}"),
-                                selected = item == destination,
-                                onClick = {
-                                    if (item == destination) {
-                                        scope.launch {
-                                            if (item == PrototypeDestination.Home) timelineState.animateScrollToItem(0)
-                                            if (item == PrototypeDestination.Profile) profileState.animateScrollTo(0)
-                                        }
-                                    } else destinationName = item.name
-                                },
-                                icon = { Icon(item.icon, null) }, label = { Text(item.label) },
-                            )
-                        }
+    var openLinksInApp by rememberSaveable { mutableStateOf(true) }
+    val motion = rememberSaveable(saver = PrototypeMediaMotionState.Saver) { PrototypeMediaMotionState() }
+    val context = LocalContext.current
+    val placeholder: (String) -> Unit = { Toast.makeText(context, "$it は固定データの試作対象外です", Toast.LENGTH_SHORT).show() }
+    val openMedia: (List<MediaAttachment>, Int) -> Unit = motion::open
+    BackHandler(enabled = authorId != null && !motion.active) { authorId = null }
+    // The transition uses this Activity window; freeze underlying insets while bars are hidden.
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val systemInsets = ScaffoldDefaults.contentWindowInsets
+    fun currentInsets() = WindowInsets(systemInsets.getLeft(density, direction), systemInsets.getTop(density),
+        systemInsets.getRight(density, direction), systemInsets.getBottom(density))
+    var appInsets by remember { mutableStateOf(currentInsets()) }
+    SideEffect { if (!motion.active) appInsets = currentInsets() }
+    CompositionLocalProvider(LocalPrototypeMotion provides motion, LocalPrototypeInsets provides appInsets) {
+        Box(Modifier.fillMaxSize().testTag("prototype_app")) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (authorId == null) 1f else 0f }
+                .semantics { if (authorId != null || motion.active) hideFromAccessibility() }) {
+                HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
+                    onLoggedOut = { main.restore() }, onStatusClick = { placeholder("投稿詳細") },
+                    onCompose = { placeholder("投稿作成") }, onQuote = { _, _ -> placeholder("引用") },
+                    onOpenLink = { placeholder("リンク") }, openLinksInApp = openLinksInApp,
+                    onOpenLinksInAppChange = { openLinksInApp = it }, onAccountClick = { authorId = it },
+                    onMediaClick = openMedia, onSettings = { placeholder("設定") },
+                    onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
+                    onEditStatus = { placeholder("投稿編集") }, onOpenLists = { placeholder("リスト") },
+                    onOpenBookmarks = { placeholder("ブックマーク") }, onOpenFavourites = { placeholder("お気に入り一覧") })
+            }
+            authorId?.let { id ->
+                val account = viewModel(key = "profile:$id") { AccountProfileViewModel(id, environment.timeline, environment.auth, environment.statusActions) }
+                LaunchedEffect(account) { account.retry() }
+                CompositionLocalProvider(LocalPrototypeThumbnailOwner provides "account:$id") {
+                    Box(Modifier.fillMaxSize().testTag("account_profile").semantics { if (motion.active) hideFromAccessibility() }) {
+                        AccountProfileScreen(account, openEditor = false, preferences = mainState.preferences,
+                            onBack = { authorId = null }, onStatusClick = { placeholder("投稿詳細") },
+                            onReply = { placeholder("返信") }, onQuote = { _, _ -> placeholder("引用") },
+                            onOpenLink = { placeholder("リンク") }, onAccountClick = { authorId = it }, onMediaClick = openMedia,
+                            onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
+                            onOpenLists = { placeholder("リスト") }, onOpenBookmarks = { placeholder("ブックマーク") },
+                            onOpenFavourites = { placeholder("お気に入り一覧") }, onEditStatus = { placeholder("投稿編集") })
                     }
                 }
-            },
-            floatingActionButton = {
-                if (openedAuthor == null && destination == PrototypeDestination.Home) {
-                    FloatingActionButton(onClick = { onAction("新規投稿") }, containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(20.dp)) { Icon(Icons.Outlined.Edit, "新規投稿") }
-                }
-            },
-            snackbarHost = { SnackbarHost(snackbar) },
-        ) { padding ->
-            if (openedAuthor != null) {
-                PrototypeProfile(openedAuthor, Modifier.fillMaxSize().padding(padding).testTag("account_profile")
-                    .verticalScroll(rememberScrollState()))
-            } else savedScreens.SaveableStateProvider(destination.name) {
-                when (destination) {
-                    PrototypeDestination.Home -> LazyColumn(
-                        state = timelineState,
-                        modifier = Modifier.fillMaxSize().padding(padding).testTag("timeline_list"),
-                        contentPadding = PaddingValues(bottom = 88.dp),
-                    ) {
-                        items(PrototypeToots, key = { it.id }) { toot ->
-                            PrototypeTootCard(
-                                toot = toot, favourited = toot.id in favourites, boosted = toot.id in boosts,
-                                onFavourite = { favourites = favourites.toggle(toot.id) },
-                                onBoost = { boosts = boosts.toggle(toot.id) },
-                                onAuthor = { authorId = toot.author.id },
-                                onMedia = { index -> previewIndex = index; previewTootId = toot.id },
-                                onAction = onAction,
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-                        }
-                    }
-                    PrototypeDestination.Explore -> PrototypeExplore(Modifier.fillMaxSize().padding(padding).testTag("explore_screen"))
-                    PrototypeDestination.Notifications -> PrototypeEmptyTabs(
-                        listOf("すべて", "メンション", "リアクション"), "通知はありません",
-                        Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
-                    )
-                    PrototypeDestination.Profile -> PrototypeProfile(PrototypeOwnAuthor,
-                        Modifier.fillMaxSize().padding(padding).testTag("profile_screen").verticalScroll(profileState))
-                }
             }
-        }
-    }
-    PrototypeToots.firstOrNull { it.id == previewTootId }?.let { toot ->
-        PrototypeMediaViewer(toot.media, previewIndex, onClose = { previewTootId = null })
-    }
-}
-
-private fun List<String>.toggle(id: String) = if (id in this) this - id else this + id
-
-@Composable
-private fun PrototypeExplore(modifier: Modifier) {
-    var query by rememberSaveable { mutableStateOf("") }
-    Column(modifier) {
-        TextField(
-            value = query, onValueChange = { query = it }, singleLine = true,
-            placeholder = { Text("検索") }, leadingIcon = { Icon(Icons.Outlined.Search, null) },
-            shape = RoundedCornerShape(28.dp),
-            colors = TextFieldDefaults.colors(
-                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            ),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("search_input"),
-        )
-        PrototypeEmptyTabs(listOf("投稿", "ハッシュタグ", "ニュース", "購読中"),
-            if (query.isBlank()) "表示する項目はありません" else "検索結果はありません", Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun PrototypeProfile(author: PrototypeAuthor, modifier: Modifier) {
-    Column(modifier) {
-        Image(painterResource(R.drawable.sample_landscape), null, Modifier.fillMaxWidth().height(140.dp), contentScale = ContentScale.Crop)
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Image(painterResource(author.avatar), "プロフィール画像", Modifier.size(80.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-            Text(author.name, style = MaterialTheme.typography.headlineSmall)
-            Text(author.account, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("写真と日々のこと。", style = MaterialTheme.typography.bodyLarge)
-            Text("2 投稿   24 フォロー   32 フォロワー", style = MaterialTheme.typography.bodyMedium)
-        }
-        PrototypeEmptyTabs(listOf("投稿", "投稿と返信", "メディア"), "表示する投稿はありません", Modifier.height(260.dp))
-    }
-}
-
-@Composable
-private fun PrototypeEmptyTabs(labels: List<String>, emptyMessage: String, modifier: Modifier) {
-    val pager = rememberPagerState(pageCount = { labels.size })
-    val scope = rememberCoroutineScope()
-    Column(modifier) {
-        PrimaryScrollableTabRow(selectedTabIndex = pager.currentPage, edgePadding = 0.dp) {
-            labels.forEachIndexed { index, label ->
-                Tab(selected = pager.currentPage == index, onClick = { scope.launch { pager.animateScrollToPage(index) } },
-                    text = { Text(label) })
-            }
-        }
-        HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f)) {
-            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(emptyMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            PrototypeMediaOverlay(motion)
         }
     }
 }

@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -14,7 +16,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent {
-            PrototypeTheme {
+            MastodonClientTheme(ThemeMode.Dark) {
                 PrototypeApp()
             }
         }
