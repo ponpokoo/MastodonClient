@@ -64,6 +64,11 @@ internal class FixtureTimelineRepository : TimelineRepository {
         val author = if (accountId == "haru") GalleryAuthor else PrototypeOwnAuthor
         return Result.success(UserProfile(author, resource("sample_landscape"),
             "<p>散歩と写真が好きです。よろしくお願いします。</p>", 128, 96, 2, emptyList(),
+            url = "https://example.test/@${author.id}",
+            fields = listOf(
+                ProfileField("Webサイト", "<a href=\"https://example.test/\">https://example.test/</a>", null),
+                ProfileField("X", "<a href=\"https://x.com/example\">https://x.com/example</a>", null),
+            ),
             endReached = true, isOwnProfile = accountId == session.accountId))
     }
     override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?) =

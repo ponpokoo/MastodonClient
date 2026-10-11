@@ -64,7 +64,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -80,6 +87,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.withTab
 import androidx.compose.material3.Button
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
 import java.net.URI
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -308,7 +316,7 @@ internal fun ProfileContent(
                 }
                 }
                 }
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 4.dp)) {
                     androidx.compose.foundation.layout.BoxWithConstraints {
                         val handle = profileAccountHandle(profile.author.accountName, profile.url)
                         val measurer = androidx.compose.ui.text.rememberTextMeasurer()
@@ -359,6 +367,22 @@ internal fun ProfileContent(
                             onLinkClick = onOpenLink,
                         )
                     }
+                    profile.url.takeIf(String::isNotBlank)?.let { profileUrl ->
+                        Text(
+                            text = buildAnnotatedString {
+                                withLink(LinkAnnotation.Url(
+                                    url = profileUrl,
+                                    styles = TextLinkStyles(SpanStyle(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        textDecoration = TextDecoration.Underline,
+                                    )),
+                                    linkInteractionListener = { onOpenLink(profileUrl) },
+                                )) { append(profileUrl) }
+                            },
+                            modifier = Modifier.padding(top = 8.dp).testTag("profile_url"),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                     if (profile.fields.isNotEmpty()) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -392,19 +416,35 @@ internal fun ProfileContent(
                         }
                     }
                 }
-                HorizontalDivider()
                 }
             }
             stickyHeader(key = "profile_tabs") {
                 SecondaryTabRow(selectedTabIndex = profileTabs.selectedPage,
-                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }) {
+                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } },
+                    indicator = {
+                        TabRowDefaults.PrimaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(profileTabs.selectedPage, matchContentSize = true),
+                            width = Dp.Unspecified,
+                            height = 2.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp),
+                        )
+                    },
+                    divider = {
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
+                        val isTabSelected = profileTabs.selectedPage == index
                         Tab(modifier = Modifier.heightIn(min = 44.dp)
                             .testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
-                            selected = profileTabs.selectedPage == index,
+                            selected = isTabSelected,
+                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             onClick = { profileTabs.selectPage(index) }) {
                             Text(label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = if (isTabSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                textAlign = TextAlign.Center)
                         }
                     }
                 }
