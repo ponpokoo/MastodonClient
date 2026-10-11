@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -20,19 +23,26 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -272,6 +282,75 @@ class MediaThumbnailDeviceTest {
         // The image remains part of the clickable URL card.
         node.performClick()
         assertEquals(card.value.url, opened.get())
+    }
+
+    @Test
+    fun postActionsRemainSeparateFromContentAcrossLayoutsAndLargeText() {
+        val media = attachment(image(400, 200)).copy(aspectRatio = 2f)
+        val body = "本文から操作ボタンを区別して押せることを確認します。"
+        val textOnly = status().copy(contentHtml = "<p>$body</p>")
+        val variants = listOf(
+            textOnly.copy(statusId = "text"),
+            textOnly.copy(statusId = "image", mediaAttachments = listOf(media)),
+            textOnly.copy(statusId = "link", previewCard = PreviewCard(
+                "https://example.test/article", "散歩の記事", "湖の景色を紹介します。", "link", "", media.url, 2f)),
+            textOnly.copy(statusId = "sensitive", sensitive = true, mediaAttachments = listOf(media)),
+        )
+        val current = mutableStateOf(variants.first())
+        val scale = mutableStateOf(1f)
+        val theme = mutableStateOf(ThemeMode.Light)
+        val detail = mutableStateOf(false)
+        val favourites = AtomicInteger()
+        val openedContent = AtomicInteger()
+        rule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, scale.value)) {
+                MastodonClientTheme(themeMode = theme.value) {
+                    Column(Modifier.width(320.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                        StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
+                            fullWidthContent = detail.value,
+                            onFavourite = { favourites.incrementAndGet() },
+                            onMediaClick = { _, _ -> openedContent.incrementAndGet() },
+                            onOpenLink = { openedContent.incrementAndGet() })
+                    }
+                }
+            }
+        }
+        for (mode in listOf(ThemeMode.Light, ThemeMode.Dark)) {
+            for (fontScale in listOf(1f, 2f)) {
+                for (isDetail in listOf(false, true)) {
+                    for (variant in variants) {
+                        rule.runOnIdle {
+                            theme.value = mode; scale.value = fontScale; detail.value = isDetail
+                            current.value = variant; favourites.set(0); openedContent.set(0)
+                        }
+                        if (variant.sensitive) {
+                            rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+                            rule.onNodeWithText("閲覧注意のメディアを表示").performScrollTo().performClick()
+                        }
+                        val content = when {
+                            variant.mediaAttachments.isNotEmpty() -> rule.onNodeWithTag("media_attachment")
+                            variant.previewCard != null -> rule.onNodeWithTag("preview_card_image", useUnmergedTree = true)
+                            else -> rule.onNodeWithText(body, useUnmergedTree = true)
+                        }
+                        val favourite = rule.onNodeWithContentDescription("お気に入り")
+                        favourite.performScrollTo()
+                        assertTrue("Content overlaps actions: $mode / $fontScale / $isDetail / ${variant.statusId}",
+                            content.getUnclippedBoundsInRoot().bottom <= favourite.getUnclippedBoundsInRoot().top)
+                        favourite.performTouchInput { click(Offset(center.x, 1f)) }
+                        rule.runOnIdle { assertEquals(1, favourites.get()); assertEquals(0, openedContent.get()) }
+                        if (variant.mediaAttachments.isNotEmpty() || variant.previewCard != null) {
+                            content.performScrollTo().performTouchInput { click(center) }
+                            rule.runOnIdle { assertEquals(1, favourites.get()); assertEquals(1, openedContent.get()) }
+                        }
+                        if (variant.sensitive) {
+                            rule.onNodeWithText("閲覧注意に戻す").performScrollTo().performClick()
+                            rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun waitForRatio(node: SemanticsNodeInteraction, expected: Float) {
