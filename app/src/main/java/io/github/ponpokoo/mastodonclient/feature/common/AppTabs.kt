@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -71,7 +72,12 @@ internal fun AppTab(
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
     val selectedColor = MaterialTheme.colorScheme.primary
-    val unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val colors = MaterialTheme.colorScheme
+    val unselectedColor = if (colors.surface.luminance() > 0.5f) {
+        colors.onSurface
+    } else {
+        colors.onSurfaceVariant
+    }
     if (text != null) {
         Tab(selected = selected, onClick = onClick, modifier = modifier, text = text,
             selectedContentColor = selectedColor, unselectedContentColor = unselectedColor)
