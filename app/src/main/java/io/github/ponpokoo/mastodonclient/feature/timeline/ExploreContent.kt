@@ -22,6 +22,9 @@ import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
+import io.github.ponpokoo.mastodonclient.feature.common.AppTab
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreTabState
 import io.github.ponpokoo.mastodonclient.feature.tag.TagSubscriptionButton
@@ -48,11 +51,12 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     }
     var confirm by remember(state.sessionKey) { mutableStateOf<SearchTag?>(null) }
     Column(modifier) {
-        SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
+        AppTabRow(selectedTabIndex = tabs.selectedPage) {
             ExploreFeed.entries.forEach { feed ->
-                Tab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
+                AppTab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
                     modifier = Modifier.testTag("explore_tab_${feed.name.lowercase()}")) {
-                    Text(feed.label(), modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
+                    AppTabText(feed.label(), selected = feed.ordinal == tabs.selectedPage,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
                         style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 }
             }

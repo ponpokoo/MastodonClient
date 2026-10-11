@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
@@ -32,6 +33,16 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLo
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
+import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
@@ -41,6 +52,52 @@ import org.junit.Test
 
 class StatusInteractionDeviceTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun visibilityHeaderKeepsMenuReachableWithLargeTextAndLongAuthorNames() {
+        val scale = mutableStateOf(1f)
+        val theme = mutableStateOf(ThemeMode.Light)
+        val visibility = mutableStateOf("public")
+        var menus = 0
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, scale.value)) {
+                MastodonClientTheme(themeMode = theme.value) {
+                    Surface {
+                        StatusCard(
+                            status = status().copy(visibility = visibility.value,
+                                author = status().author.copy(displayName = "長い表示名を持つテストユーザー", accountName = "long-account-name@example.test")),
+                            onStatusClick = null,
+                            onMoreClick = { menus++ },
+                            onUnavailableAction = {},
+                        )
+                    }
+                }
+            }
+        }
+        for (mode in listOf(ThemeMode.Light, ThemeMode.Dark)) {
+            for (fontScale in listOf(1f, 1.3f, 2f)) {
+                for ((value, label) in listOf("public" to "公開", "unlisted" to "ひかえめな公開",
+                    "private" to "フォロワー限定", "direct" to "指定した相手のみ")) {
+                    composeRule.runOnIdle { theme.value = mode; scale.value = fontScale; visibility.value = value }
+                    val icon = composeRule.onNodeWithContentDescription(label, useUnmergedTree = true)
+                    icon.assertIsDisplayed()
+                    val menu = composeRule.onNodeWithContentDescription("投稿メニュー")
+                    menu.assertIsDisplayed()
+                    assertTrue("Visibility overlaps menu at $mode / $fontScale / $value",
+                        icon.fetchSemanticsNode().boundsInRoot.right <= menu.fetchSemanticsNode().boundsInRoot.left)
+                    menu.performTouchInput { click(center) }
+                    if (value == "public") {
+                        val bitmap = composeRule.onRoot().captureToImage().asAndroidBitmap()
+                        File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),
+                            "status-header-${mode.name.lowercase()}-$fontScale.png").outputStream().use {
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                        }
+                    }
+                }
+            }
+        }
+        composeRule.runOnIdle { assertEquals(24, menus) }
+    }
 
     @Test
     fun reactionVisibilityCanBeToggledWithoutHidingTheActionButton() {

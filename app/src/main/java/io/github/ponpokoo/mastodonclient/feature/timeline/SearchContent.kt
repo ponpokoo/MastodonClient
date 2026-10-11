@@ -20,8 +20,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
+import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -115,10 +116,11 @@ internal fun SearchContent(
             focusRequester = searchFocusRequester,
         )
         if (state.isSearchActive && state.searchQuery.isNotBlank()) {
-            SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
-                SearchTarget.entries.forEach { target -> Tab(
+            AppTabRow(selectedTabIndex = tabs.selectedPage) {
+                SearchTarget.entries.forEach { target -> AppTab(
                     selected = target.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(target.ordinal) },
-                    text = { Text(target.searchLabel()) }, modifier = Modifier.testTag("search_target_${target.name.lowercase()}"),
+                    text = { AppTabText(target.searchLabel(), selected = target.ordinal == tabs.selectedPage) },
+                    modifier = Modifier.testTag("search_target_${target.name.lowercase()}"),
                 ) }
             }
             HorizontalPager(state = pager, key = { SearchTarget.entries[it] },

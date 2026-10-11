@@ -223,7 +223,7 @@ internal fun StatusCard(
                 Icon(
                     visibilityIcon,
                     contentDescription = visibilityLabel,
-                    modifier = Modifier.size(12.dp),
+                    modifier = Modifier.size(14.4.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(3.dp))
