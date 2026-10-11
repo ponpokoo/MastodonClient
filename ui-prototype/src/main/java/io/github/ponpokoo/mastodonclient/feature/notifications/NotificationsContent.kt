@@ -76,8 +76,9 @@ import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
 import io.github.ponpokoo.mastodonclient.feature.common.toShape
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
+import io.github.ponpokoo.transitionprototype.PrototypeTabRow
+import io.github.ponpokoo.transitionprototype.PrototypeTabText
+import io.github.ponpokoo.transitionprototype.PrototypeTab
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 
@@ -138,13 +139,13 @@ internal fun NotificationsContent(
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
             Column(Modifier.fillMaxSize()) {
-                SecondaryTabRow(selectedTabIndex = filterTabs.selectedPage) {
+                PrototypeTabRow(selectedTabIndex = filterTabs.selectedPage) {
                     NotificationFilter.entries.forEach { filter ->
-                        Tab(
+                        PrototypeTab(
                             modifier = Modifier.testTag("notification_filter_${filter.name.lowercase()}"),
                             selected = filterTabs.selectedPage == filter.ordinal,
                             onClick = { filterTabs.selectPage(filter.ordinal) },
-                            text = { Text(filter.label) },
+                            text = { PrototypeTabText(filter.label, selected = filterTabs.selectedPage == filter.ordinal) },
                         )
                     }
                 }

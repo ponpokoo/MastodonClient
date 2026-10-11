@@ -25,6 +25,9 @@ import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreTabState
 import io.github.ponpokoo.mastodonclient.feature.tag.TagSubscriptionButton
+import io.github.ponpokoo.transitionprototype.PrototypeTabRow
+import io.github.ponpokoo.transitionprototype.PrototypeTab
+import io.github.ponpokoo.transitionprototype.PrototypeTabText
 
 @Composable
 internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Unit,
@@ -48,11 +51,12 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     }
     var confirm by remember(state.sessionKey) { mutableStateOf<SearchTag?>(null) }
     Column(modifier) {
-        SecondaryTabRow(selectedTabIndex = tabs.selectedPage) {
+        PrototypeTabRow(selectedTabIndex = tabs.selectedPage) {
             ExploreFeed.entries.forEach { feed ->
-                Tab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
+                PrototypeTab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
                     modifier = Modifier.testTag("explore_tab_${feed.name.lowercase()}")) {
-                    Text(feed.label(), modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
+                    PrototypeTabText(feed.label(), selected = feed.ordinal == tabs.selectedPage,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
                         style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 }
             }

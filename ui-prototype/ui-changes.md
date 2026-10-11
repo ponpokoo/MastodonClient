@@ -16,7 +16,7 @@ READMEの対応する差分記載も削除し、参照がなくなった比較�
 | --- | --- | --- |
 | 投稿ヘッダーの公開範囲アイコン | 12 dp → 14.4 dp。時刻・三点メニューとの中央揃えを維持 | **未適用** |
 | プロフィールの投稿タブ | 標準48 dp → 最小44 dp。文字拡大・折り返し時は高さを広げる | **未適用** |
-| プロフィールタブの選択表示 | タブ幅の下線・共通の文字表現 → 文字幅の2 dp下線と選択色・太さの切替。下部区切り線は0.5 dp | **未適用** |
+| プロフィール・探索・検索結果・通知タブの選択表示 | タブ幅の下線・共通の文字表現 → 文字幅の2 dp下線と選択色・太さの切替を共通化。高さ・文字サイズ・余白・区切り線は各画面の指定を維持（プロフィールの下部区切り線は0.5 dp） | **未適用** |
 | プロフィール欄とタブの境界線・間隔 | 下端の区切り線を削除し、プロフィール欄の下余白を8 dpから4 dpへ変更 | **未適用** |
 | プロフィールURL | 自己紹介の下にプロフィールデータのURLをリンク表示。空の場合は非表示 | **未適用** |
 | 添付画像の開閉遷移 | Dialogによる全画面表示 → サムネイルから拡大し、閲覧中の画像のサムネイルへ戻る遷移 | **未適用** |
@@ -74,8 +74,8 @@ READMEの対応する差分記載も削除し、参照がなくなった比較�
 - `TextAlign`のimportを追加する。
 - `tabRowHeight`の初期値を48 dpから44 dpへ変更する。
 - `Tab(text = { Text(label) })`をコンテンツ形式の`Tab { Text(...) }`にし、`Modifier.heightIn(min = 44.dp)`を指定する。標準のテキスト形式のタブは48 dpになるため、数字だけの変更では足りない。
-- `Text`には左右16 dp・上下8 dpの余白、`MaterialTheme.typography.titleSmall`、`TextAlign.Center`を指定する。文字14 sp・行高20 spを維持する。選択表示も採用する場合は、下記の文字色・太さの切替を追加する。
-- `SecondaryTabRow`の`onSizeChanged`による実際の高さの取得、選択処理、テストタグ、スワイプ・スクロール連携は維持する。
+- タブの文字には左右16 dp・上下8 dpの余白、`MaterialTheme.typography.titleSmall`、`TextAlign.Center`を指定する。文字14 sp・行高20 spを維持する。選択表示は下記の共通部品`PrototypeTabText`で適用する。
+- タブ行の`onSizeChanged`による実際の高さの取得、選択処理、テストタグ、スワイプ・スクロール連携は維持する。試作では`PrototypeTabRow`が内部の`SecondaryTabRow`へ計測用のmodifierを渡す。
 
 ![最小44 dpのプロフィールタブ（選択表示の変更前）](docs/assets/profile-tabs-44dp.png)
 
@@ -89,12 +89,14 @@ READMEの対応する差分記載も削除し、参照がなくなった比較�
 
 [Solusの参考記事](https://solus.co.jp/blog/using-tabs-for-intuitive-app-design)のテキスト主体の例と、下線・文字色による選択表示を参考にする。記事の寸法はpx表記だが、この試作では下線2 dp・区切り線0.5 dpを採用する。文字サイズは既存の14 spを維持する。
 
-- `SecondaryTabRow`の`indicator`に`TabRowDefaults.PrimaryIndicator`を指定する。`Modifier.tabIndicatorOffset(selectedPage, matchContentSize = true)`と`width = Dp.Unspecified`を使い、文字幅に合わせて位置・幅をアニメーションする。Materialの最小幅24 dpを維持する。
+- `SecondaryTabRow`の`indicator`に`TabRowDefaults.PrimaryIndicator`を指定する。共通部品で実際に描画する文字幅を計測し、タブ中央に合わせて位置・幅をアニメーションする。Materialの最小幅24 dpを維持する。Materialの`matchContentSize`は左右16 dpの余白を前提に幅を推定するため、左右4 dpの探索タブにはその推定を使わない。
 - 下線は高さ2 dp、色はテーマの`primary`、上部の角丸は2 dp。タブ全体を等分する配置は維持する。
 - 選択中の文字は`primary`とSemiBold、未選択は`onSurfaceVariant`とNormal。文字色だけに頼らず、下線と太さでも選択状態を示す。
 - 下部区切り線は`outlineVariant`で0.5 dp。高さ44 dpと文字拡大時の折り返しを維持し、記事の1行表示の説明を理由に文字を切り詰めない。
 
-移植時は`TabRowDefaults`と`Dp`のimport、`indicator`・`divider`の指定、`Tab`の選択／未選択色、`Text`の選択状態に応じた太さを一緒に反映する。タップ、スワイプ、選択タイミングの処理は変更しない。
+下線と文字色・太さは[PrototypeTabs.kt](src/main/java/io/github/ponpokoo/transitionprototype/PrototypeTabs.kt)の`PrototypeTabRow`・`PrototypeTab`・`PrototypeTabText`にまとめ、プロフィール、探索の初期一覧、検索結果、通知で共用する。`PrototypeTab`はMaterialの文字色の切替アニメーションを維持する。共通化するのはこの選択表示だけで、文字サイズ・余白・最小高さ・折り返しは呼び出し側に残す。探索の初期一覧は既存の`labelMedium`・左右4 dp／上下14 dp・1行表示を維持し、検索結果と通知は既存のテキスト形式の`Tab`を維持する。プロフィールの44 dpと0.5 dp区切り線を他の画面には適用しない。
+
+移植時は共通部品を本体の共通UIへ移し、`ProfileContent.kt`・`ExploreContent.kt`・`SearchContent.kt`・`NotificationsContent.kt`の呼び出しを一緒に反映する。試作namespaceへのimportは本体の配置に合わせる。各画面の`Tab`、テストタグ、選択処理、タップ、スワイプ、選択タイミングの処理は維持する。
 
 ![投稿・投稿と返信・メディアを選択したプロフィールタブ](docs/assets/profile-tabs-indicator.png)
 

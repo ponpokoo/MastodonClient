@@ -71,7 +71,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -85,9 +84,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.feature.profile.withTab
 import androidx.compose.material3.Button
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
+import io.github.ponpokoo.transitionprototype.PrototypeTab
+import io.github.ponpokoo.transitionprototype.PrototypeTabRow
+import io.github.ponpokoo.transitionprototype.PrototypeTabText
 import java.net.URI
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -419,31 +418,20 @@ internal fun ProfileContent(
                 }
             }
             stickyHeader(key = "profile_tabs") {
-                SecondaryTabRow(selectedTabIndex = profileTabs.selectedPage,
+                PrototypeTabRow(selectedTabIndex = profileTabs.selectedPage,
                     modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } },
-                    indicator = {
-                        TabRowDefaults.PrimaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(profileTabs.selectedPage, matchContentSize = true),
-                            width = Dp.Unspecified,
-                            height = 2.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp),
-                        )
-                    },
                     divider = {
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
                         val isTabSelected = profileTabs.selectedPage == index
-                        Tab(modifier = Modifier.heightIn(min = 44.dp)
+                        PrototypeTab(modifier = Modifier.heightIn(min = 44.dp)
                             .testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
                             selected = isTabSelected,
-                            selectedContentColor = MaterialTheme.colorScheme.primary,
-                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             onClick = { profileTabs.selectPage(index) }) {
-                            Text(label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            PrototypeTabText(label, selected = isTabSelected,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = if (isTabSelected) FontWeight.SemiBold else FontWeight.Normal,
                                 textAlign = TextAlign.Center)
                         }
                     }
