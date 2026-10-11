@@ -316,7 +316,9 @@ private fun NotificationStatusQuote(
 ) {
     if (status.filterDisplay.hidden) return
     var filterRevealed by androidx.compose.runtime.saveable.rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { androidx.compose.runtime.mutableStateOf(false) }
-    var cwRevealed by androidx.compose.runtime.saveable.rememberSaveable(status.filterScope, status.statusId, status.spoilerText) { androidx.compose.runtime.mutableStateOf(false) }
+    val reading = io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings.current
+    var cwOverride by androidx.compose.runtime.saveable.rememberSaveable(reading.accountKey, status.filterScope, status.statusId, status.spoilerText) { androidx.compose.runtime.mutableStateOf<Boolean?>(null) }
+    val cwRevealed = cwOverride ?: reading.preferences.expandSpoilers
     val visible = status.filterDisplay.warnings.isEmpty() || filterRevealed
     val plainContent = remember(status.contentHtml) {
         androidx.core.text.HtmlCompat.fromHtml(
@@ -371,7 +373,7 @@ private fun NotificationStatusQuote(
             )
             if (!visible) return@Column
             if (status.spoilerText.isNotBlank()) {
-                ContentWarning(expanded = cwRevealed, onToggle = { cwRevealed = !cwRevealed }) {
+                ContentWarning(expanded = cwRevealed, onToggle = { cwOverride = !cwRevealed }) {
                     CustomEmojiText(
                         text = status.spoilerText,
                         emojis = status.customEmojis,

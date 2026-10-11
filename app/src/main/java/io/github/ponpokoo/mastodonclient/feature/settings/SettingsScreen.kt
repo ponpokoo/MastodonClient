@@ -68,6 +68,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -220,6 +221,16 @@ internal fun SettingsPageContent(
             if (page == SettingsPage.Media) {
                 item { SectionTitle("メディア") }
                 item {
+                    ChoiceRow("メディアの表示設定", accountPreferences.mediaDisplay, MediaDisplay.entries, activeSession == null) { value ->
+                        activeSession?.let { session -> scope.launch { store.setMediaDisplay(session.sessionId, value) } }
+                    }
+                }
+                item {
+                    SwitchRow("CWを常に展開する", accountPreferences.expandSpoilers, disabled = activeSession == null) { enabled ->
+                        activeSession?.let { session -> scope.launch { store.setExpandSpoilers(session.sessionId, enabled) } }
+                    }
+                }
+                item {
                     ChoiceRow("GIFの自動再生", preferences.gifAutoplay, AutoplayPolicy.entries) {
                         scope.launch { store.setGifAutoplay(it) }
                     }
@@ -332,6 +343,11 @@ internal fun SettingsPageContent(
                 item {
                     SwitchRow("代替テキスト未入力時に確認", preferences.altTextReminder) {
                         scope.launch { store.setAltTextReminder(it) }
+                    }
+                }
+                item {
+                    SwitchRow("常に閲覧注意として投稿", accountPreferences.defaultSensitive, disabled = activeSession == null) { enabled ->
+                        activeSession?.let { session -> scope.launch { store.setDefaultSensitive(session.sessionId, enabled) } }
                     }
                 }
                 item { Text("投稿画面のボタン順", modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
@@ -454,10 +470,11 @@ private fun SwitchRow(
     label: String,
     checked: Boolean,
     description: String? = null,
+    disabled: Boolean = false,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !disabled) { onCheckedChange(!checked) }
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -468,7 +485,7 @@ private fun SwitchRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = !disabled)
     }
 }
 
@@ -548,6 +565,9 @@ private fun Any?.displayLabel(): String = when (this) {
     AutoplayPolicy.Always -> "常に再生"
     AutoplayPolicy.WifiOnly -> "Wi-Fiのみ"
     AutoplayPolicy.Never -> "再生しない"
+    MediaDisplay.Default -> "閲覧注意としてマークされたメディアは隠す"
+    MediaDisplay.ShowAll -> "メディアを常に表示する"
+    MediaDisplay.HideAll -> "メディアを常に隠す"
     StreamingPolicy.On -> "オン"
     StreamingPolicy.WifiOnly -> "Wi-Fiのみ"
     StreamingPolicy.Off -> "オフ"

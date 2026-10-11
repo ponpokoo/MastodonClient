@@ -1,6 +1,9 @@
 package io.github.ponpokoo.mastodonclient.core.preferences
 
 import android.content.Context
+import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay
+import io.github.ponpokoo.mastodonclient.domain.model.ReadingPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -72,6 +75,9 @@ data class TimelineDisplayPreferences(
 data class AccountPreferences(
     val defaultVisibility: PostVisibility = PostVisibility.Public,
     val streaming: StreamingPolicy = StreamingPolicy.On,
+    val mediaDisplay: MediaDisplay = MediaDisplay.Default,
+    val expandSpoilers: Boolean = false,
+    val defaultSensitive: Boolean = false,
 )
 
 @Serializable
@@ -93,6 +99,11 @@ data class AppPreferences(
     val serverSettings: Map<String, io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
+
+    fun readingForAccount(session: AccountSession?): ReadingPreferences {
+        val account = forAccount(session?.sessionId)
+        return ReadingPreferences(account.mediaDisplay, account.expandSpoilers)
+    }
 }
 
 @Serializable
@@ -227,6 +238,15 @@ class UserPreferencesStore(
     }
     suspend fun setAccountPreferences(sessionId: String, value: AccountPreferences) = update(sessionId) {
         it.copy(accountPreferences = it.accountPreferences + (sessionId to value))
+    }
+    suspend fun setMediaDisplay(sessionId: String, value: MediaDisplay) = update(sessionId) {
+        it.copy(accountPreferences = it.accountPreferences + (sessionId to it.forAccount(sessionId).copy(mediaDisplay = value)))
+    }
+    suspend fun setExpandSpoilers(sessionId: String, enabled: Boolean) = update(sessionId) {
+        it.copy(accountPreferences = it.accountPreferences + (sessionId to it.forAccount(sessionId).copy(expandSpoilers = enabled)))
+    }
+    suspend fun setDefaultSensitive(sessionId: String, enabled: Boolean) = update(sessionId) {
+        it.copy(accountPreferences = it.accountPreferences + (sessionId to it.forAccount(sessionId).copy(defaultSensitive = enabled)))
     }
 
     val drafts: Flow<List<ComposeDraft>> = dataStore.data.map { stored ->

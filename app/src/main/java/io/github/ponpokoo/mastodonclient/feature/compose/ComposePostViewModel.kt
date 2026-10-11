@@ -283,7 +283,9 @@ class ComposePostViewModel(
 
     private fun ComposePostUiState.withFreshDefaults(session: AccountSession?, preferences: AppPreferences): ComposePostUiState {
         val defaults = session?.let { timelineRepository.serverSettings.value[it.sessionId]?.takeIf { saved -> saved.belongsTo(it) }?.defaults }
-        return copy(visibility = defaults?.visibility?.let(PostVisibility::fromApi) ?: preferences.forAccount(session?.sessionId).defaultVisibility,
+        val local = preferences.forAccount(session?.sessionId)
+        return copy(visibility = defaults?.visibility?.let(PostVisibility::fromApi) ?: local.defaultVisibility,
+            sensitive = if (editStatusId == null) local.defaultSensitive else sensitive,
             language = defaults?.language, quotePolicy = defaults?.quotePolicy, quotePolicySupported = defaults?.quotePolicySupported == true)
     }
 
@@ -713,6 +715,7 @@ class ComposePostViewModel(
         viewModelScope.launch {
             try {
                 preferencesStore.saveDraft(draft)
+                val preferences = preferencesStore.preferences.first()
                 currentCoroutineContext().ensureActive()
                 if (authRepository.getSessions().none { it.hasSameCredentials(session) }) return@launch
                 stopMedia()
@@ -727,15 +730,15 @@ class ComposePostViewModel(
                 _uiState.update { current -> ComposePostUiState(
                     sessions = current.sessions,
                     selectedSession = session,
-                    preferences = current.preferences,
-                    visibility = current.preferences.forAccount(session.sessionId).defaultVisibility,
+                    preferences = preferences,
+                    visibility = preferences.forAccount(session.sessionId).defaultVisibility,
                     configuration = current.configuration,
                     customEmojis = current.customEmojis,
                     drafts = (current.drafts.filterNot { it.key == draft.key } + draft)
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
                     isLoading = false,
                     actionMessage = "下書きに保存しました",
-                ).withFreshDefaults(session, current.preferences) }
+                ).withFreshDefaults(session, preferences) }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

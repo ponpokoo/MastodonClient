@@ -15,6 +15,37 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServerAccountSettingsRepositoryTest {
+    @Test fun serverSyncAndAccountActivationNeverReplaceLocalReadingChoices() = runTest {
+        MockWebServer().use { server ->
+            val account = testAccount.copy(instanceUrl = server.url("/").toString())
+            val other = secondAccount.copy(instanceUrl = account.instanceUrl)
+            val data = MemoryAuthPreferences()
+            val local = UserPreferencesStore(data)
+            local.setMediaDisplay(account.sessionId, MediaDisplay.HideAll)
+            local.setExpandSpoilers(account.sessionId, true)
+            local.setDefaultSensitive(account.sessionId, true)
+            local.setMediaDisplay(other.sessionId, MediaDisplay.ShowAll)
+            val repository = DefaultServerAccountSettingsRepository(ApiClientFactory(), local, backgroundScope, null,
+                { _, _, _ -> error("unused") }, { _, _, _ -> })
+            for (session in listOf(account, other, account)) {
+                repository.activateServerSettings(session)
+                server.enqueue(MockResponse().setBody("""{"reading:expand:media":"default","reading:expand:spoilers":false,"posting:default:visibility":"private","posting:default:sensitive":${session.sessionId == other.sessionId}}"""))
+                repository.syncServerSettings(session, setOf(ServerSetting.Preferences)).getOrThrow()
+                assertEquals("GET", server.takeRequest().method)
+                assertEquals("private", repository.serverSettings.value.getValue(session.sessionId).defaults?.visibility)
+                val restored = UserPreferencesStore(data).preferences.first()
+                assertEquals(ReadingPreferences(MediaDisplay.HideAll, true), restored.readingForAccount(account))
+                assertEquals(ReadingPreferences(MediaDisplay.ShowAll, false), restored.readingForAccount(other))
+                assertTrue(restored.forAccount(account.sessionId).defaultSensitive)
+                assertFalse(restored.forAccount(other.sessionId).defaultSensitive)
+            }
+            server.enqueue(MockResponse().setResponseCode(503))
+            assertTrue(repository.syncServerSettings(account, setOf(ServerSetting.Preferences)).isFailure)
+            assertEquals(ReadingPreferences(MediaDisplay.HideAll, true), local.preferences.first().readingForAccount(account))
+            assertEquals(3 + 1, server.requestCount)
+        }
+    }
+
     @Test fun postingVisibilityPatchUpdatesOnlyConfirmedDefaultAndPreservesCacheOnFailure() = runTest {
         MockWebServer().use { server ->
             val account = testAccount.copy(instanceUrl = server.url("/").toString())

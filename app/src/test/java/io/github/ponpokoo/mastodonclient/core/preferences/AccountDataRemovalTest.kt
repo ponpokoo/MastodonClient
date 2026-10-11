@@ -38,7 +38,8 @@ class AccountDataRemovalTest {
         preferences.setThemeMode(ThemeMode.Dark)
         preferences.setOpenLinksInApp(false)
         for (id in accounts) {
-            preferences.setAccountPreferences(id, AccountPreferences(PostVisibility.Direct, StreamingPolicy.Off))
+            preferences.setAccountPreferences(id, AccountPreferences(PostVisibility.Direct, StreamingPolicy.Off,
+                io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay.HideAll, true, true))
             preferences.saveServerSettings(id, ServerAccountSettings("https://$id.example", id,
                 filters = listOf(ServerFilter("filter-$id", "private-$id", setOf("home")))))
             preferences.recordReaction(id, "reaction-$id")
@@ -55,6 +56,9 @@ class AccountDataRemovalTest {
         assertNull(preferences.getComposeBuffer("late"))
         val restored = store()
         restored.setAccountPreferences("a", AccountPreferences())
+        restored.setMediaDisplay("a", io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay.ShowAll)
+        restored.setExpandSpoilers("a", true)
+        restored.setDefaultSensitive("a", true)
         restored.saveServerSettings("a", ServerAccountSettings("https://a.example", "a", filters = emptyList()))
         restored.recordReaction("a", "late")
         restored.setReactionHistory("a", listOf("late"))

@@ -231,10 +231,13 @@ fun AppNavigation(
     val timelineEntry = remember(currentBackStackEntry) {
         currentBackStackEntry?.let { runCatching { navController.getBackStackEntry<Route.Timeline>() }.getOrNull() }
     }
+    val mainSessionModel = timelineEntry?.let { entry ->
+        viewModel<MainSessionViewModel>(viewModelStoreOwner = entry, factory = mainSessionFactory)
+    }
+    val readingSession = mainSessionModel?.uiState?.collectAsStateWithLifecycle()?.value?.session
     val interactions = timelineEntry?.let { entry ->
-        val main: MainSessionViewModel = viewModel(viewModelStoreOwner = entry, factory = mainSessionFactory)
         viewModel<StatusInteractionsViewModel>(viewModelStoreOwner = entry, factory = ScreenViewModelFactory {
-            StatusInteractionsViewModel(timelineRepository, main.browsing, preferences)
+            StatusInteractionsViewModel(timelineRepository, requireNotNull(mainSessionModel).browsing, preferences)
         })
     }
     val favouriteState = interactions?.favourites?.collectAsStateWithLifecycle()?.value ?: StatusAccountsUiState()
@@ -301,6 +304,10 @@ fun AppNavigation(
     val loadReactionHistory: suspend () -> List<String> = { interactions?.loadReactionHistory().orEmpty() }
     val saveReactionHistory: suspend (List<String>) -> Unit = { interactions?.saveReactionHistory(it); Unit }
     CompositionLocalProvider(
+        io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings provides
+            io.github.ponpokoo.mastodonclient.feature.common.ReadingSettings(
+                readingSession?.let { it.sessionId + it.instanceUrl } ?: "",
+                appPreferences.readingForAccount(readingSession)),
         LocalFavouriteListOpener provides { statusId -> interactions?.openFavourites(statusId); Unit },
         LocalReactionListOpener provides { statusId, reaction -> interactions?.openReaction(statusId, reaction); Unit },
         LocalCustomReactionEmojiLoader provides loadCustomReactionEmojis,

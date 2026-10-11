@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.runtime.mutableStateOf
 import io.github.ponpokoo.mastodonclient.domain.model.FilterPresentation
 import io.github.ponpokoo.mastodonclient.domain.model.ServerFilter
+import io.github.ponpokoo.mastodonclient.domain.model.ReadingPreferences
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -84,6 +85,42 @@ class NotificationContentDeviceTest {
     }
     @Test fun compactFilterWarningHidesBodyAndAuthorCwUntilBothAreRevealed() = warningScenario("favourite")
     @Test fun replyFilterWarningHidesBodyAndAuthorCwUntilBothAreRevealed() = warningScenario("mention")
+    @Test fun compactCwFollowsReadingPreferenceWhileFilterWarningStillRequiresReveal() = readingScenario("favourite")
+    @Test fun replyCwFollowsReadingPreferenceWhileFilterWarningStillRequiresReveal() = readingScenario("mention")
+
+    private fun readingScenario(type: String) {
+        val author = StatusAuthor("author", "投稿者", "author@example.org", "")
+        val status = TimelineStatus("post", "post", "2026-10-12T00:00:00Z", author, null,
+            "<p>本文</p>", "注意文", false, "public", null, 0, 0, 0, mediaAttachments = emptyList())
+        val current = mutableStateOf(status)
+        val reading = mutableStateOf(io.github.ponpokoo.mastodonclient.feature.common.ReadingSettings("a"))
+        composeRule.setContent {
+            MaterialTheme {
+                androidx.compose.runtime.CompositionLocalProvider(io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings provides reading.value) {
+                    NotificationsContent(state = NotificationsUiState(notifications = listOf(TimelineNotification("notice", type, status.createdAt, author, current.value)), notificationsEndReached = true),
+                        padding = androidx.compose.foundation.layout.PaddingValues(), onRefresh = {}, onLoadMore = {}, onStatusClick = {},
+                        onOpenLink = {}, onReply = {}, onBoost = {}, onFavourite = {}, onBookmark = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> }, preferences = AppPreferences(),
+                        listStates = listOf(rememberLazyListState(), rememberLazyListState(), rememberLazyListState()), selectedFilter = NotificationFilter.All,
+                        onSelectFilter = {}, newNoticeMessage = null, onNewNoticeClick = null)
+                }
+            }
+        }
+        composeRule.onNodeWithText("本文").assertDoesNotExist()
+        composeRule.runOnIdle { reading.value = reading.value.copy(preferences = ReadingPreferences(expandSpoilers = true)) }
+        composeRule.onNodeWithText("本文").assertExists()
+        composeRule.onNodeWithText("内容を隠す").performClick()
+        composeRule.onNodeWithText("本文").assertDoesNotExist()
+        composeRule.runOnIdle { current.value = status.copy(favouritesCount = 1) }
+        composeRule.onNodeWithText("本文").assertDoesNotExist()
+        composeRule.runOnIdle {
+            reading.value = reading.value.copy(accountKey = "b")
+            current.value = status.copy(filterDisplay = FilterPresentation(warnings = listOf(ServerFilter("warn", "警告", setOf("notifications")))))
+        }
+        composeRule.onNodeWithText("本文").assertDoesNotExist()
+        composeRule.onNodeWithText("注意文").assertDoesNotExist()
+        composeRule.onNodeWithTag("filter_reveal").performClick()
+        composeRule.onNodeWithText("本文").assertExists()
+    }
     private fun warningScenario(type: String) {
         val opened = AtomicReference<String?>(null)
         val author = StatusAuthor("author", "投稿者", "author@example.social", "")

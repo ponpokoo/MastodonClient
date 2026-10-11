@@ -102,6 +102,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.toShape
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.AutoplayPolicy
+import io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay
+import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
 import java.util.Locale
 
 import io.github.ponpokoo.mastodonclient.feature.timeline.relativeTime
@@ -142,10 +144,13 @@ internal fun StatusCard(
     var filterRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { mutableStateOf(false) }
     var filterMediaRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.mediaWarnings) { mutableStateOf(false) }
     val filterContentVisible = status.filterDisplay.warnings.isEmpty() || filterRevealed
-    var contentExpanded by rememberSaveable(status.filterScope, status.statusId, status.spoilerText) {
-        mutableStateOf(status.spoilerText.isBlank())
-    }
-    var mediaRevealed by rememberSaveable(status.filterScope, status.statusId) { mutableStateOf(!status.sensitive) }
+    val reading = LocalReadingSettings.current
+    // An untouched card follows local preferences; a manual choice survives setting changes.
+    var contentOverride by rememberSaveable(reading.accountKey, status.filterScope, status.statusId, status.spoilerText) { mutableStateOf<Boolean?>(null) }
+    val contentExpanded = contentOverride ?: (status.spoilerText.isBlank() || reading.preferences.expandSpoilers)
+    var mediaOverride by rememberSaveable(reading.accountKey, status.filterScope, status.statusId, status.sensitive) { mutableStateOf<Boolean?>(null) }
+    val mediaPolicy = reading.preferences.media
+    val mediaRevealed = mediaOverride ?: mediaPolicy.initiallyVisible(status.sensitive)
     var reactionPickerOpen by rememberSaveable(status.filterScope, status.statusId) { mutableStateOf(false) }
     val reactionListOpener = LocalReactionListOpener.current
     val favouriteListOpener = LocalFavouriteListOpener.current
@@ -281,7 +286,7 @@ internal fun StatusCard(
             if (status.spoilerText.isNotBlank()) {
                 ContentWarning(
                     expanded = contentExpanded,
-                    onToggle = { contentExpanded = !contentExpanded },
+                    onToggle = { contentOverride = !contentExpanded },
                 ) {
                     CustomEmojiText(
                         text = status.spoilerText,
@@ -327,10 +332,10 @@ internal fun StatusCard(
                     ),
                 )
                 if (mediaRevealed && (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed)) {
-                    if (status.sensitive) {
+                    if (status.sensitive || mediaPolicy == MediaDisplay.HideAll) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { mediaRevealed = false }) {
-                                Text("閲覧注意に戻す")
+                            TextButton(onClick = { mediaOverride = false }) {
+                                Text(if (status.sensitive) "閲覧注意に戻す" else "メディアを隠す")
                             }
                         }
                     }
@@ -345,12 +350,12 @@ internal fun StatusCard(
                 } else if (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(144.dp)
-                            .clickable { mediaRevealed = true },
+                            .clickable { mediaOverride = true },
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text("閲覧注意のメディアを表示")
+                            Text(if (status.sensitive) "閲覧注意のメディアを表示" else "メディアを表示")
                         }
                     }
                 }
