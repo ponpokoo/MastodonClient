@@ -79,16 +79,16 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.collection:collection-jvm:1.5.0",
+      "id": "androidx.collection:collection-jvm:1.6.0",
       "title": "collections",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.collection:collection-ktx:1.5.0",
+      "id": "androidx.collection:collection-ktx:1.6.0",
       "title": "Collections Kotlin Extensions",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
@@ -352,11 +352,11 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.fragment:fragment:1.1.0",
-      "title": "Android Support Library fragment",
-      "version": "1.1.0",
+      "id": "androidx.fragment:fragment:1.9.1",
+      "title": "fragment",
+      "version": "1.9.1",
       "license": "Apache License 2.0",
-      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
       "id": "androidx.graphics:graphics-path:1.0.1",
@@ -660,18 +660,18 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
-      "id": "androidx.tracing:tracing-ktx:1.2.0",
-      "title": "Android Tracing Runtime Kotlin Extensions",
-      "version": "1.2.0",
+      "id": "androidx.tracing:tracing-android:2.0.0",
+      "title": "Tracing",
+      "version": "2.0.0",
       "license": "Apache License 2.0",
-      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.tracing:tracing:1.2.0",
-      "title": "Android Tracing",
-      "version": "1.2.0",
+      "id": "androidx.tracing:tracing-ktx:2.0.0",
+      "title": "Tracing Kotlin Extensions",
+      "version": "2.0.0",
       "license": "Apache License 2.0",
-      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
       "id": "androidx.transition:transition:1.6.0",

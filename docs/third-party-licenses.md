@@ -8,9 +8,9 @@
 
 表示はUI → LicensesViewModel → AppLicensesRepository → DefaultAppLicensesRepository → AppLicensesLocalDataSourceの順で行う。本文は `app/src/main/assets/licenses/` に収録し、IOディスパッチャーで読み込む。読み込み失敗は再試行でき、ViewModel破棄時には読み込みをキャンセルする。長いSDK通知は文字を欠落させずに分割表示し、Unicodeのサロゲートペアを分断しない。
 
-## 収録内容（2026-10-07）
+## 収録内容（2026-10-11）
 
-現在の作業ツリーで `releaseRuntimeClasspath` を解決し、156個の元のAAR/JARから同一Maven座標の重複をまとめた153件と、Nagisa本体1件を収録した。計154項目、共通本文を共有する10個のテキストをAPKへ同梱する。
+現在の作業ツリーで `releaseRuntimeClasspath` を解決し、155個の元のAAR/JARから同一Maven座標の重複をまとめた153件と、Nagisa本体1件を収録した。計154項目、共通本文を共有する10個のテキストをAPKへ同梱する。
 
 以前の231件は既存AGP依存メタデータから得たBOM・プラットフォーム別の参照などを含む座標一覧だった。今回の153件は現在のソースで解決した実体のあるRuntimeアーカイブを数えたもので、単純に依存を減らした件数ではない。ReorderableのRelease用Android実装も今回の解決結果に含まれる。
 
@@ -85,8 +85,8 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.arch.core:core-runtime:2.2.0` | Apache License 2.0 | 0 |
 | `androidx.autofill:autofill:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.browser:browser:1.9.0` | Apache License 2.0 | 1 |
-| `androidx.collection:collection-jvm:1.5.0` | Apache License 2.0 | 1 |
-| `androidx.collection:collection-ktx:1.5.0` | Apache License 2.0 | 1 |
+| `androidx.collection:collection-jvm:1.6.0` | Apache License 2.0 | 1 |
+| `androidx.collection:collection-ktx:1.6.0` | Apache License 2.0 | 1 |
 | `androidx.compose.animation:animation-android:1.10.5` | Apache License 2.0 | 1 |
 | `androidx.compose.animation:animation-core-android:1.10.5` | Apache License 2.0 | 1 |
 | `androidx.compose.foundation:foundation-android:1.10.5` | Apache License 2.0 | 1 |
@@ -124,7 +124,7 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.dynamicanimation:dynamicanimation:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.emoji2:emoji2:1.4.0` | Apache License 2.0 | 0 |
 | `androidx.exifinterface:exifinterface:1.4.1` | Apache License 2.0 | 1 |
-| `androidx.fragment:fragment:1.1.0` | Apache License 2.0 | 0 |
+| `androidx.fragment:fragment:1.9.1` | Apache License 2.0 | 1 |
 | `androidx.graphics:graphics-path:1.0.1` | Apache License 2.0 | 0 |
 | `androidx.interpolator:interpolator:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.legacy:legacy-support-core-utils:1.0.0` | Apache License 2.0 | 0 |
@@ -168,8 +168,8 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.sqlite:sqlite-android:2.6.2` | Apache License 2.0 | 1 |
 | `androidx.sqlite:sqlite-framework-android:2.6.2` | Apache License 2.0 | 1 |
 | `androidx.startup:startup-runtime:1.1.1` | Apache License 2.0 | 0 |
-| `androidx.tracing:tracing-ktx:1.2.0` | Apache License 2.0 | 0 |
-| `androidx.tracing:tracing:1.2.0` | Apache License 2.0 | 0 |
+| `androidx.tracing:tracing-android:2.0.0` | Apache License 2.0 | 1 |
+| `androidx.tracing:tracing-ktx:2.0.0` | Apache License 2.0 | 1 |
 | `androidx.transition:transition:1.6.0` | Apache License 2.0 | 1 |
 | `androidx.vectordrawable:vectordrawable-animated:1.2.0` | Apache License 2.0 | 0 |
 | `androidx.vectordrawable:vectordrawable:1.2.0` | Apache License 2.0 | 0 |

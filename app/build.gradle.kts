@@ -91,6 +91,11 @@ ksp {
 }
 
 dependencies {
+    constraints {
+        implementation(libs.androidx.fragment) {
+            because("Google Play flags Fragment 1.1.0 pulled in by Firebase Messaging as outdated")
+        }
+    }
     implementation(libs.androidx.media3.exoplayer)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
