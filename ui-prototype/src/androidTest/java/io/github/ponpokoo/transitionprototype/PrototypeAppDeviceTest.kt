@@ -17,6 +17,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
@@ -30,9 +32,38 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import androidx.test.espresso.Espresso
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
 
 class PrototypeAppDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun additionalPostVariantsRenderAndSensitiveImageCanBeHiddenAgain() {
+        val timeline = rule.onNodeWithTag("timeline_list")
+        timeline.performScrollToIndex(2)
+        rule.onNodeWithText("今日はゆっくり読書をしています。", substring = true).assertIsDisplayed()
+        rule.onNodeWithTag("toot_text_only_media_0").assertDoesNotExist()
+
+        timeline.performScrollToIndex(3)
+        rule.onNodeWithText("湖と山を楽しむ散歩コース").assertIsDisplayed()
+        val preview = rule.onNodeWithTag("preview_card_image", useUnmergedTree = true)
+        val screenshot = rule.onRoot().captureToImage().asAndroidBitmap()
+        File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),
+            "post-layout-url-preview.png").outputStream().use {
+            screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        assertTrue("URL thumbnail bounds: ${preview.fetchSemanticsNode().boundsInRoot}", preview.isDisplayed())
+
+        timeline.performScrollToIndex(4)
+        rule.onNodeWithTag("toot_sensitive_image_media_0").assertDoesNotExist()
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        rule.onNodeWithTag("toot_sensitive_image_media_0").assertIsDisplayed()
+        rule.onNodeWithText("閲覧注意に戻す").performClick()
+        rule.onNodeWithTag("toot_sensitive_image_media_0").assertDoesNotExist()
+        rule.onNodeWithText("閲覧注意のメディアを表示").assertIsDisplayed()
+    }
 
     @Test
     fun bundledImagesAreDecodedByTheProductionImageLoader() {

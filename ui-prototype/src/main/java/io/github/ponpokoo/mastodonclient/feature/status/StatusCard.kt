@@ -310,7 +310,7 @@ internal fun StatusCard(
                 StatusContentText(
                     contentHtml = status.contentHtml,
                     customEmojis = status.customEmojis,
-                    modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 8.dp else 0.dp),
+                    modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 4.dp else 0.dp),
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = displayPreferences.fontSize.spValue(),
                         lineHeight = displayPreferences.lineHeightSp().sp,
@@ -442,7 +442,7 @@ internal fun StatusCard(
                     }
                 }
             }
-            Spacer(Modifier.height(if (fullWidthContent) 8.dp else 12.dp))
+            Spacer(Modifier.height(4.dp))
             StatusActionRow(
                 status = status,
                 onReply = onReply,

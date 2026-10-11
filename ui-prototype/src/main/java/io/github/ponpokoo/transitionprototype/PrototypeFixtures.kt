@@ -30,6 +30,26 @@ internal val PrototypeToots = listOf(
         listOf(image("mountain", "sample_landscape", "山の景色のサンプル画像", 1.5f),
             image("tower", "sample_portrait", "夕暮れの塔のサンプル画像", 0.6f),
             image("island", "sample_square", "海辺の島のサンプル画像", 1f)), 1, 4, 8),
+    post("text_only", GalleryAuthor,
+        "<p>今日はゆっくり読書をしています。<br>気になっていた本を読み終えたら、近所のカフェへ行こうかな。</p>",
+        emptyList(), 2, 0, 5),
+    post("url_preview", GalleryAuthor,
+        "<p>次の散歩はこの湖に行ってみたいです。<br><a href=\"https://example.test/lake-walk\">https://example.test/lake-walk</a></p>",
+        emptyList(), 1, 2, 6).copy(
+        previewCard = PreviewCard(
+            url = "https://example.test/lake-walk",
+            title = "湖と山を楽しむ散歩コース",
+            description = "湖畔から眺める山の景色と、のんびり歩ける道を紹介します。",
+            type = "link",
+            byline = "散歩だより · example.test",
+            imageUrl = resource("sample_landscape"),
+            aspectRatio = 1.5f,
+        ),
+    ),
+    post("sensitive_image", GalleryAuthor,
+        "<p>閲覧注意の画像を含む投稿です。<br>画像は、表示ボタンを押すと確認できます。</p>",
+        listOf(image("sensitive_island", "sample_square", "閲覧注意の表示確認用・海辺の島のサンプル画像", 1f)
+            .copy(sensitive = true)), 0, 1, 3).copy(sensitive = true),
 )
 
 internal fun fixtureImageResource(media: MediaAttachment): Int = when (media.url) {

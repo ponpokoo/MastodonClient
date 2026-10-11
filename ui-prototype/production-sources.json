@@ -61,7 +61,7 @@
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/search/SearchBar.kt": "521ee2fd06b8e9d0cb62039fd7b19e35e1521fdf3366717f2778a93c0b74492e",
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/search/SearchViewModel.kt": "93af8bd33bcd2fa496cd1688a1a6f9246db113d41ac18517512e10f15eb29ed0",
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/status/SocialStatus.kt": "f6a36a79534edc48495ff49822edd630b1ae10132cef48b57141e10794b0af09",
-  "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/status/StatusCard.kt": "cab2146df0da4df4a2dfd32ca7a08bec488a334814ff3e7340b000170ff5e93a",
+  "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/status/StatusCard.kt": "7c6ec63f1cb1ca494297dd927c574f0c111d430ea68aff6143e17520eba6e385",
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/status/StatusMenuDialogs.kt": "437c8159ea541cb3be059a282b5ea2d57cce8ea2ede926c928a19e8e037eb611",
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/tag/HashtagTimelineViewModel.kt": "68317764ee9f6cb6273a7c4ad28f232082c470aa016a4c9cc7b84a67395c8a77",
   "app/src/main/java/io/github/ponpokoo/mastodonclient/feature/tag/TagSubscriptionButton.kt": "7484d83e063da3705834621250360506608c97b47cd546d6182f89f5919bad84",
