@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -156,7 +157,7 @@ internal fun ProfileContent(
         }
     }
     val density = LocalDensity.current
-    var tabRowHeight by remember { mutableStateOf(48.dp) }
+    var tabRowHeight by remember { mutableStateOf(44.dp) }
     val profileTabs = key(profile?.url, profile?.author?.id) {
         rememberSwipeTabs(selectedTab.ordinal, ProfileStatusTab.entries.size) {
             onSelectTab(ProfileStatusTab.entries[it])
@@ -398,9 +399,13 @@ internal fun ProfileContent(
                 SecondaryTabRow(selectedTabIndex = profileTabs.selectedPage,
                     modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
-                        Tab(modifier = Modifier.testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
+                        Tab(modifier = Modifier.heightIn(min = 44.dp)
+                            .testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
                             selected = profileTabs.selectedPage == index,
-                            onClick = { profileTabs.selectPage(index) }, text = { Text(label) })
+                            onClick = { profileTabs.selectPage(index) }) {
+                            Text(label, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }

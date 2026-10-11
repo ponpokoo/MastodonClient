@@ -50,6 +50,7 @@
 | --- | --- |
 | [段階的リファクタリング計画](refactoring-plan.md) | 調査で挙げた9候補の実装順、最小変更範囲、過剰設計を避ける制約、検証・完了条件を確認する（実装・実機確認完了） |
 | [UI試作アプリ](../ui-prototype/README.md) | 本体UIのコピー・差分確認手順、4画面・投稿2件と画像遷移、再現範囲・ビルド手順を確認する |
+| [UI変更履歴と本体への移植](../ui-prototype/ui-changes.md) | すべて本体へ未適用の試作変更、アイコン14.4 dp・プロフィールタブ44 dpの調整履歴、確認範囲と移植手順を参照する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 原因未確定。サーバー側の仕様によるものかも未確定として、調査結果・再現条件・原因特定の限界を確認する |
 | [アカウント削除後の残留データ](investigations/account-removal-data-retention.md) | 削除対象・再試行の判断、統合前の検証記録、旧孤立添付やPush解除待ちの制約を確認する |
 | [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
