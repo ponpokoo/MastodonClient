@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -77,8 +78,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.feature.profile.withTab
 import androidx.compose.material3.Button
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
+import io.github.ponpokoo.mastodonclient.feature.common.AppTab
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
+import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
 import java.net.URI
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -156,7 +158,7 @@ internal fun ProfileContent(
         }
     }
     val density = LocalDensity.current
-    var tabRowHeight by remember { mutableStateOf(48.dp) }
+    var tabRowHeight by remember { mutableStateOf(44.dp) }
     val profileTabs = key(profile?.url, profile?.author?.id) {
         rememberSwipeTabs(selectedTab.ordinal, ProfileStatusTab.entries.size) {
             onSelectTab(ProfileStatusTab.entries[it])
@@ -307,7 +309,7 @@ internal fun ProfileContent(
                 }
                 }
                 }
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 4.dp)) {
                     androidx.compose.foundation.layout.BoxWithConstraints {
                         val handle = profileAccountHandle(profile.author.accountName, profile.url)
                         val measurer = androidx.compose.ui.text.rememberTextMeasurer()
@@ -391,16 +393,25 @@ internal fun ProfileContent(
                         }
                     }
                 }
-                HorizontalDivider()
                 }
             }
             stickyHeader(key = "profile_tabs") {
-                SecondaryTabRow(selectedTabIndex = profileTabs.selectedPage,
-                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }) {
+                AppTabRow(selectedTabIndex = profileTabs.selectedPage,
+                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } },
+                    divider = {
+                        HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }) {
                     listOf("投稿", "投稿と返信", "メディア").forEachIndexed { index, label ->
-                        Tab(modifier = Modifier.testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
-                            selected = profileTabs.selectedPage == index,
-                            onClick = { profileTabs.selectPage(index) }, text = { Text(label) })
+                        val isTabSelected = profileTabs.selectedPage == index
+                        AppTab(modifier = Modifier.heightIn(min = 44.dp)
+                            .testTag("profile_status_tab_${ProfileStatusTab.entries[index].name.lowercase()}"),
+                            selected = isTabSelected,
+                            onClick = { profileTabs.selectPage(index) }) {
+                            AppTabText(label, selected = isTabSelected,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.titleSmall,
+                                textAlign = TextAlign.Center)
+                        }
                     }
                 }
             }

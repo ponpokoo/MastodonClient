@@ -128,7 +128,9 @@ class NotificationPagingDeviceTest {
             show(vm)
             rule.waitUntil { vm.uiState.value.isInitialPageLoaded }
             rule.onNodeWithTag("notification_filter_mentions").performClick()
-            rule.waitUntil { requests.get() == 2 }
+            // Automatic paging observes layout only once the tab movement has settled.
+            rule.waitForIdle()
+            rule.waitUntil(5_000) { requests.get() >= 2 }
             rule.waitForIdle()
             rule.runOnIdle { assertEquals(2, requests.get()); assertFalse(vm.uiState.value.list(NotificationCategory.Mentions).endReached) }
             rule.onNodeWithText("さらに読み込む").performClick()
