@@ -13,6 +13,43 @@ import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModerationManagementViewModelTest : ScreenViewModelTestBase() {
+    @Test fun filterFetchStatesDoNotReportFailureOrUnsupportedAsEmptyAndLocalWordsRemainEditable() = runTest(dispatcher) {
+        val repository = Repository()
+        val local = io.github.ponpokoo.mastodonclient.data.repository.DefaultWordMuteRepository(
+            io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore(
+                io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences()), backgroundScope)
+        val model = own(ModerationManagementViewModel(repository, auth, wordRepository = local))
+        advanceUntilIdle(); model.open(ModerationPage.Filters)
+        fun set(filters: List<ServerFilter>?, fetch: SettingFetch) {
+            repository.serverSettings.value = repository.serverSettings.value + (testAccount.sessionId to ServerAccountSettings(
+                testAccount.instanceUrl, testAccount.accountId, filters = filters, fetch = mapOf(ServerSetting.Filters to fetch)))
+        }
+        set(null, SettingFetch()); advanceUntilIdle()
+        assertEquals(FilterListStatus.NotFetched, model.state.value.filterListStatus)
+        set(null, SettingFetch(loading = true)); advanceUntilIdle()
+        assertEquals(FilterListStatus.Loading, model.state.value.filterListStatus)
+        for ((fetch, expected) in listOf(SettingFetch(unsupported = true) to FilterListStatus.Unsupported,
+            SettingFetch(error = "offline") to FilterListStatus.Failed)) {
+            set(null, fetch); advanceUntilIdle()
+            assertEquals(expected, model.state.value.filterListStatus)
+            model.open(ModerationPage.Words); model.addWord("spoiler"); advanceUntilIdle(); runCurrent()
+            assertEquals(listOf("spoiler"), model.state.value.words)
+            model.removeWord("spoiler"); advanceUntilIdle(); runCurrent()
+            model.undoNotice(model.state.value.notice!!.id); advanceUntilIdle(); runCurrent()
+            assertEquals(listOf("spoiler"), model.state.value.words)
+            model.selectAccount(secondAccount.sessionId); advanceUntilIdle()
+            assertTrue(model.state.value.words.isEmpty())
+            model.selectAccount(testAccount.sessionId); advanceUntilIdle()
+            assertEquals(listOf("spoiler"), model.state.value.words)
+            model.removeWord("spoiler"); advanceUntilIdle(); runCurrent(); model.open(ModerationPage.Filters)
+        }
+        set(emptyList(), SettingFetch(fetchedAt = 1)); advanceUntilIdle()
+        assertEquals(FilterListStatus.Ready, model.state.value.filterListStatus)
+        set(emptyList(), SettingFetch(fetchedAt = 1, error = "offline")); advanceUntilIdle()
+        assertEquals(FilterListStatus.Failed, model.state.value.filterListStatus)
+        assertTrue(model.state.value.server!!.filters!!.isEmpty())
+    }
+
     @Test fun filterDisplayPendingUsesNoticeOncePerTransitionAndDoesNotReplaceOperationNotice() = runTest(dispatcher) {
         val repository = Repository()
         val model = model(repository); advanceUntilIdle(); model.open(ModerationPage.Filters)

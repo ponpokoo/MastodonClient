@@ -9,7 +9,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.time.Instant
 
-enum class ModerationPage { Overview, Mutes, Blocks, Filters }
+enum class ModerationPage { Overview, Mutes, Blocks, Filters, Words }
+enum class FilterListStatus { NotFetched, Loading, Unsupported, Failed, Ready }
 data class FilterEditorState(val original: ServerFilter?, val edit: FilterEdit, val awaitingConfirmation: Boolean = false)
 data class ManagementNotice(val id: Long, val message: String, val canUndo: Boolean)
 data class ManagementList(val accounts: List<ModerationAccount> = emptyList(), val nextMaxId: String? = null,
@@ -20,10 +21,23 @@ data class ModerationManagementState(
     val lists: Map<ModerationListKind, ManagementList> = emptyMap(), val busy: Boolean = false,
     val error: String? = null, val notice: ManagementNotice? = null,
     val server: ServerAccountSettings? = null, val editor: FilterEditorState? = null,
-)
+    val words: List<String> = emptyList(),
+) {
+    val filterListStatus: FilterListStatus get() {
+        val fetch = server?.fetch?.get(ServerSetting.Filters)
+        return when {
+            fetch?.loading == true -> FilterListStatus.Loading
+            fetch?.unsupported == true -> FilterListStatus.Unsupported
+            fetch?.error != null -> FilterListStatus.Failed
+            server?.filters == null -> FilterListStatus.NotFetched
+            else -> FilterListStatus.Ready
+        }
+    }
+}
 
 /** The management account is local to this screen, like the composer account picker. */
 class ModerationManagementViewModel(private val timeline: TimelineRepository, private val auth: AuthRepository,
+    private val wordRepository: WordMuteRepository? = null,
     private val now: () -> Instant = Instant::now) : ViewModel() {
     private val mutable = MutableStateFlow(ModerationManagementState())
     val state = mutable.asStateFlow()
@@ -34,11 +48,17 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
     private var retryAction: (() -> Unit)? = null
     private var sessionsJob: Job? = null
     private val visibleCounts = mutableMapOf<ModerationListKind, Int>()
-    private data class Undo(val kind: ModerationListKind, val entry: ModerationAccount, val index: Int)
+    private sealed interface Undo {
+        data class Word(val word: String, val index: Int, val added: Boolean) : Undo
+        data class Account(val kind: ModerationListKind, val entry: ModerationAccount, val index: Int) : Undo
+    }
     private var undo: Undo? = null
     init {
         loadSessions()
         viewModelScope.launch { timeline.serverSettings.collect { presentServerSettings() } }
+        viewModelScope.launch {
+            wordRepository?.words?.collect { values -> mutable.update { it.copy(words = values[it.selected?.sessionId].orEmpty()) } }
+        }
     }
     private fun loadSessions() {
         sessionsJob?.cancel()
@@ -58,8 +78,8 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
                         selectAccount((current ?: updated.first()).sessionId)
                     } else if (previous != null) {
                         generation++; requests.cancelChildren(); undo = null; retryAction = null
-                        mutable.update { it.copy(selected = null, lists = emptyMap(),
-                            busy = false, error = null, notice = null) }
+                        mutable.update { it.copy(selected = null, lists = emptyMap(), words = emptyList(),
+                            server = null, editor = null, busy = false, error = null, notice = null) }
                     }
                 }
             }.onFailure {
@@ -73,7 +93,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         if (account.hasSameCredentials(state.value.selected)) return
         val previousSelected = state.value.selected
         generation++; requests.cancelChildren(); undo = null; retryAction = null
-        mutable.update { it.copy(selected = account, lists = emptyMap(), busy = false, error = null, notice = null) }
+        mutable.update { it.copy(selected = account, lists = emptyMap(), words = wordRepository?.words?.value?.get(id).orEmpty(), busy = false, error = null, notice = null) }
         visibleCounts.clear()
         mutable.update { it.copy(server = null, editor = null) }
         val expected = generation
@@ -96,7 +116,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         val items = when (state.value.page) {
             ModerationPage.Mutes, ModerationPage.Blocks -> setOf(ServerSetting.Mutes, ServerSetting.Blocks)
             ModerationPage.Filters -> setOf(ServerSetting.Filters)
-            ModerationPage.Overview -> return
+            ModerationPage.Overview, ModerationPage.Words -> return
         }
         val expected = generation
         retryAction = null
@@ -108,7 +128,8 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
                 presentServerSettings()
                 result.onFailure {
                     retryAction = ::refresh
-                    mutable.update { it.copy(error = "更新できませんでした。保存済み一覧を表示しています") }
+                    val unsupported = items == setOf(ServerSetting.Filters) && state.value.server?.fetch?.get(ServerSetting.Filters)?.unsupported == true
+                    if (!unsupported) mutable.update { it.copy(error = "更新できませんでした。再試行してください") }
                 }
             } finally { if (expected == generation) mutable.update { it.copy(busy = false) } }
         }
@@ -164,6 +185,17 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         timeline.deleteServerFilter(session, filter.id).getOrThrow(); ensureCurrent(session)
         mutable.update { it.copy(notice = ManagementNotice(++noticeId, "フィルターを削除しました", false)) }
     }
+    fun addWord(value: String) = wordChange(value.trim(), added = true)
+    fun removeWord(value: String) = wordChange(value, added = false)
+    private fun wordChange(word: String, added: Boolean) {
+        val index = state.value.words.indexOf(word)
+        action(onRetry = { wordChange(word, added) }) { session ->
+            val repository = requireNotNull(wordRepository)
+            if (added) repository.add(session.sessionId, word) else repository.remove(session.sessionId, word)
+            ensureCurrent(session)
+            announce("「$word」を${if (added) "追加" else "削除"}しました", Undo.Word(word, index, added))
+        }
+    }
     fun release(entry: ModerationAccount) {
         val kind = kind(state.value.page) ?: return
         val index = state.value.lists[kind]?.accounts?.indexOfFirst { it.account.id == entry.account.id } ?: return
@@ -173,10 +205,10 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
             ensureCurrent(session)
             check(if (kind == ModerationListKind.Mutes) !relation.muting else !relation.blocking) { "解除を確認できませんでした" }
             updateRelationship(entry, relation)
-            announce("${entry.account.displayName}さんの${if (kind == ModerationListKind.Mutes) "ミュート" else "ブロック"}を解除しました", Undo(kind, entry, index))
+            announce("${entry.account.displayName}さんの${if (kind == ModerationListKind.Mutes) "ミュート" else "ブロック"}を解除しました", Undo.Account(kind, entry, index))
         }
     }
-    private fun updateRelationship(entry: ModerationAccount, relation: AccountRelationship, restore: Undo? = null) {
+    private fun updateRelationship(entry: ModerationAccount, relation: AccountRelationship, restore: Undo.Account? = null) {
         mutable.update { state -> state.copy(lists = state.lists.mapValues { (kind, list) ->
             val active = if (kind == ModerationListKind.Mutes) relation.muting else relation.blocking
             val rows = list.accounts.map { if (it.account.id == entry.account.id) it.copy(relationship = relation) else it }.toMutableList()
@@ -194,16 +226,25 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         undoOperation(operation)
     }
     private fun undoOperation(operation: Undo): Unit = action(onRetry = { undoOperation(operation) }) { session ->
-        val relation = if (operation.kind == ModerationListKind.Blocks) timeline.setBlocked(session, operation.entry.account.id, true).getOrThrow()
-        else {
-            val expiry = operation.entry.muteExpiresAt?.let(Instant::parse)
-            val remaining = expiry?.let { java.time.Duration.between(now(), it).seconds }
-            if (remaining != null && remaining <= 0) return@action
-            timeline.restoreMute(session, operation.entry.account.id, operation.entry.relationship.mutingNotifications != false, remaining).getOrThrow()
+        when (operation) {
+            is Undo.Word -> {
+                val repository = requireNotNull(wordRepository)
+                if (operation.added) repository.remove(session.sessionId, operation.word)
+                else repository.restore(session.sessionId, operation.word, operation.index)
+            }
+            is Undo.Account -> {
+                val relation = if (operation.kind == ModerationListKind.Blocks) timeline.setBlocked(session, operation.entry.account.id, true).getOrThrow()
+                else {
+                    val expiry = operation.entry.muteExpiresAt?.let(Instant::parse)
+                    val remaining = expiry?.let { java.time.Duration.between(now(), it).seconds }
+                    if (remaining != null && remaining <= 0) return@action
+                    timeline.restoreMute(session, operation.entry.account.id, operation.entry.relationship.mutingNotifications != false, remaining).getOrThrow()
+                }
+                check(if (operation.kind == ModerationListKind.Mutes) relation.muting else relation.blocking) { "取り消しを確認できませんでした" }
+                ensureCurrent(session)
+                updateRelationship(operation.entry, relation, operation)
+            }
         }
-        check(if (operation.kind == ModerationListKind.Mutes) relation.muting else relation.blocking) { "取り消しを確認できませんでした" }
-        ensureCurrent(session)
-        updateRelationship(operation.entry, relation, operation)
         ensureCurrent(session); undo = null
     }
     private fun announce(message: String, operation: Undo) {
@@ -216,7 +257,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
     }
     private fun action(onRetry: () -> Unit, operation: suspend (AccountSession) -> Unit) {
         val session = state.value.selected ?: return
-        if (state.value.busy || state.value.lists.values.any { it.loading }) return
+        if (state.value.busy || state.value.page != ModerationPage.Words && state.value.lists.values.any { it.loading }) return
         val expected = generation
         mutable.update { it.copy(busy = true, error = null, notice = null) }; undo = null
         scope.launch {

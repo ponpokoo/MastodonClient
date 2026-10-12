@@ -162,7 +162,7 @@ ServerAccountSettingsRepositoryがアカウント別の設定スナップショ�
 閲覧用のメディア表示・CW展開はアカウント別の端末設定としてUserPreferencesStoreだけで保存・復元する。preferences応答の`reading:expand:media`・`reading:expand:spoilers`は読み取り・キャッシュ・適用せず、サーバー設定の同期処理で端末の選択を上書きしない。設定画面からの変更はStoreの項目別suspendメソッドで保存し、他項目を保持する。ライフサイクルに従って購読した設定を共通投稿表示へReadingPreferencesとして渡し、手動開閉はアカウント・投稿ごとに保持して投稿再取得で消去しない。公式フィルターの展開状態とは分ける。旧設定キャッシュに残るreadingフィールドは未知項目として読み飛ばし、通常の設定保存で除去する。アカウント別の端末設定はそのまま保持する。
 投稿の初期閲覧注意フラグもアカウント別の端末設定としてUserPreferencesStoreで保存・復元し、`posting:default:sensitive`のAPI取得・キャッシュ・同期反映は行わない。未保存時はfalse。新規入力作成時と下書き保存後の入力初期化時に投稿元アカウントの最新の保存値を一度だけ読み、編集中・復元下書き・一時入力・既存投稿編集の指定を設定変更で上書きしない。保存・復元・登録削除時の回収は既存のアカウント別端末設定へ含める。
 設定の公開範囲変更はPostingSettingsViewModelからServerAccountSettingsRepositoryへ渡し、`source[privacy]`だけをサーバーへ保存する。確認済みの応答で設定キャッシュを更新し、先行するpreferences取得を世代で無効化する。UIは取得済み・保存成功済みの値を表示し、アカウント切り替え時は既存のSessionScopedViewModelのキャンセル・世代照合を使う。
-端末内ワードミュートの保存モデル・Repository・表示判定は廃止し、旧項目は読み飛ばして通常の設定保存時に除去する。保存互換性と非対応サーバーの制約は[ADR 0017](adr/0017-retire-local-word-mutes.md)に従う。
+端末内ワードミュートはWordMuteRepositoryからアカウント別の端末設定へ保存し、公式フィルターの取得状態とは独立して表示へ適用する。旧JSONの`wordMutes`が残っていれば復元・保持し、廃止版で除去済みの場合は再登録が必要になる。登録削除時はワードも回収し、遅延保存を拒否する。公式フィルターはv2のみを取得し、v1の取得・移行・更新へのフォールバックは行わない。保存互換性と未対応サーバーの扱いは[ADR 0018](adr/0018-restore-local-word-mutes-with-v2-filters.md)に従う。
 取得契機と互換性の判断は[調査書](investigations/server-account-settings-sync.md)、表示と管理は[UI仕様](ui-guidelines.md#サーバー保存設定と公式フィルター)を参照する。
 
 ### アカウントの削除確認と保存順

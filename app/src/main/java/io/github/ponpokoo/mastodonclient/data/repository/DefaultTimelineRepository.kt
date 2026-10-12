@@ -86,7 +86,9 @@ class DefaultTimelineRepository(
     private val accountDisplay: AccountDisplaySynchronizer? = null,
     private val settingsStore: io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore? = null,
     private val settingsScope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO),
+    private val wordMuteRepository: io.github.ponpokoo.mastodonclient.domain.repository.WordMuteRepository? = null,
 ) : TimelineRepository {
+    override val wordMutes get() = wordMuteRepository?.words ?: super.wordMutes
     private val settingsRepository by lazy { DefaultServerAccountSettingsRepository(apiClientFactory, settingsStore, settingsScope,
         accountDisplay, ::getModerationAccounts, ::applyModerationSnapshot, { session ->
             synchronized(statusCache) { statusCache.keys.removeAll { it.sessionId == session.sessionId && it.instanceUrl == session.instanceUrl.trimEnd('/') } }

@@ -24,7 +24,8 @@
 | 0014 | [AndroidのハイブリッドPushを永続世代と差分位置で補完](0014-android-hybrid-push-sync.md) | accepted（実装済み。今回のPush試験は終了、残りは実運用で確認） |
 | 0015 | [旧APKの大通知欠落を許容して本番Relayを直接切替](0015-production-hybrid-cutover.md) | accepted（0013の移行条件を置換） |
 | 0016 | [アカウント登録削除にローカルデータの回収を含める](0016-account-local-data-removal.md) | accepted |
-| 0017 | [端末内ワードミュートを廃止して公式フィルターに集約](0017-retire-local-word-mutes.md) | accepted |
+| 0017 | [端末内ワードミュートを廃止して公式フィルターに集約](0017-retire-local-word-mutes.md) | superseded by 0018 |
+| 0018 | [公式フィルターv2と端末内ワードミュートを併用](0018-restore-local-word-mutes-with-v2-filters.md) | accepted |
 
 ## 記録方法
 

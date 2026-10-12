@@ -96,6 +96,7 @@ data class AppPreferences(
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val hiddenComposerActions: Set<ComposerAction> = emptySet(),
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
+    val wordMutes: Map<String, List<String>> = emptyMap(),
     val serverSettings: Map<String, io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
@@ -155,6 +156,10 @@ class UserPreferencesStore(
     }
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
+
+    suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update(sessionId) {
+        it.copy(wordMutes = it.wordMutes + (sessionId to transform(it.wordMutes[sessionId].orEmpty())))
+    }
 
     suspend fun saveServerSettings(sessionId: String, value: io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings) = update(sessionId) {
         it.copy(serverSettings = it.serverSettings + (sessionId to value.copy(fetch = value.fetch.mapValues { (_, state) -> state.copy(loading = false) })))
@@ -308,6 +313,7 @@ class UserPreferencesStore(
             val settings = stored[APP_PREFERENCES]?.let(::decodeAppPreferences)
             if (settings != null) stored[APP_PREFERENCES] = json.encodeToString(settings.copy(
                 accountPreferences = settings.accountPreferences - sessionId,
+                wordMutes = settings.wordMutes - sessionId,
                 serverSettings = settings.serverSettings - sessionId,
             ))
             for (key in listOf(REACTION_HISTORY, COMPOSER_EMOJI_HISTORY)) {

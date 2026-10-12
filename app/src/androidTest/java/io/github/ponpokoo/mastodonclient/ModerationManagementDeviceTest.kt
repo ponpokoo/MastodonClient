@@ -66,7 +66,7 @@ class ModerationManagementDeviceTest {
             rule.onNodeWithTag("settings_category_Moderation").performScrollTo().performClick()
             rule.onNodeWithTag("management_account_switcher").assertIsDisplayed()
             rule.onNodeWithContentDescription("一覧を更新").assertDoesNotExist()
-            rule.onNodeWithText("ワードミュート", useUnmergedTree = true).assertDoesNotExist()
+            rule.onNodeWithText("端末内のワードミュート", useUnmergedTree = true).assertIsDisplayed()
             rule.onNodeWithText("ミュート中", useUnmergedTree = true).performClick()
             rule.onNodeWithTag("management_account_switcher").assertDoesNotExist()
             rule.onNodeWithContentDescription("一覧を更新").performClick()

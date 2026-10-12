@@ -122,9 +122,12 @@ class DefaultServerAccountSettingsRepository(
         }
         if (result.isFailure) {
             val error = result.exceptionOrNull()
+            // Probe the API itself, including compatible servers with non-Mastodon version strings.
+            // These codes on the collection endpoint mean unavailable; never try v1 filters.
             val unsupported = error is HttpException && error.code() in setOf(404, 405, 501)
             commit(session, epoch, item, version) { old -> old.copy(fetch = old.fetch + (item to (old.fetch[item] ?: SettingFetch()).copy(loading = false,
-                unsupported = unsupported, error = if (unsupported) "このサーバーは未対応です" else if (error is HttpException && error.code() in setOf(401, 403)) "認証・読み取り権限を確認してください。必要なら再ログインしてください" else "取得できませんでした。保存済み設定を使用します"))) }
+                unsupported = unsupported, error = if (unsupported && item == ServerSetting.Filters) null
+                else if (unsupported) "このサーバーは未対応です" else if (error is HttpException && error.code() in setOf(401, 403)) "認証・読み取り権限を確認してください。必要なら再ログインしてください" else "取得できませんでした。取得済みの設定があれば引き続き使用します"))) }
         }
         return result
     }

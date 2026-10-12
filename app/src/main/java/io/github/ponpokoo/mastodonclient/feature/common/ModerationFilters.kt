@@ -8,10 +8,18 @@ import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailUiState
 import io.github.ponpokoo.mastodonclient.feature.search.*
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineUiState
 
+internal fun TimelineStatus.matchesWordMute(words: List<String>): Boolean {
+    if (words.isEmpty()) return false
+    val text = if ('<' in contentHtml || '&' in contentHtml)
+        androidx.core.text.HtmlCompat.fromHtml(contentHtml, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+    else contentHtml
+    return words.any { it.isNotBlank() && (text.contains(it, ignoreCase = true) || spoilerText.contains(it, ignoreCase = true)) }
+}
+
 private fun TimelineStatus.present(m: AccountModerationState, s: AccountSession, context: String?): TimelineStatus =
     if (!m.applyServerFilters || context == null) this else copy(filterDisplay = filterPresentation(context, current = m.serverFilters[s.sessionId]), filterScope = s.sessionId + s.instanceUrl)
 private fun List<TimelineStatus>.visible(m: AccountModerationState, s: AccountSession, context: String? = null) =
-    filterNot { m.hides(s, it) }
+    filterNot { m.hides(s, it) || it.matchesWordMute(m.wordMutes[s.sessionId].orEmpty()) }
         .map { it.present(m, s, context) }.filterNot { m.applyServerFilters && context != null && it.filterDisplay.hidden }
 private fun UserProfile.visible(m: AccountModerationState, s: AccountSession) =
     copy(statuses = statuses.visible(m, s, "account"), pinnedStatuses = pinnedStatuses.visible(m, s, "account"))
@@ -25,7 +33,9 @@ internal fun TimelineUiState.withModeration(m: AccountModerationState, s: Accoun
 }
 
 internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession): NotificationsUiState {
-    fun present(rows: List<TimelineNotification>) = rows.filterNot { m.hides(s, it) }.map { notification ->
+    fun present(rows: List<TimelineNotification>) = rows.filterNot {
+        m.hides(s, it) || it.status?.matchesWordMute(m.wordMutes[s.sessionId].orEmpty()) == true
+    }.map { notification ->
         notification.copy(status = notification.status?.present(m, s, "notifications"))
     }.filterNot { m.applyServerFilters && it.status?.filterDisplay?.hidden == true }
     val visible = present(notifications)
@@ -74,6 +84,8 @@ internal fun StatusDetailUiState.withModeration(m: AccountModerationState, s: Ac
     val current = detail ?: return this
     if (m.hides(s, current.status)) return copy(detail = null, isLoading = false,
         errorMessage = "ミュートまたはブロック中のアカウントの投稿です")
+    if (current.status.matchesWordMute(m.wordMutes[s.sessionId].orEmpty())) return copy(detail = null, isLoading = false,
+        errorMessage = "ワードミュートに一致する投稿です")
     val status = current.status.present(m, s, "thread")
     if (m.applyServerFilters && status.filterDisplay.hidden) return copy(detail = null, isLoading = false, errorMessage = "フィルターで非表示の投稿です")
     return copy(detail = current.copy(status = status, ancestors = current.ancestors.visible(m, s, "thread"), descendants = current.descendants.visible(m, s, "thread")))

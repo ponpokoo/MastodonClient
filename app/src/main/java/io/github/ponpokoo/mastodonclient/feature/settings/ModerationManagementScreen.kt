@@ -12,8 +12,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,11 +35,14 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
     val listState = rememberLazyListState()
     var accountPicker by remember(state.page) { mutableStateOf(false) }
     var deleteFilter by remember(state.selected?.sessionId) { mutableStateOf<ServerFilter?>(null) }
+    var input by rememberSaveable(state.selected?.sessionId) { mutableStateOf("") }
+    var deleteWord by remember(state.selected?.sessionId, state.page) { mutableStateOf<String?>(null) }
     var release by remember(state.selected?.sessionId, state.page) { mutableStateOf<ModerationAccount?>(null) }
     val back = { if (state.page == ModerationPage.Overview) onBack() else viewModel.open(ModerationPage.Overview) }
     LaunchedEffect(state.selected?.sessionId, state.page) { snackbar.currentSnackbarData?.dismiss() }
     LaunchedEffect(state.notice?.id) {
         state.notice?.let { notice ->
+            if (state.page == ModerationPage.Words && input.trim() in state.words) input = ""
             if (snackbar.showTwoSecondSnackbar(notice.message, if (notice.canUndo) "取り消し" else null) == SnackbarResult.ActionPerformed)
                 viewModel.undoNotice(notice.id)
             viewModel.consumeNotice(notice.id)
@@ -48,7 +53,8 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
         return
     }
     BackHandler(onBack = back)
-    val enabled = state.selected != null && !state.busy && state.lists.values.none { it.loading }
+    val enabled = state.selected != null && !state.busy && (state.page == ModerationPage.Words || state.lists.values.none { it.loading })
+    val filtersEditable = enabled && state.filterListStatus != FilterListStatus.Unsupported && state.filterListStatus != FilterListStatus.Loading
     Scaffold(topBar = { TopAppBar(title = { Text("ミュート・ブロック・フィルター") }, navigationIcon = {
         IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") }
     }) }, snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("management_snackbar")) }) { padding ->
@@ -59,13 +65,35 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
             }
             if (state.selected == null) item { Text("管理するアカウントがありません", Modifier.padding(vertical = 24.dp)) }
             if (state.page == ModerationPage.Overview) {
-                items(listOf(ModerationPage.Mutes, ModerationPage.Blocks, ModerationPage.Filters)) { page ->
+                items(listOf(ModerationPage.Mutes, ModerationPage.Blocks, ModerationPage.Filters, ModerationPage.Words)) { page ->
                     Row(Modifier.fillMaxWidth().clickable { viewModel.open(page) }.padding(vertical = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(page.label(), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null)
                     }
                     HorizontalDivider()
                 }
+            } else if (state.page == ModerationPage.Words) {
+                item {
+                    Row(Modifier.padding(top = 20.dp, bottom = 24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(input, { if (it.length <= 100) input = it }, Modifier.weight(1f).testTag("word_mute_input"),
+                            label = { Text("追加するワード") }, singleLine = true, enabled = enabled)
+                        Button(onClick = { viewModel.addWord(input) }, enabled = enabled && input.isNotBlank()) { Text("追加") }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("登録したワード", style = MaterialTheme.typography.labelLarge)
+                        Text("${state.words.size}件", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                items(state.words, key = { it }) { word ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(word, Modifier.weight(1f))
+                        IconButton(onClick = { deleteWord = word }, enabled = enabled) { Icon(Icons.Outlined.DeleteOutline, "$word を削除") }
+                    }
+                    HorizontalDivider()
+                }
+                if (state.words.isEmpty()) item { Text("登録したワードはありません", Modifier.padding(vertical = 24.dp)) }
+                item { Text("端末内だけで適用します。本文・CWの部分一致で判定し、英字の大文字・小文字は区別しません。", Modifier.padding(top = 20.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else if (state.page == ModerationPage.Filters) {
                 item {
                     Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -74,10 +102,16 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                             Icon(Icons.Outlined.Refresh, "一覧を更新")
                         }
                     }
-                    Button(onClick = { viewModel.editFilter(null) }, enabled = enabled && state.server?.pendingCreation == null && state.server?.fetch?.get(ServerSetting.Filters)?.unsupported != true) { Text("フィルターを追加") }
+                    Button(onClick = { viewModel.editFilter(null) }, enabled = filtersEditable && state.server?.pendingCreation == null) { Text("フィルターを追加") }
                     val fetch = state.server?.fetch?.get(ServerSetting.Filters)
-                    fetch?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (state.server?.filters == null) Text("フィルターは未取得です。設定内の更新ボタンから取得してください。")
+                    when (state.filterListStatus) {
+                        FilterListStatus.Unsupported -> Text("このサーバーは公式フィルターに対応していません。端末内のワードミュートをご利用ください。")
+                        FilterListStatus.Failed -> Text(fetch?.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                        FilterListStatus.NotFetched -> Text("フィルターは未取得です。設定内の更新ボタンから取得してください。")
+                        FilterListStatus.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                        FilterListStatus.Ready -> Unit
+                    }
+                    if (state.filterListStatus == FilterListStatus.Unsupported) TextButton(onClick = { viewModel.open(ModerationPage.Words) }) { Text("端末内のワードミュート") }
                     if (state.server?.pendingCreation != null) Text("作成結果の確認待ちです。次の同期で確認します。")
                 }
                 items(state.server?.filters.orEmpty(), key = { it.id }) { filter ->
@@ -88,13 +122,13 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("期限：" + formatFilterExpiry(filter.expiresAt), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row {
-                            TextButton(onClick = { viewModel.editFilter(filter) }, enabled = enabled) { Text("編集") }
-                            TextButton(onClick = { deleteFilter = filter }, enabled = enabled) { Text("削除", color = MaterialTheme.colorScheme.error) }
+                            TextButton(onClick = { viewModel.editFilter(filter) }, enabled = filtersEditable) { Text("編集") }
+                            TextButton(onClick = { deleteFilter = filter }, enabled = filtersEditable) { Text("削除", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                     HorizontalDivider()
                 }
-                if (state.server?.filters?.isEmpty() == true) item { Text("登録したフィルターはありません") }
+                if (state.filterListStatus == FilterListStatus.Ready && state.server?.filters?.isEmpty() == true) item { Text("登録したフィルターはありません") }
             } else {
                 val kind = if (state.page == ModerationPage.Mutes) ModerationListKind.Mutes else ModerationListKind.Blocks
                 val list = state.lists[kind] ?: ManagementList()
@@ -132,6 +166,9 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
     deleteFilter?.let { filter -> AlertDialog(onDismissRequest = { deleteFilter = null }, title = { Text("フィルターを削除") },
         text = { Text("「" + filter.title + "」を削除しますか？") }, confirmButton = { TextButton(onClick = { deleteFilter = null; viewModel.deleteFilter(filter) }) { Text("削除") } },
         dismissButton = { TextButton(onClick = { deleteFilter = null }) { Text("キャンセル") } }) }
+    deleteWord?.let { word -> AlertDialog(onDismissRequest = { deleteWord = null }, title = { Text("ワードを削除") },
+        text = { Text("「$word」を削除しますか？") }, confirmButton = { TextButton(onClick = { deleteWord = null; viewModel.removeWord(word) }) { Text("削除") } },
+        dismissButton = { TextButton(onClick = { deleteWord = null }) { Text("キャンセル") } }) }
     if (accountPicker) AccountSwitchDialog("アカウントを切り替える", state.sessions, state.selected?.sessionId,
         { accountPicker = false; viewModel.selectAccount(it) }, { accountPicker = false })
     release?.let { entry ->
@@ -146,4 +183,4 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
     }
 }
 
-private fun ModerationPage.label() = when (this) { ModerationPage.Mutes -> "ミュート中"; ModerationPage.Blocks -> "ブロック中"; ModerationPage.Filters -> "サーバーのフィルター"; ModerationPage.Overview -> "ミュート・ブロックの管理" }
+private fun ModerationPage.label() = when (this) { ModerationPage.Mutes -> "ミュート中"; ModerationPage.Blocks -> "ブロック中"; ModerationPage.Filters -> "サーバーのフィルター"; ModerationPage.Words -> "端末内のワードミュート"; ModerationPage.Overview -> "ミュート・ブロックの管理" }

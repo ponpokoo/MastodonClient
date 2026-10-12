@@ -9,7 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AccountDataRemovalTest {
-    @Test fun obsoleteWordMutesAreIgnoredAndRemovedOnSaveWithoutResettingOtherData() = runTest {
+    @Test fun legacyWordMutesAreRestoredAndPreservedOnSaveWithoutResettingOtherData() = runTest {
         val data = MemoryAuthPreferences()
         val settingsKey = androidx.datastore.preferences.core.stringPreferencesKey("app_preferences_v2")
         data.updateData { it.toMutablePreferences().apply {
@@ -22,12 +22,13 @@ class AccountDataRemovalTest {
         assertFalse(before.openLinksInApp)
         assertEquals(PostVisibility.Direct, before.forAccount("a").defaultVisibility)
         assertEquals("filter", before.serverSettings.getValue("a").filters!!.single().id)
+        assertEquals(listOf("spoiler"), before.wordMutes["a"])
         store.setThemeMode(ThemeMode.Light)
         val restored = UserPreferencesStore(data)
         assertEquals(before.copy(themeMode = ThemeMode.Light), restored.preferences.first())
         assertEquals("spoiler", restored.drafts.first().single().text)
         val saved = kotlinx.serialization.json.Json.parseToJsonElement(data.data.first()[settingsKey]!!)
-        assertFalse((saved as kotlinx.serialization.json.JsonObject).containsKey("wordMutes"))
+        assertTrue((saved as kotlinx.serialization.json.JsonObject).containsKey("wordMutes"))
     }
 
     @Test fun removesOnlySelectedAccountAndRejectsLateWritesAfterRecreation() = runTest {
@@ -38,6 +39,7 @@ class AccountDataRemovalTest {
         preferences.setThemeMode(ThemeMode.Dark)
         preferences.setOpenLinksInApp(false)
         for (id in accounts) {
+            preferences.editWordMutes(id) { listOf("word-$id") }
             preferences.setAccountPreferences(id, AccountPreferences(PostVisibility.Direct, StreamingPolicy.Off,
                 io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay.HideAll, true, true))
             preferences.saveServerSettings(id, ServerAccountSettings("https://$id.example", id,
@@ -59,6 +61,7 @@ class AccountDataRemovalTest {
         restored.setMediaDisplay("a", io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay.ShowAll)
         restored.setExpandSpoilers("a", true)
         restored.setDefaultSensitive("a", true)
+        restored.editWordMutes("a") { listOf("late") }
         restored.saveServerSettings("a", ServerAccountSettings("https://a.example", "a", filters = emptyList()))
         restored.recordReaction("a", "late")
         restored.setReactionHistory("a", listOf("late"))
@@ -66,7 +69,7 @@ class AccountDataRemovalTest {
         restored.setComposerEmojiHistory("a", listOf("late"))
         assertTrue(runCatching { restored.saveDraft(ComposeDraft("late", "a", text = "late")) }.isFailure)
         assertEquals(before.copy(accountPreferences = before.accountPreferences - "a",
-            serverSettings = before.serverSettings - "a"), restored.preferences.first())
+            serverSettings = before.serverSettings - "a", wordMutes = before.wordMutes - "a"), restored.preferences.first())
         assertEquals(listOf("b"), restored.drafts.first().map { it.sessionId })
         assertEquals(mapOf("b" to listOf("reaction-b")), restored.reactionHistory.first())
         assertEquals(mapOf("b" to listOf("emoji-b")), restored.composerEmojiHistory.first())

@@ -19,6 +19,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import io.github.ponpokoo.mastodonclient.feature.settings.*
+import io.github.ponpokoo.mastodonclient.feature.common.matchesWordMute
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,10 +54,11 @@ class ServerFilterEditorDeviceTest {
             return result
         }
     }
-    private fun withScreen(repository: Repository, test: (ModerationManagementViewModel, androidx.compose.runtime.MutableState<ThemeMode>) -> Unit) {
+    private fun withScreen(repository: Repository, words: WordMuteRepository? = null,
+        test: (ModerationManagementViewModel, androidx.compose.runtime.MutableState<ThemeMode>) -> Unit) {
         val store = ViewModelStore()
         lateinit var model: ModerationManagementViewModel
-        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth); store.put("management", model); model.open(ModerationPage.Filters) }
+        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth, wordRepository = words); store.put("management", model); model.open(ModerationPage.Filters) }
         val theme = mutableStateOf(ThemeMode.Dark)
         try {
             rule.setContent { MastodonClientTheme(themeMode = theme.value) { ModerationManagementScreen(model, {}) } }
@@ -64,6 +66,58 @@ class ServerFilterEditorDeviceTest {
             test(model, theme)
         } finally { rule.runOnIdle { store.clear() } }
     }
+    @Test fun unsupportedAndFailuresDoNotShowEmptySuccessAndLocalWordMutesStillWork() {
+        val repository = Repository()
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+        val data = object : androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences> {
+            override val data = MutableStateFlow(androidx.datastore.preferences.core.emptyPreferences())
+            override suspend fun updateData(transform: suspend (androidx.datastore.preferences.core.Preferences) -> androidx.datastore.preferences.core.Preferences) =
+                transform(data.value).also { data.value = it }
+        }
+        val words = io.github.ponpokoo.mastodonclient.data.repository.DefaultWordMuteRepository(
+            io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore(data), scope)
+        try {
+            withScreen(repository, words) { model, _ ->
+                fun fetch(value: SettingFetch, filters: List<ServerFilter>? = emptyList()) {
+                    rule.runOnIdle { repository.serverSettings.value = mapOf(session.sessionId to ServerAccountSettings(
+                        session.instanceUrl, session.accountId, filters = filters, fetch = mapOf(ServerSetting.Filters to value))) }
+                }
+                val empty = "登録したフィルターはありません"
+                val unsupported = "このサーバーは公式フィルターに対応していません。端末内のワードミュートをご利用ください。"
+                fetch(SettingFetch(error = "通信失敗"), null)
+                rule.onNodeWithText("通信失敗").assertIsDisplayed()
+                rule.onNodeWithText(empty).assertDoesNotExist()
+                rule.onNodeWithText(unsupported).assertDoesNotExist()
+                fetch(SettingFetch(unsupported = true))
+                rule.onNodeWithText(unsupported).assertIsDisplayed()
+                rule.onNodeWithText(empty).assertDoesNotExist()
+                rule.onNodeWithText("フィルターを追加").assertIsNotEnabled()
+                capture("filter-unsupported")
+                rule.onNodeWithText("端末内のワードミュート").performClick()
+                rule.onNodeWithTag("word_mute_input").performTextInput("spoiler")
+                rule.onNodeWithText("追加").performClick()
+                rule.waitUntil(5_000) { model.state.value.words == listOf("spoiler") }
+                capture("local-word-mute")
+                val status = TimelineStatus(timelineId = "post", statusId = "post", createdAt = "2026-10-12T00:00:00Z",
+                    author = StatusAuthor("author", "Author", "author", ""), boostedBy = null,
+                    contentHtml = "<p>Hello <b>SPOILER</b> &amp; end</p>", spoilerText = "", sensitive = false,
+                    visibility = "public", url = null, repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = emptyList())
+                assertTrue(status.matchesWordMute(words.words.value[session.sessionId].orEmpty()))
+                assertTrue(status.copy(contentHtml = "<p>safe</p>", spoilerText = "SPOILER warning").matchesWordMute(listOf("spoiler")))
+                assertFalse(status.matchesWordMute(listOf("<b>")))
+                rule.runOnIdle { model.open(ModerationPage.Filters) }
+                fetch(SettingFetch(fetchedAt = 1))
+                rule.onNodeWithText(empty).assertIsDisplayed()
+                fetch(SettingFetch(fetchedAt = 1, error = "認証失敗"))
+                rule.onNodeWithText("認証失敗").assertIsDisplayed()
+                rule.onNodeWithText(empty).assertDoesNotExist()
+                fetch(SettingFetch(fetchedAt = 1), listOf(ServerFilter("server", "登録済み", setOf("home"))))
+                rule.onNodeWithText("登録済み").assertIsDisplayed()
+                rule.onNodeWithText(empty).assertDoesNotExist()
+            }
+        } finally { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+    }
+
     @Test fun addingKeywordsAndSavingFromBottomPreservesInputOnFailureAndPreventsDuplicateSaves() {
         val repository = Repository()
         withScreen(repository) { model, theme ->

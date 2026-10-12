@@ -6,6 +6,7 @@ data class AccountModerationKey(val sessionId: String, val instanceUrl: String, 
 data class AccountModerationState(
     val relationships: Map<AccountModerationKey, AccountRelationship> = emptyMap(),
     val cleanupFailures: Set<AccountModerationKey> = emptySet(),
+    val wordMutes: Map<String, List<String>> = emptyMap(),
     val serverFilters: Map<String, List<ServerFilter>> = emptyMap(),
     val applyServerFilters: Boolean = true,
 ) {

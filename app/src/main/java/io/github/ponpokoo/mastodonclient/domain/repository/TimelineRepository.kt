@@ -33,6 +33,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import io.github.ponpokoo.mastodonclient.domain.model.EditableStatus
 
 interface TimelineRepository : ServerAccountSettingsRepository {
+    val wordMutes: kotlinx.coroutines.flow.StateFlow<Map<String, List<String>>>
+        get() = EmptyWordMutes.state
     suspend fun getModerationAccounts(session: AccountSession, kind: io.github.ponpokoo.mastodonclient.domain.model.ModerationListKind, maxId: String? = null): Result<io.github.ponpokoo.mastodonclient.domain.model.ModerationAccountsPage> =
         Result.failure(UnsupportedOperationException("管理一覧は未対応です"))
     suspend fun restoreMute(session: AccountSession, accountId: String, notifications: Boolean, durationSeconds: Long?): Result<AccountRelationship> = setMuted(session, accountId, true)
@@ -250,6 +252,10 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     ): Result<TimelinePage> = Result.failure(UnsupportedOperationException("保存済みタイムラインは未対応です"))
     suspend fun reportStatus(session: AccountSession, accountId: String, statusId: String, comment: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("投稿の報告は未対応です"))
+}
+
+private object EmptyWordMutes {
+    val state = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<String>>>(emptyMap())
 }
 
 private object EmptyModeration {

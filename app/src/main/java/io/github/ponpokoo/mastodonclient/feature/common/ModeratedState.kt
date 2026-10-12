@@ -21,9 +21,9 @@ internal fun <T> MutableStateFlow<T>.moderated(
         val account = session() ?: return emptyMap()
         return settings[account.sessionId]?.takeIf { it.belongsTo(account) }?.filters?.let { mapOf(account.sessionId to it) } ?: emptyMap()
     }
-    fun presentation() = repository.moderation.value.copy(serverFilters = filters())
-    val derived = combine(source, repository.moderation, repository.serverSettings) { value, moderation, settings ->
-        visible(value, moderation.copy(serverFilters = filters(settings)))
+    fun presentation() = repository.moderation.value.copy(serverFilters = filters(), wordMutes = repository.wordMutes.value)
+    val derived = combine(source, repository.moderation, repository.serverSettings, repository.wordMutes) { value, moderation, settings, words ->
+        visible(value, moderation.copy(serverFilters = filters(settings), wordMutes = words))
     }
         .onEach { source.update { visible(it, repository.moderation.value.copy(applyServerFilters = false)) } }
         .stateIn(scope, SharingStarted.Eagerly, visible(source.value, presentation()))

@@ -15,6 +15,57 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ServerAccountSettingsRepositoryTest {
+    @Test fun filtersProbeV2OnlyAndDistinguishUnsupportedFailureAndSuccessfulEmpty() = runTest {
+        MockWebServer().use { server ->
+            val account = testAccount.copy(instanceUrl = server.url("/").toString())
+            val local = UserPreferencesStore(MemoryAuthPreferences())
+            fun repository() = DefaultServerAccountSettingsRepository(ApiClientFactory(), local, backgroundScope, null,
+                { _, _, _ -> error("unused") }, { _, _, _ -> })
+            val repository = repository()
+            for (code in listOf(404, 405, 501, 401, 403, 429, 500, 502, 503)) {
+                server.enqueue(MockResponse().setResponseCode(code))
+                assertTrue(repository.syncServerSettings(account, setOf(ServerSetting.Filters)).isFailure)
+                val state = repository.serverSettings.value.getValue(account.sessionId)
+                assertNull(state.filters)
+                assertNull(state.fetch[ServerSetting.Filters]?.fetchedAt)
+                assertFalse(state.fetch.getValue(ServerSetting.Filters).loading)
+                assertEquals(code in setOf(404, 405, 501), state.fetch.getValue(ServerSetting.Filters).unsupported)
+                assertEquals(code !in setOf(404, 405, 501), state.fetch.getValue(ServerSetting.Filters).error != null)
+                assertEquals("/api/v2/filters", server.takeRequest().path)
+            }
+            server.enqueue(MockResponse().setBody("""[{"id":"opaque-id","title":"saved","context":["home"],"filter_action":"hide","future_field":true}]"""))
+            repository.syncServerSettings(account, setOf(ServerSetting.Filters)).getOrThrow()
+            val before = repository.serverSettings.value.getValue(account.sessionId)
+            assertEquals("opaque-id", before.filters!!.single().id)
+            assertNotNull(before.fetch.getValue(ServerSetting.Filters).fetchedAt)
+            val matched = testStatus().copy(filtered = listOf(StatusFilterResult(before.filters.single())))
+            assertTrue(matched.filterPresentation("home", current = before.filters).hidden)
+            for (response in listOf(MockResponse().setResponseCode(401), MockResponse().setResponseCode(503),
+                MockResponse().setBody("not-json"), MockResponse().setBody("null"), MockResponse().setResponseCode(204),
+                MockResponse().setBody(" ".repeat(10000) + "[]").setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY))) {
+                server.enqueue(response)
+                assertTrue(repository.syncServerSettings(account, setOf(ServerSetting.Filters)).isFailure)
+                val failed = repository.serverSettings.value.getValue(account.sessionId)
+                assertEquals(before.filters, failed.filters)
+                assertEquals(before.fetch.getValue(ServerSetting.Filters).fetchedAt, failed.fetch.getValue(ServerSetting.Filters).fetchedAt)
+                assertFalse(failed.fetch.getValue(ServerSetting.Filters).unsupported)
+                assertNotNull(failed.fetch.getValue(ServerSetting.Filters).error)
+                assertTrue(matched.filterPresentation("home", current = failed.filters).hidden)
+                val restarted = repository(); restarted.prepareServerSettings(account)
+                assertEquals(before.filters, restarted.serverSettings.value.getValue(account.sessionId).filters)
+            }
+            server.enqueue(MockResponse().setBody("[]"))
+            repository.syncServerSettings(account, setOf(ServerSetting.Filters)).getOrThrow()
+            val empty = repository.serverSettings.value.getValue(account.sessionId)
+            assertEquals(emptyList<ServerFilter>(), empty.filters)
+            assertFalse(empty.fetch.getValue(ServerSetting.Filters).unsupported)
+            assertNull(empty.fetch.getValue(ServerSetting.Filters).error)
+            assertFalse(matched.filterPresentation("home", current = empty.filters).hidden)
+            assertEquals(17, server.requestCount)
+            repeat(8) { assertEquals("/api/v2/filters", server.takeRequest().path) }
+        }
+    }
+
     @Test fun serverSyncAndAccountActivationNeverReplaceLocalReadingChoices() = runTest {
         MockWebServer().use { server ->
             val account = testAccount.copy(instanceUrl = server.url("/").toString())
