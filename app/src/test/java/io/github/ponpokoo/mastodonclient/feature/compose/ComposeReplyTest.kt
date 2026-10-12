@@ -4,6 +4,8 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft
+import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
@@ -22,6 +24,12 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ComposeReplyTest : ScreenViewModelTestBase() {
     private val parent = testStatus("parent").copy(author = StatusAuthor("alice", "Alice", "alice@example.org", ""))
+    private val groupParent = parent.copy(mentions = listOf(
+        StatusMention(testAccount.accountId, "me", ""),
+        StatusMention("alice", "alice@example.org", ""),
+        StatusMention("bob", "bob@other.example", ""),
+        StatusMention("bob", "bob@other.example", ""),
+    ))
     private class MemoryPreferences : DataStore<Preferences> {
         override val data = MutableStateFlow(emptyPreferences())
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
@@ -39,12 +47,155 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         }, logMediaFailure = {}),
     )
 
+    @Test fun directReplyOverridesLocalAndServerDefaultsAndSendsAllOtherParticipants() = runTest(dispatcher) {
+        for (default in PostVisibility.entries) {
+            val posts = mutableListOf<CreateStatusRequest>()
+            val repository = object : ScreenRepositoryFake() {
+                override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(
+                    testAccount.instanceUrl, testAccount.accountId, defaults = PostingDefaults(default.apiValue),
+                )))
+                override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = "direct")
+                override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                    posts += request
+                    return Result.success(testStatus())
+                }
+            }
+            val preferences = UserPreferencesStore(MemoryPreferences())
+            preferences.setAccountPreferences(testAccount.sessionId, AccountPreferences(defaultVisibility = default))
+            val vm = model(repository, preferences)
+            advanceUntilIdle()
+            assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
+            assertEquals("@alice@example.org @bob@other.example ", vm.uiState.value.text)
+            vm.onTextChanged(vm.uiState.value.text + "hello")
+            vm.post()
+            advanceUntilIdle()
+            assertEquals("direct", posts.single().visibility)
+            assertEquals("parent", posts.single().replyToId)
+            assertEquals("@alice@example.org @bob@other.example hello", posts.single().text)
+        }
+    }
+
+    @Test fun directReplyUsesDirectWhenOnlyLocalDefaultsAreAvailable() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override fun getCachedStatus(session: AccountSession, statusId: String) = parent.copy(visibility = "direct")
+        }
+        for (default in PostVisibility.entries) {
+            val preferences = UserPreferencesStore(MemoryPreferences())
+            preferences.setAccountPreferences(testAccount.sessionId, AccountPreferences(defaultVisibility = default))
+            val vm = model(repository, preferences)
+            advanceUntilIdle()
+            assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
+        }
+    }
+
+    @Test fun otherReplyVisibilitiesKeepExistingDefaultsAndIncludeParticipants() = runTest(dispatcher) {
+        for (visibility in listOf("public", "unlisted", "private")) {
+            val repository = object : ScreenRepositoryFake() {
+                override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(
+                    testAccount.instanceUrl, testAccount.accountId, defaults = PostingDefaults("unlisted"),
+                )))
+                override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = visibility)
+            }
+            val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+            advanceUntilIdle()
+            assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
+            assertEquals("@alice@example.org @bob@other.example ", vm.uiState.value.text)
+        }
+    }
+
+    @Test fun replyingToOwnPostExcludesSelfButKeepsOtherParticipants() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(
+                author = testStatus().author, visibility = "direct",
+            )
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        advanceUntilIdle()
+        assertEquals("@alice@example.org @bob@other.example ", vm.uiState.value.text)
+        vm.onTextChanged("@bob@other.example hello")
+        assertEquals("parent", vm.uiState.value.replyToId)
+    }
+
+    @Test fun fetchedDirectReplyInitializesRecipientsAndStillAllowsManualVisibility() = runTest(dispatcher) {
+        val target = CompletableDeferred<Result<TimelineStatus>>()
+        val posts = mutableListOf<CreateStatusRequest>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getTimelineStatus(session: AccountSession, timelineId: String) = target.await()
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                posts += request
+                return Result.success(testStatus())
+            }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        target.complete(Result.success(groupParent.copy(visibility = "direct")))
+        advanceUntilIdle()
+        assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
+        assertEquals("@alice@example.org @bob@other.example ", vm.uiState.value.text)
+        vm.setVisibility(PostVisibility.Unlisted)
+        vm.post()
+        advanceUntilIdle()
+        assertEquals("unlisted", posts.single().visibility)
+        assertEquals("parent", posts.single().replyToId)
+    }
+
+    @Test fun lateDirectTargetDoesNotOverwriteExplicitVisibilityOrEditedText() = runTest(dispatcher) {
+        for (editText in listOf(false, true)) {
+            val target = CompletableDeferred<Result<TimelineStatus>>()
+            val repository = object : ScreenRepositoryFake() {
+                override suspend fun getTimelineStatus(session: AccountSession, timelineId: String) = target.await()
+            }
+            val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+            runCurrent()
+            // Selecting the same value as the default is still an explicit choice.
+            vm.setVisibility(PostVisibility.Public)
+            if (editText) vm.onTextChanged("@alice@example.org my text")
+            target.complete(Result.success(groupParent.copy(visibility = "direct")))
+            advanceUntilIdle()
+            assertEquals(PostVisibility.Public, vm.uiState.value.visibility)
+            assertEquals(if (editText) "@alice@example.org my text" else "@alice@example.org @bob@other.example ", vm.uiState.value.text)
+            assertEquals("parent", vm.uiState.value.replyToId)
+        }
+    }
+
+    @Test fun restoredReplyDraftKeepsSavedVisibilityAndRecipientsEvenWithEmptyText() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = "direct")
+        }
+        for (text in listOf("", "@alice@example.org saved")) {
+            val vm = model(repository, UserPreferencesStore(MemoryPreferences()), replyId = null)
+            advanceUntilIdle()
+            vm.restoreDraft(ComposeDraft("saved", testAccount.sessionId, replyToId = "parent",
+                text = text, visibility = PostVisibility.FollowersOnly))
+            advanceUntilIdle()
+            assertEquals(text, vm.uiState.value.text)
+            assertEquals(PostVisibility.FollowersOnly, vm.uiState.value.visibility)
+            assertEquals("parent", vm.uiState.value.replyToId)
+        }
+    }
+
+    @Test fun replyBufferKeepsStoredVisibilityAndRecipientsEvenWithEmptyText() = runTest(dispatcher) {
+        val repository = object : ScreenRepositoryFake() {
+            override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = "direct")
+        }
+        for (text in listOf("", "@alice@example.org buffered")) {
+            val preferences = UserPreferencesStore(MemoryPreferences())
+            preferences.retainComposeBuffer(ComposeDraft("${testAccount.sessionId}:parent:", testAccount.sessionId,
+                replyToId = "parent", text = text, visibility = PostVisibility.Unlisted))
+            val vm = model(repository, preferences)
+            advanceUntilIdle()
+            assertEquals(text, vm.uiState.value.text)
+            assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
+            assertEquals("parent", vm.uiState.value.replyToId)
+        }
+    }
+
     @Test fun switchingAccountKeepsMentionTextButPostsWithoutReplyTarget() = runTest(dispatcher) {
         val posts = mutableListOf<Pair<AccountSession, CreateStatusRequest>>()
         val repository = object : ScreenRepositoryFake() {
             override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus {
                 assertEquals(testAccount, session)
-                return parent
+                return groupParent.copy(visibility = "direct")
             }
             override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
                 posts += session to request
@@ -53,7 +204,8 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         }
         val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
         advanceUntilIdle()
-        val text = "@alice@example.org hello"
+        val text = vm.uiState.value.text + "hello"
+        assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
         vm.onTextChanged(text)
         vm.switchPostingAccount(testAccount.sessionId)
         assertEquals("parent", vm.uiState.value.replyToId)
@@ -63,6 +215,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         assertEquals(text, vm.uiState.value.text)
         assertNull(vm.uiState.value.replyToId)
         assertNull(vm.uiState.value.replyToStatus)
+        assertEquals(PostVisibility.Public, vm.uiState.value.visibility)
         vm.post()
         advanceUntilIdle()
         assertEquals(secondAccount, posts.single().first)
@@ -93,7 +246,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
     @Test fun deletingMentionClearsReplyInSavedDraftAndOutgoingPostButKeepsOtherContent() = runTest(dispatcher) {
         val posts = mutableListOf<CreateStatusRequest>()
         val repository = object : ScreenRepositoryFake() {
-            override fun getCachedStatus(session: AccountSession, statusId: String) = parent
+            override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = "direct")
             override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
                 posts += request
                 return Result.success(testStatus())
@@ -102,17 +255,22 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         val preferences = UserPreferencesStore(MemoryPreferences())
         val vm = model(repository, preferences)
         advanceUntilIdle()
+        vm.onTextChanged("@alice@example.org hello")
+        assertEquals("parent", vm.uiState.value.replyToId)
         vm.restoreDraft(ComposeDraft("reply", testAccount.sessionId, replyToId = "parent",
-            text = "@alice@example.org hello", spoilerText = "CW", attachmentUris = listOf("file:///photo.jpg")))
+            text = "@alice@example.org @bob@other.example hello", visibility = PostVisibility.Direct,
+            spoilerText = "CW", attachmentUris = listOf("file:///photo.jpg")))
         advanceUntilIdle()
         vm.onTextChanged("hello @bob@example.org")
         assertNull(vm.uiState.value.replyToStatus)
         assertEquals(listOf("file:///photo.jpg"), vm.uiState.value.attachments.map { it.uri })
         assertEquals("CW", vm.uiState.value.spoilerText)
+        assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
         vm.saveDraft()
         advanceUntilIdle()
         val draft = preferences.drafts.first().single()
         assertNull(draft.replyToId)
+        assertEquals(PostVisibility.Direct, draft.visibility)
         val restored = model(repository, preferences, replyId = null)
         advanceUntilIdle()
         restored.restoreDraft(draft)
@@ -123,6 +281,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         assertNull(posts.single().replyToId)
         assertEquals("hello @bob@example.org", posts.single().text)
+        assertEquals("direct", posts.single().visibility)
     }
 
     @Test fun punctuationKeepsReplyButDifferentAccountDetachesAndReaddingDoesNotRestore() = runTest(dispatcher) {
@@ -169,13 +328,14 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         }
         val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
         runCurrent()
-        vm.restoreDraft(ComposeDraft("ordinary", testAccount.sessionId, text = "ordinary text"))
+        vm.restoreDraft(ComposeDraft("ordinary", testAccount.sessionId, text = "ordinary text", visibility = PostVisibility.Unlisted))
         runCurrent()
-        target.complete(Result.success(parent))
+        target.complete(Result.success(groupParent.copy(visibility = "direct")))
         advanceUntilIdle()
         assertNull(vm.uiState.value.replyToId)
         assertNull(vm.uiState.value.replyToStatus)
         assertEquals("ordinary text", vm.uiState.value.text)
+        assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
     }
 
     @Test fun explicitlyClearingReplyDuringFetchKeepsMentionAndIgnoresLateResult() = runTest(dispatcher) {
@@ -188,10 +348,11 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         runCurrent()
         vm.onTextChanged("@alice@example.org hello")
         vm.clearReply()
-        target.complete(Result.success(parent))
+        target.complete(Result.success(groupParent.copy(visibility = "direct")))
         advanceUntilIdle()
         assertEquals("@alice@example.org hello", vm.uiState.value.text)
         assertNull(vm.uiState.value.replyToId)
         assertNull(vm.uiState.value.replyToStatus)
+        assertEquals(PostVisibility.Public, vm.uiState.value.visibility)
     }
 }

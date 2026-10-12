@@ -96,6 +96,7 @@ class ComposePostViewModel(
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
     private var idempotencyKey = UUID.randomUUID().toString()
     private var activeReplyToId: String? = initialReplyToId
+    private var visibilitySelectionGeneration = 0
     private enum class ReferenceKind { Reply, Quote }
     private val targetJobs = mutableMapOf<ReferenceKind, Job>()
     private val targetGenerations = mutableMapOf<ReferenceKind, Int>()
@@ -289,7 +290,11 @@ class ComposePostViewModel(
             language = defaults?.language, quotePolicy = defaults?.quotePolicy, quotePolicySupported = defaults?.quotePolicySupported == true)
     }
 
-    fun setVisibility(value: PostVisibility) = change { it.copy(visibility = value) }
+    fun setVisibility(value: PostVisibility) {
+        if (_uiState.value.isSavingDraft) return
+        visibilitySelectionGeneration++
+        change { it.copy(visibility = value) }
+    }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
     fun setLanguage(value: String?) {
         if (_uiState.value.isSavingDraft || _uiState.value.isPosting || _uiState.value.isLoading) return
@@ -542,7 +547,7 @@ class ComposePostViewModel(
                 ) }
             }
         }
-        loadReplyTarget(session, insertMention = false)
+        loadReplyTarget(session, initializeReply = false)
         loadQuoteTarget(session)
         scheduleAttachments()
     }
@@ -796,7 +801,7 @@ class ComposePostViewModel(
             try { pendingSharedMedia = stageMedia(sharedMediaUris) }
             finally { _uiState.update { it.copy(isImportingMedia = false) } }
         }
-        loadReplyTarget(session, insertMention = draft == null && _uiState.value.text.isBlank())
+        loadReplyTarget(session, initializeReply = draft == null && _uiState.value.text.isBlank())
         val configuration = timelineRepository.getComposerConfiguration(session).getOrDefault(ComposerConfiguration())
         val emojis = timelineRepository.getCustomEmojis(session).getOrDefault(emptyList())
         currentCoroutineContext().ensureActive()
@@ -889,17 +894,32 @@ class ComposePostViewModel(
         }
     }
 
-    private fun loadReplyTarget(session: AccountSession, insertMention: Boolean) {
+    private fun loadReplyTarget(session: AccountSession, initializeReply: Boolean) {
         val originalText = _uiState.value.text
+        val visibilityGeneration = visibilitySelectionGeneration
         loadTarget(session, ReferenceKind.Reply) { status ->
             if (containsMention(originalText, status.author) && !containsMention(_uiState.value.text, status.author)) {
                 clearReply()
             } else {
-                _uiState.update { it.copy(replyToId = activeReplyToId, replyToStatus = status) }
-                if (insertMention && _uiState.value.text == originalText) insertMention(status.author)
+                _uiState.update { state -> state.copy(
+                    replyToId = activeReplyToId,
+                    replyToStatus = status,
+                    text = if (initializeReply && state.text == originalText) replyMentionText(status, session.accountId) else state.text,
+                    // Restored input and an explicit selection take precedence over a late target.
+                    visibility = if (initializeReply && status.visibility == "direct" && visibilityGeneration == visibilitySelectionGeneration)
+                        PostVisibility.Direct else state.visibility,
+                ) }
             }
         }
     }
+
+    private fun replyMentionText(status: TimelineStatus, ownAccountId: String): String =
+        (listOf(status.author.id to status.author.accountName) + status.mentions.map { it.accountId to it.accountName })
+            .asSequence()
+            .filter { (id, name) -> id != ownAccountId && name.isNotBlank() }
+            .distinctBy { it.first }
+            .distinctBy { it.second.lowercase() }
+            .joinToString("") { (_, name) -> "@$name " }
 
     private fun cancelTargetLoad(kind: ReferenceKind): Int {
         val generation = (targetGenerations[kind] ?: 0) + 1
