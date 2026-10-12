@@ -13,6 +13,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,6 +35,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.net.toUri
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
@@ -78,6 +80,7 @@ import io.github.ponpokoo.mastodonclient.feature.compose.IncomingShareBus
 import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountListScreen
@@ -469,12 +472,23 @@ fun AppNavigation(
             ),
         ) { backStackEntry ->
             val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            val darkTheme = when (appPreferences.themeMode) {
+                ThemeMode.Light -> false
+                ThemeMode.Dark -> true
+                ThemeMode.System -> isSystemInDarkTheme()
+            }
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
                 dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
                 dialogWindow?.setSoftInputMode(
                     WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE,
                 )
+                dialogWindow?.let { window ->
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
             }
             val route = backStackEntry.toRoute<Route.ComposePost>()
             val composeViewModel: ComposePostViewModel = viewModel(
@@ -704,6 +718,12 @@ fun AppNavigation(
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
                 dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow?.let { window ->
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = false
+                        isAppearanceLightNavigationBars = false
+                    }
+                }
             }
             val route = backStackEntry.toRoute<Route.MediaViewer>()
             val media = remember(route.mediaJson) {

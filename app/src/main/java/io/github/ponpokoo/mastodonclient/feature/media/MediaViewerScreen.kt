@@ -16,10 +16,15 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -75,6 +80,7 @@ private data class PendingSystemBarsChange(
     val uncontrolledTypes: Int,
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MediaViewerScreen(
     media: List<MediaAttachment>,
@@ -156,6 +162,12 @@ fun MediaViewerScreen(
         }
     }
     SideEffect {
+        dialogWindow?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        }
         pendingBarsChange?.let { change ->
             change.controller.finish(change.visible)
             if (change.uncontrolledTypes != 0) {
@@ -269,6 +281,13 @@ fun MediaViewerScreen(
             }
 
             if (controlsVisible) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBarsIgnoringVisibility)
+                        .background(Color(0xFF303030).copy(alpha = 0.6f * backdropAlpha)),
+                )
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
