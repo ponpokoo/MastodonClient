@@ -47,6 +47,7 @@ data class ComposePostUiState(
     val text: String = "",
     val spoilerText: String = "",
     val visibility: PostVisibility = PostVisibility.Public,
+    val isVisibilityInitialized: Boolean = false,
     val sensitive: Boolean = false,
     val language: String? = null,
     val quotePolicy: String? = null,
@@ -269,7 +270,8 @@ class ComposePostViewModel(
         when (kind) {
             ReferenceKind.Reply -> {
                 activeReplyToId = null
-                _uiState.update { it.copy(replyToId = null, replyToStatus = null, errorMessage = null) }
+                _uiState.update { it.copy(replyToId = null, replyToStatus = null,
+                    isVisibilityInitialized = it.selectedSession != null, errorMessage = null) }
             }
             ReferenceKind.Quote -> {
                 activeQuoteStatusId = null
@@ -293,7 +295,7 @@ class ComposePostViewModel(
     fun setVisibility(value: PostVisibility) {
         if (_uiState.value.isSavingDraft) return
         visibilitySelectionGeneration++
-        change { it.copy(visibility = value) }
+        change { it.copy(visibility = value, isVisibilityInitialized = true) }
     }
     fun setSensitive(value: Boolean) = change { it.copy(sensitive = value) }
     fun setLanguage(value: String?) {
@@ -587,7 +589,7 @@ class ComposePostViewModel(
         if (replyText != null) clearReply()
         stopMedia()
         clearPendingShare()
-        _uiState.update { it.copy(isLoading = true) }
+        _uiState.update { it.copy(isLoading = true, isVisibilityInitialized = false) }
         viewModelScope.launch {
             retainInput()
             restoredDraftKey = null
@@ -739,6 +741,7 @@ class ComposePostViewModel(
                     visibility = preferences.forAccount(session.sessionId).defaultVisibility,
                     configuration = current.configuration,
                     customEmojis = current.customEmojis,
+                    isVisibilityInitialized = true,
                     drafts = (current.drafts.filterNot { it.key == draft.key } + draft)
                         .sortedByDescending(ComposeDraft::updatedAtEpochMillis),
                     isLoading = false,
@@ -795,6 +798,8 @@ class ComposePostViewModel(
             activeReplyToId = draft.replyToId
             _uiState.update { it.withDraft(draft).copy(replyToId = activeReplyToId) }
         }
+        // Defaults and restored input are local. A fresh reply also needs its target's visibility.
+        _uiState.update { it.copy(isVisibilityInitialized = draft != null || activeReplyToId == null) }
         // Restore existing input first, then copy shared files before any network waits.
         if (sharedMediaUris.isNotEmpty()) {
             _uiState.update { it.copy(isImportingMedia = true) }
@@ -810,7 +815,6 @@ class ComposePostViewModel(
             if (current.selectedSession?.sessionId != session.sessionId) current else current.copy(
                 text = current.text,
                 spoilerText = draft?.spoilerText ?: current.spoilerText,
-                visibility = draft?.visibility ?: current.visibility,
                 sensitive = draft?.sensitive ?: current.sensitive,
                 attachments = draft?.attachmentUris.orEmpty().map { uri ->
                     DraftAttachment(
@@ -908,6 +912,7 @@ class ComposePostViewModel(
                     // Restored input and an explicit selection take precedence over a late target.
                     visibility = if (initializeReply && status.visibility == "direct" && visibilityGeneration == visibilitySelectionGeneration)
                         PostVisibility.Direct else state.visibility,
+                    isVisibilityInitialized = true,
                 ) }
             }
         }
@@ -950,7 +955,8 @@ class ComposePostViewModel(
             result.onSuccess(apply).onFailure { error ->
                 if (error is CancellationException) throw error
                 val fallback = if (kind == ReferenceKind.Reply) "返信先を取得できませんでした" else "引用元を取得できませんでした"
-                _uiState.update { it.copy(errorMessage = error.message ?: fallback) }
+                _uiState.update { it.copy(errorMessage = error.message ?: fallback,
+                    isVisibilityInitialized = it.isVisibilityInitialized || kind == ReferenceKind.Reply) }
             }
         }
     }
@@ -959,6 +965,7 @@ class ComposePostViewModel(
         text = draft.text,
         spoilerText = draft.spoilerText,
         visibility = draft.visibility,
+        isVisibilityInitialized = true,
         sensitive = draft.sensitive,
         language = draft.language,
         quotePolicy = draft.quotePolicy,

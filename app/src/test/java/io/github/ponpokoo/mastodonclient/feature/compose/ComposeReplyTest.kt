@@ -128,8 +128,10 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         }
         val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
         runCurrent()
+        assertFalse(vm.uiState.value.isVisibilityInitialized)
         target.complete(Result.success(groupParent.copy(visibility = "direct")))
         advanceUntilIdle()
+        assertTrue(vm.uiState.value.isVisibilityInitialized)
         assertEquals(PostVisibility.Direct, vm.uiState.value.visibility)
         assertEquals("@alice@example.org @bob@other.example ", vm.uiState.value.text)
         vm.setVisibility(PostVisibility.Unlisted)
@@ -170,22 +172,30 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
             advanceUntilIdle()
             assertEquals(text, vm.uiState.value.text)
             assertEquals(PostVisibility.FollowersOnly, vm.uiState.value.visibility)
+            assertTrue(vm.uiState.value.isVisibilityInitialized)
             assertEquals("parent", vm.uiState.value.replyToId)
         }
     }
 
     @Test fun replyBufferKeepsStoredVisibilityAndRecipientsEvenWithEmptyText() = runTest(dispatcher) {
-        val repository = object : ScreenRepositoryFake() {
-            override fun getCachedStatus(session: AccountSession, statusId: String) = groupParent.copy(visibility = "direct")
-        }
         for (text in listOf("", "@alice@example.org buffered")) {
+            val target = CompletableDeferred<Result<TimelineStatus>>()
+            val repository = object : ScreenRepositoryFake() {
+                override suspend fun getTimelineStatus(session: AccountSession, timelineId: String) = target.await()
+            }
             val preferences = UserPreferencesStore(MemoryPreferences())
             preferences.retainComposeBuffer(ComposeDraft("${testAccount.sessionId}:parent:", testAccount.sessionId,
                 replyToId = "parent", text = text, visibility = PostVisibility.Unlisted))
             val vm = model(repository, preferences)
+            runCurrent()
+            assertTrue(vm.uiState.value.isVisibilityInitialized)
+            assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
+            assertNull(vm.uiState.value.replyToStatus)
+            target.complete(Result.success(groupParent.copy(visibility = "direct")))
             advanceUntilIdle()
             assertEquals(text, vm.uiState.value.text)
             assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
+            assertTrue(vm.uiState.value.isVisibilityInitialized)
             assertEquals("parent", vm.uiState.value.replyToId)
         }
     }
@@ -234,6 +244,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
         runCurrent()
         assertTrue(vm.uiState.value.isLoading)
+        assertTrue(vm.uiState.value.isVisibilityInitialized)
         assertEquals(parent, vm.uiState.value.replyToStatus)
         vm.onTextChanged("ordinary post")
         configuration.complete(Result.success(ComposerConfiguration()))
@@ -309,6 +320,7 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         runCurrent()
         vm.restoreDraft(ComposeDraft("reply", testAccount.sessionId, replyToId = "parent", text = "@alice@example.org hello"))
         runCurrent()
+        assertTrue(vm.uiState.value.isVisibilityInitialized)
         vm.onTextChanged("hello")
         vm.post()
         runCurrent()
@@ -348,11 +360,29 @@ class ComposeReplyTest : ScreenViewModelTestBase() {
         runCurrent()
         vm.onTextChanged("@alice@example.org hello")
         vm.clearReply()
+        assertTrue(vm.uiState.value.isVisibilityInitialized)
         target.complete(Result.success(groupParent.copy(visibility = "direct")))
         advanceUntilIdle()
         assertEquals("@alice@example.org hello", vm.uiState.value.text)
         assertNull(vm.uiState.value.replyToId)
         assertNull(vm.uiState.value.replyToStatus)
         assertEquals(PostVisibility.Public, vm.uiState.value.visibility)
+    }
+
+    @Test fun failedReplyFetchReleasesVisibilityControlAndKeepsError() = runTest(dispatcher) {
+        val target = CompletableDeferred<Result<TimelineStatus>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getTimelineStatus(session: AccountSession, timelineId: String) = target.await()
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        assertFalse(vm.uiState.value.isVisibilityInitialized)
+        target.complete(Result.failure(IllegalStateException("offline")))
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isVisibilityInitialized)
+        assertEquals("offline", vm.uiState.value.errorMessage)
+        assertEquals("parent", vm.uiState.value.replyToId)
+        vm.setVisibility(PostVisibility.Unlisted)
+        assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
     }
 }

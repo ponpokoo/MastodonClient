@@ -88,6 +88,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -407,9 +408,12 @@ fun ComposePostScreen(
                     onClick = { visibilityMenuOpen = true },
                     label = { Text(state.visibility.label()) },
                     leadingIcon = { Icon(state.visibility.icon(), contentDescription = null, Modifier.size(18.dp)) },
-                    modifier = Modifier.testTag("compose_visibility"),
+                    enabled = state.isVisibilityInitialized,
+                    modifier = Modifier.testTag("compose_visibility")
+                        .alpha(if (state.isVisibilityInitialized) 1f else 0f)
+                        .then(if (state.isVisibilityInitialized) Modifier else Modifier.clearAndSetSemantics {}),
                 )
-                DropdownMenu(expanded = visibilityMenuOpen, onDismissRequest = { visibilityMenuOpen = false }) {
+                DropdownMenu(expanded = state.isVisibilityInitialized && visibilityMenuOpen, onDismissRequest = { visibilityMenuOpen = false }) {
                     PostVisibility.entries.forEach { visibility ->
                         DropdownMenuItem(
                             text = { Text(visibility.label()) },
