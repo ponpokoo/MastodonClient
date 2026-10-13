@@ -38,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -64,7 +65,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -77,7 +80,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.toShape
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.feature.profile.withTab
-import androidx.compose.material3.Button
 import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
@@ -223,7 +225,29 @@ internal fun ProfileContent(
             ) {
             item(key = "profile_header") {
                 Column(Modifier.fillMaxWidth().testTag("profile_header")) {
-                Box(Modifier.fillMaxWidth().height(184.dp)) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val actionLabel = if (profile.isOwnProfile) "プロフィールを編集"
+                    else followActionLabel(relationship, profile.locked)
+                val actionMeasurer = rememberTextMeasurer()
+                val actionDensity = LocalDensity.current
+                val actionStyle = MaterialTheme.typography.labelLarge
+                val naturalTextWidth = with(actionDensity) {
+                    actionMeasurer.measure(actionLabel, actionStyle).size.width.toDp()
+                }
+                val actionContentPadding = if (profile.isOwnProfile) 48.dp else 80.dp
+                // The text-only editor stays beside the avatar and wraps when needed.
+                val actionsBelowAvatar = !profile.isOwnProfile &&
+                    naturalTextWidth + actionContentPadding + 56.dp > maxWidth - 132.dp
+                val actionsWidth = maxWidth - 32.dp - if (actionsBelowAvatar) 0.dp else 100.dp
+                val actionTextHeight = with(actionDensity) {
+                    actionMeasurer.measure(actionLabel, actionStyle, constraints = Constraints(
+                        maxWidth = (actionsWidth - 56.dp - actionContentPadding).coerceAtLeast(1.dp).roundToPx(),
+                    )).size.height.toDp()
+                }
+                val actionsHeight = (actionTextHeight + 24.dp).coerceAtLeast(48.dp)
+                val headerHeight = if (actionsBelowAvatar) 184.dp + actionsHeight + 8.dp
+                    else (132.dp + actionsHeight).coerceAtLeast(184.dp)
+                Box(Modifier.fillMaxWidth().height(headerHeight)) {
                     io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
                         model = if (profile.isOwnProfile) io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(
                             profile.headerUrl, state.imageRefreshRevision) else profile.headerUrl,
@@ -238,34 +262,30 @@ internal fun ProfileContent(
                             if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision),
                         identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "avatar"),
                         retainPreviousImage = profile.isOwnProfile, contentDescription = "プロフィール画像",
-                        modifier = Modifier.padding(start = 16.dp).align(Alignment.BottomStart).size(84.dp)
+                        modifier = Modifier.padding(start = 16.dp, top = 100.dp).align(Alignment.TopStart).size(84.dp)
                             .clip(avatarShape).clickable(onClick = onAvatarClick)
                             .testTag("profile_avatar")
                             .background(MaterialTheme.colorScheme.surface)
                             .border(2.dp, MaterialTheme.colorScheme.outlineVariant, avatarShape),
                         contentScale = ContentScale.Crop,
                     )
-                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp).width(actionsWidth)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.End) {
                             if (profile.isOwnProfile) {
-                                Button(onClick = onEditProfile) { Text("プロフィールを編集") }
+                                EditProfileButton(onClick = onEditProfile, modifier = Modifier.weight(1f, fill = false))
                             } else {
-                                Button(onClick = onToggleFollow,
-                                    enabled = relationship != null && !relationship.requested) {
-                                    Text(when {
-                                        relationship?.requested == true -> "リクエスト中"
-                                        relationship?.following == true -> "フォロー解除"
-                                        profile.locked -> "リクエスト"
-                                        else -> "フォロー"
-                                    })
-                                }
+                                FollowActionButton(relationship, profile.locked, onToggleFollow,
+                                    modifier = Modifier.weight(1f, fill = false))
                             }
                             Spacer(Modifier.width(8.dp))
                             Box {
                             OutlinedIconButton(
                                 onClick = { onProfileMenuOpen(); profileMenuExpanded = true },
                                 modifier = Modifier.size(48.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface),
+                                colors = IconButtonDefaults.outlinedIconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurface),
                             ) {
                                 Icon(
                                     Icons.Outlined.MoreVert,
@@ -306,6 +326,7 @@ internal fun ProfileContent(
                             }
                         }
                     }
+                }
                 }
                 }
                 }

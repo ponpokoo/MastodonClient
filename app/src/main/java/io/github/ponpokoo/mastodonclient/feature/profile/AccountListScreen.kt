@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +26,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -42,13 +42,65 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
+import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import kotlinx.coroutines.flow.distinctUntilChanged
+
+@Composable
+internal fun AccountListItem(
+    account: StatusAuthor,
+    relationship: AccountRelationship?,
+    showFollowButton: Boolean,
+    enabled: Boolean,
+    onAccountClick: () -> Unit,
+    onFollowClick: () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val density = LocalDensity.current
+        val measurer = rememberTextMeasurer()
+        val labelWidth = with(density) {
+            measurer.measure(followActionLabel(relationship, account.locked), MaterialTheme.typography.labelLarge)
+                .size.width.toDp()
+        }
+        // Preserve room for the account name when the action grows with font size.
+        val buttonBelowName = showFollowButton && labelWidth + 80.dp > maxWidth - 208.dp
+        val followButton: @Composable () -> Unit = {
+            FollowActionButton(relationship, account.locked, onFollowClick, enabled = enabled)
+        }
+        ListItem(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onAccountClick),
+            leadingContent = {
+                AsyncImage(account.avatarUrl, contentDescription = null,
+                    modifier = Modifier.size(48.dp).clip(CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
+                    contentScale = ContentScale.Crop)
+            },
+            headlineContent = {
+                CustomEmojiText(account.displayName, account.customEmojis, fontWeight = FontWeight.SemiBold)
+            },
+            supportingContent = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("@${account.accountName}", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false))
+                        if (account.locked) Icon(Icons.Outlined.Lock, contentDescription = "非公開アカウント",
+                            modifier = Modifier.padding(start = 4.dp).size(15.dp))
+                    }
+                    if (buttonBelowName) followButton()
+                }
+            },
+            trailingContent = if (showFollowButton && !buttonBelowName) followButton else null,
+        )
+    }
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,53 +155,15 @@ fun AccountListScreen(
                 }
                 items(state.accounts, key = { it.id }) { account ->
                     val relationship = state.relationships[account.id]
-                    ListItem(
-                        modifier = Modifier.fillMaxWidth().clickable { onAccountClick(account.id) },
-                        leadingContent = {
-                            AsyncImage(
-                                model = account.avatarUrl,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp).clip(CircleShape)
-                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
-                                contentScale = ContentScale.Crop,
-                            )
-                        },
-                        headlineContent = {
-                            CustomEmojiText(
-                                account.displayName,
-                                account.customEmojis,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        },
-                        supportingContent = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("@${account.accountName}", maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false))
-                                if (account.locked) {
-                                    Icon(Icons.Outlined.Lock, contentDescription = "非公開アカウント",
-                                        modifier = Modifier.padding(start = 4.dp).size(15.dp))
-                                }
-                            }
-                        },
-                        trailingContent = {
-                            if (account.id != state.viewerAccountId) {
-                                val label = when {
-                                    relationship?.requested == true -> "リクエスト中"
-                                    relationship?.following == true -> "フォロー解除"
-                                    account.locked -> "リクエスト"
-                                    relationship == null -> "確認中"
-                                    else -> "フォロー"
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        if (relationship?.following == true) pendingUnfollow = account
-                                        else viewModel.toggleFollow(account.id)
-                                    },
-                                    enabled = relationship != null && !relationship.requested &&
-                                        account.id !in state.mutatingAccountIds,
-                                    contentPadding = PaddingValues(horizontal = 10.dp),
-                                ) { Text(label, maxLines = 1) }
-                            }
+                    AccountListItem(
+                        account = account,
+                        relationship = relationship,
+                        showFollowButton = account.id != state.viewerAccountId,
+                        enabled = account.id !in state.mutatingAccountIds,
+                        onAccountClick = { onAccountClick(account.id) },
+                        onFollowClick = {
+                            if (relationship?.following == true) pendingUnfollow = account
+                            else viewModel.toggleFollow(account.id)
                         },
                     )
                     HorizontalDivider()
