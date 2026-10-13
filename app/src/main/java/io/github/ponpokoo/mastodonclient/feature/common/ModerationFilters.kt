@@ -60,7 +60,7 @@ internal fun AccountProfileUiState.withModeration(m: AccountModerationState, s: 
         val tabs = ProfileStatusTab.entries.associateWith { tab ->
             (profileTabs[tab] ?: ProfileTabUiState()).let { it.copy(statuses = it.statuses.visible(m, s), nextMaxId = null,
                 endReached = true, isLoaded = true, isLoading = false, isRefreshing = false,
-                isLoadingMore = false, error = null) }
+                isLoadingMore = false, isPullRefreshing = false, error = null) }
         }
         return copy(profile = profile?.visible(m, s)?.copy(
             nextMaxId = null, endReached = true), profileTabs = tabs, relationship = relationship,

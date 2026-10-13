@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -337,7 +338,11 @@ internal fun SettingsPageContent(
                             posting?.setVisibility(it)
                         }
                     }
-                    if (postingState?.saving == true) Text("保存中…", Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.bodySmall)
+                    if (postingState?.saving == true) Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text("保存中…", style = MaterialTheme.typography.bodySmall)
+                    }
                     postingState?.error?.let { Text(it, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 }
                 item {

@@ -20,12 +20,16 @@ class SettingsMaintenanceViewModel(private val repository: AppMaintenanceReposit
         if (state.value.isClearing) return
         state.value = CacheSettingsState(isClearing = true)
         viewModelScope.launch {
-            val result = runCatchingCancellable { repository.clearImageCache() }
-            state.value = CacheSettingsState(message = if (result.isSuccess) {
-                "画像キャッシュを削除しました。"
-            } else {
-                "キャッシュを削除できませんでした。もう一度お試しください。"
-            })
+            try {
+                val result = runCatchingCancellable { repository.clearImageCache() }
+                state.value = CacheSettingsState(message = if (result.isSuccess) {
+                    "画像キャッシュを削除しました。"
+                } else {
+                    "キャッシュを削除できませんでした。もう一度お試しください。"
+                })
+            } finally {
+                state.value = state.value.copy(isClearing = false)
+            }
         }
     }
 }

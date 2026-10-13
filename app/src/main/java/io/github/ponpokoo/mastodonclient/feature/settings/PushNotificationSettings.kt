@@ -27,6 +27,11 @@ internal fun PushNotificationSettings(viewModel: PushSettingsViewModel, sessions
     Column(Modifier.fillMaxWidth().padding(20.dp).testTag("push_settings")) {
         Text("バックグラウンドの通知（Push）", style = MaterialTheme.typography.titleMedium)
         Text("アプリが画面にない間も通知を受信します。ストリーミングがオフの場合でも動作します。", style = MaterialTheme.typography.bodySmall)
+        if (busy) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text("処理中…", style = MaterialTheme.typography.bodySmall)
+        }
         sessions.forEach { session ->
             val state = states[session.sessionId] ?: PushControlState()
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {

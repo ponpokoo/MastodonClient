@@ -22,20 +22,21 @@ fun AppPullToRefreshBox(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val state = rememberPullToRefreshState()
     Box(
-        modifier = modifier.pullToRefresh(
+        modifier = if (enabled) modifier.pullToRefresh(
             isRefreshing = isRefreshing,
             state = state,
             // Keep indicator travel unchanged, reaching it with less finger movement.
             threshold = AppPullToRefreshThreshold / AppPullToRefreshDragSpeed,
             onRefresh = onRefresh,
-        ),
+        ) else modifier,
     ) {
         content()
-        PullToRefreshDefaults.Indicator(
+        if (enabled) PullToRefreshDefaults.Indicator(
             state = state,
             isRefreshing = isRefreshing,
             maxDistance = AppPullToRefreshIndicatorDistance,

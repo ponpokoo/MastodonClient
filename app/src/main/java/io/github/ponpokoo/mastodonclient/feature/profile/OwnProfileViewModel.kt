@@ -148,7 +148,15 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
 
     fun prepareProfileTab(tab: ProfileStatusTab) = loadTab(tab)
 
-    fun loadMoreProfile() {
+    fun retryProfile() {
+        if (_uiState.value.profileTabs[_uiState.value.profileSelectedTab]?.errorIsPagination == true) loadMoreProfile()
+        else refreshProfile()
+    }
+
+    fun loadMoreProfile() = loadMoreProfile(automatic = false)
+    fun loadMoreProfileAutomatically() = loadMoreProfile(automatic = true)
+
+    private fun loadMoreProfile(automatic: Boolean) {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         val state = _uiState.value
@@ -156,15 +164,17 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val tab = state.profileSelectedTab
         val cached = state.profileTabs[tab] ?: return
         val cursor = cached.nextMaxId ?: return
-        if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached) return
-        updateTab(tab) { it.copy(isLoadingMore = true, error = null) }
+        if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached ||
+            automatic && !cached.canAutoLoadMore) return
+        updateTab(tab) { it.copy(isLoadingMore = true, error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
             timelineRepository.getProfileStatuses(session, profile.author.id, tab, cursor)
                 .forSession(snapshot).fold(
                     onSuccess = { page ->
                         updateTab(tab) { it.appendPage(page, cursor) }
                     },
-                    onFailure = { error -> updateTab(tab) { it.copy(isLoadingMore = false, error = error.message) } },
+                    onFailure = { error -> updateTab(tab) { it.copy(isLoadingMore = false,
+                        error = error.message ?: "投稿の続きを取得できませんでした", errorIsPagination = true) } },
                 )
         }
     }
@@ -177,7 +187,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         }
     }
 
-    private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
+    private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false,
+        userInitiated: Boolean = true) {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         val profile = _uiState.value.profile ?: return
@@ -185,12 +196,14 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         if (cached.isLoading || cached.isRefreshing || (!refresh && (cached.isLoaded || cached.isLoadingMore))) return
         tabJobs[tab]?.cancel()
         updateTab(tab) { it.copy(isLoading = !refresh && !initialPosts,
-            isLoadingMore = initialPosts, isRefreshing = refresh, error = null) }
+            isLoadingMore = initialPosts, isRefreshing = refresh, isPullRefreshing = refresh && cached.isLoaded && userInitiated,
+            error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
             if (refresh) {
                 val header = timelineRepository.getProfileHeader(session, profile.author.id).forSession(snapshot)
                     .getOrElse { error ->
-                        updateTab(tab) { it.copy(isRefreshing = false, error = error.message ?: "プロフィールを更新できませんでした") }
+                        updateTab(tab) { it.copy(isRefreshing = false, isPullRefreshing = false,
+                            error = error.message ?: "プロフィールを更新できませんでした") }
                         return@launch
                     }
                 _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
@@ -212,7 +225,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             val snapshot = currentSnapshot() ?: return
             requestScope.launch {
                 io.github.ponpokoo.mastodonclient.feature.common.trackServerFilterDisplay(timelineRepository, snapshot.account!!, "own-profile") {
-                    profileJob?.join(); tabJobs.values.toList().forEach { it.join() }; refreshProfile()
+                    profileJob?.join(); tabJobs.values.toList().forEach { it.join() }
+                    loadTab(_uiState.value.profileSelectedTab, refresh = true, userInitiated = false)
                     profileJob?.join(); tabJobs.values.toList().forEach { it.join() }
                     _uiState.value.profileError == null && _uiState.value.profileTabs[_uiState.value.profileSelectedTab]?.error == null
                 }

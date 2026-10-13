@@ -66,7 +66,8 @@ class AccountProfileViewModel(
     fun setProfileBlocked(enabled: Boolean) = moderationMenu.block(accountId, enabled)
     init {
         io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, timelineRepository, { session }, "account:$accountId") {
-            tabJobs.values.toList().forEach { it.join() }; refresh()
+            tabJobs.values.toList().forEach { it.join() }
+            loadTab(_uiState.value.selectedTab, refresh = true, userInitiated = false)
             tabJobs.values.toList().forEach { it.join() }
             _uiState.value.profileTabs[_uiState.value.selectedTab]?.error == null
         }
@@ -109,7 +110,9 @@ class AccountProfileViewModel(
         load()
     }
     fun retry() {
-        if (_uiState.value.profile == null) load() else loadTab(_uiState.value.selectedTab, refresh = true)
+        if (_uiState.value.profile == null) load()
+        else if (_uiState.value.profileTabs[_uiState.value.selectedTab]?.errorIsPagination == true) loadMore()
+        else loadTab(_uiState.value.selectedTab, refresh = true)
     }
 
     fun refresh() {
@@ -125,21 +128,26 @@ class AccountProfileViewModel(
 
     fun prepareTab(tab: ProfileStatusTab) = loadTab(tab)
 
-    fun loadMore() {
+    fun loadMore() = loadMore(automatic = false)
+    fun loadMoreAutomatically() = loadMore(automatic = true)
+
+    private fun loadMore(automatic: Boolean) {
         val current = session ?: return
         if (postsHidden(current)) return
         val state = _uiState.value
         val tab = state.selectedTab
         val cached = state.profileTabs[tab] ?: return
         val cursor = cached.nextMaxId ?: return
-        if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached) return
-        updateTab(tab) { it.copy(isLoadingMore = true, error = null) }
+        if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached ||
+            automatic && !cached.canAutoLoadMore) return
+        updateTab(tab) { it.copy(isLoadingMore = true, error = null, errorIsPagination = false) }
         tabJobs[tab] = viewModelScope.launch {
             val result = timelineRepository.getProfileStatuses(current, accountId, tab, cursor)
             currentCoroutineContext().ensureActive()
             result.fold(
                 { page -> updateTab(tab) { it.appendPage(page, cursor) } },
-                { error -> updateTab(tab) { it.copy(isLoadingMore = false, error = error.message) } },
+                { error -> updateTab(tab) { it.copy(isLoadingMore = false,
+                    error = error.message ?: "投稿の続きを取得できませんでした", errorIsPagination = true) } },
             )
         }
     }
@@ -152,7 +160,8 @@ class AccountProfileViewModel(
         }
     }
 
-    private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false) {
+    private fun loadTab(tab: ProfileStatusTab, refresh: Boolean = false, initialPosts: Boolean = false,
+        userInitiated: Boolean = true) {
         val current = session ?: return
         if (postsHidden(current)) return
         if (_uiState.value.profile == null) return
@@ -160,13 +169,15 @@ class AccountProfileViewModel(
         if (cached.isLoading || cached.isRefreshing || (!refresh && (cached.isLoaded || cached.isLoadingMore))) return
         tabJobs[tab]?.cancel()
         updateTab(tab) { it.copy(isLoading = !refresh && !initialPosts,
-            isLoadingMore = initialPosts, isRefreshing = refresh, error = null) }
+            isLoadingMore = initialPosts, isRefreshing = refresh, isPullRefreshing = refresh && cached.isLoaded && userInitiated,
+            error = null, errorIsPagination = false) }
         tabJobs[tab] = viewModelScope.launch {
             if (refresh) {
                 val result = timelineRepository.getProfileHeader(current, accountId)
                 currentCoroutineContext().ensureActive()
                 val header = result.getOrElse { error ->
-                    updateTab(tab) { it.copy(isRefreshing = false, error = error.message ?: "プロフィールを更新できませんでした") }
+                    updateTab(tab) { it.copy(isRefreshing = false, isPullRefreshing = false,
+                        error = error.message ?: "プロフィールを更新できませんでした") }
                     return@launch
                 }
                 _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),

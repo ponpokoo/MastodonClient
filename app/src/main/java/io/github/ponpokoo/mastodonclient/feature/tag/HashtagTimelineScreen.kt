@@ -48,6 +48,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -110,9 +111,7 @@ fun HashtagTimelineScreen(
         },
     ) { padding ->
         when {
-            state.isLoading && state.statuses.isEmpty() -> Box(
-                Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
+            state.isLoading && state.statuses.isEmpty() -> ListLoadingContent(Modifier.padding(padding))
             state.statuses.isEmpty() -> Column(
                 Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

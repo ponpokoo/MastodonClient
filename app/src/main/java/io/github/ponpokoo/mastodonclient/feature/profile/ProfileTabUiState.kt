@@ -18,22 +18,31 @@ data class ProfileTabUiState(
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val error: String? = null,
-)
+    val errorIsPagination: Boolean = false,
+    val isPullRefreshing: Boolean = false,
+) {
+    val canAutoLoadMore: Boolean get() = isLoaded && !isLoading && !isRefreshing && !isLoadingMore &&
+        error == null && !endReached && nextMaxId != null
+}
 
 internal fun ProfileTabUiState.appendPage(page: TimelinePage, requestedCursor: String) = copy(
     statuses = (statuses + page.statuses).distinctBy(TimelineStatus::statusId),
     nextMaxId = page.nextMaxId, endReached = page.endReached || page.nextMaxId == requestedCursor,
-    isLoadingMore = false,
+    isLoadingMore = false, error = null, errorIsPagination = false,
 )
 
 internal fun ProfileTabUiState.replacePage(page: TimelinePage) = copy(
     statuses = page.statuses, nextMaxId = page.nextMaxId, endReached = page.endReached,
     isLoaded = true, isLoading = false, isLoadingMore = false, isRefreshing = false,
+    error = null, errorIsPagination = false,
+    isPullRefreshing = false,
 )
 
 internal fun ProfileTabUiState.pageFailed(error: Throwable) = copy(
     isLoading = false, isLoadingMore = false, isRefreshing = false,
     error = error.message ?: "投稿を取得できませんでした",
+    errorIsPagination = false,
+    isPullRefreshing = false,
 )
 
 /** Pinned failure stays independent of the posts result; session checks remain in the caller. */

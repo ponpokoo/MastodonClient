@@ -33,9 +33,12 @@ class ModerationManagementDeviceTest {
             mutes = listOf(ModerationAccount(author, AccountRelationship(muting = true, blocking = true))), blocks = listOf(ModerationAccount(author, AccountRelationship(muting = true, blocking = true))),
             fetch = mapOf(ServerSetting.Mutes to SettingFetch(fetchedAt = 1), ServerSetting.Blocks to SettingFetch(fetchedAt = 1))) })
         var relation = AccountRelationship(muting = true, blocking = true)
+        var onSync: suspend (AccountSession, Set<ServerSetting>) -> Unit = { _, _ -> }
+        var onDeleteFilter: suspend (String) -> Result<Unit> = { Result.success(Unit) }
         val syncs = mutableListOf<Pair<String, Set<ServerSetting>>>()
         override suspend fun syncServerSettings(session: AccountSession, items: Set<ServerSetting>): Result<Unit> {
             syncs += session.sessionId to items
+            onSync(session, items)
             return Result.success(Unit)
         }
         override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) = Result.success(TimelinePage(emptyList(), null, true))
@@ -44,7 +47,76 @@ class ModerationManagementDeviceTest {
         override suspend fun setMuted(session: AccountSession, accountId: String, muted: Boolean): Result<AccountRelationship> {
             relation = relation.copy(muting = muted); return Result.success(relation)
         }
+        override suspend fun deleteServerFilter(session: AccountSession, id: String) = onDeleteFilter(id)
     }
+    @Test fun refreshAndServerSyncKeepOneContentSpinnerThroughAllPhases() {
+        val repository = Repository()
+        val store = ViewModelStore()
+        var finish = kotlinx.coroutines.CompletableDeferred<Unit>()
+        lateinit var model: ModerationManagementViewModel
+        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth); store.put("management", model) }
+        repository.onSync = { _, _ -> finish.await() }
+        fun updateLoading(items: Set<ServerSetting>, loading: Boolean) {
+            val saved = repository.serverSettings.value.getValue(session.sessionId)
+            repository.serverSettings.value = repository.serverSettings.value + (session.sessionId to saved.copy(
+                fetch = saved.fetch + items.associateWith { SettingFetch(loading = loading, fetchedAt = 1) }))
+        }
+        try {
+            rule.setContent { MastodonClientTheme { ModerationManagementScreen(model, {}) } }
+            val progress = SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo)
+            for (page in listOf(ModerationPage.Mutes, ModerationPage.Blocks, ModerationPage.Filters)) {
+                val items = if (page == ModerationPage.Filters) setOf(ServerSetting.Filters)
+                    else setOf(ServerSetting.Mutes, ServerSetting.Blocks)
+                rule.runOnIdle { finish = kotlinx.coroutines.CompletableDeferred(); model.open(page); model.refresh() }
+                rule.onAllNodes(progress).assertCountEquals(1)
+                val spinner = rule.onNodeWithTag("management_processing")
+                spinner.assertIsDisplayed().assert(hasAnyAncestor(hasTestTag("moderation_management_content")))
+                val spinnerId = spinner.fetchSemanticsNode().id
+                rule.runOnIdle { updateLoading(items, true) }
+                rule.waitUntil(5_000) {
+                    model.state.value.server?.fetch?.filterKeys { it in items }?.values?.all { it.loading } == true
+                }
+                rule.onAllNodes(progress).assertCountEquals(1)
+                assertEquals(spinnerId, spinner.fetchSemanticsNode().id)
+                rule.runOnIdle { finish.complete(Unit) }
+                rule.waitUntil(5_000) { !model.state.value.busy }
+                rule.onAllNodes(progress).assertCountEquals(1)
+                assertEquals(spinnerId, spinner.fetchSemanticsNode().id)
+                rule.runOnIdle { updateLoading(items, false) }
+                rule.onAllNodes(progress).assertCountEquals(0)
+            }
+        } finally { rule.runOnIdle { store.clear() } }
+    }
+
+    @Test fun filterDeletionProgressRemainsVisibleAfterScrollingAndStopsOnFailureAndRetry() {
+        val repository = Repository()
+        val filters = List(30) { ServerFilter("filter-$it", "フィルター$it") }
+        val saved = repository.serverSettings.value.getValue(session.sessionId)
+        repository.serverSettings.value = repository.serverSettings.value + (session.sessionId to saved.copy(filters = filters))
+        var finish = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        repository.onDeleteFilter = { finish.await() }
+        val store = ViewModelStore()
+        lateinit var model: ModerationManagementViewModel
+        rule.runOnIdle { model = ModerationManagementViewModel(repository, auth); store.put("management", model) }
+        try {
+            rule.setContent { MastodonClientTheme { ModerationManagementScreen(model, {}) } }
+            rule.runOnIdle { model.open(ModerationPage.Filters) }
+            rule.onNodeWithTag("moderation_management").performScrollToNode(hasText(filters.last().title))
+            rule.onNodeWithText(filters.last().title).assertIsDisplayed()
+            rule.runOnIdle { model.deleteFilter(filters.last()) }
+            val progress = SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo)
+            rule.onNode(progress).assertIsDisplayed()
+            rule.runOnIdle { finish.complete(Result.failure(IllegalStateException("削除失敗"))) }
+            rule.waitUntil(5_000) { !model.state.value.busy && model.state.value.error != null }
+            rule.onAllNodes(progress).assertCountEquals(0)
+            rule.runOnIdle { finish = kotlinx.coroutines.CompletableDeferred(); model.retry() }
+            rule.onNode(progress).assertIsDisplayed()
+            rule.runOnIdle { finish.complete(Result.success(Unit)) }
+            rule.waitUntil(5_000) { !model.state.value.busy && model.state.value.error == null }
+            rule.onAllNodes(progress).assertCountEquals(0)
+        } finally { rule.runOnIdle { store.clear() } }
+    }
+
     @Test fun releaseUndoAndTimedSnackbarAndAccountPickerWorkInBothThemes() {
         val repository = Repository(); val store = ViewModelStore()
         lateinit var model: ModerationManagementViewModel

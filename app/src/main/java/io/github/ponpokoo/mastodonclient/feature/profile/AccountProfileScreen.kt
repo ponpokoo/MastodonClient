@@ -143,6 +143,7 @@ fun AccountProfileScreen(
             onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.selectedTab,
             preferences = preferences,
             isLoadingMore = state.isLoadingMore, onSelectTab = viewModel::selectTab, onLoadMore = viewModel::loadMore,
+            onAutoLoadMore = viewModel::loadMoreAutomatically,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
             onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("header", "image", it, it, "ヘッダー画像", cacheRevision = state.imageRefreshRevision)), 0) } },
@@ -292,12 +293,25 @@ fun AccountProfileScreen(
         OutlinedTextField(name, { name = it }, enabled = !images.isSaving, label = { Text("表示名") }); Spacer(Modifier.height(8.dp))
         OutlinedTextField(note, { note = it }, enabled = !images.isSaving, label = { Text("自己紹介") }, minLines = 4)
         Row { TextButton(enabled = !images.isSaving, onClick = { avatarPicker.launch("image/*") }) { Text(if (images.avatarPath == null) "アイコンを変更" else "アイコン選択済み") }; TextButton(enabled = !images.isSaving, onClick = { headerPicker.launch("image/*") }) { Text(if (images.headerPath == null) "ヘッダーを変更" else "ヘッダー選択済み") } }
-        if (images.importing.isNotEmpty()) Text("画像を取り込み中…")
+        if (images.importing.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text("画像を取り込み中…")
+        }
         images.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Row(verticalAlignment = Alignment.CenterVertically) { Switch(locked, { locked = it }, enabled = !images.isSaving); Spacer(Modifier.width(8.dp)); Text("フォローを承認制にする") }
         fields.forEachIndexed { index, field -> Row { OutlinedTextField(field.first, { fields[index] = it to field.second }, Modifier.weight(0.4f), enabled = !images.isSaving, label = { Text("項目") }); OutlinedTextField(field.second, { fields[index] = field.first to it }, Modifier.weight(0.6f), enabled = !images.isSaving, label = { Text("内容") }) } }
         if (fields.size < 4) TextButton(enabled = !images.isSaving, onClick = { fields.add("" to "") }) { Text("プロフィール項目を追加") }
-    } }, confirmButton = { TextButton(enabled = images.importing.isEmpty() && !images.isSaving, onClick = { onSave(ProfileEditRequest(name, note, locked, true, fields.toList())) }) { Text(if (images.isSaving) "保存中…" else "保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
+    } }, confirmButton = {
+        TextButton(enabled = images.importing.isEmpty() && !images.isSaving,
+            onClick = { onSave(ProfileEditRequest(name, note, locked, true, fields.toList())) }) {
+            if (images.isSaving) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(if (images.isSaving) "保存中…" else "保存")
+        }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
 }
 
 @Composable private fun QrDialog(url: String, onDismiss: () -> Unit) {

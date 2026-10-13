@@ -5,6 +5,8 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.spValue
 import io.github.ponpokoo.mastodonclient.feature.status.lineHeightSp
 import io.github.ponpokoo.mastodonclient.feature.common.MessageContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import androidx.compose.foundation.background
@@ -39,7 +41,6 @@ import androidx.compose.material.icons.filled.Poll
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -123,6 +124,8 @@ internal fun NotificationsContent(
     val filterPagerState = filterTabs.pagerState
     val selectedListState = listStates[selectedFilter.ordinal]
     val activeState = state.forCategory(selectedFilter)
+    val canPullRefresh = activeState.isInitialPageLoaded || activeState.notifications.isNotEmpty()
+    val isPullRefreshing = canPullRefresh && activeState.isPullRefreshingNotifications
     val activeList = state.list(selectedFilter)
     LaunchedEffect(selectedListState, activeList, selectedFilter, state.capabilities, state.isCheckingCapabilities) {
         if (state.canExplore(selectedFilter) && activeList.canAutoLoad) {
@@ -136,7 +139,8 @@ internal fun NotificationsContent(
         }
     }
     AppPullToRefreshBox(
-            isRefreshing = activeState.isPullRefreshingNotifications,
+            isRefreshing = isPullRefreshing,
+            enabled = canPullRefresh,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
         ) {
@@ -161,13 +165,16 @@ internal fun NotificationsContent(
                     val pageState = state.forCategory(filter)
                     val filteredNotifications = pageState.notifications.filter(filter::includes)
                     val supported = state.canExplore(filter)
+                    val checkingCapabilities = !supported && state.isCheckingCapabilities
+                    val initialLoading = supported && !pageState.isInitialPageLoaded &&
+                        filteredNotifications.isEmpty() && pageState.notificationsError == null
+                    Box(Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
-                    if (!supported) item {
-                        MessageContent(if (state.isCheckingCapabilities) "対応状況を確認しています" else "現在サポートしていません")
+                    if (!supported && !checkingCapabilities) item {
+                        MessageContent("現在サポートしていません")
                     }
-                    else if (filteredNotifications.isEmpty() && pageState.notificationsError == null) item {
+                    else if (supported && !initialLoading && filteredNotifications.isEmpty() && pageState.notificationsError == null) item {
                         MessageContent(when {
-                            !pageState.isInitialPageLoaded || pageState.isLoadingNotifications -> "通知を読み込んでいます"
                             pageState.notificationsEndReached -> "該当する通知はありません"
                             else -> "読み込んだ範囲に該当する通知はありません"
                         })
@@ -223,12 +230,8 @@ internal fun NotificationsContent(
                         HorizontalDivider()
                         }
                     }
-                    if (supported && pageState.isLoadingMoreNotifications) {
-                        item {
-                            Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                            }
-                        }
+                    if (supported && pageState.isLoadingMoreNotifications && !initialLoading && !isPullRefreshing) {
+                        item { ListLoadingMoreIndicator() }
                     } else if (supported && pageState.notificationsError != null) {
                         item {
                             Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -244,6 +247,10 @@ internal fun NotificationsContent(
                                 TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
                             }
                         }
+                    }
+                    }
+                    if ((checkingCapabilities && !isPullRefreshing) || initialLoading) {
+                        ListLoadingContent(label = if (checkingCapabilities) "対応状況を確認中…" else "読み込み中…")
                     }
                     }
                 }

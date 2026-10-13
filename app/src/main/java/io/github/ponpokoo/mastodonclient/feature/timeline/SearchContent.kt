@@ -2,7 +2,8 @@ package io.github.ponpokoo.mastodonclient.feature.timeline
 
 import io.github.ponpokoo.mastodonclient.feature.status.SocialStatus
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountResult
-import io.github.ponpokoo.mastodonclient.feature.common.LoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
 import io.github.ponpokoo.mastodonclient.feature.common.MessageContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -128,8 +129,8 @@ internal fun SearchContent(
                 val target = SearchTarget.entries[page]
                 val tab = state.tabs[target] ?: SearchTabState()
                 val results = tab.results
+                Box(Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().testTag("search_results_${target.name.lowercase()}"), state = listStates[page]) {
-                    if (tab.isSearching) item { LoadingContent("${target.searchLabel()}を検索しています") }
                     if (results != null) {
                         when (target) {
                             SearchTarget.Accounts -> items(results.accounts, key = StatusAuthor::id) { AccountResult(it, onAccountClick) }
@@ -156,16 +157,17 @@ internal fun SearchContent(
                             Text(tab.error.message(), color = MaterialTheme.colorScheme.error)
                             TextButton(onClick = onRetry) { Text("再試行") }
                         }
-                    } else if (tab.isLoadingMore) item { LoadingContent("続きを取得しています") }
+                    } else if (tab.isLoadingMore && !tab.isSearching) item { ListLoadingMoreIndicator() }
                     else if (results != null && !tab.isSearching && !tab.endReached && tab.nextOffset != null) item {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             TextButton(onClick = onLoadMore) { Text("さらに読み込む") }
                         }
                     }
                     if (results == null && !tab.isSearching && tab.error == null) item {
-                        if (state.submittedQuery == state.searchQuery.trim()) LoadingContent("${target.searchLabel()}を検索しています")
-                        else MessageContent("対象を選び、キーボードの検索キーで検索してください")
+                        MessageContent("対象を選び、キーボードの検索キーで検索してください")
                     }
+                }
+                if (tab.isSearching) ListLoadingContent()
                 }
             }
         } else if (state.isSearchActive) MessageContent("キーワード、アカウントID、URLを入力してください")

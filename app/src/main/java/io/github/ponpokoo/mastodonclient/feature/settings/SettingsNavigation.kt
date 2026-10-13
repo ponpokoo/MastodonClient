@@ -7,6 +7,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -101,6 +104,10 @@ internal fun CacheSettings(viewModel: SettingsMaintenanceViewModel) {
             style = MaterialTheme.typography.bodyMedium,
         )
         OutlinedButton(onClick = { confirm = true }, enabled = !state.isClearing) {
+            if (state.isClearing) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
             Text(if (state.isClearing) "削除中…" else "キャッシュを削除")
         }
         state.message?.let { Text(it, Modifier.padding(top = 12.dp)) }

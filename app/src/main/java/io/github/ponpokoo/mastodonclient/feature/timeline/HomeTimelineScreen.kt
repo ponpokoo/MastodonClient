@@ -112,6 +112,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.EditProfileDialog
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
@@ -597,6 +598,7 @@ fun HomeTimelineScreen(
                     instanceUrl = mainState.session?.instanceUrl,
                     padding = padding,
                     onRetry = profileViewModel::loadProfile,
+                    onRetryPosts = profileViewModel::retryProfile,
                     onRefresh = {
                         scrollProfileAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         profileRefreshStarted = false
@@ -619,6 +621,7 @@ fun HomeTimelineScreen(
                     isLoadingMore = profileState.isLoadingMoreProfile,
                     onSelectTab = profileViewModel::selectProfileTab,
                     onLoadMore = profileViewModel::loadMoreProfile,
+                    onAutoLoadMore = profileViewModel::loadMoreProfileAutomatically,
                     onFollowers = { profileState.profile?.author?.id?.let(onFollowers) },
                     onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
                     onHeaderClick = {
@@ -893,7 +896,7 @@ private fun AnnouncementsSheet(
 }
 
 @Composable
-private fun TimelineContent(
+internal fun TimelineContent(
     state: TimelineUiState,
     padding: PaddingValues,
     listState: LazyListState,
@@ -928,11 +931,7 @@ private fun TimelineContent(
             }
     }
     when {
-        state.isInitialLoading -> CenteredMessage(padding) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text("ホームタイムラインを読み込んでいます")
-        }
+        state.isInitialLoading -> ListLoadingContent(Modifier.padding(padding))
         state.statuses.isEmpty() && state.errorMessage != null -> CenteredMessage(padding) {
             Text(state.errorMessage, color = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(12.dp))

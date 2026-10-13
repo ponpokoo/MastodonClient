@@ -3,6 +3,7 @@ package io.github.ponpokoo.mastodonclient.feature.common
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -11,6 +12,19 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsMaintenanceViewModelTest : ScreenViewModelTestBase() {
+    @Test fun cancelledClearStopsProgressWithoutReportingFailureAndCanBeRetried() = runTest(dispatcher) {
+        var attempts = 0
+        val model = own(SettingsMaintenanceViewModel(fakeRepository {
+            if (++attempts == 1) throw CancellationException("cancelled")
+        }))
+        model.clearCache(); advanceUntilIdle()
+        assertFalse(model.cacheState.value.isClearing)
+        assertNull(model.cacheState.value.message)
+        model.clearCache(); advanceUntilIdle()
+        assertEquals(2, attempts)
+        assertFalse(model.cacheState.value.isClearing)
+        assertNotNull(model.cacheState.value.message)
+    }
     @Test fun duplicateClearIsIgnoredWhilePending() = runTest(dispatcher) {
         val pending = CompletableDeferred<Unit>()
         var calls = 0

@@ -1,7 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
 import io.github.ponpokoo.mastodonclient.feature.status.SocialStatus
-import io.github.ponpokoo.mastodonclient.feature.common.LoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.profileWebLinks
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -118,6 +118,8 @@ internal fun ProfileContent(
     isLoadingMore: Boolean = false,
     onSelectTab: (ProfileStatusTab) -> Unit = {},
     onLoadMore: () -> Unit = {},
+    onAutoLoadMore: () -> Unit = onLoadMore,
+    onRetryPosts: () -> Unit = onRetry,
     onFollowers: () -> Unit = {},
     onFollowing: () -> Unit = {},
     onHeaderClick: () -> Unit = {},
@@ -188,24 +190,26 @@ internal fun ProfileContent(
             }
         }
     }
+    val selectedPageState = state.profileTabs[selectedTab]
+    val selectedPageLoaded = selectedPageState?.isLoaded ?: (profile != null && !state.isLoadingProfile && !isLoadingMore)
+    val isPullRefreshing = state.isRefreshingProfile && (selectedPageState?.isPullRefreshing ?: true) && selectedPageLoaded
     LaunchedEffect(resolvedListState, profile?.statuses?.size, profile?.nextMaxId, selectedTab,
-        state.isLoadingProfile, state.isRefreshingProfile, isLoadingMore) {
+        state.isLoadingProfile, state.isRefreshingProfile, isLoadingMore, selectedPageState?.canAutoLoadMore) {
         if (!state.isLoadingProfile && !state.isRefreshingProfile && !isLoadingMore &&
-            profile?.nextMaxId != null && !profile.endReached) {
+            profile?.nextMaxId != null && !profile.endReached &&
+            (selectedPageState?.canAutoLoadMore ?: (state.profileError == null))) {
             snapshotFlow {
                 if (profileTabs.isMoving || tabPagerState.settledPage != selectedTab.ordinal) null
                 else resolvedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
             }
                 .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= resolvedListState.layoutInfo.totalItemsCount - 4) onLoadMore()
+                    if (lastVisible != null && lastVisible >= resolvedListState.layoutInfo.totalItemsCount - 4) onAutoLoadMore()
                 }
         }
     }
     var profileMenuExpanded by remember { mutableStateOf(false) }
     when {
-        state.isLoadingProfile && profile == null -> LoadingContent(
-            "プロフィールを読み込んでいます", Modifier.padding(padding),
-        )
+        state.isLoadingProfile && profile == null -> ListLoadingContent(Modifier.padding(padding))
         profile == null -> Column(
             Modifier.fillMaxSize().padding(padding).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -215,7 +219,8 @@ internal fun ProfileContent(
             TextButton(onClick = onRetry) { Text("再試行") }
         }
         else -> AppPullToRefreshBox(
-            isRefreshing = state.isRefreshingProfile,
+            isRefreshing = isPullRefreshing,
+            enabled = selectedPageLoaded,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),
         ) {
@@ -469,7 +474,6 @@ internal fun ProfileContent(
                     if (pinnedStatusIds.isNotEmpty() && wasAtTop) postListState.requestScrollToItem(0)
                 }
             }
-            LazyColumn(Modifier.fillMaxSize(), state = postListState) {
             val statuses = if (pageProfile == null) {
                 emptyList()
             } else if (pageTab == ProfileStatusTab.Posts) {
@@ -477,6 +481,13 @@ internal fun ProfileContent(
             } else {
                 pageProfile.statuses
             }
+            val pageLoaded = pageState?.isLoaded ?: (pageProfile != null && !state.isLoadingProfile && !isLoadingMore)
+            val initialLoading = pageProfile == null || (!pageLoaded && pageState?.error == null &&
+                (pageState?.isLoading == true || pageState?.isLoadingMore == true || pageState?.isRefreshing == true ||
+                    (pageState == null && isSelectedPage && (state.isLoadingProfile || isLoadingMore))))
+            val loadingMore = pageLoaded && (pageState?.isLoadingMore ?: (isSelectedPage && isLoadingMore))
+            Box(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), state = postListState) {
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
@@ -489,12 +500,27 @@ internal fun ProfileContent(
                     item { Text("ミュートまたはブロック中のため、投稿を表示していません", modifier = Modifier.padding(20.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
-                if (pageProfile == null || pageState?.isLoading == true || pageState?.isLoadingMore == true ||
-                    (pageState == null && isSelectedPage && (state.isLoadingProfile || isLoadingMore))) {
-                    item { Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-                } else if (isSelectedPage && !profile.endReached) {
+                if (loadingMore && !isPullRefreshing) {
+                    item { ListLoadingMoreIndicator() }
+                } else if (pageState?.error != null) {
+                    item {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(pageState.error, color = MaterialTheme.colorScheme.error)
+                            if (isSelectedPage) TextButton(onClick = onRetryPosts) { Text("再試行") }
+                        }
+                    }
+                } else if (isSelectedPage && !initialLoading && !isPullRefreshing && !profile.endReached) {
                     item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
                 }
+            }
+            if (initialLoading) {
+                val visibleHeaderHeight = resolvedHeaderListState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.key == "profile_header" }?.let { (it.offset + it.size).coerceAtLeast(0) } ?: 0
+                // Pager pages keep the full viewport height; exclude the part hidden
+                // below the screen while the shared profile header is still visible.
+                val hiddenHeight = with(density) { visibleHeaderHeight.toDp() }.coerceAtMost(pagerHeight)
+                ListLoadingContent(Modifier.padding(bottom = hiddenHeight))
+            }
             }
             }
             }

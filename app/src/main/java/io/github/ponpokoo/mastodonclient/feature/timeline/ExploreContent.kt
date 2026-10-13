@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
-import io.github.ponpokoo.mastodonclient.feature.common.LoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
 import io.github.ponpokoo.mastodonclient.feature.common.MessageContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -64,9 +65,9 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
         HorizontalPager(pager, key = { ExploreFeed.entries[it] }, modifier = Modifier.fillMaxWidth().weight(1f).testTag("explore_pager")) { index ->
             val feed = ExploreFeed.entries[index]
             val tab = state.tabs[feed] ?: ExploreTabState()
-            AppPullToRefreshBox(isRefreshing = tab.loading && tab.page != null, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
+            AppPullToRefreshBox(isRefreshing = tab.loading && tab.page != null, onRefresh = onRefresh,
+                enabled = tab.page != null, modifier = Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize(), state = lists[index]) {
-                    if (tab.page == null && tab.error == null) item { LoadingContent("読み込んでいます") }
                     tab.page?.let { page ->
                         items(page.statuses, key = { it.timelineId }) { post(it) }
                         items(page.tags, key = { it.name.lowercase(java.util.Locale.ROOT) }) { tag ->
@@ -96,11 +97,12 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
                             Text(tab.error, color = MaterialTheme.colorScheme.error)
                             TextButton(onClick = onRetry) { Text("再試行") }
                         }
-                    } else if (tab.loadingMore) item { LoadingContent("続きを取得しています") }
+                    } else if (tab.loadingMore && !tab.loading) item { ListLoadingMoreIndicator() }
                     else if (!tab.loading && tab.page?.nextCursor != null) item {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TextButton(onClick = onLoadMore) { Text("さらに読み込む") } }
                     }
                 }
+                if (tab.page == null && tab.error == null) ListLoadingContent()
             }
         }
     }

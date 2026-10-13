@@ -78,6 +78,10 @@ internal fun ServerFilterEditor(
                     modifier = Modifier.padding(end = 8.dp).sizeIn(minWidth = 88.dp, minHeight = 48.dp).testTag("filter_save"),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                 ) {
+                    if (busy) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Text(
                         if (busy) "保存中…" else if (editor.original == null) "追加" else "保存",
                         style = MaterialTheme.typography.titleMedium,

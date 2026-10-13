@@ -8,12 +8,95 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OwnProfileViewModelTest : ScreenViewModelTestBase() {
+    @Test fun filterRefreshStaysQuietAndManualRefreshIndicatorStopsOnFailure() = runTest(dispatcher) {
+        var finish = CompletableDeferred<Result<TimelinePage>>()
+        var calls = 0
+        val page = TimelinePage(listOf(testStatus()), null, true)
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(
+                testAccount.instanceUrl, testAccount.accountId, filters = emptyList())))
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?) = if (++calls == 1) Result.success(page) else finish.await()
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val model = own(OwnProfileViewModel(repository, browsing))
+        advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
+        browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.FiltersChanged))
+        runCurrent()
+        assertEquals(2, calls)
+        assertTrue(model.uiState.value.isRefreshingProfile)
+        assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        finish.complete(Result.success(page)); advanceUntilIdle()
+        val preservedPosts = model.uiState.value.profile!!.statuses
+        finish = CompletableDeferred()
+        model.refreshProfile(); runCurrent()
+        assertTrue(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        finish.complete(Result.failure(IllegalStateException("offline"))); advanceUntilIdle()
+        assertFalse(model.uiState.value.isRefreshingProfile)
+        assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        assertEquals(preservedPosts, model.uiState.value.profile!!.statuses)
+    }
+
+    @Test fun initialPostsFailureRetriesWithoutAPaginationCursor() = runTest(dispatcher) {
+        val cursors = mutableListOf<String?>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> {
+                cursors += maxId
+                return if (cursors.size == 1) Result.failure(IllegalStateException("offline"))
+                else Result.success(TimelinePage(listOf(testStatus("recovered")), null, true))
+            }
+        }
+        val model = own(OwnProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
+        assertNotNull(model.uiState.value.profile)
+        assertEquals("offline", model.uiState.value.profileError)
+        assertFalse(model.uiState.value.isLoadingMoreProfile)
+        assertNull(model.uiState.value.profile?.nextMaxId)
+        model.retryProfile(); advanceUntilIdle()
+        assertEquals(listOf(null, null), cursors)
+        assertEquals("recovered", model.uiState.value.profile?.statuses?.single()?.statusId)
+        assertNull(model.uiState.value.profileError)
+        assertFalse(model.uiState.value.isRefreshingProfile)
+    }
+
+    @Test fun paginationFailureStopsAutomaticRequestsAndManualRetryUsesSameCursor() = runTest(dispatcher) {
+        val cursors = mutableListOf<String?>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> {
+                cursors += maxId
+                return when (cursors.size) {
+                    1 -> Result.success(TimelinePage(listOf(testStatus("first")), "next", false))
+                    2 -> Result.failure(IllegalStateException())
+                    else -> Result.success(TimelinePage(listOf(testStatus("second")), "later", false))
+                }
+            }
+        }
+        val model = own(OwnProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
+        model.loadMoreProfileAutomatically(); advanceUntilIdle()
+        assertNotNull(model.uiState.value.profileError)
+        assertFalse(model.uiState.value.isLoadingMoreProfile)
+        model.loadMoreProfileAutomatically(); model.loadMoreProfileAutomatically(); advanceUntilIdle()
+        assertEquals(listOf(null, "next"), cursors)
+        assertEquals(listOf("first"), model.uiState.value.profile?.statuses?.map { it.statusId })
+        model.retryProfile(); advanceUntilIdle()
+        assertEquals(listOf(null, "next", "next"), cursors)
+        assertEquals(listOf("first", "second"), model.uiState.value.profile?.statuses?.map { it.statusId })
+        assertNull(model.uiState.value.profileError)
+        model.loadMoreProfileAutomatically(); advanceUntilIdle()
+        assertEquals("later", cursors.last())
+    }
+
     @Test fun postsAndPinsAppearTogetherRegardlessOfWhichRequestFinishesFirst() = runTest(dispatcher) {
         for (pinsFirst in listOf(false, true)) {
             val repository = ProfileLoadingRepositoryFake()

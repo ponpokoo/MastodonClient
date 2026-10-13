@@ -55,10 +55,17 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
     BackHandler(onBack = back)
     val enabled = state.selected != null && !state.busy && (state.page == ModerationPage.Words || state.lists.values.none { it.loading })
     val filtersEditable = enabled && state.filterListStatus != FilterListStatus.Unsupported && state.filterListStatus != FilterListStatus.Loading
+    val isProcessing = state.busy || when (state.page) {
+        ModerationPage.Mutes, ModerationPage.Blocks -> state.lists.values.any { it.loading }
+        ModerationPage.Filters -> state.filterListStatus == FilterListStatus.Loading
+        ModerationPage.Overview -> state.server?.fetch?.values?.any { it.loading } == true
+        ModerationPage.Words -> false
+    }
     Scaffold(topBar = { TopAppBar(title = { Text("ミュート・ブロック・フィルター") }, navigationIcon = {
         IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") }
     }) }, snackbarHost = { SnackbarHost(snackbar, Modifier.testTag("management_snackbar")) }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("moderation_management"), state = listState,
+        Box(Modifier.fillMaxSize().padding(padding).testTag("moderation_management_content")) {
+        LazyColumn(Modifier.fillMaxSize().testTag("moderation_management"), state = listState,
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)) {
             if (state.page == ModerationPage.Overview) {
                 item { AccountSwitcherRow(state.selected, { accountPicker = true }, Modifier.testTag("management_account_switcher"), enabled = state.sessions.isNotEmpty()) }
@@ -108,7 +115,7 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                         FilterListStatus.Unsupported -> Text("このサーバーは公式フィルターに対応していません。端末内のワードミュートをご利用ください。")
                         FilterListStatus.Failed -> Text(fetch?.error.orEmpty(), color = MaterialTheme.colorScheme.error)
                         FilterListStatus.NotFetched -> Text("フィルターは未取得です。設定内の更新ボタンから取得してください。")
-                        FilterListStatus.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                        FilterListStatus.Loading -> Unit
                         FilterListStatus.Ready -> Unit
                     }
                     if (state.filterListStatus == FilterListStatus.Unsupported) TextButton(onClick = { viewModel.open(ModerationPage.Words) }) { Text("端末内のワードミュート") }
@@ -153,14 +160,14 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                     }
                     HorizontalDivider()
                 }
-                if (list.loading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-                if (!list.loaded && !list.loading) item { Text("未取得の一覧です。設定内の更新ボタンから取得してください。") }
+                if (!list.loaded && !isProcessing) item { Text("未取得の一覧です。設定内の更新ボタンから取得してください。") }
                 state.server?.fetch?.get(if (kind == ModerationListKind.Mutes) ServerSetting.Mutes else ServerSetting.Blocks)?.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
-                if (list.loaded && list.accounts.isEmpty() && !list.loading) item { Text("${state.page.label()}のアカウントはありません", Modifier.padding(vertical = 24.dp)) }
-                if (list.nextMaxId != null && !list.loading) item { TextButton(viewModel::loadMore, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
+                if (list.loaded && list.accounts.isEmpty() && !isProcessing) item { Text("${state.page.label()}のアカウントはありません", Modifier.padding(vertical = 24.dp)) }
+                if (list.nextMaxId != null && !isProcessing) item { TextButton(viewModel::loadMore, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
             }
             state.error?.let { error -> item { Text(error, Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.error); TextButton(viewModel::retry, enabled = !state.busy) { Text("再試行") } } }
-            if (state.busy && state.page != ModerationPage.Filters) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp)) }
+        }
+        if (isProcessing) CircularProgressIndicator(Modifier.align(Alignment.Center).testTag("management_processing"))
         }
     }
     deleteFilter?.let { filter -> AlertDialog(onDismissRequest = { deleteFilter = null }, title = { Text("フィルターを削除") },

@@ -5,6 +5,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState
+import io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings
+import io.github.ponpokoo.mastodonclient.domain.model.ServerFilter
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenRepositoryFake
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelTestBase
@@ -32,6 +34,60 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
         override suspend fun completeAuthorization(callbackUrl: String) = Result.success(testAccount)
         override suspend fun logout() = Unit
+    }
+
+    @Test fun filterRefreshStaysQuietAndManualRefreshIndicatorStopsOnFailure() = runTest(dispatcher) {
+        var finish = CompletableDeferred<Result<TimelinePage>>()
+        var calls = 0
+        val page = TimelinePage(listOf(testStatus()), null, true)
+        val repository = object : ScreenRepositoryFake() {
+            override val serverSettings = MutableStateFlow(mapOf(testAccount.sessionId to ServerAccountSettings(
+                testAccount.instanceUrl, testAccount.accountId, filters = emptyList())))
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?) = if (++calls == 1) Result.success(page) else finish.await()
+        }
+        val model = own(AccountProfileViewModel("author", repository, auth)); advanceUntilIdle()
+        repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) ->
+            saved.copy(filters = listOf(ServerFilter("filter", "新しいフィルター")))
+        }
+        runCurrent()
+        assertEquals(2, calls)
+        assertTrue(model.uiState.value.isRefreshing)
+        assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        finish.complete(Result.success(page)); advanceUntilIdle()
+        val preservedPosts = model.uiState.value.profile!!.statuses
+        finish = CompletableDeferred()
+        model.refresh(); runCurrent()
+        assertTrue(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        finish.complete(Result.failure(IllegalStateException("offline"))); advanceUntilIdle()
+        assertFalse(model.uiState.value.isRefreshing)
+        assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
+        assertEquals(preservedPosts, model.uiState.value.profile!!.statuses)
+    }
+
+    @Test fun paginationFailureSurvivesSnackbarDismissalAndRetriesTheSamePageManually() = runTest(dispatcher) {
+        val cursors = mutableListOf<String?>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> {
+                cursors += maxId
+                return when (cursors.size) {
+                    1 -> Result.success(TimelinePage(listOf(testStatus("first")), "next", false))
+                    2 -> Result.failure(IllegalStateException("offline"))
+                    else -> Result.success(TimelinePage(listOf(testStatus("second")), null, true))
+                }
+            }
+        }
+        val model = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle(); model.loadMoreAutomatically(); advanceUntilIdle()
+        model.clearMessage()
+        model.loadMoreAutomatically(); advanceUntilIdle()
+        assertEquals(listOf(null, "next"), cursors)
+        assertFalse(model.uiState.value.isLoadingMore)
+        model.retry(); advanceUntilIdle()
+        assertEquals(listOf(null, "next", "next"), cursors)
+        assertEquals(listOf("first", "second"), model.uiState.value.profile?.statuses?.map { it.statusId })
+        assertNull(model.uiState.value.profileTabs[ProfileStatusTab.Posts]?.error)
     }
 
     @Test fun postsAndPinsAppearTogetherRegardlessOfWhichRequestFinishesFirst() = runTest(dispatcher) {
