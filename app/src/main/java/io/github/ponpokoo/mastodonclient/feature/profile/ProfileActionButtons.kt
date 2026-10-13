@@ -17,6 +17,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -28,6 +30,13 @@ internal fun followActionLabel(relationship: AccountRelationship?, locked: Boole
     relationship.following -> "フォロー中"
     locked -> "リクエスト"
     else -> "フォロー"
+}
+
+@Composable
+internal fun profileActionBorderColor(): Color {
+    val colors = MaterialTheme.colorScheme
+    return if (colors.surface.luminance() > 0.5f) colors.onSurface
+        else colors.outline
 }
 
 @Composable
@@ -48,7 +57,7 @@ internal fun FollowActionButton(
     val buttonModifier = modifier.testTag("follow_action")
     if (relationship?.following == true || relationship?.requested == true) {
         OutlinedButton(onClick, buttonModifier, enabled = canClick,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface),
+            border = BorderStroke(1.dp, profileActionBorderColor()),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
         ) { ActionButtonLabel(icon, label) }
     } else {
@@ -59,7 +68,7 @@ internal fun FollowActionButton(
 @Composable
 internal fun EditProfileButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     OutlinedButton(onClick, modifier.testTag("edit_profile_action"),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface),
+        border = BorderStroke(1.dp, profileActionBorderColor()),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text("プロフィールを編集")

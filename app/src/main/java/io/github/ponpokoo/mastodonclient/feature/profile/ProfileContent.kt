@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedIconButton
@@ -45,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -244,7 +246,12 @@ internal fun ProfileContent(
                         maxWidth = (actionsWidth - 56.dp - actionContentPadding).coerceAtLeast(1.dp).roundToPx(),
                     )).size.height.toDp()
                 }
-                val actionsHeight = (actionTextHeight + 24.dp).coerceAtLeast(48.dp)
+                val actionButtonHeight = (
+                    actionTextHeight.coerceAtLeast(if (profile.isOwnProfile) 0.dp else ButtonDefaults.IconSize) +
+                        ButtonDefaults.ContentPadding.calculateTopPadding() +
+                        ButtonDefaults.ContentPadding.calculateBottomPadding()
+                    ).coerceAtLeast(ButtonDefaults.MinHeight)
+                val actionsHeight = (actionButtonHeight + 8.dp).coerceAtLeast(48.dp)
                 val headerHeight = if (actionsBelowAvatar) 184.dp + actionsHeight + 8.dp
                     else (132.dp + actionsHeight).coerceAtLeast(184.dp)
                 Box(Modifier.fillMaxWidth().height(headerHeight)) {
@@ -273,17 +280,20 @@ internal fun ProfileContent(
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End) {
                             if (profile.isOwnProfile) {
-                                EditProfileButton(onClick = onEditProfile, modifier = Modifier.weight(1f, fill = false))
+                                EditProfileButton(onClick = onEditProfile, modifier = Modifier.weight(1f, fill = false)
+                                    .minimumInteractiveComponentSize().height(actionButtonHeight))
                             } else {
                                 FollowActionButton(relationship, profile.locked, onToggleFollow,
-                                    modifier = Modifier.weight(1f, fill = false))
+                                    modifier = Modifier.weight(1f, fill = false)
+                                        .minimumInteractiveComponentSize().height(actionButtonHeight))
                             }
                             Spacer(Modifier.width(8.dp))
                             Box {
                             OutlinedIconButton(
                                 onClick = { onProfileMenuOpen(); profileMenuExpanded = true },
-                                modifier = Modifier.size(48.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface),
+                                modifier = Modifier.minimumInteractiveComponentSize()
+                                    .width(ButtonDefaults.MinHeight).height(actionButtonHeight),
+                                border = BorderStroke(1.dp, profileActionBorderColor()),
                                 colors = IconButtonDefaults.outlinedIconButtonColors(
                                     contentColor = MaterialTheme.colorScheme.onSurface),
                             ) {
