@@ -92,7 +92,7 @@ data class AppPreferences(
     val foregroundNotificationsEnabled: Boolean = true,
     val simpleNotificationsEnabled: Boolean = true,
     val simpleNotificationSetupFailed: Boolean = false,
-    val altTextReminder: Boolean = true,
+    val altTextReminder: Boolean = false,
     val composerActionOrder: List<ComposerAction> = ComposerAction.entries,
     val hiddenComposerActions: Set<ComposerAction> = emptySet(),
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),

@@ -86,6 +86,24 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
         }, initialSharedMediaUris = sharedUris, logMediaFailure = {}),
     )
 
+    @Test fun blankAltPostsByDefaultAndReminderCanStillBeEnabled() = runTest(dispatcher) {
+        for (enabled in listOf(null, true, false)) {
+            val repository = Repository()
+            val preferences = UserPreferencesStore(MemoryPreferences())
+            enabled?.let { preferences.setAltTextReminder(it) }
+            val vm = model(repository, preferences)
+            runCurrent()
+            vm.importMedia(listOf("file:///one.jpg")); advanceUntilIdle()
+            vm.post(); advanceUntilIdle()
+            assertEquals(enabled == true, vm.uiState.value.altReminderVisible)
+            assertEquals(if (enabled == true) 0 else 1, repository.posts.size)
+            if (enabled == true) {
+                vm.post(skipAltReminder = true); advanceUntilIdle()
+                assertEquals(1, repository.posts.size)
+            }
+        }
+    }
+
     @Test fun lateUploadCannotRestoreOriginalStateAfterAtoBtoA() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         var calls = 0
