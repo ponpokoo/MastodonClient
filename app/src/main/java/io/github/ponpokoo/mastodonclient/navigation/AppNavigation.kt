@@ -247,8 +247,7 @@ fun AppNavigation(
             StatusInteractionsViewModel(timelineRepository, requireNotNull(mainSessionModel).browsing, preferences)
         })
     }
-    val favouriteState = interactions?.favourites?.collectAsStateWithLifecycle()?.value ?: StatusAccountsUiState()
-    val reactionState = interactions?.reactions?.collectAsStateWithLifecycle()?.value ?: StatusAccountsUiState()
+    val accountsState = interactions?.accounts?.collectAsStateWithLifecycle()?.value ?: StatusAccountsUiState()
     val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
     val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
@@ -461,6 +460,9 @@ fun AppNavigation(
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
                 onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
+                onShowBoosters = { interactions?.openBoosters(it) },
+                onShowFavourites = { interactions?.openFavourites(it) },
+                onShowReaction = { statusId, reaction -> interactions?.openReaction(statusId, reaction) },
             )
         }
         dialog<Route.ComposePost>(
@@ -738,32 +740,28 @@ fun AppNavigation(
         }
     }
     }
-    (reactionState.request as? StatusAccountsRequest.Reaction)?.let { request ->
-        StatusAccountsDialog(
-            title = if (request.reaction.accountIds.isEmpty()) "リアクションした人"
-                else "${request.reaction.name} を付けた人",
-            accounts = reactionState.accounts,
-            isLoading = reactionState.isLoading,
-            errorMessage = reactionState.error,
-            onDismiss = { interactions?.dismissReactions() },
-            onAccountClick = { accountId ->
-                interactions?.dismissReactions()
-                navController.navigate(Route.AccountProfile(accountId))
-            },
-        )
-    }
-    favouriteState.request?.let {
-        StatusAccountsDialog(
-            title = "お気に入りしたアカウント",
-            accounts = favouriteState.accounts,
-            isLoading = favouriteState.isLoading,
-            errorMessage = favouriteState.error,
-            onDismiss = { interactions?.dismissFavourites() },
-            onAccountClick = { accountId ->
-                interactions?.dismissFavourites()
-                navController.navigate(Route.AccountProfile(accountId))
-            },
-        )
+    accountsState.request?.let { request ->
+        androidx.compose.runtime.key(request) {
+            StatusAccountsDialog(
+                title = when (request) {
+                    is StatusAccountsRequest.Favourites -> "お気に入りしたアカウント"
+                    is StatusAccountsRequest.Boosters -> "ブーストしたアカウント"
+                    is StatusAccountsRequest.Reaction -> if (request.reaction.accountIds.isEmpty()) "リアクションした人"
+                        else "${request.reaction.name} を付けた人"
+                },
+                accounts = accountsState.accounts,
+                isLoading = accountsState.isLoading,
+                errorMessage = accountsState.error,
+                nextMaxId = accountsState.nextMaxId,
+                onLoadMore = { interactions?.loadMoreAccounts() },
+                onRetry = { interactions?.retryAccounts() },
+                onDismiss = { interactions?.dismissAccounts() },
+                onAccountClick = { accountId ->
+                    interactions?.dismissAccounts()
+                    navController.navigate(Route.AccountProfile(accountId))
+                },
+            )
+        }
     }
 }
 

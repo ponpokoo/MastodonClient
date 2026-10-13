@@ -98,6 +98,7 @@ data class AppPreferences(
     val accountPreferences: Map<String, AccountPreferences> = emptyMap(),
     val wordMutes: Map<String, List<String>> = emptyMap(),
     val serverSettings: Map<String, io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings> = emptyMap(),
+    val notificationCapabilities: Map<String, io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities> = emptyMap(),
 ) {
     fun forAccount(sessionId: String?) = sessionId?.let(accountPreferences::get) ?: AccountPreferences()
 
@@ -163,6 +164,10 @@ class UserPreferencesStore(
 
     suspend fun saveServerSettings(sessionId: String, value: io.github.ponpokoo.mastodonclient.domain.model.ServerAccountSettings) = update(sessionId) {
         it.copy(serverSettings = it.serverSettings + (sessionId to value.copy(fetch = value.fetch.mapValues { (_, state) -> state.copy(loading = false) })))
+    }
+
+    suspend fun saveNotificationCapabilities(instanceUrl: String, value: io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities) = update {
+        it.copy(notificationCapabilities = it.notificationCapabilities + (instanceUrl.trimEnd('/') to value))
     }
 
     val reactionHistory: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->

@@ -44,14 +44,13 @@ class NotificationPagingDeviceTest {
         } } }
     }
 
-    @Test fun unsupportedReactionTabReusesCheckWithoutButtonAndRefreshCanEnableIt() {
-        val firstCheck = CompletableDeferred<Result<NotificationCapabilities>>()
+    @Test fun unsupportedReactionTabReusesCheckOnNavigationAndRefresh() {
         val checks = AtomicInteger()
         val reactions = AtomicInteger()
         val repository = object : TimelineRepository {
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = error("unused")
             override suspend fun getNotificationCapabilities(session: AccountSession) =
-                if (checks.incrementAndGet() == 1) firstCheck.await() else Result.success(NotificationCapabilities(true, true))
+                Result.success(NotificationCapabilities(true, checks.incrementAndGet() != 1))
             override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
                 if (category == NotificationCategory.Reactions) reactions.incrementAndGet()
                 return Result.success(NotificationPage(emptyList(), null, true))
@@ -65,8 +64,7 @@ class NotificationPagingDeviceTest {
             rule.waitUntil { vm.uiState.value.isInitialPageLoaded }
             rule.onNodeWithTag("notification_filter_reactions").performClick()
             rule.waitUntil { vm.uiState.value.selectedCategory == NotificationCategory.Reactions }
-            rule.onNodeWithText("対応状況を確認しています").assertExists()
-            rule.runOnIdle { assertEquals(0, reactions.get()); firstCheck.complete(Result.success(NotificationCapabilities(true, false))) }
+            rule.runOnIdle { assertEquals(0, reactions.get()) }
             rule.waitUntil { !vm.uiState.value.isCheckingCapabilities }
             rule.onNodeWithText("現在サポートしていません").assertExists()
             rule.onNodeWithText("再確認").assertDoesNotExist()
@@ -78,13 +76,13 @@ class NotificationPagingDeviceTest {
                 rule.onNodeWithTag("notification_filter_reactions").performClick()
                 rule.waitUntil { vm.uiState.value.selectedCategory == NotificationCategory.Reactions }
                 rule.onNodeWithText("現在サポートしていません").assertExists()
-                rule.onNodeWithText("対応状況を確認しています").assertDoesNotExist()
+                rule.onNodeWithTag("list_initial_loading").assertDoesNotExist()
             }
             rule.runOnIdle { assertEquals(1, checks.get()); assertEquals(0, reactions.get()); vm.refreshNotifications() }
-            rule.waitUntil(5_000) { reactions.get() >= 1 && vm.uiState.value.list(NotificationCategory.Reactions).isLoaded }
-            rule.runOnIdle { assertEquals(1, reactions.get()) }
-            rule.onNodeWithText("現在サポートしていません").assertDoesNotExist()
-            rule.onNodeWithText("該当する通知はありません").assertExists()
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals(1, checks.get()); assertEquals(0, reactions.get()) }
+            rule.onNodeWithText("現在サポートしていません").assertExists()
+            rule.onNodeWithTag("list_initial_loading").assertDoesNotExist()
         } finally { rule.runOnIdle { store.clear() } }
     }
 
@@ -100,15 +98,15 @@ class NotificationPagingDeviceTest {
         rule.runOnIdle { vm = NotificationsViewModel(repository, BrowsingSession().apply { activate(account) }); store.put("notifications", vm) }
         try {
             show(vm, startLoading)
-            rule.onNodeWithText("通知を読み込んでいます").assertExists()
+            rule.onNodeWithTag("list_initial_loading").assertIsDisplayed()
             rule.onNodeWithText("読み込んだ範囲に該当する通知はありません").assertDoesNotExist()
             rule.runOnIdle { startLoading.complete(Unit) }
             rule.waitUntil { vm.uiState.value.isLoadingNotifications }
-            rule.onNodeWithText("通知を読み込んでいます").assertExists()
+            rule.onNodeWithTag("list_initial_loading").assertIsDisplayed()
             rule.onNodeWithText("読み込んだ範囲に該当する通知はありません").assertDoesNotExist()
             rule.runOnIdle { response.complete(Result.success(NotificationPage(emptyList(), null, false))) }
             rule.waitUntil { vm.uiState.value.isInitialPageLoaded }
-            rule.onNodeWithText("通知を読み込んでいます").assertDoesNotExist()
+            rule.onNodeWithTag("list_initial_loading").assertDoesNotExist()
             rule.onNodeWithText("読み込んだ範囲に該当する通知はありません").assertExists()
         } finally { rule.runOnIdle { store.clear() } }
     }

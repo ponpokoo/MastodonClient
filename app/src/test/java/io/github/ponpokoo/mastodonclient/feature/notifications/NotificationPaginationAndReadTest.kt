@@ -14,22 +14,61 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
-    @Test fun immediateCapabilityRecheckDoesNotFetchReactionPageTwice() = runTest(dispatcher) {
+    @Test fun refreshAndForegroundUseInitialCapabilitiesWithoutCheckingAgain() = runTest(dispatcher) {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        var supported = false
+        var checks = 0
         var reactions = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession) = Result.success(NotificationCapabilities(true, supported))
+            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+                checks++
+                return Result.success(NotificationCapabilities(true, true))
+            }
             override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
                 if (category == NotificationCategory.Reactions) reactions++
                 return Result.success(NotificationPage(emptyList(), null, true))
             }
         }
         val vm = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        assertEquals(1, checks)
         vm.onNotificationsVisible(); advanceUntilIdle()
         vm.selectCategory(NotificationCategory.Reactions); advanceUntilIdle()
-        supported = true; vm.refreshNotifications(); advanceUntilIdle()
         assertEquals(1, reactions)
+        vm.refreshNotifications(); advanceUntilIdle()
+        assertEquals(2, reactions)
+        vm.onAppForeground(); advanceUntilIdle()
+        assertEquals(3, reactions)
+        assertEquals(1, checks)
+        assertFalse(vm.uiState.value.isCheckingCapabilities)
+    }
+
+    @Test fun pullRefreshDuringInitialCapabilityCheckWaitsForItWithoutDuplicatingRequests() = runTest(dispatcher) {
+        val check = CompletableDeferred<Result<NotificationCapabilities>>()
+        val page = CompletableDeferred<Result<NotificationPage>>()
+        var checks = 0
+        var reactions = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+                checks++
+                return check.await()
+            }
+            override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
+                if (category != NotificationCategory.Reactions) return super.getNotificationPage(session, category, maxId, limit, supportsTypeFiltering)
+                reactions++
+                return page.await()
+            }
+        }
+        val vm = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        runCurrent(); vm.onNotificationsVisible(); vm.selectCategory(NotificationCategory.Reactions)
+        vm.refreshNotifications(); runCurrent()
+        assertEquals(1, checks)
+        assertEquals(0, reactions)
+        check.complete(Result.success(NotificationCapabilities(true, true))); runCurrent()
+        assertEquals(1, reactions)
+        assertFalse(vm.uiState.value.isCheckingCapabilities)
+        assertTrue(vm.uiState.value.list(NotificationCategory.Reactions).isRefreshing)
+        page.complete(Result.success(NotificationPage(emptyList(), null, true))); advanceUntilIdle()
+        assertFalse(vm.uiState.value.list(NotificationCategory.Reactions).isRefreshing)
+        assertEquals(1, checks)
     }
 
     @Test fun pageIsDisplayedAndViewedWhileMarkerIsPendingWithoutRevivingReadNotifications() = runTest(dispatcher) {
@@ -141,7 +180,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         assertEquals("All-next", vm.uiState.value.notificationsNextMaxId)
     }
 
-    @Test fun unsupportedOrFailedReactionCheckBlocksBothPagingPathsAndCanBeRetried() = runTest(dispatcher) {
+    @Test fun unsupportedOrFailedReactionCheckBlocksPagingAndRefreshWithoutRechecking() = runTest(dispatcher) {
         for (failedCheck in listOf(false, true)) {
             var supported = false
             var checks = 0
@@ -168,10 +207,10 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
             assertEquals(1, checks)
             assertEquals(listOf(NotificationCategory.All), requests)
             supported = true; vm.refreshNotifications(); advanceUntilIdle()
-            assertEquals(2, checks)
-            assertEquals(listOf(NotificationCategory.All, NotificationCategory.Reactions), requests)
-            assertTrue(vm.uiState.value.canExplore(NotificationCategory.Reactions))
-            assertTrue(vm.uiState.value.list(NotificationCategory.Reactions).endReached)
+            assertEquals(1, checks)
+            assertEquals(listOf(NotificationCategory.All), requests)
+            assertFalse(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+            assertFalse(vm.uiState.value.isCheckingCapabilities)
         }
     }
 

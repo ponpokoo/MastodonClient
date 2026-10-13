@@ -9,8 +9,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
-import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
-import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -30,10 +28,6 @@ data class StatusDetailUiState(
     val detail: StatusDetail? = null,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
-    val accountListTitle: String? = null,
-    val accounts: List<StatusAuthor> = emptyList(),
-    val isLoadingAccounts: Boolean = false,
-    val accountListError: String? = null,
     val currentAccountId: String? = null,
     val lists: List<MastodonList> = emptyList(),
     val isLoadingLists: Boolean = false,
@@ -81,31 +75,6 @@ class StatusDetailViewModel(
         if (!_uiState.value.isLoading) load()
     }
 
-    fun showBoosters() {
-        if ((_uiState.value.detail?.status?.boostsCount ?: 0L) <= 0L) return
-        loadAccounts("ブーストしたアカウント") { current ->
-            timelineRepository.getRebloggedBy(current, statusId)
-        }
-    }
-
-    fun showFavourites() {
-        if ((_uiState.value.detail?.status?.favouritesCount ?: 0L) <= 0L) return
-        loadAccounts("お気に入りしたアカウント") { current ->
-            timelineRepository.getFavouritedBy(current, statusId)
-        }
-    }
-
-    fun showReaction(reaction: EmojiReaction) =
-        loadAccounts(
-            if (reaction.accountIds.isEmpty()) "リアクションした人"
-            else "${reaction.name} を付けた人",
-        ) { current ->
-            timelineRepository.getEmojiReactionedBy(current, statusId, reaction.name).map { accounts ->
-                if (reaction.accountIds.isEmpty()) accounts
-                else accounts.filter { it.id in reaction.accountIds }
-            }
-        }
-
     fun toggleFavourite() = runOptimisticAction(statusActionManager::beginFavourite)
 
     fun toggleReblog() = runOptimisticAction(statusActionManager::beginReblog)
@@ -117,10 +86,6 @@ class StatusDetailViewModel(
     fun votePoll(choices: Set<Int>) = mutateStatus { current, status ->
         val poll = status.poll ?: return@mutateStatus Result.failure(IllegalStateException("アンケートが見つかりません"))
         timelineRepository.votePoll(current, status.statusId, poll.id, choices)
-    }
-
-    fun dismissAccounts() {
-        _uiState.update { it.copy(accountListTitle = null, accounts = emptyList(), accountListError = null) }
     }
 
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }
@@ -214,31 +179,6 @@ class StatusDetailViewModel(
                     }
                 }
         }
-
-    private fun loadAccounts(
-        title: String,
-        request: suspend (AccountSession) -> Result<List<StatusAuthor>>,
-    ) {
-        val current = session ?: return
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(accountListTitle = title, accounts = emptyList(), isLoadingAccounts = true, accountListError = null)
-            }
-            request(current)
-                .onSuccess { accounts ->
-                    _uiState.update { if (it.accountListTitle == title) it.copy(accounts = accounts, isLoadingAccounts = false) else it }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        if (it.accountListTitle == title) it.copy(
-                            isLoadingAccounts = false,
-                            accountListError = error.message?.takeIf { message -> message.length <= 100 }
-                                ?: "一覧を取得できませんでした",
-                        ) else it
-                    }
-                }
-        }
-    }
 
     private fun mutateStatus(
         request: suspend (AccountSession, io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus) ->

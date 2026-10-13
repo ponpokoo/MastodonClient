@@ -260,14 +260,17 @@ interface MastodonApi {
     suspend fun getStatusContext(@Path("id") id: String): StatusContextDto
 
     @GET("api/v1/statuses/{id}/reblogged_by")
-    suspend fun getRebloggedBy(@Path("id") id: String): List<AccountDto>
+    suspend fun getRebloggedBy(@Path("id") id: String, @Query("max_id") maxId: String? = null,
+        @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
 
     @GET("api/v1/statuses/{id}/favourited_by")
-    suspend fun getFavouritedBy(@Path("id") id: String): List<AccountDto>
+    suspend fun getFavouritedBy(@Path("id") id: String, @Query("max_id") maxId: String? = null,
+        @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
 
     // Fedibird extension. Called only when a status advertises emoji_reactions.
     @GET("api/v1/statuses/{id}/emoji_reactioned_by")
-    suspend fun getEmojiReactionedBy(@Path("id") id: String): JsonElement
+    suspend fun getEmojiReactionedBy(@Path("id") id: String, @Query("max_id") maxId: String? = null,
+        @Query("limit") limit: Int = 40): retrofit2.Response<JsonElement>
 
     @POST("api/v1/statuses/{id}/favourite")
     suspend fun favourite(@Path("id") id: String): StatusDto

@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -154,6 +155,8 @@ class DefaultTimelineRepository(
     private val moderationMutex = Mutex()
     private data class CachedConfiguration(val value: ComposerConfiguration, val fetchedAt: Long)
     private val configurationMutex = Mutex()
+    private val notificationCapabilitiesMutex = Mutex()
+    private val notificationCapabilityCache = mutableMapOf<String, NotificationCapabilities>()
     private val configurations = object : LinkedHashMap<String, CachedConfiguration>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedConfiguration>?) = size > 8
     }
@@ -433,18 +436,30 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getNotificationCapabilities(session: AccountSession) = runCatching {
-        val api = apiClientFactory.create(session.instanceUrl)
-        val instance = try { api.getInstance() } catch (error: HttpException) {
-            if (error.code() != 404) throw error
-            api.getLegacyInstance()
+        notificationCapabilitiesMutex.withLock {
+            val instanceUrl = session.instanceUrl.trimEnd('/')
+            notificationCapabilityCache[instanceUrl]?.let { return@withLock it }
+            settingsStore?.preferences?.first()?.notificationCapabilities?.get(instanceUrl)?.let {
+                notificationCapabilityCache[instanceUrl] = it
+                return@withLock it
+            }
+            val api = apiClientFactory.create(session.instanceUrl)
+            val instance = try { api.getInstance() } catch (error: HttpException) {
+                if (error.code() != 404) throw error
+                api.getLegacyInstance()
+            }
+            val version = Regex("""^(\d+)\.(\d+)""").find(instance.version.orEmpty())
+            val major = version?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val minor = version?.groupValues?.get(2)?.toIntOrNull() ?: 0
+            val capabilities = NotificationCapabilities(
+                supportsTypeFiltering = major > 3 || major == 3 && minor >= 5,
+                supportsEmojiReactions = "emoji_reaction" in instance.fedibirdCapabilities.orEmpty(),
+            )
+            // A failed request is never persisted as an unsupported instance.
+            runCatching { settingsStore?.saveNotificationCapabilities(instanceUrl, capabilities) }
+            notificationCapabilityCache[instanceUrl] = capabilities
+            capabilities
         }
-        val version = Regex("""^(\d+)\.(\d+)""").find(instance.version.orEmpty())
-        val major = version?.groupValues?.get(1)?.toIntOrNull() ?: 0
-        val minor = version?.groupValues?.get(2)?.toIntOrNull() ?: 0
-        NotificationCapabilities(
-            supportsTypeFiltering = major > 3 || major == 3 && minor >= 5,
-            supportsEmojiReactions = "emoji_reaction" in instance.fedibirdCapabilities.orEmpty(),
-        )
     }
 
     override suspend fun getNotificationPage(
@@ -642,16 +657,21 @@ class DefaultTimelineRepository(
         )
     } }
 
-    override suspend fun getRebloggedBy(session: AccountSession, statusId: String) =
-        loadAccounts(session) { getRebloggedBy(statusId) }
+    override suspend fun getRebloggedBy(session: AccountSession, statusId: String, maxId: String?) =
+        loadAccounts(session) { getRebloggedBy(statusId, maxId) }
 
-    override suspend fun getFavouritedBy(session: AccountSession, statusId: String) =
-        loadAccounts(session) { getFavouritedBy(statusId) }
+    override suspend fun getFavouritedBy(session: AccountSession, statusId: String, maxId: String?) =
+        loadAccounts(session) { getFavouritedBy(statusId, maxId) }
 
-    override suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String) = runCatching {
+    override suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String,
+        maxId: String?) = runCatching {
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
-            .getEmojiReactionedBy(statusId)
-        reactionAccountsFromResponse(response, reactionName, json).map(AccountDto::toDomain)
+            .getEmojiReactionedBy(statusId, maxId)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        val accounts = response.body()?.let { reactionAccountsFromResponse(it, reactionName, json) }
+            .orEmpty().map(AccountDto::toDomain)
+        val nextMaxId = nextAccountListCursor(response.headers()["Link"])
+        AccountListPage(accounts, nextMaxId, nextMaxId == null)
     }
 
     override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
@@ -853,11 +873,13 @@ class DefaultTimelineRepository(
 
     private suspend fun loadAccounts(
         session: AccountSession,
-        request: suspend io.github.ponpokoo.mastodonclient.data.remote.MastodonApi.() -> List<AccountDto>,
+        request: suspend io.github.ponpokoo.mastodonclient.data.remote.MastodonApi.() -> retrofit2.Response<List<AccountDto>>,
     ) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken)
-            .request()
-            .map(AccountDto::toDomain)
+        val response = apiClientFactory.create(session.instanceUrl, session.accessToken).request()
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        val accounts = response.body().orEmpty().map(AccountDto::toDomain)
+        val nextMaxId = nextAccountListCursor(response.headers()["Link"])
+        AccountListPage(accounts, nextMaxId, nextMaxId == null)
     }
 }
 

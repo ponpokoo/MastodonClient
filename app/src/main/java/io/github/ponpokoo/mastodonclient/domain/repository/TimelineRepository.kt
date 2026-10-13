@@ -173,13 +173,14 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> =
         Result.failure(UnsupportedOperationException("投稿詳細は未対応です"))
 
-    suspend fun getRebloggedBy(session: AccountSession, statusId: String): Result<List<StatusAuthor>> =
+    suspend fun getRebloggedBy(session: AccountSession, statusId: String, maxId: String? = null): Result<AccountListPage> =
         Result.failure(UnsupportedOperationException("ブースト一覧は未対応です"))
 
-    suspend fun getFavouritedBy(session: AccountSession, statusId: String): Result<List<StatusAuthor>> =
+    suspend fun getFavouritedBy(session: AccountSession, statusId: String, maxId: String? = null): Result<AccountListPage> =
         Result.failure(UnsupportedOperationException("お気に入り一覧は未対応です"))
 
-    suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String): Result<List<StatusAuthor>> =
+    suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String,
+        maxId: String? = null): Result<AccountListPage> =
         Result.failure(UnsupportedOperationException("リアクション一覧は未対応です"))
 
     suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean): Result<TimelineStatus> =

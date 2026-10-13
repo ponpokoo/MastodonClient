@@ -12,6 +12,7 @@ enum class NotificationCategory(val label: String) {
     }
 }
 
+@Serializable
 data class NotificationCapabilities(
     val supportsTypeFiltering: Boolean = false,
     val supportsEmojiReactions: Boolean = false,

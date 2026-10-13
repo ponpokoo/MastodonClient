@@ -57,7 +57,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
@@ -97,6 +97,9 @@ fun StatusDetailScreen(
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onStatusClick: (String) -> Unit,
+    onShowBoosters: (String) -> Unit = {},
+    onShowFavourites: (String) -> Unit = {},
+    onShowReaction: (String, EmojiReaction) -> Unit = { _, _ -> },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val moderationMenu by viewModel.moderationMenuState.collectAsStateWithLifecycle()
@@ -192,7 +195,7 @@ fun StatusDetailScreen(
                         onFavourite = viewModel::toggleFavourite,
                         onVotePoll = viewModel::votePoll,
                         onReact = viewModel::setReaction,
-                        onReactionLongPress = viewModel::showReaction,
+                        onReactionLongPress = { onShowReaction(status.statusId, it) },
                         onUnavailableAction = {},
                         displayPreferences = preferences.timelineDisplay,
                         gifAutoplay = preferences.gifAutoplay,
@@ -201,8 +204,8 @@ fun StatusDetailScreen(
                         afterActions = {
                             StatusDetailMetadata(
                                 status = status,
-                                onBoosters = viewModel::showBoosters,
-                                onFavourites = viewModel::showFavourites,
+                                onBoosters = { onShowBoosters(status.statusId) },
+                                onFavourites = { onShowFavourites(status.statusId) },
                             )
                         },
                     )
@@ -289,19 +292,6 @@ fun StatusDetailScreen(
         )
     }
 
-    state.accountListTitle?.let { accountListTitle ->
-        StatusAccountsDialog(
-            title = accountListTitle,
-            accounts = state.accounts,
-            isLoading = state.isLoadingAccounts,
-            errorMessage = state.accountListError,
-            onDismiss = viewModel::dismissAccounts,
-            onAccountClick = { accountId ->
-                viewModel.dismissAccounts()
-                onAccountClick(accountId)
-            },
-        )
-    }
 }
 
 /** Position once after the complete conversation arrives; preserve later browsing position. */
@@ -366,7 +356,20 @@ internal fun StatusAccountsDialog(
     errorMessage: String? = null,
     onDismiss: () -> Unit,
     onAccountClick: (String) -> Unit,
+    nextMaxId: String? = null,
+    onLoadMore: () -> Unit = {},
+    onRetry: () -> Unit = {},
 ) {
+    val listState = rememberLazyListState()
+    val loadMore by androidx.compose.runtime.rememberUpdatedState(onLoadMore)
+    LaunchedEffect(listState, accounts.size, nextMaxId, isLoading, errorMessage) {
+        if (accounts.isNotEmpty() && nextMaxId != null && !isLoading && errorMessage == null) {
+            snapshotFlow {
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= accounts.lastIndex } == true
+            }.first { it }
+            loadMore()
+        }
+    }
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.8f
     val minHeight = minOf(129.dp, maxHeight)
     Dialog(onDismissRequest = onDismiss) {
@@ -387,12 +390,35 @@ internal fun StatusAccountsDialog(
                 }
                 HorizontalDivider()
                 when {
-                    isLoading -> Spacer(Modifier.height(64.dp))
-                    errorMessage != null -> Text(errorMessage, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error)
+                    isLoading && accounts.isEmpty() -> Spacer(Modifier.height(64.dp))
+                    errorMessage != null && accounts.isEmpty() -> Column(Modifier.padding(20.dp)) {
+                        Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = onRetry) { Text("再試行") }
+                    }
                     accounts.isEmpty() -> Text("表示できるアカウントはありません", Modifier.padding(20.dp))
-                    else -> LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                    else -> LazyColumn(
+                        Modifier.fillMaxWidth().weight(1f, fill = false).testTag("status_accounts_list"),
+                        state = listState,
+                    ) {
                         items(accounts, key = StatusAuthor::id) { account ->
                             AccountRow(account) { onAccountClick(account.id) }
+                        }
+                        if (isLoading) item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(64.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp).testTag("status_accounts_load_more"),
+                                    strokeWidth = 2.dp,
+                                )
+                            }
+                        }
+                        if (errorMessage != null) item {
+                            Column(Modifier.padding(20.dp)) {
+                                Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                                TextButton(onClick = onRetry) { Text("再試行") }
+                            }
                         }
                     }
                 }
@@ -403,21 +429,15 @@ internal fun StatusAccountsDialog(
 
 @Composable
 private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
-    var loadAvatar by remember(account.id, account.avatarUrl) { mutableStateOf(false) }
     var avatarFailed by remember(account.id, account.avatarUrl) { mutableStateOf(false) }
-    LaunchedEffect(account.id, account.avatarUrl) {
-        // Draw the account name first, then start the avatar request on a later frame.
-        withFrameNanos { }
-        withFrameNanos { }
-        loadAvatar = true
-    }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+                .testTag("status_account_avatar_${account.id}"),
             contentAlignment = Alignment.Center,
         ) {
             if (account.avatarUrl.isBlank() || avatarFailed) {
@@ -428,7 +448,7 @@ private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (loadAvatar && account.avatarUrl.isNotBlank()) {
+            if (account.avatarUrl.isNotBlank()) {
                 AsyncImage(
                     model = account.avatarUrl,
                     contentDescription = null,

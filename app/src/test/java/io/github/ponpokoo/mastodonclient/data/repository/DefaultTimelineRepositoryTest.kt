@@ -21,6 +21,63 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    @Test fun interactionPagesUseLinkCursorsAndTheSelectedInstanceForAllThreeKinds() = runTest {
+        for (kind in listOf("favourited_by", "reblogged_by", "emoji_reactioned_by")) {
+            MockWebServer().use { server ->
+                val account = """{"id":"account-id","username":"alice","acct":"alice"}"""
+                val body = if (kind == "emoji_reactioned_by") """[{"name":"👍","account":$account}]""" else "[$account]"
+                server.enqueue(MockResponse().setBody(body).addHeader("Link",
+                    "<https://different.example/api/v1/statuses/post/$kind?max_id=opaque%2Bcursor&limit=40>; rel=\"next\""))
+                server.enqueue(MockResponse().setBody(body))
+                val repository = DefaultTimelineRepository(ApiClientFactory())
+                val session = testSession(server)
+                suspend fun load(cursor: String? = null) = when (kind) {
+                    "favourited_by" -> repository.getFavouritedBy(session, "post", cursor)
+                    "reblogged_by" -> repository.getRebloggedBy(session, "post", cursor)
+                    else -> repository.getEmojiReactionedBy(session, "post", "👍", cursor)
+                }.getOrThrow()
+                val first = load()
+                assertEquals("opaque+cursor", first.nextMaxId)
+                assertFalse(first.endReached)
+                assertEquals("account-id", first.accounts.single().id)
+                val last = load(first.nextMaxId)
+                assertTrue(last.endReached)
+                assertNull(last.nextMaxId)
+                val initialRequest = server.takeRequest().requestUrl!!
+                assertEquals("/api/v1/statuses/post/$kind", initialRequest.encodedPath)
+                assertEquals("40", initialRequest.queryParameter("limit"))
+                assertNull(initialRequest.queryParameter("max_id"))
+                val nextRequest = server.takeRequest().requestUrl!!
+                assertEquals("opaque+cursor", nextRequest.queryParameter("max_id"))
+                assertEquals(server.port, nextRequest.port)
+            }
+        }
+    }
+
+    @Test fun reactionPageWithNoMatchingEmojiRetainsItsServerCursor() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(
+                """[{"name":"🎉","account":{"id":"other","username":"bob","acct":"bob"}}]""",
+            ).addHeader("Link", "<${server.url("/api/v1/statuses/post/emoji_reactioned_by?max_id=reaction-id")}>; rel=\"next\""))
+            val page = DefaultTimelineRepository(ApiClientFactory())
+                .getEmojiReactionedBy(testSession(server), "post", "👍").getOrThrow()
+            assertTrue(page.accounts.isEmpty())
+            assertEquals("reaction-id", page.nextMaxId)
+            assertFalse(page.endReached)
+        }
+    }
+
+    @Test fun interactionPageHttpFailuresAreNotReportedAsEmptySuccessfulLists() = runTest {
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(MockResponse().setResponseCode(403).setBody("{}")) }
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            assertTrue(repository.getFavouritedBy(session, "post").isFailure)
+            assertTrue(repository.getRebloggedBy(session, "post").isFailure)
+            assertTrue(repository.getEmojiReactionedBy(session, "post", "👍").isFailure)
+        }
+    }
+
     @Test fun audioAttachmentsPreserveTypeAndOriginalUrlWithoutPreviewOrMimeFiltering() = runTest {
         MockWebServer().use { server ->
             val media = """"media_attachments":[
@@ -207,9 +264,9 @@ class DefaultTimelineRepositoryTest {
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val session = testSession(server)
 
-            assertEquals(listOf("one"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
-            assertEquals(listOf("two"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
-            assertEquals(listOf("four"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().map { it.id })
+            assertEquals(listOf("one"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().accounts.map { it.id })
+            assertEquals(listOf("two"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().accounts.map { it.id })
+            assertEquals(listOf("four"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().accounts.map { it.id })
         }
     }
 

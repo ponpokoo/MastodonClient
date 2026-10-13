@@ -129,6 +129,7 @@ class NotificationsViewModel(
         readState = NotificationReadState(); markerId = null; initialAllPage = emptyList()
         waitingAllMarkerId = null; lastSentMarkerId = null
         reactionRefreshRequested = false; reactionPullRefreshRequested = false
+        if (snapshot.account != null) checkCapabilities()
         if (requestedCategories.isNotEmpty() && snapshot.account != null) {
             requestedCategories.toList().forEach { loadCategory(it) }
         }
@@ -176,11 +177,9 @@ class NotificationsViewModel(
         }
     }
 
-    private fun checkCapabilities(force: Boolean = false, reloadReactions: Boolean = false, pullRefresh: Boolean = false) {
+    private fun checkCapabilities() {
         val snapshot = currentSnapshot() ?: return
-        reactionRefreshRequested = reactionRefreshRequested || reloadReactions
-        reactionPullRefreshRequested = reactionPullRefreshRequested || pullRefresh
-        if (capabilityJob?.isActive == true || !force && capabilityCheckRequested) return
+        if (capabilityCheckRequested) return
         capabilityCheckRequested = true
         _uiState.update { it.copy(isCheckingCapabilities = true) }
         capabilityJob = requestScope.launch {
@@ -205,7 +204,13 @@ class NotificationsViewModel(
         val snapshot = currentSnapshot() ?: return
         ensureReadState(snapshot)
         checkCapabilities()
-        if (!_uiState.value.canExplore(category)) return
+        if (!_uiState.value.canExplore(category)) {
+            if (category == NotificationCategory.Reactions && _uiState.value.isCheckingCapabilities) {
+                reactionRefreshRequested = reactionRefreshRequested || force
+                reactionPullRefreshRequested = reactionPullRefreshRequested || showPullRefreshIndicator
+            }
+            return
+        }
         val before = _uiState.value.list(category)
         if (before.isLoading || !force && before.isLoaded) return
         val initial = !before.isLoaded
@@ -281,16 +286,12 @@ class NotificationsViewModel(
     fun onNotificationsVisible() = loadNotifications()
     fun onAppForeground() {
         if (requestedCategories.isNotEmpty()) {
-            checkCapabilities(force = true, reloadReactions = true)
-            requestedCategories.filter { it != NotificationCategory.Reactions }.forEach { loadCategory(it, force = true) }
+            requestedCategories.toList().forEach { loadCategory(it, force = true) }
         }
     }
     fun onSystemNotificationOpened() { selectCategory(NotificationCategory.All); loadCategory(NotificationCategory.All, force = true) }
     fun refreshNotifications() {
-        checkCapabilities(force = true, reloadReactions = true, pullRefresh = true)
-        if (_uiState.value.selectedCategory != NotificationCategory.Reactions) {
-            loadNotifications(force = true, showPullRefreshIndicator = true)
-        }
+        loadNotifications(force = true, showPullRefreshIndicator = true)
     }
     fun onNotificationsHidden() { _uiState.update { it.copy(highlightedNotificationIds = emptySet(), shownNewNotice = null) } }
 
