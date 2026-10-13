@@ -22,7 +22,6 @@ jobs:
       android: ${{ steps.scope.outputs.android }}
       android_test: ${{ steps.scope.outputs.android_test }}
       release_tests: ${{ steps.scope.outputs.release_tests }}
-      prototype: ${{ steps.scope.outputs.prototype }}
       workers: ${{ steps.scope.outputs.workers }}
       relay: ${{ steps.scope.outputs.relay }}
     steps:
@@ -44,8 +43,7 @@ jobs:
     needs: changes
     if: >-
       needs.changes.outputs.android == 'true' ||
-      needs.changes.outputs.release_tests == 'true' ||
-      needs.changes.outputs.prototype == 'true'
+      needs.changes.outputs.release_tests == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -71,9 +69,6 @@ jobs:
       - name: Compile independent Release checks
         if: needs.changes.outputs.release_tests == 'true'
         run: ./gradlew --no-daemon :release-tests:assembleRelease
-      - name: Build UI prototype and its device tests
-        if: needs.changes.outputs.prototype == 'true'
-        run: ./gradlew --no-daemon :ui-prototype:assembleDebug :ui-prototype:assembleDebugAndroidTest
       - name: Save Android verification reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

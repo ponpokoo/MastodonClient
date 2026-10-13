@@ -68,7 +68,7 @@ Pushの専用試験は終了済みで、残るRelay・端末の確認は実運�
 | 領域 | 候補 | 採用前に決めること |
 | --- | --- | --- |
 | 投稿 | 投稿アクションボタンに機能を追加する | 対象の操作、利用条件、画面上の配置 |
-| 画像表示 | サムネイルから全画面への画像遷移を検討する | [Issue #3](https://github.com/ponpokoo/MastodonClient/issues/3)で管理。[独立した試作](../ui-prototype/README.md)の確認記録を参照 |
+| 画像表示 | サムネイルから全画面への画像遷移を検討する | [Issue #3](https://github.com/ponpokoo/MastodonClient/issues/3)で管理。`codex/ui-prototype`ブランチの[試作差分と本体への移植手順](https://github.com/ponpokoo/MastodonClient/blob/codex/ui-prototype/ui-prototype/ui-changes.md)を参照 |
 
 ### 品質・基盤候補
 

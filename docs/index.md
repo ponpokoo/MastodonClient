@@ -26,41 +26,64 @@
 
 ## Push・Relay
 
-まず[Workers版Relay](../relay/workers/README.md)で現在の方式を確認する。
-本番は2026-10-08にハイブリッド方式へ切替済み。今回のPush試験は2026-10-09で終了し、残る確認は[実運用へ引き継ぐ](../relay/workers/hybrid.md#採用後の対応と確認)。対応APKの配布状況は別途確認する。
+まず[ハイブリッド配送の採用仕様](../relay/workers/hybrid.md)で現在の本番方式を確認する。
+小通知はinline、大通知はsync_requiredを使い、Relayに本文を保存せず、永続再送を行わない。
+本番切替と対応APKの配布・運用性能の確認は区別する。確認済みの範囲と実運用での確認事項は[採用後の対応と確認](../relay/workers/hybrid.md#採用後の対応と確認)を参照する。
+
+### 現行仕様
 
 | 目的 | 文書 |
 | --- | --- |
-| Androidの購読・受信を変更する | [通知設定と購読管理](push-settings.md)・[Android接続と受信処理](push-reception.md) |
-| 通信形式・配送仕様を確認する | [共通通信契約](relay-protocol.md)・[ハイブリッド仕様と実運用での確認事項](../relay/workers/hybrid.md) |
-| Relayを開発・起動する | [Workers版](../relay/workers/README.md)・[ローカルv1模擬版](../relay/README.md) |
-| 配置・更新・停止・復旧する | [Workers配置・運用・復旧](../relay/workers/setup.md) |
-| 本番ハイブリッド切替の結果・旧APKへの影響を確認する | [2026-10-08切替記録](investigations/relay-production-hybrid-cutover-20261008.md)・[直接切替の判断](adr/0015-production-hybrid-cutover.md) |
-| 実FCMの通信量・表示遅延を確認する | [2026-10-08 小通知5件の測定](investigations/relay-live-fcm-measurement-20261008.md)（匿名結果・時計のずれ・測定範囲） |
+| 本番Relayの配送・保存・失敗時の動作を確認する | [ハイブリッド配送の採用仕様](../relay/workers/hybrid.md) |
+| 登録API・FCMエンベロープ・各版の互換性を確認する | [共通通信契約](relay-protocol.md) |
+| Androidの設定・購読・解除・再開を変更する | [通知設定と購読管理](push-settings.md) |
+| AndroidのFirebase接続・受信・復号・表示・差分同期を変更する | [Android接続と受信処理](push-reception.md) |
+
+### 開発・運用手順
+
+| 目的 | 文書 |
+| --- | --- |
+| Workers版Relayを開発・起動する | [Workers版README](../relay/workers/README.md)（本番ハイブリッドと旧保存経路の入口・ビルドを区別する） |
+| 旧v1契約のローカル模擬Relayを起動する | [ローカルv1模擬版](../relay/README.md)（登録v2・実FCM送信は未対応） |
+| Workersを配置・更新・停止・復旧する | [Workers配置・運用・復旧](../relay/workers/setup.md)（旧入口の新規配置と本番ハイブリッド更新を区別する） |
+| 公開条件・監視方針・購読移行を確認する | [本運用への移行手順](relay-production.md)（準備・移行の経緯と旧経路の手順を含む） |
+
+### 検証手順・記録・設計判断
+
+| 目的 | 文書 |
+| --- | --- |
+| 自動テストを実行する・過去の調査や測定を探す | [検証ガイド](../relay/workers/testing.md)（テスト配置・測定ツール・環境準備・各記録への入口） |
 | エミュレーターで実FCMのハイブリッド配送を試す | [専用Worker・D1・FCM設定とAndroid購読の切替](../relay/workers/hybrid-live-setup.md) |
 | 4KiBの合成Pushで実FCMの大通知経路を試す | [一時登録・通知音のミュート・隔離した同期処理](../relay/workers/hybrid-live-setup.md#合成大通知の実fcm確認) |
-| 運用条件・購読移行を確認する | [本運用への移行手順](relay-production.md)・[規模増加や問題発生時に参照する再測定計画](relay-100-user-remeasurement-plan.md) |
-| テスト・測定・過去の調査を読む | [検証ガイド](../relay/workers/testing.md)（測定ツール・専用環境の準備・各記録への入口） |
+| 規模増加や問題発生時に再検証の条件を選ぶ | [100人を想定した再測定計画](relay-100-user-remeasurement-plan.md)（当初の条件・合格基準を保持した参照資料） |
+| 本番ハイブリッド切替の結果・差し戻し先・旧APKへの影響を確認する | [2026-10-08切替記録](investigations/relay-production-hybrid-cutover-20261008.md)・[直接切替の判断](adr/0015-production-hybrid-cutover.md) |
+| 実FCMの通信量・表示遅延の測定結果を読む | [2026-10-08 小通知5件の測定](investigations/relay-live-fcm-measurement-20261008.md)（匿名結果・時計のずれ・測定範囲） |
+| 責務分担・鍵紐付け・ハイブリッド採用・Android同期の判断を確認する | [ADR一覧](adr/README.md)（Push・Relay関連の判断と置き換え履歴） |
 
 実測値は各測定記録、設計の採用理由は[ADR一覧](adr/README.md)を正本とし、入口の文書には重複して転記しない。
 
 ## 調査・継続確認
 
+未解決の問題、残る互換性・保持方針の確認、採用前の試作を参照する。継続対応の進捗はIssuesで管理する。
+
 | 文書 | 読むとき |
 | --- | --- |
-| [段階的リファクタリング計画](refactoring-plan.md) | 調査で挙げた9候補の実装順、最小変更範囲、過剰設計を避ける制約、検証・完了条件を確認する（実装・実機確認完了） |
-| [UI試作アプリ](../ui-prototype/README.md) | 本体と独立した操作感の試作、単一画像・複数画像とズームの選択、ビルド手順、画像遷移の過去の確認範囲を確認する |
-| [サーバー保存設定の取得・反映](investigations/server-account-settings-sync.md) | 採用した同期方針と互換性判断。投稿初期設定（公開範囲・引用許可・言語）・設定からの初期公開範囲保存・ミュート・ブロック・公式フィルターの実装済み差分、メディア表示／CW展開／投稿の初期閲覧注意フラグを端末内だけで管理する仕様、各管理画面の手動更新、フィルターのStreaming同期、互換性・実装順を確認する |
+| [UI試作アプリ（試作ブランチ）](https://github.com/ponpokoo/MastodonClient/blob/codex/ui-prototype/ui-prototype/README.md) | 開発先は`codex/ui-prototype`。本体UIを取り込んだ4画面の試作、再現範囲・ビルド手順を確認する。未適用の差分と移植手順は同ブランチの[UI変更履歴と本体への移植](https://github.com/ponpokoo/MastodonClient/blob/codex/ui-prototype/ui-prototype/ui-changes.md)を参照する |
+| [サーバー保存設定の取得・反映](investigations/server-account-settings-sync.md) | 同期対象6項目と閲覧注意関連の端末設定3項目は実装済み。採用した取得・更新方針、公式フィルターと端末内ワードミュートの併用、未確認の実サーバーでの他クライアント変更・権限・API・Streaming互換性を確認する。現行仕様は[UI仕様](ui-guidelines.md#サーバー保存設定と公式フィルター)を参照する |
 | [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 原因未確定。サーバー側の仕様によるものかも未確定として、調査結果・再現条件・原因特定の限界を確認する |
-| [アカウント削除後の残留データ](investigations/account-removal-data-retention.md) | 削除対象・再試行の判断、統合前の検証記録、旧孤立添付やPush解除待ちの制約を確認する |
-| [通知メンションの遅延・リアクションの連続読込](investigations/notification-mention-loading-report.md) | mstdn.jpでの空表示・遅延、絵文字リアクション非対応時の連続読込、共通カーソルと既読位置待機、端末なしの検証範囲を確認する |
-| [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 公開APIの観測、MastodonとMisskeyの認証・通知・リアクションAPIの違い、連合と直接ログインの範囲を確認する |
+| [アカウント削除後の残る保持条件](investigations/account-removal-data-retention.md#4-push解除待ちの保存期間に上限がない) | ローカルデータの回収・再試行は実装済み。未実装のPush解除待ちの終了条件・保存期限と、旧孤立添付・共有画像キャッシュ・OAuth失効・過去のバックアップに関する対象外の範囲を確認する |
+| [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 2026-10-06の公開API観測と互換性判断を参照する。Misskey直接対応は未実装。連合経由の投稿表示と直接ログインを区別する |
 
-## 完了した修正
+## 完了した修正・改善
+
+実装・確認を終えた範囲と、当時の調査・判断を参照する。対象外の機能や未確認の実運用まで完了扱いにしない。
 
 | 文書 | 読むとき |
 | --- | --- |
+| [段階的リファクタリング計画](refactoring-plan.md) | 9候補の実装・実機確認は完了。採用した実装順・変更範囲・過剰設計を避ける制約・検証条件を参照する |
+| [通知一覧の取得・新着判定の修正](investigations/notification-mention-loading-report.md) | 種類別40件取得、対応不明時のリアクション探索停止、既読取得との分離、閲覧記録と新着判定は実装済み。修正前の原因候補と調査テストを参照し、実アカウントでの症状解消の確認とは区別する。現行動作は[通知仕様](ui-guidelines.md#通知の表示更新既読位置)を参照する |
+| [アカウント削除時のローカルデータ回収](investigations/account-removal-data-retention.md#実装後の扱い) | 改善対象1〜3の回収・遅延処理の拒否・削除失敗時の再試行は実装・検証済み。削除対象と統合前の検証範囲を確認する。Push解除待ちの期限などは上記の継続確認を参照する |
 | [UI修正の要点](investigations/resolved-ui-fixes.md) | 音声・プロフィールの改行・固定投稿・惰性スクロール・検索復帰の原因、修正理由、最終確認の範囲を確認する |
 | [自プロフィール画像の点滅](investigations/profile-image-refresh-flicker-report.md) | 解決済み。再取得・旧画像保持の修正に至った原因と、当時の調査記録を参照する |
 
-詳細な調整履歴の要点は上記へ統合した。再現用テスト、未解決の調査、設計判断のADRは別途保持する。
+UIの詳細な調整履歴の要点は[UI修正の要点](investigations/resolved-ui-fixes.md)へ統合した。再現用テスト、未解決の調査、設計判断のADRは別途保持する。

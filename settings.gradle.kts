@@ -25,4 +25,3 @@ dependencyResolutionManagement {
 rootProject.name = "MastodonClient"
 include(":app")
 include(":release-tests")
-include(":ui-prototype")

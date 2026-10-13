@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const flags = ['android', 'android_test', 'release_tests', 'prototype', 'workers', 'relay'];
+const flags = ['android', 'android_test', 'release_tests', 'workers', 'relay'];
 
 export function classifyPaths(paths, forceAll = false) {
   const selected = Object.fromEntries(flags.map(flag => [flag, forceAll]));
@@ -14,7 +14,7 @@ export function classifyPaths(paths, forceAll = false) {
       flags.forEach(flag => { selected[flag] = true; });
     } else if (path.startsWith('gradle/') || path === 'gradlew' || path === 'gradlew.bat' ||
         /^(build\.gradle\.kts|settings\.gradle\.kts|gradle\.properties)$/.test(path)) {
-      for (const flag of ['android', 'android_test', 'release_tests', 'prototype']) selected[flag] = true;
+      for (const flag of ['android', 'android_test', 'release_tests']) selected[flag] = true;
     } else if (path.startsWith('tools/')) {
       selected.android = true;
       selected.android_test = true;
@@ -23,8 +23,6 @@ export function classifyPaths(paths, forceAll = false) {
       if (path.startsWith('app/src/androidTest/') || path === 'app/build.gradle.kts') selected.android_test = true;
     } else if (path.startsWith('release-tests/')) {
       selected.release_tests = true;
-    } else if (path.startsWith('ui-prototype/')) {
-      selected.prototype = true;
     } else if (path.startsWith('relay/workers/')) {
       selected.workers = true;
     } else if (path.startsWith('relay/')) {
@@ -77,7 +75,7 @@ export function checkResults(needs) {
     throw new Error('CI selection outputs are missing or invalid');
   }
   const required = {
-    android: ['android', 'release_tests', 'prototype'].some(flag => output[flag] === 'true'),
+    android: ['android', 'release_tests'].some(flag => output[flag] === 'true'),
     workers: output.workers === 'true',
     relay: output.relay === 'true',
   };

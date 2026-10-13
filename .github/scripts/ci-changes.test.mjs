@@ -47,7 +47,7 @@ test('Android device tests and shared Gradle changes select the relevant compila
   assert.equal(tool.android, true);
   assert.equal(tool.android_test, true);
   const shared = classifyPaths(['gradle/libs.versions.toml']);
-  for (const flag of ['android', 'android_test', 'release_tests', 'prototype']) assert.equal(shared[flag], true);
+  for (const flag of ['android', 'android_test', 'release_tests']) assert.equal(shared[flag], true);
   assert.equal(shared.relay, false);
 });
 
@@ -61,15 +61,14 @@ test('Relay implementations remain independent and mixed changes select both', (
   assert.equal(both.android, false);
 });
 
-test('UI prototype sources and device tests select only the prototype build', () => {
-  for (const path of ['ui-prototype/src/main/Example.kt', 'ui-prototype/src/androidTest/RegressionTest.kt']) {
+test('independent Release checks select their compilation without app or Relay builds', () => {
+  for (const path of ['release-tests/build.gradle.kts', 'release-tests/src/main/RegressionTest.kt']) {
     const selected = classifyPaths([path]);
-    assert.equal(selected.prototype, true);
-    for (const flag of ['android', 'android_test', 'release_tests', 'workers', 'relay']) {
+    assert.equal(selected.release_tests, true);
+    for (const flag of ['android', 'android_test', 'workers', 'relay']) {
       assert.equal(selected[flag], false);
     }
   }
-  assert.ok(Object.values(classifyPaths(['ui-prototype/README.md'])).every(value => value === false));
 });
 
 test('CI changes and manual dispatch select every job', () => {
