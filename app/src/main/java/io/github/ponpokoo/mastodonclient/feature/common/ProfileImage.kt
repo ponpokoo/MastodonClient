@@ -1,8 +1,12 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -24,12 +28,15 @@ internal fun ProfileImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     imageLoader: ImageLoader = SingletonImageLoader.get(LocalContext.current),
+    onDisplayedPainter: (Painter) -> Unit = {},
 ) {
     key(identity) {
         val displayed = remember { DisplayedProfileImage() }
+        var currentPainter by remember { mutableStateOf<Painter?>(null) }
         AsyncImage(
             model = model, imageLoader = imageLoader, contentDescription = contentDescription,
             modifier = modifier, contentScale = contentScale,
+            onState = { state -> currentPainter = state.painter },
             transform = { state ->
                 if (!retainPreviousImage) state else when (state) {
                     is AsyncImagePainter.State.Success -> state.also { displayed.painter = it.painter }
@@ -39,5 +46,6 @@ internal fun ProfileImage(
                 }
             },
         )
+        SideEffect { currentPainter?.let(onDisplayedPainter) }
     }
 }

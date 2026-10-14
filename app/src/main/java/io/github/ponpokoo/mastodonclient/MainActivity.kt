@@ -94,18 +94,20 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.Dark -> true
                 ThemeMode.System -> isSystemInDarkTheme()
             }
+            var mediaVisible by remember { mutableStateOf(false) }
             MastodonClientTheme(themeMode = preferences.themeMode) {
                 val windowBackground = MaterialTheme.colorScheme.background
                 SideEffect {
                     window.setBackgroundDrawable(ColorDrawable(windowBackground.toArgb()))
                     WindowCompat.getInsetsController(window, window.decorView).apply {
-                        isAppearanceLightStatusBars = !darkTheme
-                        isAppearanceLightNavigationBars = !darkTheme
+                        isAppearanceLightStatusBars = !darkTheme && !mediaVisible
+                        isAppearanceLightNavigationBars = !darkTheme && !mediaVisible
                     }
                 }
                 AppNavigation(
                     preferences = preferencesStore,
                     notificationOpenRequest = notificationOpenRequest,
+                    onMediaVisibilityChanged = { mediaVisible = it },
                     onNotificationOpenHandled = { handled ->
                         if (notificationOpenRequest == handled) {
                             notificationOpenRequest = null

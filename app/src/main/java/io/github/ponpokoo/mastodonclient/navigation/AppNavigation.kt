@@ -90,6 +90,8 @@ import io.github.ponpokoo.mastodonclient.feature.profile.SavedTimelinesViewModel
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
+import io.github.ponpokoo.mastodonclient.feature.media.MediaTransitionHost
+import io.github.ponpokoo.mastodonclient.feature.media.rememberMediaTransitionState
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -111,6 +113,7 @@ fun AppNavigation(
     preferences: UserPreferencesStore,
     notificationOpenRequest: NotificationOpenRequest? = null,
     onNotificationOpenHandled: (NotificationOpenRequest) -> Unit = {},
+    onMediaVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val appLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     val navController = rememberNavController()
@@ -242,6 +245,14 @@ fun AppNavigation(
         viewModel<MainSessionViewModel>(viewModelStoreOwner = entry, factory = mainSessionFactory)
     }
     val readingSession = mainSessionModel?.uiState?.collectAsStateWithLifecycle()?.value?.session
+    val mediaSnapshot = mainSessionModel?.browsing?.snapshot?.collectAsStateWithLifecycle()?.value
+    val mediaSessionKey = mediaSnapshot?.account?.let {
+        "${it.sessionId}|${it.instanceUrl}|${mediaSnapshot.generation}"
+    }
+    val mediaMotion = rememberMediaTransitionState()
+    SideEffect {
+        onMediaVisibilityChanged(mediaMotion.active || currentBackStackEntry?.destination?.hasRoute<Route.MediaViewer>() == true)
+    }
     val interactions = timelineEntry?.let { entry ->
         viewModel<StatusInteractionsViewModel>(viewModelStoreOwner = entry, factory = ScreenViewModelFactory {
             StatusInteractionsViewModel(timelineRepository, requireNotNull(mainSessionModel).browsing, preferences)
@@ -292,8 +303,8 @@ fun AppNavigation(
         val availableMedia = media.filter { it.url != null || it.previewUrl != null }
         if (availableMedia.isNotEmpty()) {
             val resolvedIndex = availableMedia.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
-            navController.navigate(Route.MediaViewer(navigationJson.encodeToString(availableMedia), resolvedIndex)) {
-                launchSingleTop = true
+            mediaSessionKey?.let { session ->
+                currentBackStackEntry?.id?.let { owner -> mediaMotion.open(availableMedia, resolvedIndex, session, owner) }
             }
         }
     }
@@ -309,6 +320,8 @@ fun AppNavigation(
     }
     val loadReactionHistory: suspend () -> List<String> = { interactions?.loadReactionHistory().orEmpty() }
     val saveReactionHistory: suspend (List<String>) -> Unit = { interactions?.saveReactionHistory(it); Unit }
+    MediaTransitionHost(mediaMotion, mediaSessionKey, currentBackStackEntry?.id,
+        sessionReady = (mediaSnapshot?.generation ?: 0) > 0 || currentBackStackEntry?.destination?.hasRoute<Route.Login>() == true) {
     CompositionLocalProvider(
         io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings provides
             io.github.ponpokoo.mastodonclient.feature.common.ReadingSettings(
@@ -482,6 +495,12 @@ fun AppNavigation(
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
                 dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow?.let { window ->
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = false
+                        isAppearanceLightNavigationBars = false
+                    }
+                }
                 dialogWindow?.setSoftInputMode(
                     WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE,
                 )
@@ -708,6 +727,8 @@ fun AppNavigation(
                 onQuote = openQuote,
             )
         }
+        // Compatibility for a previously saved media dialog navigation entry.
+        // New openings use the overlay and retain their source navigation entry.
         dialog<Route.MediaViewer>(
             dialogProperties = DialogProperties(
                 dismissOnBackPress = false,
@@ -720,12 +741,6 @@ fun AppNavigation(
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
                 dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
-                dialogWindow?.let { window ->
-                    WindowCompat.getInsetsController(window, window.decorView).apply {
-                        isAppearanceLightStatusBars = false
-                        isAppearanceLightNavigationBars = false
-                    }
-                }
             }
             val route = backStackEntry.toRoute<Route.MediaViewer>()
             val media = remember(route.mediaJson) {
@@ -762,6 +777,7 @@ fun AppNavigation(
                 },
             )
         }
+    }
     }
 }
 

@@ -11,7 +11,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -24,6 +27,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
+import io.github.ponpokoo.mastodonclient.feature.media.*
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
@@ -40,6 +44,87 @@ import org.junit.Test
 
 class HomeScrollDeviceTest {
     @get:Rule val rule = createComposeRule()
+
+    @Test fun changingTheTopBarOnAnotherTabKeepsTheShortTimelineViewport() = withHomeTimeline(statusCount = 8) { _, _, _ ->
+        rule.onNodeWithTag("timeline_list").performScrollToIndex(7)
+        val before = scrollPosition()
+        assertTrue(before > 0f)
+        rule.onNodeWithTag("main_tab_explore").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("main_tab_home").performClick()
+        rule.waitForIdle()
+        assertEquals(before, scrollPosition(), 1f)
+    }
+
+    @Test fun homeImageUsesItsSourceAndClosingKeepsTheScrolledTimeline() {
+        val motion = MediaTransitionState()
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val file = java.io.File.createTempFile("home-transition-", ".png", context.cacheDir)
+        val bitmap = android.graphics.Bitmap.createBitmap(240, 400, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.BLUE)
+        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        try {
+        withHomeTimeline(PostContent.Media, statusCount = 8, motion = motion, imageUrl = file.toURI().toString()) { _, _, _ ->
+            rule.onNodeWithTag("timeline_list").performScrollToIndex(4)
+            rule.waitUntil(5_000) { motion.thumbnailPainters.isNotEmpty() }
+            val list = rule.onNodeWithTag("timeline_list")
+            val image = rule.onNodeWithContentDescription("Attached image 4")
+            val button = rule.onNodeWithContentDescription("新規投稿").fetchSemanticsNode().boundsInRoot
+            val fullSource = image.fetchSemanticsNode().boundsInRoot
+            list.performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.ScrollBy) {
+                it(0f, fullSource.center.y - button.center.y)
+            }
+            rule.waitForIdle()
+            val source = image.fetchSemanticsNode().boundsInRoot
+            val sample = button.center + Offset(button.width * 0.25f, 0f)
+            assertTrue("The source must overlap the compose button", source.contains(sample))
+            val x = sample.x.toInt()
+            val y = sample.y.toInt()
+            val buttonColor = rule.onRoot().captureToImage().toPixelMap()[x, y]
+            val before = scrollPosition()
+            image.performTouchInput { click(Offset(width * 0.2f, height / 2f)) }
+            rule.waitUntil(5_000) { motion.phase == MediaPhase.Viewing }
+            assertTrue(motion.sourceIsHome)
+            assertTrue(motion.transitionThumbnail != null)
+            val frame = motion.transitionThumbnail!!
+            assertTrue("Start from a bottom-clipped thumbnail", frame.visibleBounds.bottom < frame.bounds.bottom - 10f)
+            assertTrue("The compose button must be hidden in full screen",
+                rule.onRoot().captureToImage().toPixelMap()[x, y].blue > 0.98f)
+            rule.onNodeWithTag("media_viewer").performTouchInput { click(center) }
+            rule.waitUntil(5_000) { rule.onAllNodesWithTag("media_viewer_close").fetchSemanticsNodes().isEmpty() }
+            rule.mainClock.autoAdvance = false
+            androidx.test.espresso.Espresso.pressBackUnconditionally()
+            var checkedOverlap = false
+            var checkedClipping = false
+            repeat(60) {
+                rule.mainClock.advanceTimeBy(16)
+                rule.waitForIdle()
+                if (motion.phase == MediaPhase.Closing) {
+                    val geometry = rule.onNodeWithTag("media_transition").fetchSemanticsNode().config
+                    if (!checkedOverlap && motion.progress.value in 0.05f..0.25f && geometry[MediaImageVisibleBounds].contains(sample)) {
+                        val pixel = rule.onRoot().captureToImage().toPixelMap()[x, y]
+                        val toButton = kotlin.math.abs(pixel.red - buttonColor.red) + kotlin.math.abs(pixel.green - buttonColor.green) +
+                            kotlin.math.abs(pixel.blue - buttonColor.blue)
+                        val toBlue = pixel.red + pixel.green + kotlin.math.abs(pixel.blue - 1f)
+                        assertTrue("Show the compose button above the returning image", toButton < toBlue)
+                        checkedOverlap = true
+                    }
+                    if (!checkedClipping && motion.progress.value in 0f..0.001f) {
+                        assertTrue(geometry[MediaImageVisibleBounds].bottom <= frame.visibleBounds.bottom + 1f)
+                        checkedClipping = true
+                    }
+                }
+            }
+            rule.mainClock.autoAdvance = true
+            assertTrue("Check the actual overlapping return frame", checkedOverlap)
+            assertTrue("Check clipping just before the return completes", checkedClipping)
+            assertEquals(MediaPhase.Closed, motion.phase)
+            assertEquals(before, scrollPosition(), 1f)
+            rule.onNodeWithTag("main_tab_home").assertIsSelected()
+        }
+        } finally { file.delete() }
+    }
 
     @Test fun homeTapReachesTopFromDifferentDistancesWithVariableHeightPosts() = withHomeTimeline { _, _, _ ->
         for (index in listOf(140, 35, 5)) {
@@ -239,10 +324,12 @@ class HomeScrollDeviceTest {
 
     private enum class PostContent { Plain, Url, Media, UrlPreview, UrlMediaPreview }
 
-    private fun withHomeTimeline(content: PostContent = PostContent.Plain, block: (MainSessionViewModel, TimelineViewModel, List<TimelineStatus>) -> Unit) {
+    private fun withHomeTimeline(content: PostContent = PostContent.Plain, statusCount: Int = 180,
+        motion: MediaTransitionState? = null,
+        imageUrl: String = "android.resource://io.github.ponpokoo.mastodonclient/drawable/nagisa_launcher_art",
+        block: (MainSessionViewModel, TimelineViewModel, List<TimelineStatus>) -> Unit) {
         val session = AccountSession("test", "https://example.test", "me", "me", "Me", "", "test-token")
-        val imageUrl = "android.resource://io.github.ponpokoo.mastodonclient/drawable/nagisa_launcher_art"
-        val statuses = (0 until 180).map { index ->
+        val statuses = (0 until statusCount).map { index ->
             val articleUrl = "https://example.test/article/$index"
             val sample = index % 3 == 1
             val hasUrl = sample && content in setOf(PostContent.Url, PostContent.UrlPreview, PostContent.UrlMediaPreview)
@@ -257,7 +344,7 @@ class HomeScrollDeviceTest {
                 spoilerText = "", sensitive = false, visibility = "public", url = null,
                 repliesCount = 0, boostsCount = 0, favouritesCount = 0,
                 mediaAttachments = if (hasMedia) listOf(MediaAttachment(
-                    id = "image-$index", type = "image", url = imageUrl, previewUrl = imageUrl, description = "Attached image",
+                    id = "image-$index", type = "image", url = imageUrl, previewUrl = imageUrl, description = "Attached image $index",
                 )) else emptyList(),
                 previewCard = if (hasPreview) PreviewCard(
                     url = articleUrl, title = "Article $index with a long title on two lines",
@@ -300,11 +387,14 @@ class HomeScrollDeviceTest {
         try {
             rule.setContent {
                 MaterialTheme {
+                    val home: @Composable () -> Unit = {
                     HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
                         onLoggedOut = {}, onStatusClick = {}, onCompose = {}, onQuote = { _, _ -> },
                         onOpenLink = {}, openLinksInApp = true, onOpenLinksInAppChange = {},
-                        onAccountClick = {}, onMediaClick = { _, _ -> }, onSettings = {}, onFollowers = {},
+                        onAccountClick = {}, onMediaClick = { media, index -> motion?.open(media, index, "test", "timeline") }, onSettings = {}, onFollowers = {},
                         onFollowing = {}, onEditStatus = {}, onOpenLists = {}, onOpenBookmarks = {}, onOpenFavourites = {})
+                    }
+                    if (motion == null) home() else MediaTransitionHost(motion, "test", "timeline", content = home)
                 }
             }
             rule.waitUntil(5_000) { !timeline.uiState.value.isInitialLoading }

@@ -1,63 +1,48 @@
 package io.github.ponpokoo.mastodonclient.feature.media
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculatePan
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.gestures.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
@@ -67,12 +52,34 @@ import androidx.core.view.WindowInsetsAnimationControllerCompat
 import androidx.core.view.WindowInsetsCompat
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
 import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun MediaViewerScreen(media: List<MediaAttachment>, initialIndex: Int, onBack: () -> Unit) {
+    if (media.isEmpty()) {
+        LaunchedEffect(Unit) { onBack() }
+        return
+    }
+    val motion = remember(media, initialIndex) {
+        MediaTransitionState().apply { open(media, initialIndex, "standalone", "standalone") }
+    }
+    Box(Modifier.fillMaxSize().onSizeChanged { motion.viewerSize = it }) {
+        if (motion.active) MediaViewerContent(media, motion, onBack, drawBackdrop = true)
+    }
+}
+
+private fun itemIsPlayback(media: MediaAttachment) = media.type in setOf("video", "gifv", "audio")
+internal val MediaViewerPage = SemanticsPropertyKey<Int>("MediaViewerPage")
+internal val MediaViewerScale = SemanticsPropertyKey<Float>("MediaViewerScale")
+internal val MediaViewerOffset = SemanticsPropertyKey<Offset>("MediaViewerOffset")
+internal val MediaViewerDismissOffset = SemanticsPropertyKey<Float>("MediaViewerDismissOffset")
 
 private data class PendingSystemBarsChange(
     val controller: WindowInsetsAnimationControllerCompat,
@@ -80,114 +87,134 @@ private data class PendingSystemBarsChange(
     val uncontrolledTypes: Int,
 )
 
+@Stable
+private class ViewerZoomState {
+    var scale by mutableFloatStateOf(1f)
+    var offset by mutableStateOf(Offset.Zero)
+    var viewport by mutableStateOf(IntSize.Zero)
+}
+
+// Production gesture values, integrated into the restored image transition.
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MediaViewerScreen(
-    media: List<MediaAttachment>,
-    initialIndex: Int,
-    onBack: () -> Unit,
-) {
-    if (media.isEmpty()) {
-        LaunchedEffect(Unit) { onBack() }
-        return
-    }
-
-    BackHandler(onBack = onBack)
-    val pagerState = rememberPagerState(
-        initialPage = initialIndex.coerceIn(media.indices),
-        pageCount = media::size,
-    )
-    val pageScales = remember { mutableStateMapOf<Int, Float>() }
-    val currentScale = pageScales[pagerState.currentPage] ?: 1f
+internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTransitionState, onBack: () -> Unit, drawBackdrop: Boolean = false) {
+    MediaTransitionAnimations(motion, onBack)
+    val pager = rememberPagerState(initialPage = motion.page, pageCount = media::size)
+    val zoomStates = media.map { image -> remember(image.id) { ViewerZoomState() } }
+    val currentZoom = zoomStates[pager.currentPage]
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-    val viewerActive = remember(dialogWindow) { AtomicBoolean(true) }
+    val window = (LocalView.current.parent as? DialogWindowProvider)?.window ?: context.findActivity()?.window
+    val previousBarsAppearance = remember(window) { window?.let {
+        WindowCompat.getInsetsController(it, it.decorView).let { controller ->
+            controller.isAppearanceLightStatusBars to controller.isAppearanceLightNavigationBars
+        }
+    } }
+    val active = remember(window) { AtomicBoolean(true) }
     var controlsVisible by remember { mutableStateOf(true) }
-    var barsRequestPending by remember { mutableStateOf(false) }
-    var pendingBarsChange by remember { mutableStateOf<PendingSystemBarsChange?>(null) }
+    var barsPending by remember { mutableStateOf(false) }
+    var barsChange by remember { mutableStateOf<PendingSystemBarsChange?>(null) }
     var barsCancellation by remember { mutableStateOf<CancellationSignal?>(null) }
     val barTypes = WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars()
     fun setControlsVisible(visible: Boolean) {
-        if (controlsVisible == visible || barsRequestPending) return
-        val window = dialogWindow
-        if (window == null) {
-            controlsVisible = visible
-            return
-        }
+        if (controlsVisible == visible || barsPending) return
+        if (window == null) { controlsVisible = visible; return }
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         if (Build.VERSION.SDK_INT < 30) {
             controlsVisible = visible
             if (visible) controller.show(barTypes) else controller.hide(barTypes)
             return
         }
-        barsRequestPending = true
-        val cancellation = CancellationSignal()
-        barsCancellation = cancellation
-        controller.controlWindowInsetsAnimation(
-            barTypes, 0L, null, cancellation,
+        barsPending = true
+        barsCancellation = CancellationSignal()
+        controller.controlWindowInsetsAnimation(barTypes, 0L, null, barsCancellation,
             object : WindowInsetsAnimationControlListenerCompat {
                 override fun onReady(animationController: WindowInsetsAnimationControllerCompat, types: Int) {
-                    if (!viewerActive.get()) {
-                        animationController.finish(true)
-                        return
-                    }
+                    if (!active.get()) { animationController.finish(true); return }
                     controlsVisible = visible
-                    pendingBarsChange = PendingSystemBarsChange(
-                        animationController, visible, barTypes and types.inv(),
-                    )
+                    barsChange = PendingSystemBarsChange(animationController, visible, barTypes and types.inv())
                 }
-
                 override fun onFinished(animationController: WindowInsetsAnimationControllerCompat) {
-                    barsRequestPending = false
+                    barsPending = false
                     barsCancellation = null
                 }
-
                 override fun onCancelled(animationController: WindowInsetsAnimationControllerCompat?) {
-                    barsRequestPending = false
+                    barsPending = false
                     barsCancellation = null
-                    pendingBarsChange = null
-                    if (!viewerActive.get()) return
+                    barsChange = null
+                    if (!active.get()) return
                     controlsVisible = visible
                     if (visible) controller.show(barTypes) else controller.hide(barTypes)
                 }
             },
         )
     }
-    LaunchedEffect(pagerState.currentPage) {
-        if (media[pagerState.currentPage].type in setOf("video", "gifv")) {
+    LaunchedEffect(pager.currentPage) {
+        if (media[pager.currentPage].type in setOf("video", "gifv")) {
             // Reset on page entry, not when a hide/show system-bar request finishes.
-            snapshotFlow { barsRequestPending }.first { !it }
+            snapshotFlow { barsPending }.first { !it }
             setControlsVisible(true)
         }
     }
     SideEffect {
-        dialogWindow?.let { window ->
-            WindowCompat.getInsetsController(window, window.decorView).apply {
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
-            }
-        }
-        pendingBarsChange?.let { change ->
+        barsChange?.let { change ->
             change.controller.finish(change.visible)
-            if (change.uncontrolledTypes != 0) {
-                dialogWindow?.let { window ->
-                    val controller = WindowCompat.getInsetsController(window, window.decorView)
-                    if (change.visible) controller.show(change.uncontrolledTypes)
-                    else controller.hide(change.uncontrolledTypes)
-                }
+            if (change.uncontrolledTypes != 0 && window != null) {
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                if (change.visible) controller.show(change.uncontrolledTypes) else controller.hide(change.uncontrolledTypes)
             }
-            pendingBarsChange = null
+            barsChange = null
         }
     }
-    DisposableEffect(dialogWindow) {
+    DisposableEffect(window) {
+        window?.let { WindowCompat.getInsetsController(it, it.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        } }
         onDispose {
-            viewerActive.set(false)
+            active.set(false)
             barsCancellation?.cancel()
-            dialogWindow?.let { window ->
-                WindowCompat.getInsetsController(window, window.decorView)
-                    .show(barTypes)
+            window?.let {
+                WindowCompat.getInsetsController(it, it.decorView).apply {
+                    show(barTypes)
+                    previousBarsAppearance?.let { saved ->
+                        isAppearanceLightStatusBars = saved.first
+                        isAppearanceLightNavigationBars = saved.second
+                    }
+                }
             }
+        }
+    }
+    BackHandler(enabled = motion.active) { motion.close(pager.currentPage) }
+    LaunchedEffect(pager.settledPage, pager.isScrollInProgress) {
+        if (!pager.isScrollInProgress && motion.phase == MediaPhase.Viewing) {
+            motion.page = pager.settledPage
+            motion.selectedKey = motion.imageKey(media[pager.settledPage])
+            zoomStates.forEachIndexed { page, zoom ->
+                if (page != pager.settledPage) { zoom.scale = 1f; zoom.offset = Offset.Zero }
+            }
+        }
+    }
+    LaunchedEffect(motion.phase) {
+        if (motion.phase == MediaPhase.Closing) setControlsVisible(true)
+        if (motion.phase == MediaPhase.ResettingZoom) {
+            setControlsVisible(true)
+            pager.scrollToPage(motion.page)
+            val zoom = zoomStates[motion.page]
+            val startScale = zoom.scale
+            val startOffset = zoom.offset
+            val startDrag = motion.dragOffset
+            if (startScale != 1f || startOffset != Offset.Zero || startDrag != 0f) {
+                animate(0f, 1f, animationSpec = tween(150)) { fraction, _ ->
+                    zoom.scale = startScale + (1f - startScale) * fraction
+                    zoom.offset = startOffset * (1f - fraction)
+                    motion.dragOffset = startDrag * (1f - fraction)
+                }
+            }
+            zoom.scale = 1f
+            zoom.offset = Offset.Zero
+            motion.dragOffset = 0f
+            motion.phase = MediaPhase.Rounding
         }
     }
     var pendingSaveSource by remember { mutableStateOf<String?>(null) }
@@ -210,98 +237,103 @@ fun MediaViewerScreen(
             }
         }
     }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    var viewportHeight by remember { mutableFloatStateOf(1f) }
-    val backdropAlpha = (1f - dragOffsetY / viewportHeight * BACKDROP_FADE_SPEED).coerceIn(0f, 1f)
-
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = backdropAlpha)),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .onSizeChanged { viewportHeight = it.height.toFloat().coerceAtLeast(1f) }
-                .pointerInput(currentScale, viewportHeight) {
-                    if (currentScale <= MIN_DISMISS_SCALE) {
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { change, dragAmount ->
-                                if (dragOffsetY > 0f || dragAmount > 0f) {
-                                    change.consume()
-                                    dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
-                                }
-                            },
-                            onDragEnd = {
-                                if (dragOffsetY >= viewportHeight * DISMISS_THRESHOLD) {
-                                    onBack()
-                                } else {
-                                    val start = dragOffsetY
-                                    scope.launch {
-                                        animate(start, 0f) { value, _ -> dragOffsetY = value }
-                                    }
-                                }
-                            },
-                            onDragCancel = {
-                                val start = dragOffsetY
-                                scope.launch {
-                                    animate(start, 0f) { value, _ -> dragOffsetY = value }
-                                }
-                            },
-                        )
+    var returnJob by remember { mutableStateOf<Job?>(null) }
+    val viewportHeight = motion.viewerSize.height.toFloat().coerceAtLeast(1f)
+    val interactive = motion.phase == MediaPhase.Viewing
+    val dismissEnabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing)
+    val drawPager = motion.phase in listOf(MediaPhase.HandingOff, MediaPhase.Viewing, MediaPhase.ResettingZoom) || motion.transitionPainter == null
+    val controlsAlpha = motion.visibleBackdropAlpha
+    DisposableEffect(interactive) {
+        if (!interactive) returnJob?.cancel()
+        onDispose { }
+    }
+    Box(Modifier.fillMaxSize().background(if (drawBackdrop) Color.Black.copy(alpha = motion.visibleBackdropAlpha) else Color.Transparent).testTag("media_viewer")
+                // Observe in stationary window coordinates, outside the translated pager.
+                // Keep the same detector as the picture opens and hands off to the pager.
+                .pointerInput(pager.currentPage, dismissEnabled, viewportHeight) {
+                    if (!dismissEnabled) return@pointerInput
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        returnJob?.cancel()
+                        var eligible = currentZoom.scale <= MIN_DISMISS_SCALE
+                        var dragging = false
+                        var distance = Offset.Zero
+                        motion.dragOffset = 0f
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Main)
+                            val change = event.changes.first()
+                            val delta = change.position - change.previousPosition
+                            // The image/pager get first refusal. After vertical slop, consume only
+                            // one-finger movement; a second finger still takes over for pinch.
+                            if (event.changes.size > 1 || currentZoom.scale > MIN_DISMISS_SCALE ||
+                                (change.isConsumed && delta != Offset.Zero)) eligible = false
+                            // Track an already-down finger, but only move the picture once
+                            // it fills the screen, including a pending load or handoff.
+                            if (motion.progress.value < 1f) {
+                                distance = Offset.Zero
+                                continue
+                            }
+                            distance += delta
+                            if (eligible && !dragging && distance.getDistance() > viewConfiguration.touchSlop) {
+                                dragging = distance.y > abs(distance.x)
+                                if (!dragging) eligible = false
+                            }
+                            motion.dragOffset = if (eligible && dragging) (distance.y - viewConfiguration.touchSlop).coerceAtLeast(0f) else 0f
+                            if (eligible && dragging && delta != Offset.Zero) change.consume()
+                        } while (event.changes.any { it.pressed })
+                        if (eligible && dragging && motion.dragOffset >= viewportHeight * DISMISS_THRESHOLD) {
+                            motion.close(pager.currentPage, fromDrag = true)
+                        }
+                        else returnJob = scope.launch {
+                            animate(motion.dragOffset, 0f, animationSpec = MediaReturnAnimation) {
+                                value, _ -> motion.dragOffset = value
+                            }
+                        }
                     }
+                }.semantics {
+                    this[MediaViewerPage] = pager.currentPage
+                    this[MediaViewerScale] = currentZoom.scale
+                    this[MediaViewerOffset] = currentZoom.offset
+                    this[MediaViewerDismissOffset] = motion.dragOffset
+                }) {
+        HorizontalPager(pager,
+            Modifier.fillMaxSize().graphicsLayer { translationY = motion.dragOffset; alpha = if (!drawPager) 0f else if (motion.phase == MediaPhase.Closing && motion.transitionPainter == null) motion.progress.value else 1f }
+                .semantics { if (!drawPager) hideFromAccessibility() },
+            userScrollEnabled = interactive && currentZoom.scale <= MIN_DISMISS_SCALE, beyondViewportPageCount = 1,
+        ) { page ->
+            val item = media[page]
+            when (item.type) {
+                "audio" -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    AudioPlayer(item, active = page == pager.currentPage)
                 }
-                .testTag("media_viewer"),
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize().graphicsLayer { translationY = dragOffsetY },
-                userScrollEnabled = currentScale <= MIN_DISMISS_SCALE,
-                beyondViewportPageCount = 1,
-            ) { page ->
-                val item = media[page]
-                if (item.type == "audio") {
-                    LaunchedEffect(page) { pageScales[page] = 1f }
-                    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                        AudioPlayer(item, active = page == pagerState.currentPage)
-                    }
-                } else if (item.type == "video" || item.type == "gifv") {
-                    LaunchedEffect(page) { pageScales[page] = 1f }
-                    VideoPlayer(item.url, loop = item.type == "gifv", active = page == pagerState.currentPage,
-                        controlsVisible = controlsVisible && page == pagerState.currentPage,
-                        onTap = { setControlsVisible(!controlsVisible) })
-                } else {
-                    ZoomableImage(
-                        url = item.url ?: item.previewUrl.orEmpty(),
-                        previewUrl = item.previewUrl,
-                        description = item.description,
-                        cacheRevision = item.cacheRevision,
-                        onScaleChanged = { pageScales[page] = it },
-                        onTap = { setControlsVisible(!controlsVisible) },
-                    )
-                }
+                "video", "gifv" -> VideoPlayer(item.url, loop = item.type == "gifv", active = page == pager.currentPage,
+                    controlsVisible = controlsVisible && page == pager.currentPage,
+                    onTap = { setControlsVisible(!controlsVisible) })
+                else -> ZoomableImage(item.url ?: item.previewUrl.orEmpty(), item.previewUrl, item.description,
+                    item.cacheRevision, zoomStates[page], enabled = interactive, fallbackPainter = motion.fallbackPainter(item),
+                    onDisplayed = { painter -> motion.reportImageReady(item.id, painter) },
+                    onTap = { setControlsVisible(!controlsVisible) })
             }
-
-            if (controlsVisible) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBarsIgnoringVisibility)
-                        .background(Color(0xFF303030).copy(alpha = 0.6f * backdropAlpha)),
-                )
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp),
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "閉じる",
-                        tint = Color.White,
-                    )
+        }
+        if (controlsVisible) {
+            Box(Modifier.fillMaxSize().mediaOverlay(2f) { motion.active }) {
+                // Keep the control backgrounds lighter and smaller than their touch targets.
+                val controlsBackground = Color(0xFF303030).copy(alpha = 0.35f)
+                val controlsShape = RoundedCornerShape(8.dp)
+                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                    .windowInsetsTopHeight(WindowInsets.statusBarsIgnoringVisibility)
+                    .background(Color(0xFF303030).copy(alpha = 0.6f * controlsAlpha)))
+                IconButton(onClick = { motion.close(pager.currentPage) },
+                    enabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing),
+                    modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)
+                        .graphicsLayer { alpha = controlsAlpha }
+                        .testTag("media_viewer_close")) {
+                    Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, "閉じる", modifier = Modifier.size(20.dp), tint = Color.White)
+                    }
                 }
-
-                IconButton(
-                    onClick = {
-                        val item = media[pagerState.currentPage]
+                IconButton(onClick = {
+                        val item = media[pager.currentPage]
                         val source = item.url ?: item.previewUrl
                         if (source != null) {
                             pendingSaveSource = source
@@ -314,22 +346,18 @@ fun MediaViewerScreen(
                             saveLauncher.launch("$baseName.$extension")
                         }
                     },
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp),
-                ) {
-                    Icon(Icons.Outlined.Download, contentDescription = "メディアを保存", tint = Color.White)
+                    enabled = interactive, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
+                        .graphicsLayer { alpha = controlsAlpha }) {
+                    Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Download, "メディアを保存", modifier = Modifier.size(20.dp), tint = Color.White)
+                    }
                 }
-
                 if (media.size > 1) {
-                    val playbackPage = media[pagerState.currentPage].type in setOf("audio", "video", "gifv")
-                    Text(
-                        text = "${pagerState.currentPage + 1} / ${media.size}",
-                        color = Color.White,
-                        modifier = if (playbackPage) {
-                            Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp)
-                        } else {
-                            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)
-                        },
-                    )
+                    Text("${pager.currentPage + 1} / ${media.size}", color = Color.White,
+                        modifier = (if (itemIsPlayback(media[pager.currentPage])) Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp)
+                            else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp))
+                            .graphicsLayer { alpha = controlsAlpha }
+                            .background(controlsBackground, controlsShape).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
             }
         }
@@ -342,19 +370,34 @@ private fun ZoomableImage(
     previewUrl: String?,
     description: String?,
     cacheRevision: Long,
-    onScaleChanged: (Float) -> Unit,
+    zoom: ViewerZoomState,
+    enabled: Boolean,
+    fallbackPainter: Painter?,
+    onDisplayed: (Painter?) -> Unit,
     onTap: () -> Unit,
 ) {
-    var scale by remember(url) { mutableFloatStateOf(1f) }
-    var offset by remember(url) { mutableStateOf(Offset.Zero) }
-    var imageSize by remember(url) { mutableStateOf(IntSize.Zero) }
     var sourceSize by remember(url) { mutableStateOf(Size.Unspecified) }
     var originalLoaded by remember(url) { mutableStateOf(false) }
     val currentOnTap by rememberUpdatedState(onTap)
+    val currentOnDisplayed by rememberUpdatedState(onDisplayed)
+    val fallback = fallbackPainter
+    var displayedPainter by remember(url) { mutableStateOf<Painter?>(null) }
+    LaunchedEffect(originalLoaded) {
+        if (originalLoaded) {
+            // Coil success can precede the first draw. Keep the transition cover for that frame.
+            withFrameNanos { }
+            currentOnDisplayed(displayedPainter)
+        }
+    }
     val scope = rememberCoroutineScope()
+    var settleJob by remember { mutableStateOf<Job?>(null) }
+    DisposableEffect(enabled) {
+        if (!enabled) settleJob?.cancel()
+        onDispose { }
+    }
     fun boundedOffset(candidate: Offset, newScale: Float): Offset {
-        val viewportWidth = imageSize.width.toFloat()
-        val viewportHeight = imageSize.height.toFloat()
+        val viewportWidth = zoom.viewport.width.toFloat()
+        val viewportHeight = zoom.viewport.height.toFloat()
         if (viewportWidth <= 0f || viewportHeight <= 0f ||
             !sourceSize.width.isFinite() || !sourceSize.height.isFinite() ||
             sourceSize.width <= 0f || sourceSize.height <= 0f
@@ -364,7 +407,6 @@ private fun ZoomableImage(
         val maxY = ((sourceSize.height * fit * newScale - viewportHeight) / 2f).coerceAtLeast(0f)
         return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
     }
-    LaunchedEffect(scale) { onScaleChanged(scale) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (!originalLoaded && previewUrl != null && previewUrl != url) {
             AsyncImage(
@@ -377,64 +419,90 @@ private fun ZoomableImage(
         AsyncImage(
             model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(url, cacheRevision),
             contentDescription = description ?: "添付画像",
+            error = fallback,
             onSuccess = {
                 originalLoaded = true
                 sourceSize = it.painter.intrinsicSize
+                displayedPainter = it.painter
+            },
+            onError = {
+                sourceSize = fallback?.intrinsicSize ?: Size.Unspecified
+                displayedPainter = fallback
+                originalLoaded = true
             },
             modifier = Modifier
                 .fillMaxSize()
-                .onSizeChanged { imageSize = it }
+                .onSizeChanged { zoom.viewport = it }
                 .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
+                    scaleX = zoom.scale,
+                    scaleY = zoom.scale,
+                    translationX = zoom.offset.x,
+                    translationY = zoom.offset.y,
                 )
-                .pointerInput(url, scale, imageSize) {
+                .pointerInput(url, enabled) {
+                    if (!enabled) return@pointerInput
                     detectTapGestures(
                         onTap = { currentOnTap() },
                         onDoubleTap = { tapPosition ->
-                            if (scale > 1f) {
-                                scale = 1f
-                                offset = Offset.Zero
+                            settleJob?.cancel()
+                            if (zoom.scale > 1f) {
+                                zoom.scale = 1f
+                                zoom.offset = Offset.Zero
                             } else {
-                                scale = DOUBLE_TAP_SCALE
-                                offset = boundedOffset(Offset(
-                                    x = (imageSize.width / 2f - tapPosition.x) * (DOUBLE_TAP_SCALE - 1f),
-                                    y = (imageSize.height / 2f - tapPosition.y) * (DOUBLE_TAP_SCALE - 1f),
+                                zoom.scale = DOUBLE_TAP_SCALE
+                                zoom.offset = boundedOffset(Offset(
+                                    x = (zoom.viewport.width / 2f - tapPosition.x) * (DOUBLE_TAP_SCALE - 1f),
+                                    y = (zoom.viewport.height / 2f - tapPosition.y) * (DOUBLE_TAP_SCALE - 1f),
                                 ), DOUBLE_TAP_SCALE)
                             }
                         },
                     )
                 }
-                .pointerInput(url) {
+                .pointerInput(url, enabled) {
+                    if (!enabled) return@pointerInput
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
+                        settleJob?.cancel()
+                        var panDistance = Offset.Zero
+                        var panning = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val pressedPointers = event.changes.count { it.pressed }
                             val isPinching = pressedPointers >= 2
-                            val isPanningZoomedImage = scale > 1f && pressedPointers > 0
-                            if (isPinching || isPanningZoomedImage) {
+                            val isPanningZoomedImage = zoom.scale > 1f && pressedPointers > 0
+                            var panChange = event.calculatePan()
+                            if (isPinching) {
+                                // Keep an established pinch active when one finger is lifted.
+                                panning = true
+                            } else if (isPanningZoomedImage && !panning) {
+                                // Pointer coordinates are inside the scaled layer. Compare slop
+                                // in screen pixels so zoom does not change the drag threshold.
+                                panDistance += panChange * zoom.scale
+                                val distance = panDistance.getDistance()
+                                if (distance > viewConfiguration.touchSlop) {
+                                    panning = true
+                                    panChange = panDistance * (1f - viewConfiguration.touchSlop / distance) / zoom.scale
+                                }
+                            }
+                            if (isPinching || (isPanningZoomedImage && panning)) {
                                 val zoomChange = if (isPinching) event.calculateZoom() else 1f
-                                val nextScale = (scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
-                                val panChange = event.calculatePan()
-                                scale = nextScale
-                                offset = if (nextScale <= 1f) {
+                                val nextScale = (zoom.scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
+                                zoom.scale = nextScale
+                                zoom.offset = if (nextScale <= 1f) {
                                     Offset.Zero
                                 } else {
-                                    boundedOffset(offset + panChange * PAN_SPEED_MULTIPLIER, nextScale)
+                                    boundedOffset(zoom.offset + panChange * PAN_SPEED_MULTIPLIER, nextScale)
                                 }
                                 if (isPinching || panChange != Offset.Zero) {
                                     event.changes.forEach { change -> change.consume() }
                                 }
                             }
                             if (event.changes.none { it.pressed }) {
-                                if (scale < 1f) {
-                                    val start = scale
-                                    scope.launch {
-                                        animate(start, 1f) { value, _ -> scale = value }
-                                        offset = Offset.Zero
+                                if (zoom.scale < 1f) {
+                                    val start = zoom.scale
+                                    settleJob = scope.launch {
+                                        animate(start, 1f) { value, _ -> zoom.scale = value }
+                                        zoom.offset = Offset.Zero
                                     }
                                 }
                                 break
@@ -453,4 +521,10 @@ private const val MIN_SCALE = 0.5f
 private const val DOUBLE_TAP_SCALE = 2.5f
 private const val MIN_DISMISS_SCALE = 1.01f
 private const val DISMISS_THRESHOLD = 0.12f
-private const val BACKDROP_FADE_SPEED = 1.5f
+internal const val BACKDROP_FADE_SPEED = 1.5f
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}

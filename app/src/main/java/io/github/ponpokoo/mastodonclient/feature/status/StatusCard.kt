@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.status
 
+import io.github.ponpokoo.mastodonclient.feature.media.mediaTransitionThumbnail
+
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.Context
@@ -584,6 +586,7 @@ private fun MediaGrid(
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     audioAuthorAvatarUrl: String? = null,
 ) {
+    val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
     val context = LocalContext.current
     val maxHeight = when (thumbnailSize) {
         ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
@@ -633,6 +636,12 @@ private fun MediaGrid(
                                 } else {
                                     media.previewUrl ?: media.url
                                 }
+                                var displayedPainter by remember(imageUrl) {
+                                    mutableStateOf<androidx.compose.ui.graphics.painter.Painter?>(null)
+                                }
+                                androidx.compose.runtime.SideEffect {
+                                    displayedPainter?.let { mediaSourceGroup.displayed(media, it) }
+                                }
                                 val onDimensionsKnown: (Int, Int) -> Unit = { width, height ->
                                     if (width > 0 && height > 0) {
                                         loadedAspectRatios = loadedAspectRatios + (media.id to width.toFloat() / height)
@@ -640,11 +649,13 @@ private fun MediaGrid(
                                 }
                                 Box(
                                     modifier = Modifier.size(frames[index])
+                                        .mediaTransitionThumbnail(media, mediaSourceGroup, cropped = cropImageRow)
                                         .clip(RoundedCornerShape(8.dp))
                                         .testTag("media_attachment")
                                         .then(
                                             if (onMediaClick == null || media.url == null) Modifier else {
                                                 Modifier.clickable {
+                                                    mediaSourceGroup.prepare(media)
                                                     // Older cached posts have no avatar context on attachments.
                                                     val viewerMedia = attachments.map { item ->
                                                         if (item.type == "audio") item.copy(authorAvatarUrl = audioAuthorAvatarUrl ?: item.authorAvatarUrl)
@@ -670,7 +681,10 @@ private fun MediaGrid(
                                             contentDescription = media.description ?: "添付メディア",
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = if (cropImageRow) ContentScale.Crop else ContentScale.Fit,
-                                            onSuccess = { onDimensionsKnown(it.result.image.width, it.result.image.height) },
+                                            onSuccess = {
+                                                onDimensionsKnown(it.result.image.width, it.result.image.height)
+                                                displayedPainter = it.painter
+                                            },
                                         )
                                     }
                                     if (!autoplay && (media.type == "video" || media.type == "gifv")) {

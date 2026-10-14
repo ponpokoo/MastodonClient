@@ -1,5 +1,13 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.feature.media.mediaComposeButton
+import io.github.ponpokoo.mastodonclient.feature.media.LocalMediaSourceIsHome
+import io.github.ponpokoo.mastodonclient.feature.media.mediaContentInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.CompositionLocalProvider
+
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNotice
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
@@ -22,6 +30,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,9 +85,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,6 +103,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -175,6 +188,9 @@ fun HomeTimelineScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val destinations = MainDestination.entries
+    // Keep an off-screen page's viewport when another tab has a different top bar.
+    val savedPagePadding = remember { mutableStateMapOf<MainDestination, PaddingValues>() }
+    val layoutDirection = LocalLayoutDirection.current
     val pagerState = rememberPagerState(pageCount = { destinations.size })
     val timelineListState = rememberLazyListState()
     val allNotificationsListState = rememberLazyListState()
@@ -413,6 +429,7 @@ fun HomeTimelineScreen(
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
+        contentWindowInsets = mediaContentInsets(),
         topBar = {
             if (destination == MainDestination.Home) {
                 TimelineTopBar(
@@ -426,11 +443,12 @@ fun HomeTimelineScreen(
                     onSettings = onSettings,
                 )
             } else if (destination != MainDestination.Explore) {
-                TopAppBar(title = { Text(destination.label) })
+                TopAppBar(title = { Text(destination.label) }, windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp,
+                windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)) {
                 MainDestination.entries.forEach { item ->
                     val page = destinations.indexOf(item)
                     NavigationBarItem(
@@ -474,6 +492,7 @@ fun HomeTimelineScreen(
         floatingActionButton = {
             if (destination == MainDestination.Home) {
                 FloatingActionButton(
+                    modifier = Modifier.mediaComposeButton(),
                     onClick = { onCompose(null) },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(20.dp),
@@ -484,16 +503,23 @@ fun HomeTimelineScreen(
         },
         snackbarHost = {},
     ) { padding ->
+        val measuredPadding = PaddingValues(
+            start = padding.calculateStartPadding(layoutDirection), top = padding.calculateTopPadding(),
+            end = padding.calculateEndPadding(layoutDirection), bottom = padding.calculateBottomPadding(),
+        )
+        SideEffect { savedPagePadding[destination] = measuredPadding }
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             key = { destinations[it] },
             userScrollEnabled = false,
         ) { page ->
+            val pagePadding = if (destinations[page] == destination) padding else savedPagePadding[destinations[page]] ?: padding
+            CompositionLocalProvider(LocalMediaSourceIsHome provides (destinations[page] == MainDestination.Home)) {
             when (val pageDestination = destinations[page]) {
                 MainDestination.Home -> TimelineContent(
                     state = state,
-                    padding = padding,
+                    padding = pagePadding,
                     listState = timelineListState,
                     onRefresh = {
                         scrollHomeAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
@@ -531,7 +557,7 @@ fun HomeTimelineScreen(
                     onUnfollowTag = { searchViewModel.setTagFollowing(it, false) },
                     onOpenTag = onOpenTag,
                     isVisible = destination == MainDestination.Explore,
-                    padding = padding,
+                    padding = pagePadding,
                     onQueryChanged = searchViewModel::onQueryChanged,
                     onSearch = searchViewModel::search,
                     onEnterSearch = searchViewModel::enterSearch,
@@ -556,7 +582,7 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
-                    padding = padding,
+                    padding = pagePadding,
                     onRefresh = notificationsViewModel::refreshNotifications,
                     onLoadMore = notificationsViewModel::loadNextNotifications,
                     onAutoLoadMore = notificationsViewModel::loadNextNotificationsAutomatically,
@@ -596,7 +622,7 @@ fun HomeTimelineScreen(
                 MainDestination.Profile -> ProfileContent(
                     state = profileState,
                     instanceUrl = mainState.session?.instanceUrl,
-                    padding = padding,
+                    padding = pagePadding,
                     onRetry = profileViewModel::loadProfile,
                     onRetryPosts = profileViewModel::retryProfile,
                     onRefresh = {
@@ -644,6 +670,7 @@ fun HomeTimelineScreen(
                     headerListState = profileHeaderListState,
                 )
             }
+            }
         }
     }
         val newPostMessage = when {
@@ -653,7 +680,7 @@ fun HomeTimelineScreen(
             else -> refreshNotice
         }
         if (destination == MainDestination.Home && newPostMessage != null && snackbarHostState.currentSnackbarData == null) {
-            Box(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp)) {
+            Box(Modifier.align(Alignment.TopCenter).windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Top)).padding(top = 64.dp)) {
                 TimelineNotice(newPostMessage, onClick = if (state.isResumedWindow) {
                     { viewModel.goToLatest() }
                 } else if (state.unseenStreamIds.isNotEmpty()) {
@@ -665,7 +692,7 @@ fun HomeTimelineScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .statusBarsPadding()
+                .windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Top))
                 .padding(top = 64.dp),
         ) { data ->
             TimelineNotice(data.visuals.message)
@@ -763,6 +790,7 @@ internal fun TimelineTopBar(
     var accountDialogOpen by remember { mutableStateOf(false) }
 
     TopAppBar(
+        windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
         title = {
             Box {
                 Row(

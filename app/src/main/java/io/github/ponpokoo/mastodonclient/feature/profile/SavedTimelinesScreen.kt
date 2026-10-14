@@ -1,5 +1,10 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.media.mediaContentInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+
+
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
@@ -205,10 +210,10 @@ fun SavedTimelinesScreen(
                 }
         }
     }
-    Scaffold(
+    Scaffold(contentWindowInsets = mediaContentInsets(),
         modifier = Modifier.testTag("saved_timelines_screen"),
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = { TopAppBar(
+        topBar = { TopAppBar(windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
             title = { Text(title) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
         ) },

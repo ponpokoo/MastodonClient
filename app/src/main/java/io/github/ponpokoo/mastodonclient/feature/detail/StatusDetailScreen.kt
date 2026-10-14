@@ -1,5 +1,10 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.feature.media.mediaContentInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+
+
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
@@ -125,10 +130,10 @@ fun StatusDetailScreen(
         }
     }
 
-    Scaffold(
+    Scaffold(contentWindowInsets = mediaContentInsets(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            TopAppBar(windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                 title = {
                     if (status == null) Text("投稿") else CustomEmojiText(
                         text = "${status.author.displayName}さんの投稿",

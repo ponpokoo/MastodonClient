@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.media.mediaTransitionThumbnail
+
 import io.github.ponpokoo.mastodonclient.feature.status.SocialStatus
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
@@ -148,6 +150,11 @@ internal fun ProfileContent(
     headerListState: LazyListState? = null,
 ) {
     val profile = state.profile
+    val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
+    val headerMedia = MediaAttachment("profile-header", "image", profile?.headerUrl, profile?.headerUrl,
+        "ヘッダー画像", cacheRevision = state.imageRefreshRevision)
+    val avatarMedia = MediaAttachment("profile-avatar", "image", profile?.author?.avatarUrl, profile?.author?.avatarUrl,
+        "プロフィール画像", cacheRevision = if (profile?.isOwnProfile == true) state.imageRefreshRevision else profile?.author?.avatarRevision ?: 0)
     val webLinks = profile?.let { profileWebLinks(it.url, instanceUrl) }
     val avatarShape = preferences.timelineDisplay.avatarIconShape.toShape()
     val resolvedListStates = listStates ?: List(ProfileStatusTab.entries.size) { rememberLazyListState() }
@@ -265,9 +272,12 @@ internal fun ProfileContent(
                             profile.headerUrl, state.imageRefreshRevision) else profile.headerUrl,
                         identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "header"),
                         retainPreviousImage = profile.isOwnProfile, contentDescription = "ヘッダー画像",
-                        modifier = Modifier.fillMaxWidth().height(132.dp).clickable(onClick = onHeaderClick)
+                        modifier = Modifier.fillMaxWidth().height(132.dp)
+                            .mediaTransitionThumbnail(headerMedia, mediaSourceGroup, cornerRadiusDp = 0f)
+                            .clickable { mediaSourceGroup.prepare(headerMedia); onHeaderClick() }
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentScale = ContentScale.Crop,
+                        onDisplayedPainter = { mediaSourceGroup.displayed(headerMedia, it) },
                     )
                     io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
                         model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(profile.author.avatarUrl,
@@ -275,11 +285,14 @@ internal fun ProfileContent(
                         identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "avatar"),
                         retainPreviousImage = profile.isOwnProfile, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp, top = 100.dp).align(Alignment.TopStart).size(84.dp)
-                            .clip(avatarShape).clickable(onClick = onAvatarClick)
+                            .mediaTransitionThumbnail(avatarMedia, mediaSourceGroup, cornerRadiusDp = 10f,
+                                circular = preferences.timelineDisplay.avatarIconShape == io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape.Circle)
+                            .clip(avatarShape).clickable { mediaSourceGroup.prepare(avatarMedia); onAvatarClick() }
                             .testTag("profile_avatar")
                             .background(MaterialTheme.colorScheme.surface)
                             .border(2.dp, MaterialTheme.colorScheme.outlineVariant, avatarShape),
                         contentScale = ContentScale.Crop,
+                        onDisplayedPainter = { mediaSourceGroup.displayed(avatarMedia, it) },
                     )
                     Box(modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp).width(actionsWidth)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
