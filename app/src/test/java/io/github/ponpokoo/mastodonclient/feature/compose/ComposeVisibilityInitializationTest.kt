@@ -12,13 +12,16 @@ import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.DraftMediaRepository
 import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -151,5 +154,115 @@ class ComposeVisibilityInitializationTest : ScreenViewModelTestBase() {
         assertEquals("", vm.uiState.value.text)
         assertTrue(vm.uiState.value.isVisibilityInitialized)
         assertEquals(PostVisibility.FollowersOnly, vm.uiState.value.visibility)
+    }
+
+    @Test fun textPostingWaitsForConfigurationButNotEmojisAndLateEmojisPreserveInput() = runTest(dispatcher) {
+        val configuration = CompletableDeferred<Result<ComposerConfiguration>>()
+        val emojis = CompletableDeferred<Result<List<CustomEmoji>>>()
+        val expectedEmojis = listOf(CustomEmoji("wave", "https://one.example/wave.png", "https://one.example/wave.png", null))
+        val posts = mutableListOf<CreateStatusRequest>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getComposerConfiguration(session: AccountSession) = configuration.await()
+            override suspend fun getCustomEmojis(session: AccountSession) = emojis.await()
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                posts += request
+                return Result.success(testStatus())
+            }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        vm.onTextChanged("text only")
+        vm.setVisibility(PostVisibility.Unlisted)
+        vm.post()
+        runCurrent()
+        assertTrue(vm.uiState.value.isLoading)
+        assertTrue(posts.isEmpty())
+
+        configuration.complete(Result.success(ComposerConfiguration()))
+        runCurrent()
+        assertFalse(vm.uiState.value.isLoading)
+        assertFalse(emojis.isCompleted)
+        vm.post()
+        runCurrent()
+        assertEquals("text only", posts.single().text)
+        assertEquals("unlisted", posts.single().visibility)
+        assertTrue(vm.uiState.value.posted)
+
+        emojis.complete(Result.success(expectedEmojis))
+        runCurrent()
+        assertEquals(expectedEmojis, vm.uiState.value.customEmojis)
+        assertEquals("text only", vm.uiState.value.text)
+        assertEquals(PostVisibility.Unlisted, vm.uiState.value.visibility)
+        assertTrue(vm.uiState.value.posted)
+        assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test fun emojiFailureDoesNotBlockPostingOrReplaceOtherErrors() = runTest(dispatcher) {
+        val emojis = CompletableDeferred<Result<List<CustomEmoji>>>()
+        var postCalls = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCustomEmojis(session: AccountSession) = emojis.await()
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                postCalls++
+                return Result.failure(IllegalStateException("post failed"))
+            }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        vm.onTextChanged("text only")
+        vm.post()
+        runCurrent()
+        assertEquals(1, postCalls)
+        assertEquals("post failed", vm.uiState.value.errorMessage)
+
+        emojis.complete(Result.failure(IllegalStateException("emoji failed")))
+        runCurrent()
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals("post failed", vm.uiState.value.errorMessage)
+        assertEquals("text only", vm.uiState.value.text)
+        vm.post()
+        runCurrent()
+        assertEquals(2, postCalls)
+    }
+
+    @Test fun accountSwitchCancelsEmojiRequestAndRejectsLateResponseAfterSwitchingBack() = runTest(dispatcher) {
+        val oldEmojis = CompletableDeferred<Result<List<CustomEmoji>>>()
+        val newEmojis = CompletableDeferred<Result<List<CustomEmoji>>>()
+        val secondEmojis = listOf(CustomEmoji("second", "second.png", "second.png", null))
+        val currentEmojis = listOf(CustomEmoji("current", "current.png", "current.png", null))
+        var firstAccountRequests = 0
+        var oldRequestCancelled = false
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getCustomEmojis(session: AccountSession): Result<List<CustomEmoji>> {
+                if (session.sessionId == secondAccount.sessionId) return Result.success(secondEmojis)
+                if (++firstAccountRequests > 1) return newEmojis.await()
+                return try {
+                    oldEmojis.await()
+                } catch (error: CancellationException) {
+                    oldRequestCancelled = true
+                    // Simulate a data source that returns a response despite cancellation.
+                    withContext(NonCancellable) { oldEmojis.await() }
+                }
+            }
+        }
+        val vm = model(repository, UserPreferencesStore(MemoryPreferences()))
+        runCurrent()
+        vm.switchPostingAccount(secondAccount.sessionId)
+        runCurrent()
+        assertTrue(oldRequestCancelled)
+        assertEquals(secondEmojis, vm.uiState.value.customEmojis)
+        vm.switchPostingAccount(testAccount.sessionId)
+        assertTrue(vm.uiState.value.customEmojis.isEmpty())
+        runCurrent()
+        assertTrue(vm.uiState.value.customEmojis.isEmpty())
+        assertFalse(vm.uiState.value.isLoading)
+        newEmojis.complete(Result.success(currentEmojis))
+        runCurrent()
+        assertEquals(currentEmojis, vm.uiState.value.customEmojis)
+
+        oldEmojis.complete(Result.success(listOf(CustomEmoji("stale", "stale.png", "stale.png", null))))
+        runCurrent()
+        assertEquals(testAccount, vm.uiState.value.selectedSession)
+        assertEquals(currentEmojis, vm.uiState.value.customEmojis)
     }
 }

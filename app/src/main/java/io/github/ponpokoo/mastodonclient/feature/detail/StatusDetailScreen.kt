@@ -77,6 +77,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialo
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import java.time.Instant
 import java.time.ZoneId
@@ -145,10 +146,7 @@ fun StatusDetailScreen(
         },
     ) { padding ->
         when {
-            state.isLoading && status == null -> Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
+            state.isLoading && status == null -> ListLoadingContent(Modifier.padding(padding), label = null)
             status == null -> Column(
                 Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

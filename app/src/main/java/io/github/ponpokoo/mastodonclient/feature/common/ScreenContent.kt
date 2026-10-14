@@ -34,12 +34,14 @@ internal fun LoadingContent(label: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-internal fun ListLoadingContent(modifier: Modifier = Modifier, label: String = "読み込み中…") {
+internal fun ListLoadingContent(modifier: Modifier = Modifier, label: String? = "読み込み中…") {
     Box(modifier.fillMaxSize().testTag("list_initial_loading"), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
-            Spacer(Modifier.height(12.dp))
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (label != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

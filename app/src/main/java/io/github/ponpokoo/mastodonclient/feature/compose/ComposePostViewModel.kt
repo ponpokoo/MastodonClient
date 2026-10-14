@@ -115,6 +115,8 @@ class ComposePostViewModel(
         posting = _uiState.map { it.isPosting }, logMediaFailure = logMediaFailure)
     private var restoredDraftKey: String? = null
     private var postingJob: Job? = null
+    private var emojiLoadJob: Job? = null
+    private var emojiLoadGeneration = 0
 
     private fun stopMedia() = mediaTransfer.stop()
 
@@ -234,6 +236,7 @@ class ComposePostViewModel(
                 val selected = _uiState.value.selectedSession
                 if (selected != null && sessions.none { it.hasSameCredentials(selected) }) {
                     postingJob?.cancel()
+                    cancelEmojiLoad()
                     stopMedia()
                     clearPendingShare()
                     ReferenceKind.entries.forEach(::cancelTargetLoad)
@@ -584,12 +587,13 @@ class ComposePostViewModel(
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        cancelEmojiLoad()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
         val replyText = _uiState.value.text.takeIf { activeReplyToId != null }
         if (replyText != null) clearReply()
         stopMedia()
         clearPendingShare()
-        _uiState.update { it.copy(isLoading = true, isVisibilityInitialized = false) }
+        _uiState.update { it.copy(isLoading = true, isVisibilityInitialized = false, customEmojis = emptyList()) }
         viewModelScope.launch {
             retainInput()
             restoredDraftKey = null
@@ -807,8 +811,8 @@ class ComposePostViewModel(
             finally { _uiState.update { it.copy(isImportingMedia = false) } }
         }
         loadReplyTarget(session, initializeReply = draft == null && _uiState.value.text.isBlank())
+        loadCustomEmojis(session)
         val configuration = timelineRepository.getComposerConfiguration(session).getOrDefault(ComposerConfiguration())
-        val emojis = timelineRepository.getCustomEmojis(session).getOrDefault(emptyList())
         currentCoroutineContext().ensureActive()
         if (generation != mediaTransfer.generation || _uiState.value.selectedSession?.sessionId != session.sessionId) return
         _uiState.update { current ->
@@ -830,13 +834,29 @@ class ComposePostViewModel(
                 pollExpiresInSeconds = draft?.pollExpiresInSeconds ?: current.pollExpiresInSeconds,
                 pollMultiple = draft?.pollMultiple ?: current.pollMultiple,
                 configuration = configuration,
-                customEmojis = emojis,
                 errorMessage = if (configuration.supportedMimeTypes == null && (current.attachments.isNotEmpty() || pendingSharedMedia != null))
                     "サーバーの対応ファイル形式を確認できません。添付には設定の再取得が必要です" else current.errorMessage,
                 isLoading = false,
             )
         }
         scheduleAttachments()
+    }
+
+    private fun cancelEmojiLoad(): Int {
+        emojiLoadGeneration++
+        emojiLoadJob?.cancel()
+        emojiLoadJob = null
+        return emojiLoadGeneration
+    }
+
+    private fun loadCustomEmojis(session: AccountSession) {
+        val generation = cancelEmojiLoad()
+        emojiLoadJob = viewModelScope.launch {
+            val result = timelineRepository.getCustomEmojis(session)
+            currentCoroutineContext().ensureActive()
+            if (generation != emojiLoadGeneration || _uiState.value.selectedSession?.hasSameCredentials(session) != true) return@launch
+            result.onSuccess { emojis -> _uiState.update { it.copy(customEmojis = emojis) } }
+        }
     }
 
     private fun change(transform: (ComposePostUiState) -> ComposePostUiState) {
@@ -991,6 +1011,7 @@ class ComposePostViewModel(
     }
 
     override fun onCleared() {
+        cancelEmojiLoad()
         stopMedia()
         clearPendingShare()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
