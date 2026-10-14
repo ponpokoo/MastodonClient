@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.IntSize
 import androidx.test.platform.app.InstrumentationRegistry
 import coil3.ImageLoader
@@ -97,6 +99,30 @@ class PrototypeImageHandoffDeviceTest {
         rule.waitUntil(5_000) { motion.phase == MediaPhase.Viewing }
         assertTrue(motion.imageReady("white_background"))
         assertWhiteCenter()
+    }
+
+    @Test
+    fun fullScreenSwipeClosesWithoutWaitingForTheDelayedImage() {
+        render()
+        rule.mainClock.autoAdvance = false
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        assertEquals(MediaPhase.Opening, motion.phase)
+        assertEquals(1f, motion.progress.value, 0.001f)
+        val image = rule.onNodeWithTag("prototype_media_viewer")
+        image.performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, height * 0.25f), 32)
+        }
+        rule.mainClock.advanceTimeBy(16)
+        rule.waitForIdle()
+        assertTrue("The full-screen transition picture must follow the first swipe", motion.dragOffset > 0f)
+        image.performTouchInput { up() }
+        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
+        assertEquals(MediaPhase.Closed, motion.phase)
+        assertFalse("Dismissal must not wait for the viewer image to load", release.isCompleted)
+        rule.mainClock.autoAdvance = true
     }
 
     @Test

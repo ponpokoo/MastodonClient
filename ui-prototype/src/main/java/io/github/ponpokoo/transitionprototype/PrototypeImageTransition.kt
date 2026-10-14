@@ -235,8 +235,11 @@ internal fun PrototypeMediaOverlay(motion: PrototypeMediaMotionState) {
     val image = motion.media.firstOrNull { imageKey(it) == motion.selectedKey }
     val painter = image?.let { painterResource(fixtureImageResource(it)) }
     val geometry = painter?.let {
-        val viewport = if (motion.phase == MediaPhase.Viewing) motion.fullBounds.translate(Offset(0f, motion.dragOffset))
-            else motion.transitionViewport
+        val viewport = when (motion.phase) {
+            MediaPhase.Viewing -> motion.fullBounds.translate(Offset(0f, motion.dragOffset))
+            MediaPhase.Opening, MediaPhase.HandingOff -> motion.transitionViewport.translate(Offset(0f, motion.dragOffset))
+            else -> motion.transitionViewport
+        }
         prototypeImageGeometry(it.intrinsicSize, motion.transitionThumbnail, viewport, motion.progress.value)
     }
     Box(Modifier.fillMaxSize().zIndex(if (motion.active) 1f else -1f)

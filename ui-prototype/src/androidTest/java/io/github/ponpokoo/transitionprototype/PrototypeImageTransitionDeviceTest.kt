@@ -82,6 +82,63 @@ class PrototypeImageTransitionDeviceTest {
     }
 
     @Test
+    fun downwardSwipeDuringHandoffContinuesWhenViewingStarts() {
+        rule.onNodeWithTag("toot_single_media_0").assertExists()
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("toot_single_media_0").performClick()
+        repeat(60) { if (phase() == "Opening") advance(16) }
+        assertEquals("HandingOff", phase())
+        val image = rule.onNodeWithTag("prototype_media_viewer")
+        val bounds = image.fetchSemanticsNode().boundsInRoot
+        val origin = Offset(bounds.width / 2f, bounds.height / 2f)
+        val initialImageTop = motion()[PrototypeImageBounds].top
+        image.performTouchInput {
+            down(origin)
+            moveTo(origin + Offset(0f, bounds.height * 0.06f), 16)
+        }
+        advance(16)
+        val handoffOffset = viewer()[PrototypeViewerDismissOffset]
+        assertTrue("The first swipe must move the image during handoff", handoffOffset > 0f)
+        assertTrue("The transition cover must follow the swipe too", motion()[PrototypeImageBounds].top > initialImageTop)
+        advance(160)
+        assertEquals("Viewing", phase())
+        assertEquals("Do not reset an in-progress swipe at handoff", handoffOffset,
+            viewer()[PrototypeViewerDismissOffset], 0.01f)
+        image.performTouchInput { moveTo(origin + Offset(0f, bounds.height * 0.25f), 32) }
+        advance(16)
+        assertTrue(viewer()[PrototypeViewerDismissOffset] > handoffOffset)
+        image.performTouchInput { up() }
+        advance(16)
+        assertEquals("Closing", phase())
+        advance(500)
+        assertEquals("Closed", phase())
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun fingerDownDuringOpeningCanDismissOnceTheImageFillsTheScreen() {
+        rule.onNodeWithTag("toot_single_media_0").assertExists()
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("toot_single_media_0").performClick()
+        advance(96)
+        assertEquals("Opening", phase())
+        val image = rule.onNodeWithTag("prototype_media_viewer")
+        val bounds = image.fetchSemanticsNode().boundsInRoot
+        val origin = Offset(bounds.width / 2f, bounds.height / 2f)
+        image.performTouchInput { down(origin) }
+        repeat(60) { if (phase() == "Opening") advance(16) }
+        assertEquals("HandingOff", phase())
+        image.performTouchInput { moveTo(origin + Offset(0f, bounds.height * 0.25f), 32) }
+        advance(16)
+        assertTrue("Keep tracking the finger placed before full-screen display",
+            viewer()[PrototypeViewerDismissOffset] > 0f)
+        image.performTouchInput { up() }
+        advance(500)
+        assertEquals("Closed", phase())
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test
     fun downwardDismissalTracksFramesAndClosesFromTheReleasedPosition() {
         rule.onNodeWithTag("timeline_list").performScrollToIndex(1)
         rule.onNodeWithTag("toot_gallery_media_3").performClick()
@@ -181,7 +238,11 @@ class PrototypeImageTransitionDeviceTest {
         val sampleY = (if (top) viewport.top - 4f else viewport.bottom + 4f).roundToInt().coerceIn(0, before.height - 1)
         val outsideColor = before[sampleX, sampleY]
 
-        thumbnail.performClick()
+        val composeBounds = rule.onNodeWithTag("prototype_compose").fetchSemanticsNode().boundsInRoot
+        val tapPosition = Offset(visibleSource.left + visibleSource.width * 0.2f, visibleSource.center.y)
+        assertFalse("The thumbnail tap must avoid the compose button: source=$visibleSource compose=$composeBounds",
+            composeBounds.contains(tapPosition))
+        thumbnail.performTouchInput { click(Offset(width * 0.2f, height / 2f)) }
         rule.waitForIdle()
         assertEquals("Viewing", phase())
         rule.mainClock.autoAdvance = false

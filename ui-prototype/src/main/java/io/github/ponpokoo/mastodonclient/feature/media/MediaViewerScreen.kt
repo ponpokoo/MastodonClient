@@ -170,6 +170,7 @@ internal fun MediaViewerScreen(media: List<MediaAttachment>, motion: PrototypeMe
     var returnJob by remember { mutableStateOf<Job?>(null) }
     val viewportHeight = motion.viewerSize.height.toFloat().coerceAtLeast(1f)
     val interactive = motion.phase == MediaPhase.Viewing
+    val dismissEnabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing)
     val drawPager = motion.phase in listOf(MediaPhase.HandingOff, MediaPhase.Viewing, MediaPhase.ResettingZoom)
     val controlsAlpha = motion.visibleBackdropAlpha
     DisposableEffect(interactive) {
@@ -178,8 +179,9 @@ internal fun MediaViewerScreen(media: List<MediaAttachment>, motion: PrototypeMe
     }
     Box(Modifier.fillMaxSize().testTag("prototype_media_viewer")
                 // Observe in stationary window coordinates, outside the translated pager.
-                .pointerInput(pager.currentPage, motion.phase, viewportHeight) {
-                    if (!interactive) return@pointerInput
+                // Keep the same detector as the picture opens and hands off to the pager.
+                .pointerInput(pager.currentPage, dismissEnabled, viewportHeight) {
+                    if (!dismissEnabled) return@pointerInput
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
                         returnJob?.cancel()
@@ -191,11 +193,17 @@ internal fun MediaViewerScreen(media: List<MediaAttachment>, motion: PrototypeMe
                             val event = awaitPointerEvent(PointerEventPass.Main)
                             val change = event.changes.first()
                             val delta = change.position - change.previousPosition
-                            distance += delta
                             // The image/pager get first refusal. After vertical slop, consume only
                             // one-finger movement; a second finger still takes over for pinch.
                             if (event.changes.size > 1 || currentZoom.scale > MIN_DISMISS_SCALE ||
                                 (change.isConsumed && delta != Offset.Zero)) eligible = false
+                            // Track an already-down finger, but only move the picture once
+                            // it fills the screen, including a pending load or handoff.
+                            if (motion.progress.value < 1f) {
+                                distance = Offset.Zero
+                                continue
+                            }
+                            distance += delta
                             if (eligible && !dragging && distance.getDistance() > viewConfiguration.touchSlop) {
                                 dragging = distance.y > abs(distance.x)
                                 if (!dragging) eligible = false
@@ -368,15 +376,30 @@ private fun ZoomableImage(
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
                         settleJob?.cancel()
+                        var panDistance = Offset.Zero
+                        var panning = false
                         while (true) {
                             val event = awaitPointerEvent()
                             val pressedPointers = event.changes.count { it.pressed }
                             val isPinching = pressedPointers >= 2
                             val isPanningZoomedImage = zoom.scale > 1f && pressedPointers > 0
-                            if (isPinching || isPanningZoomedImage) {
+                            var panChange = event.calculatePan()
+                            if (isPinching) {
+                                // Keep an established pinch active when one finger is lifted.
+                                panning = true
+                            } else if (isPanningZoomedImage && !panning) {
+                                // Pointer coordinates are inside the scaled layer. Compare slop
+                                // in screen pixels so zoom does not change the drag threshold.
+                                panDistance += panChange * zoom.scale
+                                val distance = panDistance.getDistance()
+                                if (distance > viewConfiguration.touchSlop) {
+                                    panning = true
+                                    panChange = panDistance * (1f - viewConfiguration.touchSlop / distance) / zoom.scale
+                                }
+                            }
+                            if (isPinching || (isPanningZoomedImage && panning)) {
                                 val zoomChange = if (isPinching) event.calculateZoom() else 1f
                                 val nextScale = (zoom.scale * zoomChange).coerceIn(MIN_SCALE, MAX_SCALE)
-                                val panChange = event.calculatePan()
                                 zoom.scale = nextScale
                                 zoom.offset = if (nextScale <= 1f) {
                                     Offset.Zero
