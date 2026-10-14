@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.transitionprototype.prototypeForeground
+
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNotice
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
@@ -491,6 +493,7 @@ fun HomeTimelineScreen(
             if (destination == MainDestination.Home) {
                 FloatingActionButton(
                     onClick = { onCompose(null) },
+                    modifier = Modifier.prototypeForeground().testTag("prototype_compose"),
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(20.dp),
                 ) {

@@ -2,6 +2,8 @@ package io.github.ponpokoo.transitionprototype
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.runtime.*
@@ -36,6 +38,7 @@ internal class PrototypeEnvironment : ViewModel() {
 }
 
 /** Production screens and ViewModels are wired to local fixture repositories here. */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 internal fun PrototypeApp() {
     val environment = viewModel { PrototypeEnvironment() }
@@ -62,36 +65,40 @@ internal fun PrototypeApp() {
         systemInsets.getRight(density, direction), systemInsets.getBottom(density))
     var appInsets by remember { mutableStateOf(currentInsets()) }
     SideEffect { if (!motion.active) appInsets = currentInsets() }
-    CompositionLocalProvider(LocalPrototypeMotion provides motion, LocalPrototypeInsets provides appInsets) {
-        Box(Modifier.fillMaxSize().testTag("prototype_app")) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (authorId == null) 1f else 0f }
-                .semantics { if (authorId != null || motion.active) hideFromAccessibility() }) {
-                HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
-                    onLoggedOut = { main.restore() }, onStatusClick = { placeholder("投稿詳細") },
-                    onCompose = { placeholder("投稿作成") }, onQuote = { _, _ -> placeholder("引用") },
-                    onOpenLink = { placeholder("リンク") }, openLinksInApp = openLinksInApp,
-                    onOpenLinksInAppChange = { openLinksInApp = it }, onAccountClick = { authorId = it },
-                    onMediaClick = openMedia, onSettings = { placeholder("設定") },
-                    onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
-                    onEditStatus = { placeholder("投稿編集") }, onOpenLists = { placeholder("リスト") },
-                    onOpenBookmarks = { placeholder("ブックマーク") }, onOpenFavourites = { placeholder("お気に入り一覧") })
-            }
-            authorId?.let { id ->
-                val account = viewModel(key = "profile:$id") { AccountProfileViewModel(id, environment.timeline, environment.auth, environment.statusActions) }
-                LaunchedEffect(account) { account.retry() }
-                CompositionLocalProvider(LocalPrototypeThumbnailOwner provides "account:$id") {
-                    Box(Modifier.fillMaxSize().testTag("account_profile").semantics { if (motion.active) hideFromAccessibility() }) {
-                        AccountProfileScreen(account, openEditor = false, preferences = mainState.preferences,
-                            onBack = { authorId = null }, onStatusClick = { placeholder("投稿詳細") },
-                            onReply = { placeholder("返信") }, onQuote = { _, _ -> placeholder("引用") },
-                            onOpenLink = { placeholder("リンク") }, onAccountClick = { authorId = it }, onMediaClick = openMedia,
-                            onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
-                            onOpenLists = { placeholder("リスト") }, onOpenBookmarks = { placeholder("ブックマーク") },
-                            onOpenFavourites = { placeholder("お気に入り一覧") }, onEditStatus = { placeholder("投稿編集") })
+    SharedTransitionLayout(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalPrototypeMotion provides motion, LocalPrototypeInsets provides appInsets,
+            LocalPrototypeMainVisible provides (authorId == null),
+            LocalPrototypeSharedTransitionScope provides this@SharedTransitionLayout) {
+            Box(Modifier.fillMaxSize().testTag("prototype_app")) {
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (authorId == null) 1f else 0f }
+                    .semantics { if (authorId != null || motion.active) hideFromAccessibility() }) {
+                    HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
+                        onLoggedOut = { main.restore() }, onStatusClick = { placeholder("投稿詳細") },
+                        onCompose = { placeholder("投稿作成") }, onQuote = { _, _ -> placeholder("引用") },
+                        onOpenLink = { placeholder("リンク") }, openLinksInApp = openLinksInApp,
+                        onOpenLinksInAppChange = { openLinksInApp = it }, onAccountClick = { authorId = it },
+                        onMediaClick = openMedia, onSettings = { placeholder("設定") },
+                        onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
+                        onEditStatus = { placeholder("投稿編集") }, onOpenLists = { placeholder("リスト") },
+                        onOpenBookmarks = { placeholder("ブックマーク") }, onOpenFavourites = { placeholder("お気に入り一覧") })
+                }
+                authorId?.let { id ->
+                    val account = viewModel(key = "profile:$id") { AccountProfileViewModel(id, environment.timeline, environment.auth, environment.statusActions) }
+                    LaunchedEffect(account) { account.retry() }
+                    CompositionLocalProvider(LocalPrototypeThumbnailOwner provides "account:$id") {
+                        Box(Modifier.fillMaxSize().testTag("account_profile").semantics { if (motion.active) hideFromAccessibility() }) {
+                            AccountProfileScreen(account, openEditor = false, preferences = mainState.preferences,
+                                onBack = { authorId = null }, onStatusClick = { placeholder("投稿詳細") },
+                                onReply = { placeholder("返信") }, onQuote = { _, _ -> placeholder("引用") },
+                                onOpenLink = { placeholder("リンク") }, onAccountClick = { authorId = it }, onMediaClick = openMedia,
+                                onFollowers = { placeholder("フォロワー") }, onFollowing = { placeholder("フォロー") },
+                                onOpenLists = { placeholder("リスト") }, onOpenBookmarks = { placeholder("ブックマーク") },
+                                onOpenFavourites = { placeholder("お気に入り一覧") }, onEditStatus = { placeholder("投稿編集") })
+                        }
                     }
                 }
+                PrototypeMediaOverlay(motion)
             }
-            PrototypeMediaOverlay(motion)
         }
     }
 }

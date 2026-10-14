@@ -642,7 +642,7 @@ private fun MediaGrid(
                                 Box(
                                     modifier = Modifier.size(frames[index])
                                         .clip(RoundedCornerShape(8.dp))
-                                        .prototypeThumbnail(media, attachments.indexOf(media))
+                                        .prototypeThumbnail(media, attachments.indexOf(media), cropped = cropImageRow)
                                         .then(
                                             if (onMediaClick == null || media.url == null) Modifier else {
                                                 Modifier.clickable {

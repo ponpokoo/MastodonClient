@@ -9,6 +9,7 @@ private fun resource(name: String): String {
     val resourceId = when (name) {
         "sample_portrait" -> R.drawable.sample_portrait
         "sample_square" -> R.drawable.sample_square
+        "sample_white_background" -> R.drawable.sample_white_background
         else -> R.drawable.sample_landscape
     }
     return "android.resource://io.github.ponpokoo.transitionprototype/$resourceId"
@@ -29,7 +30,8 @@ internal val PrototypeToots = listOf(
         "<p>旅の写真をまとめました。<br>山の景色、夕暮れの塔、海辺の島。どの場所もまた訪れたいです。</p>",
         listOf(image("mountain", "sample_landscape", "山の景色のサンプル画像", 1.5f),
             image("tower", "sample_portrait", "夕暮れの塔のサンプル画像", 0.6f),
-            image("island", "sample_square", "海辺の島のサンプル画像", 1f)), 1, 4, 8),
+            image("island", "sample_square", "海辺の島のサンプル画像", 1f),
+            image("white_background", "sample_white_background", "画像ビューアのUI確認用の白背景画像", 0.45f)), 1, 4, 8),
     post("text_only", GalleryAuthor,
         "<p>今日はゆっくり読書をしています。<br>気になっていた本を読み終えたら、近所のカフェへ行こうかな。</p>",
         emptyList(), 2, 0, 5),
@@ -55,6 +57,7 @@ internal val PrototypeToots = listOf(
 internal fun fixtureImageResource(media: MediaAttachment): Int = when (media.url) {
     resource("sample_portrait") -> R.drawable.sample_portrait
     resource("sample_square") -> R.drawable.sample_square
+    resource("sample_white_background") -> R.drawable.sample_white_background
     else -> R.drawable.sample_landscape
 }
 

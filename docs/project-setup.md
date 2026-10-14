@@ -234,7 +234,7 @@ APK生成後に関連コードが変わっていなければ再ビルドしな�
 | `app/`（`app/release/`を除く） | `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` |
 | `app/src/androidTest/`・`app/build.gradle.kts`・`tools/` | 本体の共通確認に加え`:app:assembleDebugAndroidTest` |
 | `release-tests/` | `:release-tests:assembleRelease`。端末での実行は行わない |
-| `ui-prototype/` | 本体UI取り込みスクリプトのテスト、UI試作のDebugアプリ・端末テストAPKの生成 |
+| `ui-prototype/` | 本体UI取り込みスクリプトとUI試作の単体テスト、Debugアプリ・端末テストAPKの生成 |
 | ルートのGradle設定・Wrapper・`gradle/` | Androidの上記すべて |
 | `relay/workers/`（`bench/results/`を除く） | `npm ci`・`npm test`。旧配送・ハイブリッド・FCM・測定記録のテスト |
 | `relay/`のWorkers以外 | ローカル模擬Relayの`npm test`。外部依存のインストールは不要 |

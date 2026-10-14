@@ -3,6 +3,8 @@ package io.github.ponpokoo.transitionprototype
 import android.graphics.Bitmap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.click
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
@@ -23,9 +26,193 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import kotlin.math.roundToInt
+import kotlin.math.abs
 
 class PrototypeImageTransitionDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun returningImageStaysBehindTheComposeButtonWithoutShowingItInTheFullScreenViewer() {
+        val timeline = rule.onNodeWithTag("timeline_list")
+        timeline.performScrollToIndex(1)
+        val thumbnail = rule.onNodeWithTag("toot_gallery_media_3")
+        val fab = rule.onNodeWithTag("prototype_compose").fetchSemanticsNode().boundsInRoot
+        val beforeSource = thumbnail.fetchSemanticsNode().boundsInRoot
+        timeline.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, beforeSource.center.y - fab.center.y) }
+        rule.waitForIdle()
+        val source = thumbnail.fetchSemanticsNode().boundsInRoot
+        val sample = fab.center + Offset(fab.width * 0.25f, 0f)
+        assertTrue("The return image must overlap the compose button for this test", source.contains(sample))
+        val x = sample.x.roundToInt()
+        val y = sample.y.roundToInt()
+        val normalButton = rule.onRoot().captureToImage().toPixelMap()[x, y]
+
+        thumbnail.performClick()
+        rule.waitForIdle()
+        val fullScreenPixel = rule.onRoot().captureToImage().toPixelMap()[x, y]
+        assertTrue("Do not show the timeline button over the full-screen white picture", fullScreenPixel.red > 0.98f)
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("prototype_media_close").performClick()
+        advance(160)
+        var checkedOverlap = false
+        repeat(60) {
+            advance(16)
+            val progress = motion()[PrototypeImageFit]
+            if (!checkedOverlap && phase() == "Closing" && progress in 0.05f..0.25f &&
+                motion()[PrototypeImageVisibleBounds].contains(sample)) {
+                val returning = rule.onRoot().captureToImage().toPixelMap()[x, y]
+                val distanceToButton = abs(returning.red - normalButton.red) + abs(returning.green - normalButton.green) +
+                    abs(returning.blue - normalButton.blue)
+                val distanceToWhite = abs(returning.red - 1f) + abs(returning.green - 1f) + abs(returning.blue - 1f)
+                assertTrue("The button must appear in front of the returning white picture: $returning",
+                    distanceToButton < distanceToWhite)
+                capture("return-behind-compose-button")
+                checkedOverlap = true
+            }
+        }
+        assertTrue("Inspect the actual overlapping part of the return animation", checkedOverlap)
+        advance(1_000)
+        assertEquals("Closed", phase())
+        val finalButton = rule.onRoot().captureToImage().toPixelMap()[x, y]
+        assertEquals(normalButton.red, finalButton.red, 0.01f)
+        assertEquals(normalButton.green, finalButton.green, 0.01f)
+        assertEquals(normalButton.blue, finalButton.blue, 0.01f)
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun downwardDismissalTracksFramesAndClosesFromTheReleasedPosition() {
+        rule.onNodeWithTag("timeline_list").performScrollToIndex(1)
+        rule.onNodeWithTag("toot_gallery_media_3").performClick()
+        rule.waitForIdle()
+        val image = rule.onNodeWithTag("prototype_media_viewer")
+        rule.mainClock.autoAdvance = false
+        val bounds = image.fetchSemanticsNode().boundsInRoot
+        val origin = Offset(bounds.width / 2f, bounds.height / 2f)
+        image.performTouchInput { down(origin) }
+        var previousOffset = 0f
+        // Deliver separate moves and render between them, as a real finger drag does.
+        repeat(10) { step ->
+            image.performTouchInput { moveTo(origin + Offset(0f, bounds.height * 0.025f * (step + 1)), 32) }
+            advance(32)
+            val offset = viewer()[PrototypeViewerDismissOffset]
+            assertTrue("The image must follow each downward movement: $offset after $previousOffset", offset > previousOffset)
+            previousOffset = offset
+            assertEquals("Viewing", phase())
+        }
+        val releasedBounds = motion()[PrototypeImageBounds]
+        capture("downward-drag")
+        image.performTouchInput { up() }
+        advance(16)
+        assertEquals("Closing", phase())
+        val firstClosingBounds = motion()[PrototypeImageBounds]
+        assertEquals("The picture must not snap back to the center", releasedBounds.top, firstClosingBounds.top, 1f)
+        assertEquals(releasedBounds.left, firstClosingBounds.left, 1f)
+        capture("downward-close-start")
+        advance(1_500)
+        assertEquals("Closed", phase())
+        rule.onNodeWithTag("toot_gallery_media_3").assertExists()
+        rule.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun shortDownwardDragReturnsToFitAndTheNextDragCanDismiss() {
+        rule.onNodeWithTag("toot_single_media_0").performClick()
+        rule.waitForIdle()
+        val image = rule.onNodeWithTag("prototype_media_viewer")
+        rule.mainClock.autoAdvance = false
+        image.performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, height * 0.07f), 300)
+        }
+        advance(16)
+        var previousOffset = viewer()[PrototypeViewerDismissOffset]
+        assertTrue("Start with a visible displacement", previousOffset > 0f)
+        image.performTouchInput {
+            up()
+        }
+        repeat(32) {
+            advance(16)
+            val offset = viewer()[PrototypeViewerDismissOffset]
+            assertTrue("The image must return without oscillating: $offset after $previousOffset",
+                offset >= 0f && offset <= previousOffset + 0.001f)
+            previousOffset = offset
+        }
+        assertEquals("Viewing", phase())
+        assertEquals(0f, viewer()[PrototypeViewerDismissOffset], 0.001f)
+        rule.mainClock.autoAdvance = true
+        image.performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, height * 0.25f), 300)
+            up()
+        }
+        rule.waitForIdle()
+        assertEquals("Closed", phase())
+    }
+
+    @Test
+    fun topClippedThumbnailReturnsWithoutPaintingOverTheToolbar() {
+        clippedThumbnailReturns(top = true)
+    }
+
+    @Test
+    fun bottomClippedThumbnailReturnsWithoutPaintingOverTheNavigation() {
+        clippedThumbnailReturns(top = false)
+    }
+
+    private fun clippedThumbnailReturns(top: Boolean) {
+        val timeline = rule.onNodeWithTag("timeline_list")
+        timeline.performScrollToIndex(if (top) 0 else 1)
+        val tag = if (top) "toot_single_media_0" else "toot_gallery_media_3"
+        val thumbnail = rule.onNodeWithTag(tag)
+        val fullSource = thumbnail.fetchSemanticsNode().boundsInRoot
+        val viewport = timeline.fetchSemanticsNode().boundsInRoot
+        val delta = if (top) fullSource.top - viewport.top + fullSource.height * 0.4f
+            else fullSource.bottom - viewport.bottom - fullSource.height * 0.4f
+        timeline.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, delta) }
+        rule.waitForIdle()
+        val visibleSource = thumbnail.fetchSemanticsNode().boundsInRoot
+        assertTrue("The test must start with a partially clipped image: $visibleSource from $fullSource, viewport=$viewport",
+            visibleSource.height < fullSource.height - 10f)
+        assertEquals(if (top) viewport.top else viewport.bottom, if (top) visibleSource.top else visibleSource.bottom, 1f)
+        val before = rule.onRoot().captureToImage().toPixelMap()
+        val sampleX = visibleSource.center.x.roundToInt().coerceIn(0, before.width - 1)
+        val sampleY = (if (top) viewport.top - 4f else viewport.bottom + 4f).roundToInt().coerceIn(0, before.height - 1)
+        val outsideColor = before[sampleX, sampleY]
+
+        thumbnail.performClick()
+        rule.waitForIdle()
+        assertEquals("Viewing", phase())
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("prototype_media_close").performClick()
+        advance(160)
+        var checkedReturn = false
+        repeat(60) {
+            advance(16)
+            if (!checkedReturn && phase() == "Closing" && motion()[PrototypeImageFit] in 0f..0.001f) {
+                val visible = motion()[PrototypeImageVisibleBounds]
+                assertTrue("The return image must stay inside the list clipping edge: $visible",
+                    if (top) visible.top >= viewport.top - 1f else visible.bottom <= viewport.bottom + 1f)
+                val during = rule.onRoot().captureToImage().toPixelMap()[sampleX, sampleY]
+                assertEquals(outsideColor.red, during.red, 0.01f)
+                assertEquals(outsideColor.green, during.green, 0.01f)
+                assertEquals(outsideColor.blue, during.blue, 0.01f)
+                capture(if (top) "closing-top-clipped" else "closing-bottom-clipped")
+                checkedReturn = true
+            }
+        }
+        assertTrue("Check the actual image just before it reaches the thumbnail", checkedReturn)
+        advance(1_000)
+        assertEquals("Closed", phase())
+        val returned = motion()[PrototypeImageVisibleBounds]
+        assertEquals(visibleSource.top, returned.top, 1f)
+        assertEquals(visibleSource.bottom, returned.bottom, 1f)
+        assertEquals(visibleSource.left, returned.left, 1f)
+        assertEquals(visibleSource.right, returned.right, 1f)
+        assertEquals(visibleSource, thumbnail.fetchSemanticsNode().boundsInRoot)
+        rule.mainClock.autoAdvance = true
+    }
 
     @Test
     fun imageTransitionReturnsToTheLastViewedGalleryThumbnail() {
@@ -39,13 +226,13 @@ class PrototypeImageTransitionDeviceTest {
         assertTrue(motion()[PrototypeImageTransitionActive])
         assertTrue(motion()[PrototypeImageFit] > 0f && motion()[PrototypeImageFit] < 1f)
         val opening = motion()[PrototypeImageBounds]
-        assertTrue("The picture should start at the scrolled thumbnail and expand toward the viewport: $opening from $source",
-            opening.left > 0f && opening.left < source.left && opening.top > 0f && opening.top < source.top && opening.width > source.width)
+        assertTrue("The picture should expand from the scrolled thumbnail: $opening from $source", opening.width > source.width)
         capture("opening-portrait")
         rule.onNodeWithTag("main_tab_explore").performTouchInput { click(center) }
         rule.onNodeWithTag("main_tab_home").assertIsSelected()
         advance(600)
         assertEquals("Viewing", phase())
+        assertTrue("Do not hand the picture off before the viewer has drawn it", motion()[PrototypeViewerImageReady])
 
         rule.mainClock.autoAdvance = true
         rule.onNodeWithTag("prototype_media_viewer").performTouchInput { swipeLeft() }
@@ -69,13 +256,14 @@ class PrototypeImageTransitionDeviceTest {
         advance(48)
         assertTrue(motion()[PrototypeImageBounds].top > 0f)
         capture("closing-square")
-        var bounced = false
+        var previousProgress = motion()[PrototypeImageFit]
         repeat(32) {
             advance(16)
-            if (motion()[PrototypeImageFit] < 0f) bounced = true
+            val progress = motion()[PrototypeImageFit]
+            assertTrue("The picture must return without overshoot or oscillation: $progress after $previousProgress",
+                progress >= 0f && progress <= previousProgress + 0.0001f)
+            previousProgress = progress
         }
-        assertTrue("The restored spring should briefly overshoot the thumbnail", bounced)
-        advance(1_000)
         assertEquals("Closed", phase())
         val returned = motion()[PrototypeImageBounds]
         assertEquals(destination.left, returned.left, 1f)
@@ -84,6 +272,10 @@ class PrototypeImageTransitionDeviceTest {
         assertEquals(destination.height, returned.height, 1f)
         rule.onNodeWithTag("prototype_media_viewer").assertDoesNotExist()
         rule.onNodeWithTag("toot_gallery_media_2").assertExists()
+        rule.onNodeWithTag("toot_gallery_media_2").performTouchInput { click(center) }
+        advance(700)
+        assertEquals("Viewing", phase())
+        assertEquals("gallery/island", motion()[PrototypeTransitionImage])
         rule.mainClock.autoAdvance = true
     }
 
