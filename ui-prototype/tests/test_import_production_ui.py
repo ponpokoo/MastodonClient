@@ -64,6 +64,22 @@ class SourceImportTest(unittest.TestCase):
         self.assertEqual("merged experiment\n", self.copied.read_text(encoding="utf-8"))
         self.assertEqual(0, self.run_import("--check"))
 
+    def test_another_checkout_can_be_used_without_writing_to_it(self):
+        self.run_import("--add", self.source)
+        production = self.root / "main-checkout"
+        original = production / self.source
+        original.parent.mkdir(parents=True)
+        original.write_text("new production UI\n", encoding="utf-8")
+        self.copied.write_text("prototype adaptation\n", encoding="utf-8")
+        self.assertEqual(1, self.run_import("--production-root", str(production), "--check"))
+        self.assertEqual(1, self.run_import("--production-root", str(production), "--refresh"))
+        self.assertEqual(0, self.run_import("--production-root", str(production), "--record", self.source))
+        self.assertEqual(0, self.run_import("--production-root", str(production), "--check"))
+        self.assertEqual("prototype adaptation\n", self.copied.read_text(encoding="utf-8"))
+        self.assertEqual("new production UI\n", original.read_text(encoding="utf-8"))
+        self.assertEqual("import io.github.ponpokoo.mastodonclient.R\nval label = 1\n",
+                         self.original.read_text(encoding="utf-8"))
+
     def test_import_rejects_paths_outside_production_sources(self):
         for source in ("../Screen.kt", "app/src/main/../../Screen.kt", "ui-prototype/src/main/Screen.kt"):
             with self.assertRaises(ValueError):
