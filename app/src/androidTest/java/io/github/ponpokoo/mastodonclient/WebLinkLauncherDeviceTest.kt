@@ -14,6 +14,32 @@ import org.junit.Test
 
 class WebLinkLauncherDeviceTest {
     @Test
+    fun explicitBrowserActionRestrictsResolutionAndPreservesTheOriginalUrl() {
+        val context = RecordingContext()
+        val launcher = WebLinkLauncher(context) { error("Browser action must not discover Custom Tabs") }
+        assertTrue(launcher.openInBrowser("https://www.youtube.com/watch?v=fixture".toUri()))
+        val launched = context.intents.single()
+        assertEquals(Intent.ACTION_VIEW, launched.action)
+        assertEquals("https://www.youtube.com/watch?v=fixture", launched.dataString)
+        assertEquals(Intent.ACTION_MAIN, launched.selector?.action)
+        assertTrue(launched.selector!!.hasCategory(Intent.CATEGORY_APP_BROWSER))
+        assertFalse(launched.hasExtra(CustomTabsIntent.EXTRA_SESSION))
+    }
+
+    @Test
+    fun explicitBrowserActionRejectsInvalidUrlsAndHandlesUnavailableBrowsers() {
+        val context = RecordingContext()
+        val launcher = WebLinkLauncher(context)
+        for (url in listOf("file:///private", "javascript:alert(1)", "https:///missing")) {
+            assertFalse(launcher.openInBrowser(url.toUri()))
+        }
+        assertTrue(context.intents.isEmpty())
+        for (failure in listOf(ActivityNotFoundException(), SecurityException())) {
+            assertFalse(WebLinkLauncher(RecordingContext { throw failure }).openInBrowser("https://example.test".toUri()))
+        }
+    }
+
+    @Test
     fun inAppLinksUseTheBrowserWithoutCreatingAnotherTask() {
         val context = RecordingContext()
         val launcher = WebLinkLauncher(context) { "test.browser" }

@@ -418,6 +418,50 @@ Actionsの実行結果で選択・スキップされた範囲を確認する。A
 確認結果はPR・コミットの説明に対象・コマンド・結果を簡潔にまとめ、未実行項目を成功扱いにしない。
 リリース・運用・移行の記録が必要な場合も、同じ結果を複数の文書へ転記しない。
 
+#### 投稿本文のリンク判定を可視化・測定する
+
+Debug版には、ネットワーク接続やログインを使わない測定画面がある。確認用Debug APKを
+インストールした専用エミュレーターで、シリアルを指定して開く。
+
+```powershell
+adb -s emulator-5554 shell am start -n io.github.ponpokoo.mastodonclient/.feature.common.LinkHitDiagnosticsActivity
+adb -s emulator-5554 logcat -s NagisaLinkHit:D '*:S'
+```
+
+緑はURL注釈のレイアウト範囲、橙は2 dp間隔の座標を現在の文字位置変換へ通した結果、
+青は本文境界、桃は最小タッチターゲットの拡張候補を表す。
+橙と桃は他の要素との競合・クリッピングを含まないため、実際にイベントが届く範囲は
+ログの`branch`と座標で確認する。緑も文字のインク形状ではなく、テキストレイアウト上の範囲である。
+ログは指を離した座標のpx・dp、文字位置、URL注釈の開始／終了位置、処理分岐を出力し、
+URLや投稿本文は出力しない。可視化は描画だけを追加し、タップ判定は変更しない。
+
+画面のチェックでオン／オフを切り替える。有効中は同じプロセス内の実投稿にも適用される。
+測定例のタップは画面内に結果を表示するが、実投稿は通常どおり画面遷移する。
+終了時はチェックを外すかアプリのプロセスを終了する。Release版には測定画面がなく、描画・ログも無効。
+
+`StatusLinkHitMeasurementDeviceTest`は、単行・折り返し・隣接リンク・文字と行高を大きくした例の
+周辺座標へタップを注入し、実際のコールバックをCSVに記録する。
+可視化の有無で分岐が変わらないこと、長押しでのメニュー表示と「開く」の選択、実際の`StatusCard`でのリンクと詳細の
+呼び分けも確認する。本体とテストAPKの生成・インストール後、対象を絞って実行する。
+
+```powershell
+adb -s emulator-5554 shell am instrument -w -e class io.github.ponpokoo.mastodonclient.StatusContentTextDeviceTest,io.github.ponpokoo.mastodonclient.StatusLinkHitMeasurementDeviceTest io.github.ponpokoo.mastodonclient.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+成果物は対象アプリの`files/link-hit-measurements/`に保存される。
+ハイライトの解除と長押しメニューの操作は`StatusLinkInteractionDeviceTest`、ブラウザー専用の起動Intentと
+起動失敗は`WebLinkLauncherDeviceTest`で確認する。
+`measurements.csv`は座標変換の予測と実際の分岐、`geometry.csv`はリンク文字ごとのレイアウト矩形、
+各例のPNGは可視化結果。PowerShell 7.4以降では、次のようにバイナリもそのまま取得できる。
+保存先ディレクトリは先に作成する。
+
+```powershell
+adb -s emulator-5554 exec-out run-as io.github.ponpokoo.mastodonclient cat files/link-hit-measurements/measurements.csv > app/build/outputs/link-hit-measurements/measurements.csv
+adb -s emulator-5554 exec-out run-as io.github.ponpokoo.mastodonclient cat files/link-hit-measurements/single.png > app/build/outputs/link-hit-measurements/single.png
+```
+
+数値は合成本文と指定端末・密度・フォント設定での測定結果であり、すべての実投稿の境界を保証しない。
+
 ### Release APKの署名と生成
 
 #### 署名設定

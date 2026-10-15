@@ -13,6 +13,16 @@ internal class WebLinkLauncher(
     private val context: Context,
     private val customTabsPackage: () -> String? = { findCustomTabsPackage(context) },
 ) {
+    /** Restrict resolution to browser apps, bypassing app links and Custom Tabs preferences. */
+    fun openInBrowser(uri: Uri): Boolean {
+        if (uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) return false
+        return tryStart {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE).apply {
+                selector = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_BROWSER)
+            })
+        }
+    }
+
     fun open(uri: Uri, inApp: Boolean): Boolean {
         if (uri.scheme?.lowercase() !in setOf("http", "https") || uri.host.isNullOrBlank()) return false
 

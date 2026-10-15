@@ -70,15 +70,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -92,6 +96,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.replyToAccountName
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
+import io.github.ponpokoo.mastodonclient.feature.common.LinkActionsPopup
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.ContentWarning
 import io.github.ponpokoo.mastodonclient.feature.common.FilterWarning
@@ -711,15 +716,24 @@ private fun MediaGrid(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun PreviewCardView(
     card: PreviewCard,
     thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
     onClick: () -> Unit,
 ) {
+    var menuVisible by remember(card.url) { mutableStateOf(false) }
+    val menuAnchor = remember { arrayOf(IntOffset.Zero) }
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().testTag("preview_card")
+            .onGloballyPositioned {
+                val origin = it.positionInWindow()
+                menuAnchor[0] = IntOffset((origin.x + it.size.width / 2f).toInt(), (origin.y + it.size.height / 2f).toInt())
+            }
+            .combinedClickable(onClick = onClick, onLongClick = { menuVisible = true }),
         shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = if (menuVisible) MaterialTheme.colorScheme.primary.copy(alpha = .18f)
+            .compositeOver(MaterialTheme.colorScheme.surfaceContainer) else MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
@@ -771,6 +785,14 @@ private fun PreviewCardView(
                 }
             }
         }
+    }
+    if (menuVisible) {
+        LinkActionsPopup(
+            url = card.url,
+            positionInWindow = menuAnchor[0],
+            onDismiss = { menuVisible = false },
+            onOpen = { menuVisible = false; onClick() },
+        )
     }
 }
 
