@@ -50,6 +50,11 @@ import io.github.ponpokoo.mastodonclient.feature.media.VideoPlayer
 import io.github.ponpokoo.mastodonclient.feature.media.MediaPlayback
 import io.github.ponpokoo.mastodonclient.feature.media.MediaPlaybackControls
 import io.github.ponpokoo.mastodonclient.feature.media.rememberMediaPlayback
+import io.github.ponpokoo.mastodonclient.feature.media.*
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.test.doubleClick
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
@@ -64,6 +69,53 @@ class VideoPlaybackDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
     private val files = mutableListOf<File>()
     @After fun cleanup() { files.forEach { it.delete() } }
+
+    @Test fun pausedVideoReturnsToItsThumbnailUsingTheThumbnail() = checkVideoTransition("video", true)
+    @Test fun playingGifReturnsWithSwipeVelocityUsingTheThumbnail() = checkVideoTransition("gifv", false)
+
+    private fun checkVideoTransition(type: String, pause: Boolean) {
+        val media = video(seconds = 10).copy(type = type)
+        val preview = BitmapPainter(Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            .apply { eraseColor(android.graphics.Color.BLUE) }.asImageBitmap())
+        val motion = MediaTransitionState().apply { validateScope("standalone", "standalone") }
+        val group = MediaSourceGroup(motion, false)
+        val thumbnail = MediaThumbnailFrame(Rect(40f, 100f, 240f, 300f), false)
+        group.displayed(media, preview)
+        motion.thumbnailFrames[group.key(media)] = thumbnail
+        rule.setContent { MaterialTheme { MediaTransitionHost(motion) {} } }
+        rule.mainClock.autoAdvance = false
+        rule.runOnIdle { group.prepare(media); motion.open(listOf(media), 0, "standalone", "standalone") }
+        rule.mainClock.advanceTimeBy(64)
+        rule.waitForIdle()
+        assertEquals(MediaPhase.Opening, motion.phase)
+        assertTrue(motion.transitionPainter === preview)
+        rule.mainClock.autoAdvance = true
+        waitForVideoState("再生中")
+        rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag("video_preview")).fetchSemanticsNodes().isEmpty() }
+        if (pause) {
+            rule.onNodeWithContentDescription("動画を一時停止").performClick()
+            waitForVideoState("一時停止")
+        }
+        rule.onNodeWithTag("video_tap_target").performTouchInput { doubleClick(center) }
+        assertEquals(1f, rule.onNodeWithTag("media_viewer").fetchSemanticsNode().config[MediaViewerScale], 0.001f)
+        rule.mainClock.autoAdvance = false
+        if (pause) rule.runOnIdle { motion.close() }
+        else rule.onNodeWithTag("media_viewer").performTouchInput {
+            down(center)
+            repeat(8) { moveTo(center + Offset(0f, height * .025f * (it + 1)), 16) }
+            up()
+        }
+        rule.runOnIdle {
+            assertEquals(MediaPhase.Closing, motion.phase)
+            assertEquals(thumbnail, motion.transitionThumbnail)
+            assertTrue(motion.transitionPainter === preview)
+            if (!pause) assertTrue(motion.closingVelocity > 0f)
+        }
+        rule.mainClock.advanceTimeBy(240)
+        rule.waitForIdle()
+        assertEquals(MediaPhase.Closed, motion.phase)
+        rule.mainClock.autoAdvance = true
+    }
 
     @Test fun fullScreenVideoStillDecodesAndPlays() {
         val media = video()

@@ -1,6 +1,11 @@
 package io.github.ponpokoo.mastodonclient.feature.media
 
-import android.view.SurfaceView
+import android.view.TextureView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -9,7 +14,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.only
@@ -30,7 +34,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
 internal fun VideoPlayer(url: String?, loop: Boolean, active: Boolean,
-    controlsVisible: Boolean = true, onTap: () -> Unit = {}) {
+    controlsVisible: Boolean = true, onTap: () -> Unit = {},
+    fallbackPainter: Painter? = null, previewUrl: String? = null) {
     val playback = rememberMediaPlayback(url, active = active, autoplay = true, loop = loop)
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).testTag("video_player").then(playback.visibilityModifier)
         .semantics { stateDescription = mediaPlaybackStatus(playback, "動画") }) {
@@ -38,13 +43,24 @@ internal fun VideoPlayer(url: String?, loop: Boolean, active: Boolean,
         val bottomPadding = if (landscape) 0.dp else if (maxHeight < 360.dp) 8.dp else 56.dp
         playback.player?.let { player ->
             key(player) {
-                AndroidView(factory = { context -> SurfaceView(context).also(player::setVideoSurfaceView) },
-                    onRelease = { if (playback.player === player) player.clearVideoSurfaceView(it) },
-                    modifier = Modifier.align(Alignment.Center).fillMaxWidth().aspectRatio(playback.videoAspectRatio)
+                AndroidView(factory = { context -> TextureView(context).also {
+                    player.setVideoTextureView(it)
+                } },
+                    onRelease = {
+                        if (playback.player === player) player.clearVideoTextureView(it)
+                    },
+                    modifier = Modifier.align(Alignment.Center)
+                        .width(minOf(maxWidth, maxHeight * playback.videoAspectRatio)).aspectRatio(playback.videoAspectRatio)
                         .testTag("video_surface"))
             }
         }
-        // Keep this above the native SurfaceView and below the controls. Drags still reach the pager.
+        if (!playback.videoFrameRendered) {
+            if (fallbackPainter != null) Image(fallbackPainter, contentDescription = null,
+                modifier = Modifier.fillMaxSize().testTag("video_preview"), contentScale = ContentScale.Fit)
+            else if (previewUrl != null) AsyncImage(previewUrl, contentDescription = null,
+                modifier = Modifier.fillMaxSize().testTag("video_preview"), contentScale = ContentScale.Fit)
+        }
+        // Keep this above the video and below the controls. Drags still reach the pager.
         Box(Modifier.matchParentSize().testTag("video_tap_target").pointerInput(active, onTap) {
             detectTapGestures { if (active) onTap() }
         })

@@ -11,7 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
@@ -185,7 +185,11 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
             }
         }
     }
-    BackHandler(enabled = motion.active) { motion.close(pager.currentPage) }
+    fun closeViewer(fromDrag: Boolean = false, velocityY: Float = 0f) {
+        motion.close(pager.currentPage, fromDrag, currentZoom.scale,
+            currentZoom.offset + Offset(-pager.currentPageOffsetFraction * motion.viewerSize.width, 0f), velocityY)
+    }
+    BackHandler(enabled = motion.active) { closeViewer() }
     LaunchedEffect(pager.settledPage, pager.isScrollInProgress) {
         if (!pager.isScrollInProgress && motion.phase == MediaPhase.Viewing) {
             motion.page = pager.settledPage
@@ -197,25 +201,6 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
     }
     LaunchedEffect(motion.phase) {
         if (motion.phase == MediaPhase.Closing) setControlsVisible(true)
-        if (motion.phase == MediaPhase.ResettingZoom) {
-            setControlsVisible(true)
-            pager.scrollToPage(motion.page)
-            val zoom = zoomStates[motion.page]
-            val startScale = zoom.scale
-            val startOffset = zoom.offset
-            val startDrag = motion.dragOffset
-            if (startScale != 1f || startOffset != Offset.Zero || startDrag != 0f) {
-                animate(0f, 1f, animationSpec = tween(150)) { fraction, _ ->
-                    zoom.scale = startScale + (1f - startScale) * fraction
-                    zoom.offset = startOffset * (1f - fraction)
-                    motion.dragOffset = startDrag * (1f - fraction)
-                }
-            }
-            zoom.scale = 1f
-            zoom.offset = Offset.Zero
-            motion.dragOffset = 0f
-            motion.phase = MediaPhase.Rounding
-        }
     }
     var pendingSaveSource by remember { mutableStateOf<String?>(null) }
     val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
@@ -240,8 +225,8 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
     var returnJob by remember { mutableStateOf<Job?>(null) }
     val viewportHeight = motion.viewerSize.height.toFloat().coerceAtLeast(1f)
     val interactive = motion.phase == MediaPhase.Viewing
-    val dismissEnabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing)
-    val drawPager = motion.phase in listOf(MediaPhase.HandingOff, MediaPhase.Viewing, MediaPhase.ResettingZoom) || motion.transitionPainter == null
+    val dismissEnabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.Viewing)
+    val drawPager = drawBackdrop || motion.phase == MediaPhase.Viewing || motion.transitionPainter == null
     val controlsAlpha = motion.visibleBackdropAlpha
     DisposableEffect(interactive) {
         if (!interactive) returnJob?.cancel()
@@ -249,11 +234,13 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
     }
     Box(Modifier.fillMaxSize().background(if (drawBackdrop) Color.Black.copy(alpha = motion.visibleBackdropAlpha) else Color.Transparent).testTag("media_viewer")
                 // Observe in stationary window coordinates, outside the translated pager.
-                // Keep the same detector as the picture opens and hands off to the pager.
+                // Keep the same detector as the picture finishes opening.
                 .pointerInput(pager.currentPage, dismissEnabled, viewportHeight) {
                     if (!dismissEnabled) return@pointerInput
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val velocityTracker = VelocityTracker()
+                        velocityTracker.addPosition(down.uptimeMillis, down.position)
                         returnJob?.cancel()
                         var eligible = currentZoom.scale <= MIN_DISMISS_SCALE
                         var dragging = false
@@ -262,13 +249,14 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                         do {
                             val event = awaitPointerEvent(PointerEventPass.Main)
                             val change = event.changes.first()
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
                             val delta = change.position - change.previousPosition
                             // The image/pager get first refusal. After vertical slop, consume only
                             // one-finger movement; a second finger still takes over for pinch.
                             if (event.changes.size > 1 || currentZoom.scale > MIN_DISMISS_SCALE ||
                                 (change.isConsumed && delta != Offset.Zero)) eligible = false
                             // Track an already-down finger, but only move the picture once
-                            // it fills the screen, including a pending load or handoff.
+                            // it fills the screen, even while the original image is loading.
                             if (motion.progress.value < 1f) {
                                 distance = Offset.Zero
                                 continue
@@ -282,7 +270,7 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                             if (eligible && dragging && delta != Offset.Zero) change.consume()
                         } while (event.changes.any { it.pressed })
                         if (eligible && dragging && motion.dragOffset >= viewportHeight * DISMISS_THRESHOLD) {
-                            motion.close(pager.currentPage, fromDrag = true)
+                            closeViewer(fromDrag = true, velocityY = velocityTracker.calculateVelocity().y)
                         }
                         else returnJob = scope.launch {
                             animate(motion.dragOffset, 0f, animationSpec = MediaReturnAnimation) {
@@ -297,7 +285,7 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                     this[MediaViewerDismissOffset] = motion.dragOffset
                 }) {
         HorizontalPager(pager,
-            Modifier.fillMaxSize().graphicsLayer { translationY = motion.dragOffset; alpha = if (!drawPager) 0f else if (motion.phase == MediaPhase.Closing && motion.transitionPainter == null) motion.progress.value else 1f }
+            Modifier.fillMaxSize().graphicsLayer { translationY = motion.dragOffset; alpha = if (!drawPager) 0f else if (motion.phase == MediaPhase.Closing && (drawBackdrop || motion.transitionPainter == null)) motion.progress.value else 1f }
                 .semantics { if (!drawPager) hideFromAccessibility() },
             userScrollEnabled = interactive && currentZoom.scale <= MIN_DISMISS_SCALE, beyondViewportPageCount = 1,
         ) { page ->
@@ -306,9 +294,11 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                 "audio" -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     AudioPlayer(item, active = page == pager.currentPage)
                 }
-                "video", "gifv" -> VideoPlayer(item.url, loop = item.type == "gifv", active = page == pager.currentPage,
-                    controlsVisible = controlsVisible && page == pager.currentPage,
-                    onTap = { setControlsVisible(!controlsVisible) })
+                "video", "gifv" -> VideoPlayer(item.url, loop = item.type == "gifv",
+                    active = page == pager.currentPage && motion.phase != MediaPhase.Closing,
+                    controlsVisible = controlsVisible && page == pager.currentPage && interactive,
+                    onTap = { setControlsVisible(!controlsVisible) },
+                    fallbackPainter = motion.fallbackPainter(item), previewUrl = item.previewUrl)
                 else -> ZoomableImage(item.url ?: item.previewUrl.orEmpty(), item.previewUrl, item.description,
                     item.cacheRevision, zoomStates[page], enabled = interactive, fallbackPainter = motion.fallbackPainter(item),
                     onDisplayed = { painter -> motion.reportImageReady(item.id, painter) },
@@ -323,8 +313,8 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .windowInsetsTopHeight(WindowInsets.statusBarsIgnoringVisibility)
                     .background(Color(0xFF303030).copy(alpha = 0.6f * controlsAlpha)))
-                IconButton(onClick = { motion.close(pager.currentPage) },
-                    enabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing),
+                IconButton(onClick = { closeViewer() },
+                    enabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.Viewing),
                     modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)
                         .graphicsLayer { alpha = controlsAlpha }
                         .testTag("media_viewer_close")) {
@@ -376,7 +366,7 @@ private fun ZoomableImage(
     onDisplayed: (Painter?) -> Unit,
     onTap: () -> Unit,
 ) {
-    var sourceSize by remember(url) { mutableStateOf(Size.Unspecified) }
+    var sourceSize by remember(url) { mutableStateOf(fallbackPainter?.intrinsicSize ?: Size.Unspecified) }
     var originalLoaded by remember(url) { mutableStateOf(false) }
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDisplayed by rememberUpdatedState(onDisplayed)
@@ -408,7 +398,7 @@ private fun ZoomableImage(
         return Offset(candidate.x.coerceIn(-maxX, maxX), candidate.y.coerceIn(-maxY, maxY))
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        if (!originalLoaded && previewUrl != null && previewUrl != url) {
+        if (!originalLoaded && fallback == null && previewUrl != null && previewUrl != url) {
             AsyncImage(
                 model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(previewUrl, cacheRevision),
                 contentDescription = null,
@@ -419,6 +409,7 @@ private fun ZoomableImage(
         AsyncImage(
             model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(url, cacheRevision),
             contentDescription = description ?: "添付画像",
+            placeholder = fallback,
             error = fallback,
             onSuccess = {
                 originalLoaded = true

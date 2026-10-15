@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.media
 
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
@@ -10,6 +11,85 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MediaTransitionTest {
+    @Test fun videosUseTheThumbnailForBothDirectionsAndFadeWithoutAPreview() {
+        for (type in listOf("video", "gifv")) {
+            val state = MediaTransitionState().apply { viewerSize = IntSize(1080, 2400) }
+            val item = image("movie").copy(type = type)
+            val group = MediaSourceGroup(state, false)
+            group.displayed(item, painter)
+            val thumbnail = MediaThumbnailFrame(Rect(20f, 100f, 500f, 400f), false)
+            state.thumbnailFrames[group.key(item)] = thumbnail
+            group.prepare(item)
+            state.open(listOf(item), 0, "session", "route")
+            assertEquals(MediaPhase.Opening, state.phase)
+            assertSame(painter, state.openingPainter())
+            state.phase = MediaPhase.Viewing
+            state.close()
+            assertSame(painter, state.transitionPainter)
+            assertEquals(thumbnail, state.transitionThumbnail)
+            state.clear()
+            state.thumbnailPainters.clear()
+            group.prepare(item)
+            state.open(listOf(item), 0, "session", "route")
+            state.phase = MediaPhase.Viewing
+
+            state.close()
+            assertNull(state.transitionPainter)
+            assertNull(state.transitionThumbnail)
+        }
+    }
+    @Test fun zoomedReturnStartsAtTheDisplayedImageAndKeepsTheViewportClip() {
+        val viewport = Rect(0f, 0f, 1080f, 2400f)
+        val start = mediaViewerGeometry(Size(600f, 1000f), viewport, 2f, Offset(120f, -200f))
+        assertEquals(Rect(-420f, -800f, 1740f, 2800f), start.imageBounds)
+        assertEquals(viewport, start.visibleClipBounds)
+        val end = mediaImageGeometry(Size(600f, 1000f),
+            MediaThumbnailFrame(Rect(20f, 100f, 500f, 400f), true), viewport, 0f)
+        assertEquals(start, mediaReturnGeometry(start, end, 0f, 0f))
+        assertEquals(end, mediaReturnGeometry(start, end, 1f, 0f))
+        val halfway = mediaReturnGeometry(start, end, 0.5f, 0f)
+        assertEquals(0.6f, halfway.imageBounds.width / halfway.imageBounds.height, 0.0001f)
+    }
+
+    @Test fun swipeReturnPreservesReleaseVelocityAndSettlesAtTheDestination() {
+        val start = MediaImageGeometry(Rect(0f, 400f, 600f, 1400f), Rect(0f, 400f, 600f, 1400f))
+        val end = MediaImageGeometry(Rect(100f, 100f, 400f, 600f), Rect(100f, 100f, 400f, 600f))
+        for (velocity in listOf(-1000f, 1000f, 4000f)) {
+            val step = 0.0001f
+            val next = mediaReturnGeometry(start, end, step, velocity)
+            assertEquals(velocity, (next.imageBounds.top - start.imageBounds.top) / (step * 0.18f), 5f)
+            assertEquals(start, mediaReturnGeometry(start, end, 0f, velocity))
+            assertEquals(end, mediaReturnGeometry(start, end, 1f, velocity))
+            val nearEnd = mediaReturnGeometry(start, end, 1f - step, velocity)
+            assertEquals(0f, (end.imageBounds.top - nearEnd.imageBounds.top) / (step * 0.18f), 5f)
+        }
+    }
+
+    @Test fun openingDefersAnIncompatibleAspectRatioButAcceptsHigherResolutionOfTheSameShape() {
+        val state = MediaTransitionState().apply { viewerSize = IntSize(1080, 2400) }
+        val item = image("picture")
+        val group = MediaSourceGroup(state, false)
+        group.displayed(item, painter)
+        state.thumbnailFrames[group.key(item)] = MediaThumbnailFrame(Rect(0f, 0f, 100f, 100f), true)
+        group.prepare(item)
+        state.open(listOf(item), 0, "session", "route")
+        val landscape = object : Painter() {
+            override val intrinsicSize = Size(1000f, 600f)
+            override fun DrawScope.onDraw() = Unit
+        }
+        state.reportImageReady(item.id, landscape)
+        assertSame(painter, state.openingPainter())
+        val larger = object : Painter() {
+            override val intrinsicSize = Size(1200f, 2000f)
+            override fun DrawScope.onDraw() = Unit
+        }
+        state.reportImageReady(item.id, larger)
+        assertSame(larger, state.openingPainter())
+        state.phase = MediaPhase.Viewing
+        state.close(scale = 2f, offset = Offset(120f, -200f))
+        assertEquals(MediaPhase.Closing, state.phase)
+        assertEquals(Rect(-420f, -800f, 1740f, 2800f), state.closingGeometry!!.imageBounds)
+    }
     private val painter = object : Painter() {
         override val intrinsicSize = Size(600f, 1000f)
         override fun DrawScope.onDraw() = Unit

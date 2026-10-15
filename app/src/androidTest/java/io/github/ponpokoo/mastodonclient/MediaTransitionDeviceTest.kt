@@ -108,27 +108,74 @@ class MediaTransitionDeviceTest {
         rule.waitUntil(5_000) { phase() == MediaPhase.Viewing }
     }
 
-    @Test fun firstDownwardSwipeDuringHandoffSurvivesTheStartOfViewing() {
+    @Test fun backButtonAndDownwardSwipeStartReturningWithoutASeparateCornerAnimation() {
+        render()
+        repeat(3) { method ->
+            openFirst()
+            rule.mainClock.autoAdvance = false
+            when (method) {
+                0 -> rule.onNodeWithTag("media_viewer_close").performClick()
+                1 -> androidx.test.espresso.Espresso.pressBackUnconditionally()
+                else -> viewer().performTouchInput {
+                    down(center)
+                    moveTo(center + Offset(0f, height * 0.25f), 200)
+                    up()
+                }
+            }
+            advance(64)
+            assertEquals(MediaPhase.Closing, phase())
+            assertTrue("The return must already be moving for method $method", motion.progress.value < 1f)
+            advance(176)
+            assertEquals(MediaPhase.Closed, phase())
+            rule.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test fun openingCompletesWithoutAnAdditionalImageHandoffAnimation() {
         render()
         rule.mainClock.autoAdvance = false
         rule.onAllNodesWithTag("media_attachment")[0].performClick()
-        repeat(60) { if (phase() == MediaPhase.Opening) advance(16) }
-        assertEquals(MediaPhase.HandingOff, phase())
-        val image = viewer()
-        image.performTouchInput { down(center); moveTo(center + Offset(0f, height * 0.06f), 16) }
-        advance(16)
-        val duringHandoff = motion.dragOffset
-        assertTrue(duringHandoff > 0f)
-        assertTrue(rule.onNodeWithTag("media_transition").fetchSemanticsNode().config[MediaImageBounds].top > 0f)
-        advance(160)
+        advance(224)
         assertEquals(MediaPhase.Viewing, phase())
-        assertEquals(duringHandoff, motion.dragOffset, 0.01f)
-        image.performTouchInput { moveTo(center + Offset(0f, height * 0.25f), 32); up() }
-        advance(500)
+        rule.mainClock.autoAdvance = true
+        viewer().performTouchInput { doubleClick(center) }
+        assertEquals(2.5f, scale(), 0.01f)
+    }
+
+    @Test fun closingZoomedImageStartsFromItsCurrentPanWithoutResettingZoom() {
+        render(); openFirst()
+        viewer().performTouchInput { doubleClick(center) }
+        viewer().performTouchInput { down(center); moveTo(center + Offset(width * 0.15f, 0f), 100); up() }
+        val zoom = scale()
+        val pan = offset()
+        assertTrue(pan.x > 0f)
+        val expected = mediaViewerGeometry(motion.viewerPainter(items[0].id)!!.intrinsicSize,
+            motion.fullBounds, zoom, pan)
+        rule.mainClock.autoAdvance = false
+        rule.onNodeWithTag("media_viewer_close").performClick()
+        assertEquals(MediaPhase.Closing, phase())
+        assertEquals(expected, motion.closingGeometry)
+        advance(64)
+        assertTrue(motion.progress.value < 1f)
+        advance(176)
         assertEquals(MediaPhase.Closed, phase())
         rule.mainClock.autoAdvance = true
     }
 
+    @Test fun downwardSwipePassesItsReleaseVelocityToTheReturnMotion() {
+        render(); openFirst()
+        rule.mainClock.autoAdvance = false
+        viewer().performTouchInput {
+            down(center)
+            repeat(8) { step -> moveTo(center + Offset(0f, height * 0.025f * (step + 1)), 16) }
+            up()
+        }
+        assertEquals(MediaPhase.Closing, phase())
+        assertTrue(motion.closingVelocity > 0f)
+        advance(240)
+        assertEquals(MediaPhase.Closed, phase())
+        rule.mainClock.autoAdvance = true
+    }
     @Test fun aFingerPlacedWhileOpeningCanDismissWithoutLiftingAndTryingAgain() {
         render()
         rule.mainClock.autoAdvance = false
@@ -248,7 +295,7 @@ class MediaTransitionDeviceTest {
         val group = motion.sourceGroup
         rule.mainClock.autoAdvance = false
         rule.onNodeWithTag("media_viewer_close").performClick()
-        advance(200)
+        advance(64)
         assertTrue(motion.selectedKey.startsWith(group))
         val returnFrame = motion.transitionThumbnail
         assertNotNull(returnFrame)

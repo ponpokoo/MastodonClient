@@ -674,6 +674,11 @@ private fun MediaGrid(
                                         else -> false
                                     }
                                     if (autoplay && media.url != null) {
+                                        // Keep a preview available for the full-screen transition even
+                                        // while the inline player owns the visible thumbnail surface.
+                                        AsyncImage(model = media.previewUrl, contentDescription = null,
+                                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                                            onSuccess = { displayedPainter = it.painter })
                                         InlineVideo(media.url, loop = media.type == "gifv", onDimensionsKnown = onDimensionsKnown)
                                     } else {
                                         AsyncImage(

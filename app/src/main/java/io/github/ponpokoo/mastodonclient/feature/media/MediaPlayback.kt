@@ -59,6 +59,8 @@ internal class MediaPlayback(private val context: Context, val url: String?, pri
         private set
     var videoAspectRatio by mutableStateOf(16f / 9f)
         private set
+    var videoFrameRendered by mutableStateOf(false)
+        private set
     var volume by mutableStateOf(1f)
         private set
     private var audibleVolume = 1f
@@ -69,6 +71,7 @@ internal class MediaPlayback(private val context: Context, val url: String?, pri
         internal set
 
     private val listener = object : Player.Listener {
+        override fun onRenderedFirstFrame() { videoFrameRendered = true }
         override fun onPlaybackStateChanged(playbackState: Int) {
             // Seeking after completion must not silently restart playback.
             if (playbackState == Player.STATE_ENDED) player?.pause()
@@ -152,6 +155,7 @@ internal class MediaPlayback(private val context: Context, val url: String?, pri
             it.release()
         }
         player = null
+        videoFrameRendered = false
     }
 }
 

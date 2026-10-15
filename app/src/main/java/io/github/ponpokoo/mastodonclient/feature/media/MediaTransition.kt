@@ -5,6 +5,7 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -41,10 +42,10 @@ import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
-import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
+import kotlin.math.abs
 
 internal val LocalMediaTransition = staticCompositionLocalOf<MediaTransitionState?> { null }
 internal val LocalMediaContentInsets = staticCompositionLocalOf<WindowInsets?> { null }
@@ -54,7 +55,7 @@ private val LocalMediaSourceSession = staticCompositionLocalOf<String?> { "stand
 private val LocalMediaSharedScope = staticCompositionLocalOf<SharedTransitionScope?> { null }
 
 internal val MediaReturnAnimation = tween<Float>(420, easing = FastOutSlowInEasing)
-internal enum class MediaPhase { Closed, Opening, HandingOff, Viewing, ResettingZoom, Rounding, Closing }
+internal enum class MediaPhase { Closed, Opening, Viewing, Closing }
 internal data class MediaThumbnailFrame(
     val bounds: Rect,
     val cropped: Boolean,
@@ -81,8 +82,6 @@ internal class MediaTransitionState {
         private set
     var selectedKey by mutableStateOf("")
     val progress = Animatable(0f)
-    val handoffAlpha = Animatable(1f)
-    val roundedCorners = Animatable(0f)
     val thumbnailFrames = mutableStateMapOf<String, MediaThumbnailFrame>()
     val thumbnailPainters = mutableStateMapOf<String, Painter>()
     private val readyImages = mutableStateMapOf<String, Painter?>()
@@ -95,8 +94,11 @@ internal class MediaTransitionState {
     private var transitionImageId: String? = null
     var transitionViewport by mutableStateOf(Rect.Zero)
         private set
-    var roundedReturn by mutableStateOf(false)
+    var closingGeometry by mutableStateOf<MediaImageGeometry?>(null)
         private set
+    var closingVelocity by mutableFloatStateOf(0f)
+        private set
+    private var closingStartProgress = 1f
     var viewerSize by mutableStateOf(IntSize.Zero)
     var dragOffset by mutableFloatStateOf(0f)
     private var closingBackdropFactor by mutableFloatStateOf(1f)
@@ -105,8 +107,7 @@ internal class MediaTransitionState {
     val backdropAlpha get() = progress.value.coerceIn(0f, 1f) * closingBackdropFactor
     val visibleBackdropAlpha get() = backdropAlpha *
         (1f - dragOffset / viewerSize.height.coerceAtLeast(1) * 1.5f).coerceIn(0f, 1f)
-    val cornerRadius get() = if (roundedReturn) roundedCorners.value
-        else (transitionThumbnail?.cornerRadius ?: 0f) * (1f - progress.value.coerceIn(0f, 1f))
+    val cornerRadius get() = (transitionThumbnail?.cornerRadius ?: 0f) * (1f - progress.value.coerceIn(0f, 1f))
 
     fun imageKey(item: MediaAttachment) = "$sourceGroup/${item.id}/${item.url ?: item.previewUrl}/${item.cacheRevision}"
     fun prepareSource(group: String, key: String, home: Boolean) {
@@ -117,6 +118,12 @@ internal class MediaTransitionState {
         if (active && media.any { it.id == id }) readyImages[id] = painter
     }
     fun viewerPainter(id: String) = readyImages[id]
+    fun openingPainter(): Painter? {
+        val source = transitionPainter ?: return null
+        val loaded = readyImages[media[page].id] ?: return source
+        // A different aspect ratio would change the outline halfway through the motion.
+        return loaded.takeIf { sameMediaAspectRatio(source.intrinsicSize, it.intrinsicSize) } ?: source
+    }
     fun fallbackPainter(item: MediaAttachment) = thumbnailPainters[imageKey(item)]
         ?: transitionPainter.takeIf { transitionImageId == item.id }
     fun open(items: List<MediaAttachment>, index: Int, session: String, route: String) {
@@ -133,33 +140,58 @@ internal class MediaTransitionState {
         selectedKey = imageKey(items[selected])
         val frame = source?.takeIf { it.key == selectedKey }?.let { thumbnailFrames[it.key] }
             ?.takeUnless { it.visibleBounds.isEmpty }
-        transitionPainter = if (items[selected].type == "image") source?.let { thumbnailPainters[it.key] } else null
+        transitionPainter = if (items[selected].type in setOf("image", "video", "gifv"))
+            source?.let { thumbnailPainters[it.key] } else null
         transitionImageId = items[selected].id
         transitionThumbnail = frame.takeIf { transitionPainter != null }
         transitionViewport = fullBounds
-        roundedReturn = false
+        closingGeometry = null
+        closingVelocity = 0f
         closingBackdropFactor = 1f
         dragOffset = 0f
         readyImages.clear()
         phase = if (transitionThumbnail == null) MediaPhase.Viewing else MediaPhase.Opening
     }
-    fun close(index: Int = page, fromDrag: Boolean = false) {
-        if (phase !in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Viewing)) return
+    fun close(index: Int = page, fromDrag: Boolean = false, scale: Float = 1f,
+        offset: Offset = Offset.Zero, velocityY: Float = 0f) {
+        if (phase !in listOf(MediaPhase.Opening, MediaPhase.Viewing)) return
+        val wasOpening = phase == MediaPhase.Opening
+        val openingImage = if (wasOpening) openingPainter() else null
+        val openingGeometry = openingImage?.let {
+            mediaImageGeometry(it.intrinsicSize, transitionThumbnail, transitionViewport, progress.value)
+        }
         page = index.coerceIn(media.indices)
         selectedKey = imageKey(media[page])
         // Freeze the source before bars, zoom or layout are restored.
         transitionThumbnail = thumbnailFrames[selectedKey]?.takeUnless { it.visibleBounds.isEmpty }
-        transitionPainter = if (media[page].type == "image")
-            readyImages[media[page].id] ?: fallbackPainter(media[page]) else null
+        transitionPainter = when (media[page].type) {
+            "image" -> openingImage ?: readyImages[media[page].id] ?: fallbackPainter(media[page])
+            "video", "gifv" -> openingImage ?: fallbackPainter(media[page])
+            else -> null
+        }
         transitionImageId = media[page].id
         if (transitionPainter == null) transitionThumbnail = null
-        val releasedDrag = if (fromDrag) dragOffset else 0f
+        val releasedDrag = dragOffset
         transitionViewport = fullBounds.translate(Offset(0f, releasedDrag))
-        closingBackdropFactor = if (fromDrag)
-            (1f - releasedDrag / viewerSize.height.coerceAtLeast(1) * 1.5f).coerceIn(0f, 1f) else 1f
-        roundedReturn = phase == MediaPhase.Viewing && !fromDrag
-        if (fromDrag) dragOffset = 0f
-        phase = if (roundedReturn) MediaPhase.ResettingZoom else MediaPhase.Closing
+        closingGeometry = openingGeometry ?: transitionPainter?.let {
+            mediaViewerGeometry(it.intrinsicSize, fullBounds, scale, offset + Offset(0f, releasedDrag))
+        }
+        closingStartProgress = if (wasOpening) progress.value else 1f
+        closingVelocity = if (fromDrag && velocityY.isFinite())
+            velocityY.coerceIn(-viewerSize.height * 4f, viewerSize.height * 4f) else 0f
+        closingBackdropFactor =
+            (1f - releasedDrag / viewerSize.height.coerceAtLeast(1) * 1.5f).coerceIn(0f, 1f)
+        dragOffset = 0f
+        phase = MediaPhase.Closing
+    }
+    fun returnGeometry(): MediaImageGeometry? {
+        val start = closingGeometry ?: return null
+        val painter = transitionPainter ?: return null
+        val end = if (transitionThumbnail == null) start else
+            mediaImageGeometry(painter.intrinsicSize, transitionThumbnail, fullBounds, 0f)
+        val fraction = if (closingStartProgress > 0f)
+            (1f - progress.value / closingStartProgress).coerceIn(0f, 1f) else 1f
+        return mediaReturnGeometry(start, end, fraction, closingVelocity)
     }
     fun clear() {
         phase = MediaPhase.Closed
@@ -168,6 +200,8 @@ internal class MediaTransitionState {
         pendingSource = null
         transitionPainter = null
         transitionThumbnail = null
+        closingGeometry = null
+        closingVelocity = 0f
         dragOffset = 0f
     }
     fun validateScope(session: String?, route: String?, sessionReady: Boolean = true) {
@@ -182,7 +216,7 @@ internal class MediaTransitionState {
     companion object {
         private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
         val Saver: Saver<MediaTransitionState, Any> = listSaver(
-            save = { listOf(if (it.phase in listOf(MediaPhase.Closed, MediaPhase.ResettingZoom, MediaPhase.Rounding, MediaPhase.Closing))
+            save = { listOf(if (it.phase in listOf(MediaPhase.Closed, MediaPhase.Closing))
                 "" else json.encodeToString(it.media), it.page, it.sessionKey, it.routeId) },
             restore = { saved -> MediaTransitionState().apply {
                 val items = runCatching { json.decodeFromString<List<MediaAttachment>>(saved[0] as String) }.getOrDefault(emptyList())
@@ -288,29 +322,16 @@ internal fun MediaTransitionAnimations(motion: MediaTransitionState, onClosed: (
     LaunchedEffect(motion.phase) {
         when (motion.phase) {
             MediaPhase.Opening -> {
-                motion.handoffAlpha.snapTo(1f)
-                motion.roundedCorners.snapTo(0f)
                 motion.progress.snapTo(0f)
-                motion.progress.animateTo(1f, tween(300))
-                snapshotFlow { motion.imageReady(motion.media[motion.page].id) }.first { it }
-                motion.phase = MediaPhase.HandingOff
-            }
-            MediaPhase.HandingOff -> {
-                motion.handoffAlpha.animateTo(0f, tween(100))
+                motion.progress.animateTo(1f, tween(180))
                 motion.phase = MediaPhase.Viewing
             }
             MediaPhase.Viewing -> {
                 motion.progress.snapTo(1f)
-                motion.handoffAlpha.snapTo(0f)
-                motion.roundedCorners.snapTo(0f)
-            }
-            MediaPhase.Rounding -> {
-                motion.roundedCorners.animateTo(motion.transitionThumbnail?.cornerRadius ?: 0f, tween(110))
-                motion.phase = MediaPhase.Closing
             }
             MediaPhase.Closing -> {
-                motion.handoffAlpha.snapTo(1f)
-                motion.progress.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
+                motion.progress.animateTo(0f, tween(180,
+                    easing = if (motion.closingVelocity != 0f) LinearEasing else FastOutSlowInEasing))
                 motion.clear()
                 closed()
             }
@@ -326,15 +347,19 @@ internal val MediaImageFit = SemanticsPropertyKey<Float>("MediaImageFit")
 
 @Composable
 private fun MediaTransitionOverlay(motion: MediaTransitionState) {
-    val drawTransition = motion.phase in listOf(MediaPhase.Opening, MediaPhase.HandingOff, MediaPhase.Rounding, MediaPhase.Closing)
-    val painter = motion.transitionPainter
-    val geometry = painter?.let {
+    val drawTransition = motion.phase in listOf(MediaPhase.Opening, MediaPhase.Closing)
+    val painter = if (motion.phase == MediaPhase.Opening)
+        motion.openingPainter()
+        else motion.transitionPainter
+    val geometry = if (motion.phase == MediaPhase.Closing) motion.returnGeometry() else painter?.let {
         val viewport = when (motion.phase) {
             MediaPhase.Viewing -> motion.fullBounds.translate(Offset(0f, motion.dragOffset))
-            MediaPhase.Opening, MediaPhase.HandingOff -> motion.transitionViewport.translate(Offset(0f, motion.dragOffset))
+            MediaPhase.Opening -> motion.transitionViewport.translate(Offset(0f, motion.dragOffset))
             else -> motion.transitionViewport
         }
-        mediaImageGeometry(it.intrinsicSize, motion.transitionThumbnail, viewport, motion.progress.value)
+        val sourceSize = if (motion.phase == MediaPhase.Opening)
+            motion.transitionPainter?.intrinsicSize ?: it.intrinsicSize else it.intrinsicSize
+        mediaImageGeometry(sourceSize, motion.transitionThumbnail, viewport, motion.progress.value)
     }
     Box(Modifier.fillMaxSize()
         .pointerInput(Unit) {
@@ -360,8 +385,7 @@ private fun MediaTransitionOverlay(motion: MediaTransitionState) {
                     clipRect(visible.left, visible.top, visible.right, visible.bottom) {
                         translate(geometry.imageBounds.left, geometry.imageBounds.top) {
                             with(painter) {
-                                val alpha = if (motion.phase == MediaPhase.HandingOff) motion.handoffAlpha.value
-                                    else if (motion.phase == MediaPhase.Closing && motion.transitionThumbnail == null) motion.progress.value else 1f
+                                val alpha = if (motion.phase == MediaPhase.Closing && motion.transitionThumbnail == null) motion.progress.value else 1f
                                 draw(geometry.imageBounds.size, alpha = alpha)
                             }
                         }
@@ -389,4 +413,29 @@ internal fun mediaImageGeometry(source: Size, thumbnail: MediaThumbnailFrame?, v
     val clip = lerp(startClip, fitted, progress)
     val visibleClip = lerp(startVisible, fitted, progress.coerceIn(0f, 1f)).intersect(clip)
     return MediaImageGeometry(lerp(start, fitted, progress), clip, visibleClip)
+}
+
+internal fun sameMediaAspectRatio(first: Size, second: Size): Boolean =
+    first.width.isFinite() && first.height.isFinite() && second.width.isFinite() && second.height.isFinite() &&
+        first.width > 0f && first.height > 0f && second.width > 0f && second.height > 0f &&
+        abs((first.width / first.height) / (second.width / second.height) - 1f) < 0.0001f
+
+internal fun mediaViewerGeometry(source: Size, viewport: Rect, scale: Float, offset: Offset): MediaImageGeometry {
+    val fitted = mediaImageGeometry(source, null, viewport, 1f).imageBounds
+    val bounds = Rect(viewport.center + (fitted.topLeft - viewport.center) * scale + offset,
+        fitted.size * scale)
+    return MediaImageGeometry(bounds, bounds, bounds.intersect(viewport))
+}
+
+/** Hermite translation preserves the release velocity and settles at the thumbnail in 180 ms. */
+internal fun mediaReturnGeometry(start: MediaImageGeometry, end: MediaImageGeometry,
+    fraction: Float, velocityY: Float): MediaImageGeometry {
+    val t = fraction.coerceIn(0f, 1f)
+    val blend = if (velocityY == 0f) t else t * t * (3f - 2f * t)
+    val momentum = Offset(0f, velocityY * 0.18f * t * (1f - t) * (1f - t))
+    return MediaImageGeometry(
+        lerp(start.imageBounds, end.imageBounds, blend).translate(momentum),
+        lerp(start.clipBounds, end.clipBounds, blend).translate(momentum),
+        lerp(start.visibleClipBounds, end.visibleClipBounds, blend).translate(momentum),
+    )
 }

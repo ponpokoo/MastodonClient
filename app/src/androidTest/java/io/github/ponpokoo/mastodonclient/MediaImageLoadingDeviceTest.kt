@@ -79,13 +79,19 @@ class MediaImageLoadingDeviceTest {
         rule.mainClock.autoAdvance = false
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
-        assertEquals(MediaPhase.Opening, motion.phase)
+        assertEquals(MediaPhase.Viewing, motion.phase)
         assertEquals(1f, motion.progress.value, 0.001f)
         assertFalse(motion.imageReady("delayed"))
         assertCenterIsBlue()
+        rule.mainClock.autoAdvance = true
+        rule.onNodeWithTag("media_viewer").performTouchInput { doubleClick(center) }
+        assertEquals(2.5f, rule.onNodeWithTag("media_viewer").fetchSemanticsNode().config[MediaViewerScale], 0.01f)
+        assertFalse(release.isCompleted)
+        assertCenterIsBlue()
         release.complete(Unit)
         rule.mainClock.autoAdvance = true
-        rule.waitUntil(5_000) { motion.phase == MediaPhase.Viewing }
+        rule.waitUntil(5_000) { motion.imageReady("delayed") }
+        assertEquals(2.5f, rule.onNodeWithTag("media_viewer").fetchSemanticsNode().config[MediaViewerScale], 0.01f)
         val pixels = rule.onRoot().captureToImage().toPixelMap()
         assertTrue(pixels[pixels.width / 2, pixels.height / 2].green > 0.98f)
     }
@@ -122,7 +128,7 @@ class MediaImageLoadingDeviceTest {
     @Test fun failedImageLoadingHandsOffToTheDisplayedSource() {
         release.complete(Unit)
         render(fail = true)
-        rule.waitUntil(5_000) { motion.phase == MediaPhase.Viewing }
+        rule.waitUntil(5_000) { motion.imageReady("delayed") }
         assertTrue(motion.imageReady("delayed"))
         assertCenterIsBlue()
     }
