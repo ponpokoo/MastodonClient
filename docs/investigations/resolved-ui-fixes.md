@@ -16,7 +16,7 @@
 - 原因：本文中のUnicode行区切り`U+2028`はHTML変換後も残るが、確認したComposeの表示では1行になった。
 - 修正：HTML変換後の`U+2028`だけをLFへ置換する。文字数を変えず、リンク注釈とカスタム絵文字の位置を保持する。HTML中の通常のLFや`U+2029`は変更しない。
 - 確認：2026-10-05、Android 17の`StatusContentTextDeviceTest`2件が成功。2行表示、前後のリンク操作、既存のHTML改行変換を確認した。
-- 別件：プロフィール編集は表示用HTMLから本文を復元しており、編集用平文`source.note`による改行・末尾空行の保持は未対応。[Issue #9](https://github.com/ponpokoo/MastodonClient/issues/9)で管理する。
+- プロフィール編集の調査は完了（2026-10-15）。利用者から現時点では問題がないとの確認を受け、[Issue #9](https://github.com/ponpokoo/MastodonClient/issues/9)は終了した。編集用平文`source.note`を使う改善案は採用せず、追加実装は行っていない。今後問題が再現した場合に、再現条件に沿って調査を再開する。
 
 ## 固定投稿の先頭表示と同時表示
 

@@ -64,7 +64,6 @@ Pushの専用試験は終了済みで、残るRelay・端末の確認は実運�
 ### 品質・基盤候補
 
 - 古いメディア取得時の匿名レート制限への対応は[Issue #7](https://github.com/ponpokoo/MastodonClient/issues/7)で管理する。認証の送信先などの制約は[UI・機能仕様](ui-guidelines.md#投稿一覧と詳細)に残す。
-- プロフィール編集で編集用平文と改行を保持する改善は[Issue #9](https://github.com/ponpokoo/MastodonClient/issues/9)で管理する。
 
 ## リリース準備・配布・記録の手順
 
