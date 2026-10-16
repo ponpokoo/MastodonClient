@@ -55,7 +55,7 @@ data class TimelineDisplayPreferences(
     val fontSize: FontSizePreset = FontSizePreset.Standard,
     val lineSpacing: LineSpacingPreset = LineSpacingPreset.Standard,
     val avatarIconSize: AvatarIconSize = AvatarIconSize.Standard,
-    val avatarIconShape: AvatarIconShape = AvatarIconShape.Circle,
+    val avatarIconShape: AvatarIconShape = AvatarIconShape.Square,
     val actionIconSize: ActionIconSize = ActionIconSize.Small,
     val actionOrder: List<StatusAction> = listOf(
         StatusAction.Reply,
@@ -88,7 +88,7 @@ data class AppPreferences(
     val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val pauseStreamingInBackground: Boolean = true,
-    val keepPositionOnPullRefresh: Boolean = false,
+    val keepPositionOnPullRefresh: Boolean = true,
     val foregroundNotificationsEnabled: Boolean = true,
     val simpleNotificationsEnabled: Boolean = true,
     val simpleNotificationSetupFailed: Boolean = false,

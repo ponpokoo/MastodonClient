@@ -26,7 +26,7 @@ import org.junit.Test
 class AvatarShapeSettingsDeviceTest {
     @get:Rule val rule = createComposeRule()
 
-    @Test fun shapeChoiceUpdatesPreviewAndResetRestoresCircle() {
+    @Test fun shapeChoiceUpdatesPreviewAndResetRestoresSquare() {
         val dataStore = object : DataStore<Preferences> {
             override val data = MutableStateFlow(emptyPreferences())
             override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
@@ -43,21 +43,21 @@ class AvatarShapeSettingsDeviceTest {
                 SettingsPageContent(SettingsPage.Timeline, {}, maintenance, store, null, emptyList(), {}, {}, {})
             }
         }
-        assertAvatarCorner(isSquare = false)
+        assertAvatarCorner(isSquare = true)
         rule.onNodeWithText("ユーザーアイコンの形").performScrollTo().performClick()
-        rule.onNodeWithText("四角").performClick()
+        rule.onNodeWithText("丸").performClick()
         rule.runOnIdle {
-            assertEquals(AvatarIconShape.Square, runBlocking {
+            assertEquals(AvatarIconShape.Circle, runBlocking {
                 UserPreferencesStore(dataStore).preferences.first().timelineDisplay.avatarIconShape
             })
         }
-        assertAvatarCorner(isSquare = true)
+        assertAvatarCorner(isSquare = false)
         rule.onNodeWithTag("settings_screen").performScrollToNode(hasText("表示設定を初期値に戻す"))
         rule.onNodeWithText("表示設定を初期値に戻す").performClick()
         rule.runOnIdle {
-            assertEquals(AvatarIconShape.Circle, runBlocking { store.preferences.first().timelineDisplay.avatarIconShape })
+            assertEquals(AvatarIconShape.Square, runBlocking { store.preferences.first().timelineDisplay.avatarIconShape })
         }
-        assertAvatarCorner(isSquare = false)
+        assertAvatarCorner(isSquare = true)
     }
 
     private fun assertAvatarCorner(isSquare: Boolean) {

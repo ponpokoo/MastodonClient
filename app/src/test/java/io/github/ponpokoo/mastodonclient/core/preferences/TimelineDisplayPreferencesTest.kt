@@ -21,6 +21,8 @@ class TimelineDisplayPreferencesTest {
         val dataStore = MemoryPreferences()
         val store = UserPreferencesStore(dataStore)
         assertEquals(ThumbnailSize.Standard, store.preferences.first().timelineDisplay.thumbnailSize)
+        assertEquals(AvatarIconShape.Square, store.preferences.first().timelineDisplay.avatarIconShape)
+        assertEquals(true, store.preferences.first().keepPositionOnPullRefresh)
         store.setTimelineDisplay(store.preferences.first().timelineDisplay.copy(thumbnailSize = ThumbnailSize.Compact))
         assertEquals(ThumbnailSize.Compact, UserPreferencesStore(dataStore).preferences.first().timelineDisplay.thumbnailSize)
     }
@@ -28,14 +30,15 @@ class TimelineDisplayPreferencesTest {
     @Test fun legacyLargeThumbnailsBecomeStandardWithoutResettingOtherSettings() = runTest {
         val key = stringPreferencesKey("app_preferences_v2")
         val initial = emptyPreferences().toMutablePreferences().apply {
-            this[key] = """{"themeMode":"Dark","altTextReminder":false,"timelineDisplay":{"thumbnailSize":"Large","fontSize":"ExtraLarge","showCounts":false,"avatarIconShape":"Square"},"accountPreferences":{"session":{"streaming":"Off"}}}"""
+            this[key] = """{"themeMode":"Dark","altTextReminder":false,"keepPositionOnPullRefresh":false,"timelineDisplay":{"thumbnailSize":"Large","fontSize":"ExtraLarge","showCounts":false,"avatarIconShape":"Circle"},"accountPreferences":{"session":{"streaming":"Off"}}}"""
         }
         val dataStore = MemoryPreferences(initial)
         val store = UserPreferencesStore(dataStore)
         val restored = store.preferences.first()
         assertEquals(ThumbnailSize.Standard, restored.timelineDisplay.thumbnailSize)
         assertEquals(FontSizePreset.ExtraLarge, restored.timelineDisplay.fontSize)
-        assertEquals(AvatarIconShape.Square, restored.timelineDisplay.avatarIconShape)
+        assertEquals(AvatarIconShape.Circle, restored.timelineDisplay.avatarIconShape)
+        assertEquals(false, restored.keepPositionOnPullRefresh)
         assertEquals(false, restored.timelineDisplay.showCounts)
         assertEquals(false, restored.altTextReminder)
         assertEquals(ThemeMode.Dark, restored.themeMode)
@@ -57,12 +60,13 @@ class TimelineDisplayPreferencesTest {
         }
     }
 
-    @Test fun legacyDisplaySettingsKeepTheirValuesAndUseCircularAvatars() = runTest {
+    @Test fun legacyDisplaySettingsKeepTheirValuesAndUseNewDefaultsForMissingChoices() = runTest {
         val initial = emptyPreferences().toMutablePreferences().apply {
             this[stringPreferencesKey("app_preferences_v2")] = """{"themeMode":"Dark","timelineDisplay":{"fontSize":"Large","avatarIconSize":"Small","showCounts":false}}"""
         }
         val preferences = UserPreferencesStore(MemoryPreferences(initial)).preferences.first()
-        assertEquals(AvatarIconShape.Circle, preferences.timelineDisplay.avatarIconShape)
+        assertEquals(AvatarIconShape.Square, preferences.timelineDisplay.avatarIconShape)
+        assertEquals(true, preferences.keepPositionOnPullRefresh)
         assertEquals(FontSizePreset.Large, preferences.timelineDisplay.fontSize)
         assertEquals(AvatarIconSize.Small, preferences.timelineDisplay.avatarIconSize)
         assertEquals(false, preferences.timelineDisplay.showCounts)
@@ -71,18 +75,24 @@ class TimelineDisplayPreferencesTest {
         assertEquals(ThumbnailSize.Standard, preferences.timelineDisplay.thumbnailSize)
     }
 
-    @Test fun squareChoiceSurvivesStoreRecreationAndOtherSettingChanges() = runTest {
-        val dataStore = MemoryPreferences()
-        val store = UserPreferencesStore(dataStore)
-        store.setTimelineDisplay(TimelineDisplayPreferences(
-            avatarIconShape = AvatarIconShape.Square, avatarIconSize = AvatarIconSize.Large,
-        ))
-        val restored = UserPreferencesStore(dataStore)
-        restored.setThemeMode(ThemeMode.Dark)
-        val preferences = UserPreferencesStore(dataStore).preferences.first()
-        assertEquals(AvatarIconShape.Square, preferences.timelineDisplay.avatarIconShape)
-        assertEquals(AvatarIconSize.Large, preferences.timelineDisplay.avatarIconSize)
-        assertEquals(ThemeMode.Dark, preferences.themeMode)
+    @Test fun avatarAndRefreshChoicesSurviveStoreRecreationAndOtherSettingChanges() = runTest {
+        for (shape in AvatarIconShape.entries) {
+            for (keepPosition in listOf(false, true)) {
+                val dataStore = MemoryPreferences()
+                val store = UserPreferencesStore(dataStore)
+                store.setTimelineDisplay(TimelineDisplayPreferences(
+                    avatarIconShape = shape, avatarIconSize = AvatarIconSize.Large,
+                ))
+                store.setKeepPositionOnPullRefresh(keepPosition)
+                val restored = UserPreferencesStore(dataStore)
+                restored.setThemeMode(ThemeMode.Dark)
+                val preferences = UserPreferencesStore(dataStore).preferences.first()
+                assertEquals(shape, preferences.timelineDisplay.avatarIconShape)
+                assertEquals(keepPosition, preferences.keepPositionOnPullRefresh)
+                assertEquals(AvatarIconSize.Large, preferences.timelineDisplay.avatarIconSize)
+                assertEquals(ThemeMode.Dark, preferences.themeMode)
+            }
+        }
     }
 
     @Test fun hiddenReactionsSurviveRecreationAndOtherSettingChanges() = runTest {
