@@ -260,6 +260,8 @@ class MainSessionViewModel(
                     currentCoroutineContext().ensureActive()
                     if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.FiltersChanged ||
                         event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.Connected) {
+                        if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.Connected)
+                            browsing.publish(snapshot, BrowsingSession.Change.Stream(event))
                         if (browsing.snapshot.value == snapshot) requestFilterSync(snapshot)
                         return@collect
                     }

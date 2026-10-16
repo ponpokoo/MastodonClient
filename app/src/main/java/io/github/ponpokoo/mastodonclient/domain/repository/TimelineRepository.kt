@@ -51,6 +51,9 @@ interface TimelineRepository : ServerAccountSettingsRepository {
         Result.failure(UnsupportedOperationException("ハッシュタグ購読は未対応です"))
 
     fun isNetworkAvailable(): Boolean = true
+    suspend fun getCachedHomeWindow(session: AccountSession): Result<TimelinePage?> = Result.success(null)
+    suspend fun protectHomeViewport(session: AccountSession, anchorId: String): Result<Unit> = Result.success(Unit)
+    suspend fun saveHomeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change> = emptyList()): Result<Unit> = Result.success(Unit)
     suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String? = null, limit: Int = 20, anchorId: String? = null): Result<TimelinePage?> = Result.success(null)
     suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change> = emptyList()): Result<Unit> = Result.success(Unit)
     suspend fun updateHomeTimelineCache(session: AccountSession, change: io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change): Result<Unit> = Result.success(Unit)

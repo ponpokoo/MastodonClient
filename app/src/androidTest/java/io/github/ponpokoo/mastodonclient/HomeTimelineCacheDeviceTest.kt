@@ -13,6 +13,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+import io.github.ponpokoo.mastodonclient.domain.session.mergeHomePage
+import io.github.ponpokoo.mastodonclient.domain.session.fillHomeGap
+import io.github.ponpokoo.mastodonclient.domain.session.homeIndex
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -181,7 +184,7 @@ class HomeTimelineCacheDeviceTest {
             old.version = 1
         }
         val database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
-            .addMigrations(BrowsingDatabase.MIGRATION_1_2, BrowsingDatabase.MIGRATION_2_3).build()
+            .addMigrations(BrowsingDatabase.MIGRATION_1_2, BrowsingDatabase.MIGRATION_2_3, BrowsingDatabase.MIGRATION_3_4).build()
         try {
             val restored = RoomNotificationLocalDataSource(database) { true }.read(account)
             assertEquals(listOf(notification), restored.notifications)
@@ -189,6 +192,65 @@ class HomeTimelineCacheDeviceTest {
             val home = RoomHomeTimelineLocalDataSource(database) { true }
             home.writePage(account, null, page(listOf(status("home"))))
             assertEquals("home", home.readPage(account, null, 20)!!.statuses.single().timelineId)
+        } finally { database.close(); context.deleteDatabase(name) }
+    }
+    @Test fun disconnectedWindowsSurviveReopenAndPageReadsDoNotCrossGap() = runBlocking {
+        val name = "home-gap-${UUID.randomUUID()}.db"
+        var database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name).build()
+        try {
+            val old = page(listOf(status("old"), status("older")))
+            val window = old.mergeHomePage(page(listOf(status("new"))))
+            RoomHomeTimelineLocalDataSource(database) { true }.writeWindow(account, window, "old", emptyList())
+            database.close()
+            database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name).build()
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val restored = source.readWindow(account)!!
+            assertEquals(listOf("new", "old", "older"), restored.statuses.map { it.timelineId })
+            assertEquals(window.homeIndex().gaps, restored.homeIndex().gaps)
+            assertEquals(listOf(status("new")), source.readPage(account, null, 20)!!.statuses)
+            assertNull(source.readPage(account, "new", 20))
+            val joined = restored.fillHomeGap(restored.homeIndex().gaps.single(), page(listOf(status("middle"), status("old"))))
+            source.writeWindow(account, joined, "old", emptyList())
+            assertTrue(source.readWindow(account)!!.homeIndex().gaps.isEmpty())
+            source.deleteAccount(account.sessionId)
+            assertNull(source.readWindow(account))
+            assertNull(database.homeTimeline().window(account.sessionId, "https://one.example"))
+        } finally { database.close(); context.deleteDatabase(name) }
+    }
+
+    @Test fun windowBudgetKeepsAnchorAndDeletionDoesNotLoseGapCursor() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val window = page((0..599).map { status("row-$it") }).copy(homeIndex =
+                io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineIndex((0..599).map { "row-$it" }))
+            source.writeWindow(account, window, "row-550", emptyList())
+            val bounded = source.readWindow(account)!!
+            assertTrue(bounded.statuses.size <= 500)
+            assertTrue(bounded.statuses.any { it.timelineId == "row-550" })
+            val gap = bounded.homeIndex().gaps.single()
+            source.applyChange(account, BrowsingSession.Change.StatusDeleted("post-${gap.maxId}"))
+            assertEquals(gap, source.readWindow(account)!!.homeIndex().gaps.single())
+            assertFalse(source.readWindow(account)!!.statuses.any { it.timelineId == gap.maxId })
+        } finally { database.close() }
+    }
+
+    @Test fun versionThreeMigrationPreservesHomeAndNotificationMarker() = runBlocking {
+        val name = "home-v3-${UUID.randomUUID()}.db"
+        var database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name).build()
+        try {
+            RoomHomeTimelineLocalDataSource(database) { true }.writePage(account, null, page(listOf(status("existing"))))
+            RoomNotificationLocalDataSource(database) { true }.writeMarker(account, "marker")
+            database.close()
+            // v3 has the same existing tables, without the new window index table.
+            SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { old ->
+                old.execSQL("DROP TABLE home_timeline_windows")
+                old.version = 3
+            }
+            database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
+                .addMigrations(BrowsingDatabase.MIGRATION_3_4).build()
+            assertEquals(listOf(status("existing")), RoomHomeTimelineLocalDataSource(database) { true }.readWindow(account)!!.statuses)
+            assertEquals("marker", RoomNotificationLocalDataSource(database) { true }.read(account).lastReadId)
         } finally { database.close(); context.deleteDatabase(name) }
     }
 }

@@ -128,6 +128,7 @@ data class TimelinePage(
     val statuses: List<TimelineStatus>,
     val nextMaxId: String?,
     val endReached: Boolean,
+    val homeIndex: HomeTimelineIndex? = null,
 )
 
 data class AccountListPage(

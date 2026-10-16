@@ -10,12 +10,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 /** Shared database boundary; future timelines can add tables through versioned migrations. */
 @Database(entities = [CachedNotificationEntity::class, NotificationMarkerEntity::class,
     CachedHomeStatusEntity::class, HomeTimelineStateEntity::class,
-    NotificationCategoryCacheEntity::class, NotificationReadStateEntity::class], version = 3)
+    NotificationCategoryCacheEntity::class, NotificationReadStateEntity::class,
+    HomeTimelineWindowEntity::class], version = 4)
 abstract class BrowsingDatabase : RoomDatabase() {
     abstract fun notifications(): NotificationCacheDao
     abstract fun homeTimeline(): HomeTimelineCacheDao
 
     companion object {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS home_timeline_windows (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl))")
+            }
+        }
         @Volatile private var instance: BrowsingDatabase? = null
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -33,7 +39,7 @@ abstract class BrowsingDatabase : RoomDatabase() {
         fun get(context: Context): BrowsingDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, BrowsingDatabase::class.java, "browsing.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
         }
     }
 }

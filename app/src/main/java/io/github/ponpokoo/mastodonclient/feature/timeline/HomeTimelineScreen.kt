@@ -227,7 +227,8 @@ fun HomeTimelineScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
-        mainState.session?.sessionId, state.isResumedWindow) {
+        mainState.session?.sessionId, state.isResumedWindow, state.isHomeSyncing) {
+        if (mainState.preferencesLoaded) viewModel.setKeepPositionOnRefresh(mainState.preferences.keepPositionOnPullRefresh)
         if (mainState.preferencesLoaded && !mainState.preferences.keepPositionOnPullRefresh) {
             viewModel.clearSavedViewport()
             if (viewModel.uiState.value.isResumedWindow) viewModel.goToLatest()
@@ -245,7 +246,7 @@ fun HomeTimelineScreen(
     }
     LaunchedEffect(state.resumeAnchorId, state.statuses) {
         val anchorId = state.resumeAnchorId ?: return@LaunchedEffect
-        val index = state.statuses.indexOfFirst { it.timelineId == anchorId }
+        val index = state.displayRows().indexOfFirst { it is TimelineRow.Post && it.status.timelineId == anchorId }
         if (index >= 0) timelineListState.scrollToItem(index, state.resumeOffset)
         else timelineListState.scrollToItem(0)
         viewModel.consumeResumeAnchor()
@@ -258,12 +259,15 @@ fun HomeTimelineScreen(
             state.resumeAnchorId != null || state.statuses.isEmpty()) return@LaunchedEffect
         snapshotFlow {
             if (timelineListState.isScrollInProgress) null else {
-                val visibleId = timelineListState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String
+                val visible = timelineListState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+                    state.statuses.any { it.timelineId == item.key }
+                }
+                val visibleId = visible?.key as? String
                 val index = state.statuses.indexOfFirst { it.timelineId == visibleId }
                 if (index < 0) null else Triple(
                     state.statuses[index].timelineId,
                     state.statuses.getOrNull(index - 1)?.timelineId,
-                    timelineListState.firstVisibleItemScrollOffset,
+                    -(visible?.offset ?: 0),
                 )
             }
         }.distinctUntilChanged().collect { viewport ->
@@ -522,12 +526,14 @@ fun HomeTimelineScreen(
                     padding = pagePadding,
                     listState = timelineListState,
                     onRefresh = {
+                        viewModel.setKeepPositionOnRefresh(mainState.preferences.keepPositionOnPullRefresh)
                         scrollHomeAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         homeRefreshStarted = false
                         viewModel.refresh()
                     },
                     onRetry = viewModel::retry,
                     onLoadMore = viewModel::loadNextPage,
+                    onLoadGap = viewModel::loadGap,
                     onStatusClick = onStatusClick,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
@@ -945,27 +951,46 @@ internal fun TimelineContent(
     onMoreClick: (TimelineStatus) -> Unit,
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
+    onLoadGap: (String) -> Unit = {},
 ) {
-    LaunchedEffect(listState, state.statuses.size, state.nextMaxId, state.resumeAnchorId, state.isHomeSyncing) {
+    val rows = remember(state.statuses, state.homeIndex, state.automaticGapCheck) { state.displayRows() }
+    val rowKeys = remember(rows) { rows.map { it.key } }
+    var previousKeys by remember(listState) { mutableStateOf<List<Any>>(emptyList()) }
+    // Explicitly preserve the visible post, including index zero. Capture the viewport
+    // at application time, not request time, so scrolling during HTTP is respected.
+    val anchor = if (preferences.keepPositionOnPullRefresh &&
+        state.resumeAnchorId == null && state.streamAutoScrollId == 0L &&
+        previousKeys.isNotEmpty() && previousKeys != rowKeys && !listState.isScrollInProgress) {
+        listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+            item.key is String && item.key in previousKeys && item.key in rowKeys
+        }?.let { rowKeys.indexOf(it.key) to -it.offset }
+    } else null
+    SideEffect {
+        if (previousKeys != rowKeys) {
+            if (anchor != null && !listState.isScrollInProgress) listState.requestScrollToItem(anchor.first, anchor.second)
+            previousKeys = rowKeys
+        }
+    }
+    LaunchedEffect(listState, rows.size, state.nextMaxId, state.resumeAnchorId, state.isHomeSyncing) {
         if (state.resumeAnchorId != null) return@LaunchedEffect
         if (state.isHomeSyncing) return@LaunchedEffect
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .distinctUntilChanged()
             .collect { lastVisibleIndex ->
                 val remaining = if (state.selectedFeed == TimelineFeed.Home) 5 else 3
-                if (lastVisibleIndex != null && lastVisibleIndex >= state.statuses.lastIndex - remaining) {
+                if (lastVisibleIndex != null && lastVisibleIndex >= rows.lastIndex - remaining) {
                     onLoadMore()
                 }
             }
     }
     when {
         state.isInitialLoading -> ListLoadingContent(Modifier.padding(padding))
-        state.statuses.isEmpty() && state.errorMessage != null -> CenteredMessage(padding) {
+        rows.isEmpty() && state.errorMessage != null -> CenteredMessage(padding) {
             Text(state.errorMessage, color = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(12.dp))
             TextButton(onClick = onRetry) { Text("再試行") }
         }
-        state.statuses.isEmpty() -> CenteredMessage(padding) {
+        rows.isEmpty() -> CenteredMessage(padding) {
             Text("ホームタイムラインに投稿がありません")
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onRetry) { Text("再読み込み") }
@@ -979,10 +1004,19 @@ internal fun TimelineContent(
                 state = listState,
                 modifier = Modifier.fillMaxSize().testTag("timeline_list"),
             ) {
-                itemsIndexed(
-                    items = state.statuses,
-                    key = { _, status -> status.timelineId },
-                ) { _, status ->
+                items(items = rows, key = { it.key }) { row ->
+                    if (row is TimelineRow.Gap) {
+                        TimelineGapRow(
+                            loading = state.loadingGapId == row.gap.beforeId,
+                            unavailable = row.gap.unavailable,
+                            error = state.gapErrors[row.gap.beforeId],
+                            enabled = !state.isRefreshing && !state.isHomeSyncing && state.loadingGapId == null,
+                            onClick = { onLoadGap(row.gap.beforeId) },
+                        )
+                        HorizontalDivider()
+                        return@items
+                    }
+                    val status = (row as TimelineRow.Post).status
                     StatusCard(
                         status = status,
                         onStatusClick = onStatusClick,

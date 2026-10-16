@@ -161,6 +161,19 @@ class DefaultTimelineRepository(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedConfiguration>?) = size > 8
     }
     override fun isNetworkAvailable() = networkAvailable()
+    override suspend fun protectHomeViewport(session: AccountSession, anchorId: String): Result<Unit> = runCatching {
+        homeTimelineLocalDataSource?.protectViewport(session, anchorId)
+        Unit
+    }
+    override suspend fun getCachedHomeWindow(session: AccountSession): Result<TimelinePage?> = runCatching {
+        homeTimelineLocalDataSource?.readWindow(session)?.let { page ->
+            page.copy(statuses = page.statuses.filterNot { moderation.value.hides(session, it) })
+        }
+    }
+    override suspend fun saveHomeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change>): Result<Unit> = runCatching {
+        homeTimelineLocalDataSource?.writeWindow(session, page, anchorId, changes)
+        Unit
+    }
     override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = runCatching {
         homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)
             ?.let { it.copy(statuses = it.statuses.filterNot { status -> moderation.value.hides(session, status) }) }
@@ -580,13 +593,17 @@ class DefaultTimelineRepository(
         val response = apiClientFactory
             .create(session.instanceUrl, session.accessToken)
             .getHomeTimeline(maxId = maxId, limit = limit)
-        val statuses = response.map(StatusDto::toDomain)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        if (response.code() == 206) throw java.io.IOException("ホームを準備中です。しばらくしてから再試行してください。")
+        val body = response.body() ?: throw java.io.IOException("ホームを取得できませんでした。")
+        val statuses = body.map(StatusDto::toDomain)
         statuses.forEach { cacheStatus(session, it) }
         TimelinePage(
             statuses = statuses.filterNot { moderation.value.hides(session, it) },
-            nextMaxId = response.lastOrNull()?.id,
+            nextMaxId = body.lastOrNull()?.id,
             // Instances may return fewer than the requested limit before the history ends.
-            endReached = response.isEmpty(),
+            endReached = body.isEmpty(),
+            homeIndex = io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineIndex(body.map { it.id }),
         )
     }
 
@@ -611,7 +628,7 @@ class DefaultTimelineRepository(
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
-            endReached = response.size < limit,
+            endReached = response.isEmpty(),
         )
     }
 

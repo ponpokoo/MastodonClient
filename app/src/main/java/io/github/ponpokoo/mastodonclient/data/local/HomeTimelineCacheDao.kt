@@ -18,8 +18,22 @@ data class CachedHomeStatusEntity(
 @Entity(tableName = "home_timeline_state", primaryKeys = ["sessionId", "instanceUrl"])
 data class HomeTimelineStateEntity(val sessionId: String, val instanceUrl: String, val endReached: Boolean)
 
+@Entity(tableName = "home_timeline_windows", primaryKeys = ["sessionId", "instanceUrl"])
+data class HomeTimelineWindowEntity(val sessionId: String, val instanceUrl: String, val payload: String)
+
 @Dao
 interface HomeTimelineCacheDao {
+    @Query("SELECT * FROM home_timeline_windows WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl")
+    suspend fun window(sessionId: String, instanceUrl: String): HomeTimelineWindowEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun writeWindow(window: HomeTimelineWindowEntity)
+
+    @Query("DELETE FROM home_timeline_windows WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl")
+    suspend fun clearWindow(sessionId: String, instanceUrl: String)
+
+    @Query("DELETE FROM home_timeline_windows WHERE sessionId = :sessionId")
+    suspend fun deleteWindows(sessionId: String)
     @Query("SELECT * FROM home_timeline_cache WHERE sessionId = :sessionId AND instanceUrl = :instanceUrl ORDER BY position")
     suspend fun readAll(sessionId: String, instanceUrl: String): List<CachedHomeStatusEntity>
 

@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -301,6 +302,79 @@ class TimelineViewModelTest {
         assertEquals(null, model.uiState.value.streamAtTopCount)
     }
     @Test
+    fun refreshUsesApiOrderForPreviouslyUnreadStreamingRows() =
+        assertRefreshUsesApiOrder(arrivesDuringRefresh = false, followingTop = false)
+
+    @Test
+    fun refreshUsesApiOrderForUnreadStreamingRowsArrivingDuringRequest() =
+        assertRefreshUsesApiOrder(arrivesDuringRefresh = true, followingTop = false)
+
+    @Test
+    fun refreshUsesApiOrderForReadStreamingRowsArrivingDuringRequest() =
+        assertRefreshUsesApiOrder(arrivesDuringRefresh = true, followingTop = true)
+
+    private fun assertRefreshUsesApiOrder(arrivesDuringRefresh: Boolean, followingTop: Boolean) = runTest(dispatcher) {
+        val initial = status("initial").copy(createdAt = "2026-10-16T11:57:00Z")
+        val older = status("older").copy(createdAt = "2026-10-16T11:58:00Z")
+        val newer = status("newer").copy(createdAt = "2026-10-16T11:59:00Z")
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        var calls = 0
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> =
+                if (++calls == 1) Result.success(TimelinePage(listOf(initial), "initial", false)) else pending.await()
+        }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.updateViewport(followingTop)
+        if (arrivesDuringRefresh) {
+            model.refresh()
+            advanceUntilIdle()
+        }
+        mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+            BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(older)))
+        advanceUntilIdle()
+        assertEquals(if (followingTop) emptySet<String>() else setOf("older"), model.uiState.value.unseenStreamIds)
+        if (!arrivesDuringRefresh) {
+            model.refresh()
+            advanceUntilIdle()
+        }
+
+        pending.complete(Result.success(TimelinePage(listOf(newer, older, initial), "initial", false)))
+        advanceUntilIdle()
+
+        assertEquals(listOf("newer", "older", "initial"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals("initial", model.uiState.value.nextMaxId)
+        assertEquals(1, model.uiState.value.refreshNewStatusCount)
+    }
+
+    @Test
+    fun refreshKeepsPreviouslyUnreadStreamingRowMissingFromResponseAndDistinctBoostRow() = runTest(dispatcher) {
+        val original = status("original")
+        val boost = original.copy(timelineId = "boost", boostedBy = StatusAuthor("booster", "Booster", "booster@example.social", ""))
+        var calls = 0
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> =
+                Result.success(TimelinePage(if (++calls == 1) listOf(original) else listOf(boost, original), "original", false))
+        }
+        val model = createTimeline(repository, FakeAuthRepository(SESSION))
+        advanceUntilIdle()
+        model.updateViewport(false)
+        mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+            BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("unseen"))))
+        advanceUntilIdle()
+
+        model.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf("unseen", "boost", "original"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals(listOf("original", "original"), model.uiState.value.statuses.drop(1).map { it.statusId })
+        assertEquals(boost.boostedBy, model.uiState.value.statuses[1].boostedBy)
+        assertEquals(listOf(original.createdAt, original.createdAt), model.uiState.value.statuses.drop(1).map { it.createdAt })
+        assertEquals(setOf("unseen"), model.uiState.value.unseenStreamIds)
+        assertEquals("original", model.uiState.value.nextMaxId)
+    }
+
+    @Test
     fun savedViewportRestoresNearbyStatusesAndCanReturnToLatest() = runTest(dispatcher) {
         val requestedMaxIds = mutableListOf<String?>()
         val repository = object : TimelineRepository {
@@ -541,6 +615,387 @@ class TimelineViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("older"), model.uiState.value.statuses.map { it.timelineId })
         assertEquals(7L, model.uiState.value.statuses.single().favouritesCount)
+    }
+
+    @Test fun publicFeedRefreshRetainsDisconnectedViewportAndLoadsGapFromSameFeed() = runTest(dispatcher) {
+        for (feed in listOf(TimelineFeed.Local, TimelineFeed.Federated)) {
+            val requests = mutableListOf<Pair<TimelineFeed, String?>>()
+            var latest = false
+            val newIds = (1..20).map { "new-$it" }
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                    Result.success(TimelinePage(emptyList(), null, true))
+                override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int): Result<TimelinePage> {
+                    requests += feed to maxId
+                    val ids = when (maxId) {
+                        "new-20" -> listOf("middle", "old")
+                        "older" -> listOf("oldest")
+                        else -> if (latest) newIds else listOf("old", "older")
+                    }
+                    return Result.success(TimelinePage(ids.map(::status), ids.last(), false))
+                }
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            model.setKeepPositionOnRefresh(true)
+            advanceUntilIdle()
+            model.selectFeed(feed); advanceUntilIdle()
+            latest = true
+            model.refresh(); advanceUntilIdle()
+            assertEquals(newIds + listOf("old", "older"), model.uiState.value.statuses.map { it.timelineId })
+            assertEquals("older", model.uiState.value.nextMaxId)
+            assertEquals("old", model.uiState.value.homeIndex!!.gaps.single().beforeId)
+            model.loadGap("old"); advanceUntilIdle()
+            assertEquals(feed to "new-20", requests.last())
+            assertTrue(model.uiState.value.homeIndex!!.gaps.isEmpty())
+            model.loadNextPage(); advanceUntilIdle()
+            assertEquals(feed to "older", requests.last())
+            assertEquals(newIds + listOf("middle", "old", "older", "oldest"), model.uiState.value.statuses.map { it.timelineId })
+            model.setKeepPositionOnRefresh(false)
+            model.refresh(); advanceUntilIdle()
+            assertEquals(newIds, model.uiState.value.statuses.map { it.timelineId })
+            assertNull(model.uiState.value.homeIndex)
+        }
+    }
+
+    @Test fun automaticCacheRevalidationProbesShortDisconnectedPageOnce() = runTest(dispatcher) {
+        for (connects in listOf(true, false)) {
+            val requests = mutableListOf<String?>()
+            val repository = object : TimelineRepository {
+                override suspend fun getCachedHomeWindow(session: AccountSession) =
+                    Result.success(TimelinePage(listOf(status("old")), "old", false))
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                    requests += maxId
+                    val ids = if (maxId == null) listOf("new") else if (connects) listOf("middle", "old") else listOf("middle")
+                    return Result.success(TimelinePage(ids.map(::status), ids.last(), false))
+                }
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+            assertEquals(listOf(null, "new"), requests)
+            assertEquals(connects, model.uiState.value.homeIndex!!.gaps.isEmpty())
+            assertEquals(listOf("new", "middle", "old"), model.uiState.value.statuses.map { it.timelineId })
+        }
+    }
+
+    @Test fun streamingProbesOnlyNewBoundaryAndRetainsGapOnFailureOrDisconnection() = runTest(dispatcher) {
+        for (outcome in listOf("connected", "disconnected", "failure")) {
+            val requests = mutableListOf<String?>()
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                    requests += maxId
+                    if (maxId != null && outcome == "failure") return Result.failure(java.io.IOException("offline"))
+                    val ids = if (maxId == null) listOf("old") else if (outcome == "connected") listOf("middle", "old") else listOf("middle")
+                    return Result.success(TimelinePage(ids.map(::status), ids.last(), false))
+                }
+            }
+            val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
+            val model = TimelineViewModel(repository, main.browsing)
+            model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+            suspend fun emit(event: TimelineStreamEvent) = main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(event))
+            emit(TimelineStreamEvent.Connected); advanceUntilIdle()
+            assertEquals(listOf<String?>(null), requests)
+            emit(TimelineStreamEvent.StatusAdded(status("new"))); advanceUntilIdle()
+            assertEquals(listOf(null, "new"), requests)
+            assertEquals(outcome == "connected", model.uiState.value.homeIndex!!.gaps.isEmpty())
+            emit(TimelineStreamEvent.StatusAdded(status("newer"))); advanceUntilIdle()
+            emit(TimelineStreamEvent.StatusAdded(status("newer"))); advanceUntilIdle()
+            assertEquals(listOf(null, "new"), requests)
+            assertTrue(model.uiState.value.statuses.any { it.timelineId == "old" })
+            if (outcome == "failure") assertEquals("offline", model.uiState.value.gapErrors["old"])
+        }
+    }
+
+    @Test fun automaticGapStaysHiddenUntilCheckFinishesButManualRetryStaysVisible() = runTest(dispatcher) {
+        for (outcome in listOf("connected", "disconnected", "failure")) {
+            var pending = CompletableDeferred<Result<TimelinePage>>()
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                    if (maxId != null) return pending.await()
+                    return Result.success(TimelinePage(listOf(status("old")), "old", false))
+                }
+            }
+            val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
+            val model = TimelineViewModel(repository, main.browsing)
+            model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+            main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))
+            main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("new"))))
+            advanceUntilIdle()
+            assertEquals("old", model.uiState.value.loadingGapId)
+            assertEquals(1, model.uiState.value.homeIndex!!.gaps.size)
+            assertTrue(model.uiState.value.displayRows().none { it is TimelineRow.Gap })
+            val ids = if (outcome == "connected") listOf("middle", "old") else listOf("middle")
+            pending.complete(if (outcome == "failure") Result.failure(java.io.IOException("offline"))
+                else Result.success(TimelinePage(ids.map(::status), ids.last(), false)))
+            advanceUntilIdle()
+            assertNull(model.uiState.value.automaticGapCheck)
+            assertEquals(if (outcome == "connected") 0 else 1,
+                model.uiState.value.displayRows().count { it is TimelineRow.Gap })
+            if (outcome != "connected") {
+                pending = CompletableDeferred()
+                model.loadGap("old"); advanceUntilIdle()
+                assertEquals("old", model.uiState.value.loadingGapId)
+                assertEquals(1, model.uiState.value.displayRows().count { it is TimelineRow.Gap })
+                pending.complete(Result.success(TimelinePage(listOf(status("old")), "old", false)))
+                advanceUntilIdle()
+            }
+        }
+    }
+
+    @Test fun streamingProbeRejectsResponseAfterFeedSwitch() = runTest(dispatcher) {
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                if (maxId != null) return withContext(NonCancellable) { pending.await() }
+                return Result.success(TimelinePage(listOf(status("old")), "old", false))
+            }
+            override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int) =
+                if (feed == TimelineFeed.Home) getHomeTimeline(session, maxId, limit)
+                else Result.success(TimelinePage(listOf(status("local")), "local", false))
+        }
+        val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
+        val model = TimelineViewModel(repository, main.browsing)
+        model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+        main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))
+        main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("new"))))
+        advanceUntilIdle()
+        assertEquals("old", model.uiState.value.loadingGapId)
+        model.selectFeed(TimelineFeed.Local); advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("late")), "late", false)))
+        advanceUntilIdle()
+        assertEquals(listOf("local"), model.uiState.value.statuses.map { it.timelineId })
+        assertNull(model.uiState.value.loadingGapId)
+        assertNull(model.uiState.value.automaticGapCheck)
+    }
+
+    @Test fun streamingWaitsForRefreshAndSkipsGapAlreadyConnectedByItsResponse() = runTest(dispatcher) {
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        val requests = mutableListOf<String?>()
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                requests += maxId
+                if (requests.size > 1) return pending.await()
+                return Result.success(TimelinePage(listOf(status("old")), "old", false))
+            }
+        }
+        val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
+        val model = TimelineViewModel(repository, main.browsing)
+        model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+        model.refresh(); advanceUntilIdle()
+        main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))
+        main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("new"))))
+        advanceUntilIdle()
+        assertEquals(2, requests.size)
+        assertNull(model.uiState.value.loadingGapId)
+        pending.complete(Result.success(TimelinePage(listOf(status("new"), status("old")), "old", false)))
+        advanceUntilIdle()
+        assertEquals(2, requests.size)
+        assertTrue(model.uiState.value.homeIndex!!.gaps.isEmpty())
+    }
+
+    @Test fun shortRefreshProbesOnlyOnceAndKeepsUnresolvedGapsForEveryFeed() = runTest(dispatcher) {
+        for (feed in TimelineFeed.entries) for (outcome in listOf("connected", "disconnected", "failure", "empty", "overlap", "full-hidden", "zero")) {
+            var latest = false
+            val requests = mutableListOf<String?>()
+            var savedWindow: TimelinePage? = null
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                    Result.success(TimelinePage(listOf(status("old")), "old", false))
+                override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int): Result<TimelinePage> {
+                    requests += maxId
+                    if (!latest) return Result.success(TimelinePage(listOf(status("old")), "old", false))
+                    if (maxId != null && outcome == "failure") return Result.failure(java.io.IOException("offline"))
+                    val ids = if (maxId == null) when (outcome) {
+                        "overlap" -> listOf("new", "old")
+                        "full-hidden" -> (1..20).map { "new-$it" }
+                        "zero" -> emptyList()
+                        else -> listOf("new")
+                    } else when (outcome) {
+                        "connected" -> listOf("middle", "old")
+                        "empty" -> emptyList()
+                        else -> listOf("middle")
+                    }
+                    return Result.success(TimelinePage(
+                        (if (outcome == "full-hidden") ids.take(1) else ids).map(::status), ids.lastOrNull(), ids.isEmpty(),
+                        io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineIndex(ids)))
+                }
+                override suspend fun saveHomeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<BrowsingSession.Change>): Result<Unit> {
+                    savedWindow = page
+                    return Result.success(Unit)
+                }
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+            model.selectFeed(feed); advanceUntilIdle()
+            requests.clear()
+            latest = true
+            model.refresh(); advanceUntilIdle()
+            val probes = outcome !in listOf("overlap", "full-hidden", "zero")
+            assertEquals("$feed $outcome", if (probes) listOf(null, "new") else listOf<String?>(null), requests)
+            val state = model.uiState.value
+            assertTrue(state.statuses.any { it.timelineId == "old" })
+            assertFalse(state.isRefreshing)
+            assertNull(state.errorMessage)
+            assertEquals(outcome in listOf("connected", "overlap", "zero"), state.homeIndex!!.gaps.isEmpty())
+            if (outcome == "disconnected") assertEquals("middle", state.homeIndex.gaps.single().maxId)
+            if (outcome == "failure") assertFalse(state.homeIndex.gaps.single().unavailable)
+            if (feed == TimelineFeed.Home) assertEquals(state.homeIndex, savedWindow!!.homeIndex)
+        }
+    }
+
+    @Test fun switchingFeedCancelsShortRefreshProbeAndRejectsLateResponse() = runTest(dispatcher) {
+        for (feed in TimelineFeed.entries) {
+            val pending = CompletableDeferred<Result<TimelinePage>>()
+            var latest = false
+            var probes = 0
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                    Result.success(TimelinePage(emptyList(), null, true))
+                override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int): Result<TimelinePage> {
+                    if (maxId != null) {
+                        probes++
+                        return withContext(NonCancellable) { pending.await() }
+                    }
+                    val id = if (latest) "new-$feed" else "old-$feed"
+                    return Result.success(TimelinePage(listOf(status(id)), id, false))
+                }
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            model.setKeepPositionOnRefresh(true); advanceUntilIdle()
+            model.selectFeed(feed); advanceUntilIdle()
+            latest = true
+            model.refresh(); advanceUntilIdle()
+            assertTrue(model.uiState.value.isRefreshing)
+            model.refresh(); model.loadNextPage(); advanceUntilIdle()
+            assertEquals(1, probes)
+            val replacement = if (feed == TimelineFeed.Home) TimelineFeed.Local else TimelineFeed.Home
+            model.selectFeed(replacement); advanceUntilIdle()
+            pending.complete(Result.success(TimelinePage(listOf(status("late")), "late", false)))
+            advanceUntilIdle()
+            assertEquals(replacement, model.uiState.value.selectedFeed)
+            assertEquals(listOf("new-$replacement"), model.uiState.value.statuses.map { it.timelineId })
+            assertFalse(model.uiState.value.isRefreshing)
+        }
+    }
+
+    @Test fun keepPositionRefreshAndGapLoadingRetainOldRowsAndUseIndependentCursors() = runTest(dispatcher) {
+        val requests = mutableListOf<Pair<String?, Int>>()
+        var latest = false
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                requests += maxId to limit
+                val ids = when (maxId) {
+                    "new" -> listOf("middle")
+                    "middle" -> listOf("near-old", "old")
+                    else -> if (latest) listOf("new") else listOf("old", "older")
+                }
+                return Result.success(TimelinePage(ids.map(::status), ids.last(), false))
+            }
+        }
+        val saved = SavedStateHandle()
+        val model = createTimeline(repository, FakeAuthRepository(SESSION), saved)
+        model.setKeepPositionOnRefresh(true)
+        advanceUntilIdle()
+        model.saveViewport("old", null, 17)
+        latest = true
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("new", "middle", "old", "older"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals("older", model.uiState.value.nextMaxId)
+        assertNull(model.uiState.value.resumeAnchorId)
+        model.saveViewport("old", "new", 17)
+        assertEquals("", saved.get<String>("timeline_viewport_before"))
+        assertEquals("middle", model.uiState.value.homeIndex!!.gaps.single().maxId)
+        assertEquals(3, requests.size)
+        model.loadGap("old")
+        advanceUntilIdle()
+        assertTrue(model.uiState.value.homeIndex!!.gaps.isEmpty())
+        assertEquals(listOf(null to 20, null to 20, "new" to 20, "middle" to 20), requests)
+        assertEquals(listOf("new", "middle", "near-old", "old", "older"), model.uiState.value.statuses.map { it.timelineId })
+    }
+
+    @Test fun disablingPositionRetentionReturnsToContiguousLatestRange() = runTest(dispatcher) {
+        val model = createTimeline(FakeTimelineRepository(), FakeAuthRepository(SESSION))
+        model.setKeepPositionOnRefresh(true)
+        advanceUntilIdle()
+        model.refresh(); advanceUntilIdle()
+        assertEquals(1, model.uiState.value.homeIndex!!.gaps.size)
+        model.setKeepPositionOnRefresh(false)
+        assertNull(model.uiState.value.homeIndex)
+        assertEquals(listOf("new", "second"), model.uiState.value.statuses.map { it.timelineId })
+        assertEquals("second", model.uiState.value.nextMaxId)
+        assertFalse(model.uiState.value.endReached)
+    }
+
+    @Test fun gapFailureIsRetryableAndAccountSwitchRejectsLateGapResponse() = runTest(dispatcher) {
+        val pending = CompletableDeferred<Result<TimelinePage>>()
+        val second = SESSION.copy(sessionId = "second")
+        var latest = false
+        var fail = true
+        var gapCalls = 0
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                if (maxId != null) {
+                    gapCalls++
+                    if (fail) return Result.failure(java.io.IOException("offline"))
+                    return withContext(NonCancellable) { pending.await() }
+                }
+                val id = if (session.sessionId == "second") "second" else if (latest) "new" else "old"
+                return Result.success(TimelinePage(listOf(status(id)), id, false))
+            }
+        }
+        val auth = object : AuthRepository by FakeAuthRepository(SESSION) {
+            override suspend fun switchSession(sessionId: String) = second
+            override suspend fun getSessions() = listOf(SESSION, second)
+        }
+        val model = createTimeline(repository, auth)
+        model.setKeepPositionOnRefresh(true)
+        advanceUntilIdle()
+        latest = true
+        model.refresh(); advanceUntilIdle()
+        model.loadGap("old"); advanceUntilIdle()
+        assertEquals("offline", model.uiState.value.gapErrors["old"])
+        assertEquals(1, model.uiState.value.homeIndex!!.gaps.size)
+        fail = false
+        model.loadGap("old"); advanceUntilIdle()
+        model.loadGap("old"); advanceUntilIdle()
+        assertEquals(3, gapCalls) // One automatic probe, one failed tap, one pending retry.
+        mainViewModel.switchAccount("second"); advanceUntilIdle()
+        pending.complete(Result.success(TimelinePage(listOf(status("late")), "late", false)))
+        advanceUntilIdle()
+        assertEquals(listOf("second"), model.uiState.value.statuses.map { it.timelineId })
+        assertNull(model.uiState.value.loadingGapId)
+        assertTrue(model.uiState.value.gapErrors.isEmpty())
+    }
+
+    @Test fun restoredHomeRefreshGetsLatestWhileKeepingAnchorAndExistingGap() = runTest(dispatcher) {
+        val cached = TimelinePage(listOf(status("new"), status("old")), "old", false,
+            io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineIndex(listOf("new", "old"),
+                listOf(io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineGap("old", "new"))))
+        var online = false
+        val requests = mutableListOf<String?>()
+        val repository = object : TimelineRepository {
+            override fun isNetworkAvailable() = online
+            override suspend fun getCachedHomeWindow(session: AccountSession) = Result.success(cached)
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> {
+                requests += maxId
+                return Result.success(TimelinePage(listOf(status("latest"), status("new")), "new", false))
+            }
+        }
+        val saved = SavedStateHandle(mapOf("timeline_viewport_session" to SESSION.sessionId,
+            "timeline_viewport_feed" to "Home", "timeline_viewport_anchor" to "old", "timeline_viewport_offset" to 23))
+        val model = createTimeline(repository, FakeAuthRepository(SESSION), saved)
+        advanceUntilIdle()
+        assertEquals("old", model.uiState.value.resumeAnchorId)
+        assertEquals(23, model.uiState.value.resumeOffset)
+        assertEquals(1, model.uiState.value.homeIndex!!.gaps.size)
+        model.consumeResumeAnchor()
+        online = true
+        model.refresh(); advanceUntilIdle()
+        assertEquals(listOf<String?>(null), requests)
+        assertEquals(listOf("latest", "new", "old"), model.uiState.value.statuses.map { it.timelineId })
+        assertNull(model.uiState.value.resumeAnchorId)
+        assertFalse(model.uiState.value.isResumedWindow)
+        assertEquals(1, model.uiState.value.homeIndex!!.gaps.size)
     }
 
     private class CachedHomeRepository : TimelineRepository {

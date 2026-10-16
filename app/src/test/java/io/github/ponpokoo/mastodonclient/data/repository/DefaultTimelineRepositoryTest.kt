@@ -111,6 +111,14 @@ class DefaultTimelineRepositoryTest {
         }
     }
 
+    @Test fun regeneratingHomeIsRetryableRatherThanAnEmptyTerminalPage() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(206).setBody("[]"))
+            val result = DefaultTimelineRepository(ApiClientFactory()).getHomeTimeline(testSession(server))
+            assertTrue(result.isFailure)
+        }
+    }
+
     @Test
     fun editableStatusPreservesLanguageAndAllowsServersToOmitIt() = runTest {
         MockWebServer().use { server ->
@@ -353,6 +361,24 @@ class DefaultTimelineRepositoryTest {
                 "/api/v1/timelines/tag/Android?max_id=cursor&limit=1",
                 server.takeRequest().path,
             )
+        }
+    }
+
+    @Test
+    fun shortPublicPageKeepsCursorUntilEmptyResponse() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("[${basicStatusJson("cursor")}]"))
+            server.enqueue(MockResponse().setBody("[]"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            val first = repository.getTimeline(session, TimelineFeed.Local, limit = 20).getOrThrow()
+            assertFalse(first.endReached)
+            assertEquals("cursor", first.nextMaxId)
+            val last = repository.getTimeline(session, TimelineFeed.Local, maxId = first.nextMaxId, limit = 20).getOrThrow()
+            assertTrue(last.endReached)
+            assertNull(last.nextMaxId)
+            server.takeRequest()
+            assertEquals("cursor", server.takeRequest().requestUrl!!.queryParameter("max_id"))
         }
     }
 

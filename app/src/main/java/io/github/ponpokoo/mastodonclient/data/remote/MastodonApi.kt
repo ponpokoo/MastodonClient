@@ -184,7 +184,7 @@ interface MastodonApi {
     suspend fun getHomeTimeline(
         @Query("max_id") maxId: String? = null,
         @Query("limit") limit: Int = 20,
-    ): List<StatusDto>
+    ): retrofit2.Response<List<StatusDto>>
 
     @GET("api/v1/timelines/public")
     suspend fun getPublicTimeline(
