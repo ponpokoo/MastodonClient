@@ -315,14 +315,24 @@ class DefaultTimelineRepository(
         maxId: String?,
     ) = runCatching {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        val response = when (kind) {
-            SavedTimelineKind.List -> api.getListTimeline(requireNotNull(listId), maxId)
-            SavedTimelineKind.Bookmarks -> api.getBookmarks(maxId)
-            SavedTimelineKind.Favourites -> api.getFavourites(maxId)
+        val response: List<StatusDto>
+        val nextMaxId: String?
+        val endReached: Boolean
+        if (kind == SavedTimelineKind.List) {
+            response = api.getListTimeline(requireNotNull(listId), maxId)
+            nextMaxId = response.lastOrNull()?.id
+            endReached = response.size < 20
+        } else {
+            val page = if (kind == SavedTimelineKind.Bookmarks) api.getBookmarks(maxId) else api.getFavourites(maxId)
+            if (!page.isSuccessful) throw retrofit2.HttpException(page)
+            response = page.body().orEmpty()
+            // Bookmark/favourite relationship IDs differ from status IDs.
+            nextMaxId = nextAccountListCursor(page.headers()["Link"])
+            endReached = nextMaxId == null || response.isEmpty()
         }
         val statuses = response.map(StatusDto::toDomain)
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
-        TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
+        TimelinePage(statuses, nextMaxId, endReached)
     }
 
     override suspend fun getRelationship(session: AccountSession, accountId: String) = runCatching {

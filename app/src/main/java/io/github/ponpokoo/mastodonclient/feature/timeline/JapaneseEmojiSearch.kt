@@ -34,14 +34,22 @@ private val kanaByRomaji = mapOf(
     "jya" to "じゃ", "jyu" to "じゅ", "jyo" to "じょ",
     "bya" to "びゃ", "byu" to "びゅ", "byo" to "びょ",
     "pya" to "ぴゃ", "pyu" to "ぴゅ", "pyo" to "ぴょ",
+    "xa" to "ぁ", "xi" to "ぃ", "xu" to "ぅ", "xe" to "ぇ", "xo" to "ぉ",
+    "la" to "ぁ", "li" to "ぃ", "lu" to "ぅ", "le" to "ぇ", "lo" to "ぉ",
+    "xya" to "ゃ", "xyu" to "ゅ", "xyo" to "ょ",
+    "lya" to "ゃ", "lyu" to "ゅ", "lyo" to "ょ",
+    "xtu" to "っ", "ltu" to "っ", "xtsu" to "っ", "ltsu" to "っ",
 )
+
+private val lRowReadings = mapOf("la" to "ら", "li" to "り", "lu" to "る", "le" to "れ", "lo" to "ろ")
+private val latinRun = Regex("[a-z]+")
 
 internal fun normalizeEmojiSearch(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFKC)
     .lowercase(Locale.ROOT)
     .map { char -> if (char in 'ァ'..'ヶ') char - ('ァ' - 'ぁ') else char }
     .joinToString("")
 
-internal fun romajiToHiragana(text: String): String = Regex("[a-z]+").replace(text.lowercase(Locale.ROOT)) { match ->
+internal fun romajiToHiragana(text: String, lRow: Boolean = false): String = latinRun.replace(text.lowercase(Locale.ROOT)) { match ->
     val source = match.value
     buildString {
         var index = 0
@@ -57,10 +65,10 @@ internal fun romajiToHiragana(text: String): String = Regex("[a-z]+").replace(te
                 append('っ')
                 index++
             } else {
-                val pair = (3 downTo 1).firstNotNullOfOrNull { length ->
+                val pair = (4 downTo 1).firstNotNullOfOrNull { length ->
                     source.substring(index, (index + length).coerceAtMost(source.length))
                         .takeIf { it.length == length && it in kanaByRomaji }
-                        ?.let { length to kanaByRomaji.getValue(it) }
+                        ?.let { length to ((if (lRow) lRowReadings[it] else null) ?: kanaByRomaji.getValue(it)) }
                 }
                 if (pair == null) {
                     append(current)
@@ -75,12 +83,29 @@ internal fun romajiToHiragana(text: String): String = Regex("[a-z]+").replace(te
 }
 
 internal fun customEmojiMatchesQuery(emoji: CustomEmoji, query: String): Boolean {
-    val needle = normalizeEmojiSearch(query.trim().trim(':'))
-    return needle.isEmpty() || needle in customEmojiSearchKey(emoji)
+    return customEmojiSearchKey(emoji).matches(emojiSearchQuery(query))
 }
 
-internal fun customEmojiSearchKey(emoji: CustomEmoji): String {
+/** Keep direct matching independent of ambiguous readings (English and IME small kana). */
+internal data class EmojiSearchQuery(val direct: String, val readings: Set<String>)
+
+internal fun emojiSearchQuery(query: String): EmojiSearchQuery {
+    val normalized = normalizeEmojiSearch(query.trim().trim(':'))
+    return EmojiSearchQuery(normalized, emojiReadings(normalized))
+}
+
+private fun emojiReadings(normalized: String): Set<String> = setOf(
+    romajiToHiragana(normalized), romajiToHiragana(normalized, lRow = true),
+)
+
+internal data class CustomEmojiSearchKey(val shortcode: String, val category: String, val readings: Set<String>) {
+    fun matches(query: EmojiSearchQuery): Boolean = query.direct.isEmpty() ||
+        query.direct in shortcode || query.direct in category ||
+        query.readings.any { needle -> readings.any { needle in it } }
+}
+
+internal fun customEmojiSearchKey(emoji: CustomEmoji): CustomEmojiSearchKey {
     val shortcode = normalizeEmojiSearch(emoji.shortcode)
     val category = normalizeEmojiSearch(emoji.category.orEmpty())
-    return "$shortcode $category ${romajiToHiragana(shortcode)}"
+    return CustomEmojiSearchKey(shortcode, category, emojiReadings(shortcode))
 }

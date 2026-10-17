@@ -681,15 +681,23 @@ fun AppNavigation(
                 onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
-        composable<Route.Lists> {
+        composable<Route.Lists> { backStackEntry ->
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
+            val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
+            val mainState by mainModel.uiState.collectAsStateWithLifecycle()
+            val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+            })
             val savedViewModel: SavedTimelinesViewModel = viewModel(
-                factory = SavedTimelinesViewModel.Factory(
-                    null, null, timelineRepository, authRepository, statusActionManager,
-                ),
+                factory = ScreenViewModelFactory {
+                    SavedTimelinesViewModel(null, null, timelineRepository, mainModel.browsing)
+                },
             )
             SavedTimelinesScreen(
                 title = "リスト",
                 viewModel = savedViewModel,
+                actionsViewModel = actionsViewModel,
+                currentAccountId = mainState.session?.accountId,
                 preferences = appPreferences,
                 showLists = true,
                 onBack = { navController.popBackStack() },
@@ -698,7 +706,9 @@ fun AppNavigation(
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
                 onOpenLink = openLink,
+                onReply = { navController.navigate(Route.ComposePost(it)) },
                 onQuote = openQuote,
+                onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
         composable<Route.SavedTimeline> { backStackEntry ->
@@ -708,14 +718,22 @@ fun AppNavigation(
                 "bookmarks" -> SavedTimelineKind.Bookmarks
                 else -> SavedTimelineKind.Favourites
             }
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
+            val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
+            val mainState by mainModel.uiState.collectAsStateWithLifecycle()
+            val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+            })
             val savedViewModel: SavedTimelinesViewModel = viewModel(
-                factory = SavedTimelinesViewModel.Factory(
-                    kind, route.listId, timelineRepository, authRepository, statusActionManager,
-                ),
+                factory = ScreenViewModelFactory {
+                    SavedTimelinesViewModel(kind, route.listId, timelineRepository, mainModel.browsing)
+                },
             )
             SavedTimelinesScreen(
                 title = route.title,
                 viewModel = savedViewModel,
+                actionsViewModel = actionsViewModel,
+                currentAccountId = mainState.session?.accountId,
                 preferences = appPreferences,
                 showLists = false,
                 onBack = { navController.popBackStack() },
@@ -724,7 +742,9 @@ fun AppNavigation(
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
                 onOpenLink = openLink,
+                onReply = { navController.navigate(Route.ComposePost(it)) },
                 onQuote = openQuote,
+                onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
         // Compatibility for a previously saved media dialog navigation entry.

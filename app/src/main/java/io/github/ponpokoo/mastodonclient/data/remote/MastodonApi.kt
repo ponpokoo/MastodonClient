@@ -212,10 +212,10 @@ interface MastodonApi {
     ): List<StatusDto>
 
     @GET("api/v1/bookmarks")
-    suspend fun getBookmarks(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): List<StatusDto>
+    suspend fun getBookmarks(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): retrofit2.Response<List<StatusDto>>
 
     @GET("api/v1/favourites")
-    suspend fun getFavourites(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): List<StatusDto>
+    suspend fun getFavourites(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): retrofit2.Response<List<StatusDto>>
 
     @FormUrlEncoded
     @POST("api/v1/lists/{id}/accounts")

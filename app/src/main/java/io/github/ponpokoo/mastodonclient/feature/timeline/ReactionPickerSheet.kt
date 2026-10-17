@@ -139,8 +139,9 @@ internal fun ReactionPickerSheet(
     val customSearchIndex = remember(customEmojis) {
         customEmojis.map { it to customEmojiSearchKey(it) }
     }
-    val customGroups = remember(searchText, customSearchIndex) {
-        customSearchIndex.filter { (_, key) -> searchText.isBlank() || searchText in key }
+    val customQuery = remember(query) { emojiSearchQuery(query) }
+    val customGroups = remember(customQuery, customSearchIndex) {
+        customSearchIndex.filter { (_, key) -> key.matches(customQuery) }
             .map { it.first }
             .groupBy { it.category?.takeIf(String::isNotBlank) ?: "その他" }
     }

@@ -900,6 +900,39 @@ class DefaultTimelineRepositoryTest {
     }
 
     @Test
+    fun savedPostsUseRelationshipCursorFromLinkRatherThanStatusId() = runTest {
+        for (kind in listOf(SavedTimelineKind.Bookmarks, SavedTimelineKind.Favourites)) {
+            MockWebServer().use { server ->
+                val path = if (kind == SavedTimelineKind.Bookmarks) "bookmarks" else "favourites"
+                server.enqueue(MockResponse().setBody("[${basicStatusJson("status-id")}]")
+                    .setHeader("Link", "<${server.url("/api/v1/$path?max_id=relationship-next")}>; rel=\"next\""))
+                server.enqueue(MockResponse().setBody("[${basicStatusJson("older-status")}]")
+                    .setHeader("Link", "<${server.url("/api/v1/$path?min_id=previous")}>; rel=\"prev\""))
+                val repository = DefaultTimelineRepository(ApiClientFactory())
+                val session = testSession(server)
+                val page = repository.getSavedTimeline(session, kind).getOrThrow()
+                assertEquals("relationship-next", page.nextMaxId)
+                assertFalse(page.endReached)
+                val last = repository.getSavedTimeline(session, kind, maxId = page.nextMaxId).getOrThrow()
+                assertTrue(last.endReached)
+                assertNull(last.nextMaxId)
+                assertEquals("/api/v1/$path?limit=20", server.takeRequest().path)
+                assertEquals("/api/v1/$path?max_id=relationship-next&limit=20", server.takeRequest().path)
+            }
+        }
+    }
+
+    @Test
+    fun savedPostsHttpFailureIsNotAnEmptySuccessfulPage() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403))
+            val result = DefaultTimelineRepository(ApiClientFactory()).getSavedTimeline(testSession(server), SavedTimelineKind.Bookmarks)
+            assertTrue(result.isFailure)
+            assertEquals(403, (result.exceptionOrNull() as retrofit2.HttpException).code())
+        }
+    }
+
+    @Test
     fun loadsListsAndSelectedListTimeline() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""[{"id":"friends","title":"友だち"}]"""))

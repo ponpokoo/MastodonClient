@@ -118,6 +118,8 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.timeline.croppedThumbnailRowSizes
 import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailRowSizes
 import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailSize
+import io.github.ponpokoo.mastodonclient.ui.theme.reactionSelectedOutline
+import io.github.ponpokoo.mastodonclient.ui.theme.onReactionSelectedContainer
 
 internal val LocalReactionListOpener = staticCompositionLocalOf<((String, EmojiReaction) -> Unit)?> { null }
 internal val LocalFavouriteListOpener = staticCompositionLocalOf<((String) -> Unit)?> { null }
@@ -311,6 +313,7 @@ internal fun StatusCard(
                     contentHtml = status.contentHtml,
                     customEmojis = status.customEmojis,
                     modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 4.dp else 0.dp),
+                    emojiHeight = 24.dp,
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = displayPreferences.fontSize.spValue(),
                         lineHeight = displayPreferences.lineHeightSp().sp,
@@ -404,10 +407,18 @@ internal fun StatusCard(
                                 ),
                                 shape = RoundedCornerShape(16.dp),
                                 color = if (reaction.reactedByMe) {
-                                    MaterialTheme.colorScheme.secondaryContainer
+                                    MaterialTheme.colorScheme.primaryContainer
                                 } else {
                                     MaterialTheme.colorScheme.surfaceVariant
                                 },
+                                contentColor = if (reaction.reactedByMe) {
+                                    MaterialTheme.colorScheme.onReactionSelectedContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                border = if (reaction.reactedByMe) {
+                                    BorderStroke(1.dp, MaterialTheme.colorScheme.reactionSelectedOutline)
+                                } else null,
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
@@ -442,7 +453,9 @@ internal fun StatusCard(
                                         Text(reaction.name)
                                     }
                                     Spacer(Modifier.width(4.dp))
-                                    Text(reaction.count.toString(), style = MaterialTheme.typography.labelMedium)
+                                    Text(reaction.count.toString(), style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (reaction.reactedByMe) FontWeight.Bold
+                                            else MaterialTheme.typography.labelMedium.fontWeight)
                                 }
                             }
                         }

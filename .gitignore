@@ -27,6 +27,8 @@ local.properties
 # Keep generated release binaries and IDE export metadata out of source control.
 /app/release/**/*.apk
 /app/release/**/*.aab
+/app/release/**/*.apk.sha256
+/app/release/**/*.aab.sha256
 /app/release/**/output-metadata.json
 /app/release/**/baselineProfiles/
 /app/release/branch-backups-*/

@@ -4,6 +4,12 @@ import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.isSpecified
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +32,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
@@ -41,6 +48,51 @@ fun StatusContentText(
     onLinkClick: (String) -> Unit,
     onNonLinkClick: (() -> Unit)? = null,
     onOpenInBrowser: ((String) -> Unit)? = null,
+    emojiHeight: Dp? = null,
+) {
+    if (emojiHeight != null && customEmojis.isNotEmpty()) {
+        BoxWithConstraints(modifier.semantics(mergeDescendants = true) {}, propagateMinConstraints = true) {
+            val density = LocalDensity.current
+            val inherited = LocalTextStyle.current.merge(style)
+            val minimumLineHeight = with(density) { emojiHeight.toSp() }
+            val lineHeight = with(density) {
+                when {
+                    !inherited.lineHeight.isSpecified -> minimumLineHeight
+                    inherited.lineHeight.isSp ->
+                        if (inherited.lineHeight.toPx() < emojiHeight.toPx()) minimumLineHeight else inherited.lineHeight
+                    else ->
+                        if (inherited.fontSize.isSp &&
+                            inherited.lineHeight.value * inherited.fontSize.toPx() < emojiHeight.toPx()
+                        ) minimumLineHeight else inherited.lineHeight
+                }
+            }
+            val emojiStyle = style.copy(
+                lineHeight = lineHeight,
+                // Fixed narrow line heights can also let enlarged text spill into an emoji row.
+                lineHeightStyle = (inherited.lineHeightStyle ?: LineHeightStyle.Default)
+                    .copy(mode = LineHeightStyle.Mode.Minimum),
+            )
+            StatusContentTextImpl(
+                contentHtml, customEmojis, Modifier, emojiStyle,
+                onLinkClick, onNonLinkClick, onOpenInBrowser,
+                EmojiInlineSize(emojiHeight, if (maxWidth.value.isFinite()) maxWidth else emojiHeight * 10),
+            )
+        }
+    } else {
+        StatusContentTextImpl(contentHtml, customEmojis, modifier, style, onLinkClick, onNonLinkClick, onOpenInBrowser)
+    }
+}
+
+@Composable
+private fun StatusContentTextImpl(
+    contentHtml: String,
+    customEmojis: Map<String, String>,
+    modifier: Modifier,
+    style: TextStyle,
+    onLinkClick: (String) -> Unit,
+    onNonLinkClick: (() -> Unit)?,
+    onOpenInBrowser: ((String) -> Unit)?,
+    emojiSize: EmojiInlineSize? = null,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val source = remember(contentHtml, linkColor) { htmlToAnnotatedString(contentHtml, linkColor) }
@@ -89,7 +141,7 @@ fun StatusContentText(
                 )
             },
         style = style.copy(color = MaterialTheme.colorScheme.onSurface),
-        inlineContent = rememberEmojiInlineContent(source.text, customEmojis),
+        inlineContent = rememberEmojiInlineContent(source.text, customEmojis, emojiSize),
         onTextLayout = { layoutResult[0] = it },
     )
     menuLink?.let { link ->
