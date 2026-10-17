@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.Lifecycle
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.feature.media.MediaPlayback
 import io.github.ponpokoo.mastodonclient.feature.media.AudioPlayerContent
@@ -125,12 +126,41 @@ class MediaPlaybackControlsDeviceTest {
         } }
         rule.onNodeWithTag("media_seek").assertIsNotEnabled()
         rule.onNodeWithContentDescription("音声を再生").performClick()
-        rule.waitUntil(10_000) { state.get().playing }
+        rule.waitUntil(10_000) { state.get().playing && state.get().seekable }
         rule.runOnIdle { active.value = false }
         rule.onNodeWithTag("media_seek").assertIsNotEnabled()
         rule.runOnIdle { assertFalse(state.get().player!!.playWhenReady); active.value = true }
         rule.onNodeWithTag("media_seek").assertIsEnabled()
         rule.runOnIdle { assertFalse(state.get().player!!.playWhenReady) }
+        rule.runOnIdle { state.get().seekTo(1_000) }
+        rule.onNodeWithContentDescription("音声を再生").performClick()
+        rule.waitUntil(5_000) { state.get().playing && state.get().position >= 1_500 }
+    }
+
+    @Test fun pausedSeekAndProgressUpdatesStillWorkAfterReturningFromBackground() {
+        val source = audio("tone.wav")
+        val state = AtomicReference<MediaPlayback>()
+        rule.setContent { MaterialTheme {
+            val playback = rememberMediaPlayback(source)
+            SideEffect { state.set(playback) }
+            PlayerControls(playback)
+        } }
+        rule.onNodeWithContentDescription("音声を再生").performClick()
+        rule.waitUntil(10_000) { state.get().playing && state.get().seekable }
+
+        rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        rule.onNodeWithContentDescription("音声を再生").assertIsEnabled()
+        rule.runOnIdle {
+            assertFalse(state.get().playing)
+            assertFalse(state.get().player!!.playWhenReady)
+            state.get().seekTo(1_000)
+        }
+        rule.waitUntil(5_000) { state.get().position in 900L..1_100L }
+        rule.runOnIdle { assertFalse(state.get().player!!.playWhenReady) }
+
+        rule.onNodeWithContentDescription("音声を再生").performClick()
+        rule.waitUntil(5_000) { state.get().playing && state.get().position >= 1_500 }
     }
 
     @androidx.compose.runtime.Composable

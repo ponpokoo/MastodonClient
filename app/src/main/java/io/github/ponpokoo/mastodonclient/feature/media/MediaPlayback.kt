@@ -188,8 +188,12 @@ internal fun rememberMediaPlayback(url: String?, active: Boolean = true, autopla
         if (!playback.controlsEnabled) playback.pause()
         else if (autoplay && !started) { started = true; playback.play() }
     }
-    LaunchedEffect(playback, playback.player) {
-        while (playback.player != null) { playback.update(); delay(250) }
+    // Events cover pauses, seeks and buffering; only advancing playback needs a position timer.
+    LaunchedEffect(playback, playback.player, playback.controlsEnabled, playback.playing) {
+        while (playback.controlsEnabled && playback.playing && playback.player != null) {
+            playback.update()
+            delay(250)
+        }
     }
     return playback
 }

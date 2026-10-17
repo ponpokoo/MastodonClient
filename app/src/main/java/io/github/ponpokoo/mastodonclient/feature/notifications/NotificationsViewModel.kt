@@ -378,30 +378,41 @@ class NotificationsViewModel(
             }
             return
         }
-        if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.NotificationReceived) {
-            val notification = change.event.notification
+        val notification = ((change as? BrowsingSession.Change.Stream)?.event as? TimelineStreamEvent.NotificationReceived)?.notification
+        val deleted = when (change) {
+            is BrowsingSession.Change.StatusDeleted -> change.statusId
+            is BrowsingSession.Change.Stream -> (change.event as? TimelineStreamEvent.StatusDeleted)?.statusId
+            else -> null
+        }
+        // Ordinary timeline posts, connection events and tag changes cannot affect notifications.
+        if (notification == null && deleted == null && change !is BrowsingSession.Change.StatusUpdated) return
+        val before = _uiState.value
+        if (notification != null) {
             val known = NotificationCategory.entries.any { category -> _uiState.value.list(category).notifications.any { it.id == notification.id } }
             NotificationCategory.entries.filter { it.includes(notification) }.forEach { category ->
                 updateList(category) { it.copy(notifications = (listOf(notification) + it.notifications).distinctBy(TimelineNotification::id)) }
             }
             if (!known && notification.id !in readState.viewedIds) addUnread(setOf(notification.id))
         } else {
-            val deleted = when (change) {
-                is BrowsingSession.Change.StatusDeleted -> change.statusId
-                is BrowsingSession.Change.Stream -> (change.event as? TimelineStreamEvent.StatusDeleted)?.statusId
-                else -> null
-            }
             for (category in NotificationCategory.entries) updateList(category) { tab ->
-                tab.copy(notifications = tab.notifications.map { notification -> notification.copy(status = notification.status?.let { status ->
-                    when {
+                tab.copy(notifications = tab.notifications.map { notification ->
+                    val status = notification.status
+                    val updated = when {
+                        status == null -> null
                         status.statusId == deleted -> null
                         change is BrowsingSession.Change.StatusUpdated -> status.withUpdatedActions(change.status)
                         else -> status
                     }
-                }) })
+                    if (updated == status) notification else notification.copy(status = updated)
+                })
             }
         }
-        currentSnapshot()?.let { snapshot -> restoredCategories.forEach { persistNotifications(snapshot, it) } }
+        val after = _uiState.value
+        currentSnapshot()?.let { snapshot ->
+            restoredCategories.forEach { category ->
+                if (before.list(category).notifications != after.list(category).notifications) persistNotifications(snapshot, category)
+            }
+        }
     }
 
     private fun persistNotifications(snapshot: BrowsingSession.Snapshot, category: NotificationCategory) {
