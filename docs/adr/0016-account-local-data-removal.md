@@ -32,5 +32,5 @@ Push解除待ちの旧認証情報は従来の暗号化保存・再試行仕様�
 ## 見直し条件と関連文書
 
 下書き移行・共有、バックアップ復元、別プロセスでの保存を追加する場合は所有権と同期境界を見直す。
-現在の削除順序は[開発ガイド](../project-setup.md#アカウントの削除確認と保存順)、利用者の動作は[UI仕様](../ui-guidelines.md#登録済みアカウントの管理)を参照。
+現在の削除順序は[開発ガイド](../project-setup.md#アカウントの削除確認と保存順)、利用者の動作は[UI仕様](../ui/accounts-profile.md#登録済みアカウントの管理)を参照。
 当初の問題と修正範囲は[残留データ調査](../investigations/account-removal-data-retention.md)、Pushの例外は[購読管理](../push-settings.md)を参照。

@@ -4,7 +4,7 @@
 
 同日後続の実装修正では、種類別40件取得、対応不明のリアクション探索停止、一覧と既読取得の分離、
 閲覧記録の保存と境界不明時の全件新着判定の抑止を追加した。
-現行動作は[通知仕様](../ui-guidelines.md#通知の表示更新既読位置)、判断は[ADR 0007](../adr/0007-notification-category-pages-and-read-state.md)を参照。
+現行動作は[通知仕様](../ui/notifications.md#通知の表示更新既読位置)、判断は[ADR 0007](../adr/0007-notification-category-pages-and-read-state.md)を参照。
 以下のコード位置・未実装候補・検証結果は調査時点の記録であり、修正後の結果とは区別する。
 
 ## 結論と対象
@@ -49,7 +49,7 @@
 
 [NotificationsViewModel.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/notifications/NotificationsViewModel.kt) 98行でDBを先に表示し、130行で初回の通信結果へ置き換える。取得中のStreaming新着以外は、保存済み履歴をそのまま残さない。
 
-「DBに古いメンションがある → 最初に見える → 最新全通知80件がすべてお気に入り → メンション一覧が空になる → 追加ページで再び現れる」という条件が成立する。履歴の未取得区間を飛ばさないための現行仕様であり、単純に古いキャッシュを結合すると順序・履歴の連続性を壊す。修正するなら種類別の取得位置を管理する必要がある。[通知の保存・更新仕様](../ui-guidelines.md#通知の表示更新既読位置)
+「DBに古いメンションがある → 最初に見える → 最新全通知80件がすべてお気に入り → メンション一覧が空になる → 追加ページで再び現れる」という条件が成立する。履歴の未取得区間を飛ばさないための現行仕様であり、単純に古いキャッシュを結合すると順序・履歴の連続性を壊す。修正するなら種類別の取得位置を管理する必要がある。[通知の保存・更新仕様](../ui/notifications.md#通知の表示更新既読位置)
 
 ログアウトは対象アカウントの通知キャッシュと既読位置を削除する（[DefaultAuthRepository.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultAuthRepository.kt) 125行）。再ログインしても全通知から探す方式は変わらず、保存済み表示による補助も失われる。このため再ログインで改善しない症状と整合する。
 
@@ -63,7 +63,7 @@ NotificationsViewModel 93・96行では`GET /api/v1/markers`と`GET /api/v1/noti
 
 ## 4. Streaming受信がないとタブへ戻っても新着を補わない
 
-NotificationsViewModel 78行の`hasLoaded`判定により、一度成功した後の`onNotificationsVisible()`では再取得を省く。手動更新、アプリの前景復帰、Android通知タップでは強制取得する。通常のタブ切替では一覧と閲覧位置を保持する仕様。[通知の更新仕様](../ui-guidelines.md#設定と初期値)
+NotificationsViewModel 78行の`hasLoaded`判定により、一度成功した後の`onNotificationsVisible()`では再取得を省く。手動更新、アプリの前景復帰、Android通知タップでは強制取得する。通常のタブ切替では一覧と閲覧位置を保持する仕様。[通知の更新仕様](../ui/settings-moderation.md#設定と初期値)
 
 [MainSessionViewModel.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/main/MainSessionViewModel.kt)はStreamingオフ・Wi-Fi条件不成立・設定に従った背景移行時に接続しない。切断時は2秒から最大30秒の待機で再接続するが、再接続成功時のREST取得はない。再接続の待機時間と欠落した通知の補完時間は別問題である。[MastodonStreamingDataSource.kt](https://github.com/ponpokoo/MastodonClient/blob/b457b63bbc7a46210492a54461277f969d1174f3/app/src/main/java/io/github/ponpokoo/mastodonclient/data/remote/MastodonStreamingDataSource.kt)はSSEのみを使い、受信後のDTO変換失敗はRepositoryで`getOrNull()`により破棄される。
 

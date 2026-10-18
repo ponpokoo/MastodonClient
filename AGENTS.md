@@ -22,8 +22,9 @@ adding, moving, or removing documentation entry points.
 - Never log access tokens, authorization codes, client secrets, or Authorization headers.
 - Release builds must not enable HTTP body logging.
 - Prefer current, non-deprecated Mastodon endpoints (for example `/api/v2/media`).
-- Follow `docs/ui-guidelines.md` for phone navigation, status rendering, theming, and timeline
-  customization. Tablet-specific UI is out of scope for the MVP.
+- Follow `docs/ui-guidelines.md` for shared UI rules and its linked feature specifications in
+  `docs/ui/` for phone navigation, status rendering, theming, and timeline customization.
+  Tablet-specific UI is out of scope for the MVP.
 - Keep the project compiling and existing tests valid. Choose validation by change scope using
   `docs/project-setup.md`; do not run the full suite after every small edit.
 - Documentation-only edits need content/link/diff checks, not Gradle builds or tests.

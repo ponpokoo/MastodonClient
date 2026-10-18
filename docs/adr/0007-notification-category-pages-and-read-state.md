@@ -43,12 +43,12 @@ Misskey由来の連合通知はログイン先が返す通知として維持す�
 - 通信失敗・タイムアウトは非対応として永続保存せず、同じセッション内では再試行しない。次回起動または新しいセッションで、未確認のサーバーを再度確認する。
 
 この補足は対応確認の保存・再確認方針を更新する。種類別ページと独立した閲覧記録の判断は引き続き採用する。
-詳細は[リアクション通知の対応判定](../ui-guidelines.md#リアクション通知の対応判定)を参照する。
+詳細は[リアクション通知の対応判定](../ui/notifications.md#リアクション通知の対応判定)を参照する。
 
 ## 見直し条件と関連文書
 
 対応範囲の拡大、未読総数APIの導入、種類別既読表現の追加、保存量の問題がある場合は再評価する。
-[通知の現行仕様](../ui-guidelines.md#通知の表示更新既読位置)、[開発ガイド](../project-setup.md)、
+[通知の現行仕様](../ui/notifications.md#通知の表示更新既読位置)、[開発ガイド](../project-setup.md)、
 [調査記録](../investigations/notification-mention-loading-report.md)、[ADR 0001](0001-session-isolation.md)、
 [ADR 0002](0002-persistent-browsing-cache.md)を参照する。
 APIの確認元：[Mastodon通知API](https://docs.joinmastodon.org/methods/notifications/)、

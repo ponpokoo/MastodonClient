@@ -36,5 +36,5 @@ Pushの短縮本文だけで判定する案は、本文やCWの見落としが�
 ## 見直し条件・関連文書
 
 Android通知にもワード適用が必要になった時点で、本文取得・失敗時の表示・遅延を再評価する。
-[現行仕様](../ui-guidelines.md#ミュートブロックの設定からの管理)、[開発ガイド](../project-setup.md#メイン画面の責務とライフサイクル)、
+[現行仕様](../ui/settings-moderation.md#ミュートブロックの設定からの管理)、[開発ガイド](../project-setup.md#メイン画面の責務とライフサイクル)、
 [ADR 0007](0007-notification-category-pages-and-read-state.md)、[Issue #1](https://github.com/ponpokoo/MastodonClient/issues/1)を参照する。

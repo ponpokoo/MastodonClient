@@ -34,4 +34,4 @@ Issue #10の確認対象照合からPush解除・削除までは既存の登録�
 ## 見直し条件・関連文書
 
 複数アカウントを同時閲覧する構成や別プロセスからプロフィールを更新する経路を追加する際、同期処理の所有者と世代管理を見直す。
-[開発ガイド](../project-setup.md#登録済みアカウント情報の同期)、[UI・機能仕様](../ui-guidelines.md#登録済み自アカウントの表示情報)、[ADR 0001](0001-session-isolation.md)、[Issue #12](https://github.com/ponpokoo/MastodonClient/issues/12)を参照する。
+[開発ガイド](../project-setup.md#登録済みアカウント情報の同期)、[UI・機能仕様](../ui/accounts-profile.md#登録済み自アカウントの表示情報)、[ADR 0001](0001-session-isolation.md)、[Issue #12](https://github.com/ponpokoo/MastodonClient/issues/12)を参照する。

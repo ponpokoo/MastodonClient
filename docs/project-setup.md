@@ -58,7 +58,7 @@ Flowはライフサイクルに従って購読し、保存はStoreのsuspendメ�
 
 | 内容 | 記載先 |
 | --- | --- |
-| 利用者向けの通知動作・設定・通知キャッシュ | [UI・機能仕様](ui-guidelines.md#設定と初期値) |
+| 利用者向けの通知動作・設定・通知キャッシュ | [通知仕様](ui/notifications.md) |
 | Push購読の登録・更新・解除・再認証・再開 | [通知設定と購読管理](push-settings.md) |
 | AndroidのFirebase設定・FCMトークン同期・受信・復号・表示 | [Android接続と受信処理](push-reception.md) |
 | Androidと両Relay実装の共通通信形式 | [Relay共通契約](relay-protocol.md) |
@@ -163,7 +163,7 @@ v4ではホームの境界情報テーブルを追加し、既存の投稿・通
 処理中は入力変更を受け付けず、確認済み入力の変更で確認結果と未起動の認証URLを破棄する。
 通信結果の反映前にコルーチンの有効性を確認し、画面離脱後の遅延応答を採用しない。
 入力形式の確認は既存のInstanceUrlNormalizerを使い、認証保存・PKCE・OAuth stateの処理は既存Repositoryに保持する。
-利用者向けの動作は[ログインとアカウント追加](ui-guidelines.md#ログインとアカウント追加)を参照する。
+利用者向けの動作は[ログインとアカウント追加](ui/accounts-profile.md#ログインとアカウント追加)を参照する。
 
 ### ViewModelの保持と責務
 
@@ -220,7 +220,7 @@ v4ではホームの境界情報テーブルを追加し、既存の投稿・通
 #### 画像キャッシュの更新
 
 画像更新番号は暗号化保存し、旧保存形式では0を既定値にする。対象アイコンのCoilメモリ・ディスクキーを更新し、新規取得には`Cache-Control: no-cache`を指定する。
-共有境界、代替案と受け入れる費用は[ADR 0011](adr/0011-account-display-synchronization.md)、利用者向け仕様は[UI・機能仕様](ui-guidelines.md#登録済み自アカウントの表示情報)を参照する。
+共有境界、代替案と受け入れる費用は[ADR 0011](adr/0011-account-display-synchronization.md)、利用者向け仕様は[UI・機能仕様](ui/accounts-profile.md#登録済み自アカウントの表示情報)を参照する。
 
 ### サーバー保存設定の同期
 
@@ -277,7 +277,7 @@ UIは取得済み・保存成功済みの値を表示し、アカウント切り
 
 公式フィルターはv2のみを取得し、v1の取得・移行・更新へのフォールバックは行わない。
 保存互換性と未対応サーバーの扱いは[ADR 0018](adr/0018-restore-local-word-mutes-with-v2-filters.md)に従う。
-取得契機と互換性の判断は[調査書](investigations/server-account-settings-sync.md)、表示と管理は[UI仕様](ui-guidelines.md#サーバー保存設定と公式フィルター)を参照する。
+取得契機と互換性の判断は[調査書](investigations/server-account-settings-sync.md)、表示と管理は[UI仕様](ui/settings-moderation.md#サーバー保存設定と公式フィルター)を参照する。
 
 ### アカウントの削除確認と保存順
 
@@ -316,7 +316,7 @@ Push解除に時間がかかる間も同じMutexを使う切替・認証保存�
 Scaffoldの余白はLazyColumnのModifierへ適用し、表示領域に上部バーを含めない。ドラッグ座標と端スクロールの範囲を同じ表示領域で扱う。
 ドラッグ中はローカルの表示順だけを更新し、ドロップ時に保存する。保存されたFlowの順序が追いつくまで表示順を保持し、同じLazyColumnのキーと行の状態を引き継ぐ。
 ボタン順・表示設定の保存は既存のUserPreferencesStoreへの直接アクセスを維持する。
-利用者向けの動作と追加・削除後のルールは[アカウント管理の仕様](ui-guidelines.md#登録済みアカウントの管理)を参照する。
+利用者向けの動作と追加・削除後のルールは[アカウント管理の仕様](ui/accounts-profile.md#登録済みアカウントの管理)を参照する。
 
 ### 投稿操作とStreamingの反映
 
@@ -601,7 +601,8 @@ adb -s emulator-5554 reverse --remove tcp:8765
 
 ## 文書の維持
 
-旧来のプロフィール仕様・設定／投稿仕様はUI・機能仕様へ、状態管理メモ・実機確認手順は本書へ統合した。
+UIの共通ルールと機能別仕様の入口は[UI・機能仕様](ui-guidelines.md)、機能別の詳細は`docs/ui/`で管理する。状態管理と確認手順は本書を参照する。
+同じ仕様を複数の文書へ転記せず、共通ルールまたは該当機能の文書を更新し、他の文書からリンクする。
 文書の更新・追加基準は[AGENTS.md](../AGENTS.md#documentation-maintenance)に従う。
 Play公開後を含む通常保守では、既存の説明が実際の挙動・契約・操作手順と食い違う箇所だけ更新する。
 内部リファクタリングや通常の表示調整には、仕様の変更がなければ文書更新・調査報告・計画書への追記は不要。

@@ -22,4 +22,4 @@
 公式フィルターv2が使えないサーバーには非対応を表示し、端末内判定へのフォールバックは行わない。
 公式フィルターの適用画面をこの削除に伴って拡張せず、Android通知への適用も追加しない。
 
-現在の取得・更新・適用範囲は[サーバー設定調査](../investigations/server-account-settings-sync.md)、画面の仕様は[UIガイド](../ui-guidelines.md#サーバー保存設定と公式フィルター)を参照する。
+現在の取得・更新・適用範囲は[サーバー設定調査](../investigations/server-account-settings-sync.md)、画面の仕様は[UIガイド](../ui/settings-moderation.md#サーバー保存設定と公式フィルター)を参照する。
