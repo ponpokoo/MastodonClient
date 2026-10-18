@@ -20,7 +20,11 @@ data class SearchResultDto(
 )
 
 @Serializable
-data class FeaturedTagDto(val id: String, val name: String)
+data class FeaturedTagDto(
+    val id: String,
+    val name: String,
+    @SerialName("statuses_count") val statusesCount: kotlinx.serialization.json.JsonElement? = null,
+)
 
 @Serializable
 data class TagDto(

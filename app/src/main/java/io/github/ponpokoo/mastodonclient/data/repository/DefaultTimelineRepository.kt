@@ -276,7 +276,8 @@ class DefaultTimelineRepository(
         try {
             apiClientFactory.create(session.instanceUrl, session.accessToken).getFeaturedTags(accountId)
                 .filter { it.name.isNotBlank() }.distinctBy { it.name.lowercase(java.util.Locale.ROOT) }
-                .map { io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag(it.id, it.name) }
+                .map { tag -> io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag(tag.id, tag.name,
+                    (tag.statusesCount as? JsonPrimitive)?.content?.toLongOrNull()?.takeIf { it >= 0 }) }
         } catch (error: HttpException) {
             if (error.code() == 404 || error.code() == 405 || error.code() == 501) emptyList() else throw error
         }
@@ -290,7 +291,9 @@ class DefaultTimelineRepository(
 
     private suspend fun getProfileStatusesPage(session: AccountSession, accountId: String, tab: ProfileStatusTab,
         maxId: String?, hashtag: String? = null): Result<TimelinePage> = runCatching {
-        val response = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccountStatuses(
+        val api = if (hashtag == null) apiClientFactory.create(session.instanceUrl, session.accessToken)
+            else apiClientFactory.createForProfileTags(session.instanceUrl, session.accessToken)
+        val response = api.getAccountStatuses(
             id = accountId,
             excludeReplies = tab == ProfileStatusTab.Posts,
             onlyMedia = tab == ProfileStatusTab.Media,

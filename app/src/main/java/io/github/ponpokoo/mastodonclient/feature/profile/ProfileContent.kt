@@ -578,7 +578,8 @@ private fun ProfileFeaturedTags(state: ProfileUiState, onSelect: (String) -> Uni
                     border = if (active) BorderStroke(1.dp, MaterialTheme.colorScheme.reactionSelectedOutline) else null,
                 ) {
                     Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
-                        Text("#${tag.name}", style = MaterialTheme.typography.labelLarge)
+                        Text("#${tag.name}" + (tag.statusesCount?.let { " ($it)" } ?: ""),
+                            style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }

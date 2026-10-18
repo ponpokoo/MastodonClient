@@ -43,7 +43,7 @@ class ProfileFeaturedTagsDeviceTest {
 
     private fun verify(theme: ThemeMode, fontScale: Float = 1f) {
         val state = mutableStateOf(ProfileUiState(profile = profile,
-            featuredTags = listOf(FeaturedTag("one", "写真"), FeaturedTag("two", "NowPlaying"),
+            featuredTags = listOf(FeaturedTag("one", "写真", 350), FeaturedTag("two", "NowPlaying", 0),
                 FeaturedTag("three", "長いハッシュタグも画面幅に合わせて折り返して表示します")),
             profileTabs = mapOf(ProfileStatusTab.Posts to ProfileTabUiState(statuses = profile.statuses, isLoaded = true, endReached = true))))
         rule.setContent {
@@ -65,10 +65,10 @@ class ProfileFeaturedTagsDeviceTest {
             }
         }
         val note = rule.onNodeWithText("プロフィールの自己紹介").fetchSemanticsNode().boundsInRoot
-        val chip = rule.onNodeWithText("#写真").fetchSemanticsNode().boundsInRoot
+        val chip = rule.onNodeWithText("#写真 (350)").fetchSemanticsNode().boundsInRoot
         val field = rule.onNodeWithText("プロフィール項目").fetchSemanticsNode().boundsInRoot
         assertTrue(chip.top > note.bottom && field.top > chip.bottom)
-        rule.onNodeWithText("#写真").performClick()
+        rule.onNodeWithText("#写真 (350)").performClick()
         rule.runOnIdle { assertEquals("写真", state.value.selectedHashtag) }
         rule.onNodeWithText("固定された投稿").assertDoesNotExist()
         rule.onNodeWithText("通常の投稿").assertDoesNotExist()
@@ -81,9 +81,9 @@ class ProfileFeaturedTagsDeviceTest {
         File(directory, "profile-featured-tags-${theme.name.lowercase()}-$fontScale.png").outputStream().use {
             image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
-        rule.onNodeWithText("#NowPlaying").performClick()
+        rule.onNodeWithText("#NowPlaying (0)").performClick()
         rule.runOnIdle { assertEquals("NowPlaying", state.value.selectedHashtag) }
-        rule.onNodeWithText("#NowPlaying").performClick()
+        rule.onNodeWithText("#NowPlaying (0)").performClick()
         rule.runOnIdle { assertEquals(null, state.value.selectedHashtag) }
         rule.onNodeWithText("固定された投稿").assertExists()
     }

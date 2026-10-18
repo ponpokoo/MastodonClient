@@ -24,6 +24,7 @@ local.properties
 /.npm-cache/
 # Internal release notes are stored locally and backed up with release artifacts.
 /app/release/*-release-notes.md
+/app/release/*-release-package-*.zip
 # Keep generated release binaries and IDE export metadata out of source control.
 /app/release/**/*.apk
 /app/release/**/*.aab
