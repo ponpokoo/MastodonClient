@@ -308,9 +308,8 @@ class AccountProfileViewModel(
         }
     }
 
-    fun unfollowStatus(status: TimelineStatus) = accountMutation {
-        timelineRepository.setFollowing(it, status.author.id, false)
-    }
+    fun followStatus(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, true)
+    fun unfollowStatus(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, false)
     fun muteStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
     fun blockStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
     fun reportStatus(status: TimelineStatus, comment: String) {
@@ -348,8 +347,11 @@ class AccountProfileViewModel(
 
     fun addProfileToList(listId: String) {
         val current = session ?: return
+        _uiState.update { it.copy(message = null, errorMessage = null) }
         viewModelScope.launch {
-            timelineRepository.addAccountToList(current, listId, accountId).fold(
+            val result = timelineRepository.addAccountToList(current, listId, accountId)
+            currentCoroutineContext().ensureActive()
+            result.fold(
                 onSuccess = { _uiState.update { it.copy(message = "リストに追加しました") } },
                 onFailure = ::showError,
             )
@@ -383,15 +385,14 @@ class AccountProfileViewModel(
     private fun relationshipMutation(request: suspend (AccountSession, AccountRelationship) -> Result<AccountRelationship>) {
         val current = session ?: return; val relationship = _uiState.value.relationship ?: return
         _uiState.update { it.copy(isMutating = true) }
-        viewModelScope.launch { request(current, relationship).fold({ rel -> _uiState.update { it.copy(relationship = rel, isMutating = false) } }, ::showError) }
-    }
-    private fun accountMutation(request: suspend (AccountSession) -> Result<AccountRelationship>) {
-        val current = session ?: return
         viewModelScope.launch {
-            request(current).fold(
-                onSuccess = { relationship -> _uiState.update { it.copy(relationship = relationship) } },
-                onFailure = ::showError,
-            )
+            val result = request(current, relationship)
+            currentCoroutineContext().ensureActive()
+            if (!current.hasSameCredentials(authRepository.restoreSession())) return@launch
+            result.fold({ rel ->
+                _uiState.update { it.copy(relationship = rel, isMutating = false) }
+                moderationMenu.remember(accountId, rel)
+            }, ::showError)
         }
     }
     private fun showError(error: Throwable) = _uiState.update { it.copy(isLoading = false, isRefreshing = false, isLoadingMore = false, isMutating = false, errorMessage = error.message ?: "操作に失敗しました") }

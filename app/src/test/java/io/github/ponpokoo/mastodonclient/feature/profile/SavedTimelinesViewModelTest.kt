@@ -15,6 +15,152 @@ import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SavedTimelinesViewModelTest : ScreenViewModelTestBase() {
+    @Test fun listAccountsRetryTheSamePageAndRemoveOnlyAfterSuccessWithoutDuplicateRequests() = runTest(dispatcher) {
+        val alice = testStatus().author.copy(id = "alice")
+        val bob = alice.copy(id = "bob")
+        val cursors = mutableListOf<String?>()
+        val removals = mutableListOf<String>()
+        var timelineLoads = 0
+        var removal = CompletableDeferred<Result<Unit>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> {
+                timelineLoads++
+                return Result.success(TimelinePage(emptyList(), null, true))
+            }
+            override suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String?): Result<AccountListPage> {
+                assertEquals("friends", listId)
+                cursors += maxId
+                return when (cursors.size) {
+                    1 -> Result.success(AccountListPage(listOf(alice), "opaque", false))
+                    2 -> Result.failure(IOException("offline"))
+                    else -> Result.success(AccountListPage(listOf(alice, bob), null, true))
+                }
+            }
+            override suspend fun removeAccountFromList(session: AccountSession, listId: String, accountId: String): Result<Unit> {
+                assertEquals("friends", listId)
+                removals += accountId
+                return removal.await()
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val model = own(SavedTimelinesViewModel(SavedTimelineKind.List, "friends", repository, browsing))
+        advanceUntilIdle()
+        model.openListAccounts(); model.openListAccounts(); advanceUntilIdle()
+        model.loadListAccounts(); advanceUntilIdle()
+        assertEquals(listOf(alice), model.state.value.listAccounts.accounts)
+        assertNotNull(model.state.value.listAccounts.error)
+        model.loadListAccounts(); advanceUntilIdle()
+        assertEquals(listOf(null, "opaque", "opaque"), cursors)
+        assertEquals(listOf(alice, bob), model.state.value.listAccounts.accounts)
+        model.removeListAccount("alice"); model.removeListAccount("alice"); runCurrent()
+        assertEquals(listOf("alice"), removals)
+        assertEquals(listOf(alice, bob), model.state.value.listAccounts.accounts)
+        removal.complete(Result.failure(IOException("offline"))); advanceUntilIdle()
+        assertNotNull(model.state.value.listAccounts.actionError)
+        assertEquals(1, timelineLoads)
+        assertEquals(listOf(alice, bob), model.state.value.listAccounts.accounts)
+        removal = CompletableDeferred()
+        model.removeListAccount("alice"); runCurrent()
+        removal.complete(Result.success(Unit)); advanceUntilIdle()
+        assertEquals(listOf(bob), model.state.value.listAccounts.accounts)
+        assertEquals("リストから削除しました", model.state.value.listAccounts.message)
+        assertNull(model.state.value.listAccounts.actionError)
+        assertEquals(2, timelineLoads)
+    }
+
+    @Test fun removalRefreshRetainsPostsUntilResponseAndCanRetryAFailedRefreshAfterDialogCloses() = runTest(dispatcher) {
+        for (failRefresh in listOf(false, true)) {
+            val refresh = CompletableDeferred<Result<TimelinePage>>()
+            val cursors = mutableListOf<String?>()
+            val original = testStatus("original")
+            val updated = testStatus("updated")
+            val repository = object : ScreenRepositoryFake() {
+                override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> {
+                    assertEquals("friends", listId)
+                    cursors += maxId
+                    return when (cursors.size) {
+                        1 -> Result.success(TimelinePage(listOf(original), "old-cursor", false))
+                        2 -> refresh.await()
+                        else -> Result.success(TimelinePage(listOf(updated), null, true))
+                    }
+                }
+                override suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String?) =
+                    Result.success(AccountListPage(listOf(original.author), null, true))
+                override suspend fun removeAccountFromList(session: AccountSession, listId: String, accountId: String) = Result.success(Unit)
+            }
+            val model = own(SavedTimelinesViewModel(SavedTimelineKind.List, "friends", repository,
+                BrowsingSession().apply { activate(testAccount) }))
+            advanceUntilIdle(); model.openListAccounts(); advanceUntilIdle()
+            val displayedPosts = model.state.value.statuses
+            model.removeListAccount(original.author.id); runCurrent()
+            assertTrue(model.state.value.loading)
+            assertFalse(model.state.value.refreshing)
+            assertEquals(displayedPosts, model.state.value.statuses)
+            assertTrue(model.state.value.listAccounts.accounts.isEmpty())
+            assertEquals(listOf(null, null), cursors)
+            model.dismissListAccounts()
+            refresh.complete(if (failRefresh) Result.failure(IOException("offline"))
+                else Result.success(TimelinePage(listOf(updated), null, true)))
+            advanceUntilIdle()
+            if (failRefresh) {
+                assertEquals(displayedPosts, model.state.value.statuses)
+                assertEquals("offline", model.state.value.error)
+                model.retry(); advanceUntilIdle()
+                assertEquals(listOf(null, null, null), cursors)
+            }
+            assertEquals(listOf(updated.statusId), model.state.value.statuses.map { it.statusId })
+            assertNull(model.state.value.nextMaxId)
+            assertNull(model.state.value.error)
+            assertFalse(model.state.value.listAccounts.open)
+        }
+    }
+
+    @Test fun closingAndReopeningRejectsTheOldAccountPage() = runTest(dispatcher) {
+        val oldPage = CompletableDeferred<Result<AccountListPage>>()
+        var calls = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String?): Result<AccountListPage> =
+                if (++calls == 1) withContext(NonCancellable) { oldPage.await() }
+                else Result.success(AccountListPage(listOf(testStatus().author.copy(id = "new")), null, true))
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val model = own(SavedTimelinesViewModel(SavedTimelineKind.List, "friends", repository, browsing))
+        advanceUntilIdle(); model.openListAccounts(); runCurrent()
+        model.dismissListAccounts(); model.openListAccounts(); runCurrent()
+        oldPage.complete(Result.success(AccountListPage(listOf(testStatus().author), "old", false))); advanceUntilIdle()
+        assertEquals("new", model.state.value.listAccounts.accounts.single().id)
+        assertNull(model.state.value.listAccounts.nextMaxId)
+    }
+
+    @Test fun sessionSwitchRejectsOldRemovalAndClosesAccountManagement() = runTest(dispatcher) {
+        val removal = CompletableDeferred<Result<Unit>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String?) =
+                Result.success(AccountListPage(listOf(testStatus().author), null, true))
+            override suspend fun removeAccountFromList(session: AccountSession, listId: String, accountId: String) =
+                withContext(NonCancellable) { removal.await() }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val model = own(SavedTimelinesViewModel(SavedTimelineKind.List, "friends", repository, browsing))
+        advanceUntilIdle(); model.openListAccounts(); advanceUntilIdle()
+        model.removeListAccount(testStatus().author.id); runCurrent()
+        browsing.activate(secondAccount); runCurrent()
+        removal.complete(Result.success(Unit)); advanceUntilIdle()
+        assertFalse(model.state.value.listAccounts.open)
+        assertNull(model.state.value.listAccounts.message)
+        assertTrue(model.state.value.listAccounts.accounts.isEmpty())
+    }
+
+    @Test fun accountManagementIsUnavailableOutsideAnIndividualList() = runTest(dispatcher) {
+        for (kind in listOf(null, SavedTimelineKind.Bookmarks, SavedTimelineKind.Favourites)) {
+            val browsing = BrowsingSession().apply { activate(testAccount) }
+            val model = own(SavedTimelinesViewModel(kind, null, ScreenRepositoryFake(), browsing))
+            advanceUntilIdle(); model.openListAccounts()
+            assertFalse(model.canManageAccounts)
+            assertFalse(model.state.value.listAccounts.open)
+        }
+    }
+
     @Test fun listFilterRefreshIsSilentAndItsDisplayCheckIsCancelledOnAccountChange() = runTest(dispatcher) {
         val page = CompletableDeferred<Result<TimelinePage>>()
         var calls = 0

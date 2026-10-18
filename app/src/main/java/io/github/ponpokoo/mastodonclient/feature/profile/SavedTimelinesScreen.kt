@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -56,6 +57,7 @@ fun SavedTimelinesScreen(
     var confirmation by remember(state.sessionKey) { mutableStateOf<StatusConfirmation?>(null) }
     var reportStatus by remember(state.sessionKey) { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember(state.sessionKey) { mutableStateOf<TimelineStatus?>(null) }
+    var listMenuOpen by remember(state.sessionKey) { mutableStateOf(false) }
     LaunchedEffect(state.sessionKey, actionsState.actionMessage) {
         actionsState.actionMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -78,6 +80,19 @@ fun SavedTimelinesScreen(
             windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
             title = { Text(title, Modifier.clickable { scope.launch { listState.animateToTimelineTop() } }) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
+            actions = {
+                if (viewModel.canManageAccounts) Box {
+                    IconButton(onClick = { listMenuOpen = true }) {
+                        Icon(Icons.Outlined.MoreVert, "リストのその他メニュー")
+                    }
+                    DropdownMenu(expanded = listMenuOpen, onDismissRequest = { listMenuOpen = false }) {
+                        DropdownMenuItem(text = { Text("アカウントを管理") }, onClick = {
+                            listMenuOpen = false
+                            viewModel.openListAccounts()
+                        })
+                    }
+                }
+            },
         ) },
     ) { padding ->
         if (state.loading && !state.loaded) {
@@ -110,7 +125,10 @@ fun SavedTimelinesScreen(
                                 onReact = actionsViewModel::setReaction,
                                 onVotePoll = actionsViewModel::votePoll,
                                 onQuote = onQuote,
-                                onMoreClick = { menuStatus = it },
+                                onMoreClick = {
+                                    if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
+                                    menuStatus = it
+                                },
                                 preferences = preferences,
                             )
                         }
@@ -133,8 +151,18 @@ fun SavedTimelinesScreen(
             }
         }
     }
-    LaunchedEffect(state.sessionKey, menuStatus?.author?.id) {
-        menuStatus?.author?.id?.let { actionsViewModel.loadModerationMenu(it) }
+    if (state.listAccounts.open) {
+        ListAccountsDialog(
+            state = state.listAccounts,
+            preferences = preferences,
+            onDismiss = viewModel::dismissListAccounts,
+            onLoadMore = viewModel::loadListAccounts,
+            onRemove = viewModel::removeListAccount,
+            onAccountClick = { accountId ->
+                viewModel.dismissListAccounts()
+                onAccountClick(accountId)
+            },
+        )
     }
     menuStatus?.let { status ->
         StatusMenuDialog(
@@ -151,6 +179,7 @@ fun SavedTimelinesScreen(
             onEdit = { menuStatus = null; onEditStatus(status.statusId) },
             onDelete = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Delete, status) },
             onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
+            onFollow = { menuStatus = null; actionsViewModel.follow(status) },
             onUnfollow = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, status) },
             onMute = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), status) },
             onBlock = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), status) },
@@ -176,7 +205,7 @@ fun SavedTimelinesScreen(
         }
     }
     listStatus?.let { status ->
-        ListPickerSheet(actionsState.lists, actionsState.isLoadingLists, { listStatus = null }) { listId ->
+        ListPickerDialog(actionsState.lists, actionsState.isLoadingLists, { listStatus = null }) { listId ->
             actionsViewModel.addToList(status, listId)
             listStatus = null
         }

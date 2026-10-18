@@ -255,6 +255,10 @@ interface TimelineRepository : ServerAccountSettingsRepository {
         Result.failure(UnsupportedOperationException("リストは未対応です"))
     suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String): Result<Unit> =
         Result.failure(UnsupportedOperationException("リスト追加は未対応です"))
+    suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String? = null): Result<AccountListPage> =
+        Result.failure(UnsupportedOperationException("リストのアカウント取得は未対応です"))
+    suspend fun removeAccountFromList(session: AccountSession, listId: String, accountId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("リストからの削除は未対応です"))
     suspend fun getSavedTimeline(
         session: AccountSession,
         kind: SavedTimelineKind,

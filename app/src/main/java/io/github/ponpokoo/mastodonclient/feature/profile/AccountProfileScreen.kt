@@ -36,7 +36,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
-import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -187,15 +187,15 @@ fun AccountProfileScreen(
             onReportProfile = { reportOpen = true },
             isProfileMuted = moderationMenu.relationship?.muting == true,
             isProfileBlocked = moderationMenu.relationship?.blocking == true,
-            onMoreClick = { statusMenu = it },
+            onMoreClick = {
+                if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
+                statusMenu = it
+            },
             listStates = profileListStates,
             headerListState = profileHeaderListState,
         )
     }
 
-    LaunchedEffect(statusMenu?.author?.id) {
-        statusMenu?.author?.id?.let { viewModel.loadModerationMenu(it) }
-    }
     statusMenu?.let { status ->
         StatusMenuDialog(
             status = status,
@@ -211,6 +211,7 @@ fun AccountProfileScreen(
             onEdit = { statusMenu = null; onEditStatus(status.statusId) },
             onDelete = { statusMenu = null; statusConfirmation = StatusConfirmation(StatusConfirmationAction.Delete, status) },
             onAddToList = { statusMenu = null; listStatus = status; viewModel.loadLists() },
+            onFollow = { statusMenu = null; viewModel.followStatus(status) },
             onUnfollow = { statusMenu = null; statusConfirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, status) },
             onMute = { statusMenu = null; statusConfirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), status) },
             onBlock = { statusMenu = null; statusConfirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), status) },
@@ -236,13 +237,13 @@ fun AccountProfileScreen(
         }
     }
     listStatus?.let { status ->
-        ListPickerSheet(state.lists, state.isLoadingLists, { listStatus = null }) { listId ->
+        ListPickerDialog(state.lists, state.isLoadingLists, { listStatus = null }) { listId ->
             viewModel.addToList(status, listId)
             listStatus = null
         }
     }
     if (profileListOpen) {
-        ListPickerSheet(state.lists, state.isLoadingLists, { profileListOpen = false }) { listId ->
+        ListPickerDialog(state.lists, state.isLoadingLists, { profileListOpen = false }) { listId ->
             viewModel.addProfileToList(listId)
             profileListOpen = false
         }
@@ -272,7 +273,9 @@ fun AccountProfileScreen(
                 ProfileAccountAction.Block -> viewModel.setProfileBlocked(true)
             }
             confirmAction = null
-        }) { Text(if (action == ProfileAccountAction.Unfollow) "フォロー解除" else "実行") } },
+        }, colors = ButtonDefaults.textButtonColors(contentColor =
+            if (action == ProfileAccountAction.Unfollow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
+        ) { Text(if (action == ProfileAccountAction.Unfollow) "フォロー解除" else "実行") } },
         dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("キャンセル") } },
     ) }
     if (reportOpen) ReportDialog(onDismiss = { reportOpen = false }, onSubmit = { text, forward -> viewModel.report(text, forward); reportOpen = false })

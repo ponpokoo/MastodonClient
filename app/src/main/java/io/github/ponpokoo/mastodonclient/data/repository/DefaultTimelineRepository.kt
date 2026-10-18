@@ -322,9 +322,35 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String) = runCatching {
-        apiClientFactory.create(session.instanceUrl, session.accessToken)
-            .addAccountsToList(listId, listOf(accountId))
+        try {
+            apiClientFactory.create(session.instanceUrl, session.accessToken)
+                .addAccountsToList(listId, listOf(accountId))
+        } catch (error: HttpException) {
+            if (error.code() == 422) throw IllegalStateException("このリストには追加済みです", error)
+            throw error
+        }
         Unit
+    }
+
+    override suspend fun getListAccounts(session: AccountSession, listId: String, maxId: String?) = try {
+        val response = apiClientFactory.create(session.instanceUrl, session.accessToken).getListAccounts(listId, maxId)
+        if (!response.isSuccessful) throw HttpException(response)
+        val accounts = response.body().orEmpty().map(AccountDto::toDomain)
+        val nextMaxId = nextAccountListCursor(response.headers()["Link"])
+        Result.success(AccountListPage(accounts, nextMaxId, nextMaxId == null || accounts.isEmpty()))
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
+
+    override suspend fun removeAccountFromList(session: AccountSession, listId: String, accountId: String) = try {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).removeAccountsFromList(listId, listOf(accountId))
+        Result.success(Unit)
+    } catch (error: kotlinx.coroutines.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
     }
 
     override suspend fun getSavedTimeline(

@@ -8,6 +8,90 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountModerationMenuTest {
+    @Test fun followAndUnfollowUpdateTheRelationshipReusedWhenReopening() = runTest {
+        var lookups = 0
+        val calls = mutableListOf<Pair<String, Boolean>>()
+        val updates = mutableListOf<AccountRelationship>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> {
+                lookups++
+                return Result.success(AccountRelationship(followedBy = true))
+            }
+            override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> {
+                calls += accountId to following
+                return Result.success(AccountRelationship(following = following, followedBy = true))
+            }
+        }
+        val menu = AccountModerationMenu(repository, this, { testAccount }, { 1 }, message = {},
+            updated = { _, relationship -> updates += relationship })
+        menu.load("author"); advanceUntilIdle()
+        menu.setFollowing("author", true); advanceUntilIdle()
+        menu.load("author"); advanceUntilIdle()
+        assertTrue(menu.state.value.relationship!!.following)
+        menu.setFollowing("author", false); advanceUntilIdle()
+        menu.load("author"); advanceUntilIdle()
+        assertFalse(menu.state.value.relationship!!.following)
+        assertTrue(menu.state.value.relationship!!.followedBy)
+        assertEquals(listOf("author" to true, "author" to false), calls)
+        assertEquals(listOf(false, true, false), updates.map { it.following })
+        assertEquals(1, lookups)
+    }
+
+    @Test fun pendingFollowRequestUsesServerStateAndCannotBeSentAgain() = runTest {
+        var calls = 0
+        val messages = mutableListOf<String>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getRelationship(session: AccountSession, accountId: String) =
+                Result.success(AccountRelationship())
+            override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> {
+                calls++
+                return Result.success(AccountRelationship(requested = true))
+            }
+        }
+        val menu = AccountModerationMenu(repository, this, { testAccount }, { 1 }, message = messages::add)
+        menu.load("author"); advanceUntilIdle()
+        menu.setFollowing("author", true); advanceUntilIdle()
+        menu.load("author"); advanceUntilIdle()
+        menu.setFollowing("author", true)
+        menu.setFollowing("author", false)
+        advanceUntilIdle()
+        assertTrue(menu.state.value.relationship!!.requested)
+        assertFalse(menu.state.value.relationship!!.following)
+        assertEquals(1, calls)
+        assertEquals(listOf("フォローリクエストを送信しました"), messages)
+    }
+
+    @Test fun failedFollowRetainsStateAndRejectsUnknownTargetsAndDuplicateRequests() = runTest {
+        val response = CompletableDeferred<Result<AccountRelationship>>()
+        val calls = mutableListOf<Pair<String, Boolean>>()
+        val messages = mutableListOf<String>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getRelationship(session: AccountSession, accountId: String) =
+                Result.success(AccountRelationship())
+            override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> {
+                calls += accountId to following
+                return response.await()
+            }
+        }
+        val menu = AccountModerationMenu(repository, this, { testAccount }, { 1 }, message = messages::add)
+        menu.setFollowing("author", true)
+        menu.load("author")
+        menu.setFollowing("author", true)
+        advanceUntilIdle()
+        menu.setFollowing("another-author", true)
+        menu.setFollowing("author", false)
+        assertTrue(calls.isEmpty())
+        menu.setFollowing("author", true); runCurrent()
+        menu.setFollowing("author", true); runCurrent()
+        assertTrue(menu.state.value.busy)
+        response.complete(Result.failure(IllegalStateException("offline")))
+        advanceUntilIdle()
+        assertEquals(listOf("author" to true), calls)
+        assertFalse(menu.state.value.relationship!!.following)
+        assertFalse(menu.state.value.busy)
+        assertEquals(listOf("offline"), messages)
+    }
+
     @Test fun reopeningReusesFreshStateButExpiryAndContextChangesReloadIt() = runTest {
         var now = 0L
         var context = 1

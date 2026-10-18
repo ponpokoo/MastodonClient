@@ -36,6 +36,64 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         override suspend fun logout() = Unit
     }
 
+    @Test fun headerFollowAndPostMenuUnfollowShareTheUpdatedRelationship() = runTest(dispatcher) {
+        var lookups = 0
+        val calls = mutableListOf<Pair<String, Boolean>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfile(session: AccountSession, accountId: String) =
+                Result.success(testProfile().copy(author = testStatus().author.copy(id = accountId), isOwnProfile = false))
+            override suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> {
+                lookups++
+                return Result.success(AccountRelationship())
+            }
+            override suspend fun setFollowing(session: AccountSession, accountId: String, following: Boolean): Result<AccountRelationship> {
+                calls += accountId to following
+                return Result.success(AccountRelationship(following = following))
+            }
+        }
+        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle()
+        viewModel.toggleFollow(); advanceUntilIdle()
+        viewModel.loadModerationMenu(); advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.relationship!!.following)
+        assertTrue(viewModel.moderationMenuState.value.relationship!!.following)
+        viewModel.unfollowStatus(testStatus().copy(author = testStatus().author.copy(id = "author")))
+        advanceUntilIdle()
+        viewModel.loadModerationMenu(); advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.relationship!!.following)
+        assertFalse(viewModel.moderationMenuState.value.relationship!!.following)
+        assertEquals(listOf("author" to true, "author" to false), calls)
+        assertEquals(1, lookups)
+    }
+
+    @Test fun duplicateProfileListAdditionReplacesSuccessWithAnErrorAndCanBeRetried() = runTest(dispatcher) {
+        val calls = mutableListOf<Pair<String, String>>()
+        var result = Result.success(Unit)
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String): Result<Unit> {
+                assertEquals(testAccount, session)
+                calls += listId to accountId
+                return result
+            }
+        }
+        val model = own(AccountProfileViewModel("author", repository, auth))
+        advanceUntilIdle()
+        model.clearMessage()
+        model.addProfileToList("friends"); advanceUntilIdle()
+        assertEquals("リストに追加しました", model.uiState.value.message)
+
+        result = Result.failure(IllegalStateException("このリストには追加済みです"))
+        model.addProfileToList("friends"); advanceUntilIdle()
+        assertNull(model.uiState.value.message)
+        assertEquals("このリストには追加済みです", model.uiState.value.errorMessage)
+
+        result = Result.success(Unit)
+        model.addProfileToList("work"); advanceUntilIdle()
+        assertNull(model.uiState.value.errorMessage)
+        assertEquals("リストに追加しました", model.uiState.value.message)
+        assertEquals(listOf("friends" to "author", "friends" to "author", "work" to "author"), calls)
+    }
+
     @Test fun filterRefreshStaysQuietAndManualRefreshIndicatorStopsOnFailure() = runTest(dispatcher) {
         var finish = CompletableDeferred<Result<TimelinePage>>()
         var calls = 0

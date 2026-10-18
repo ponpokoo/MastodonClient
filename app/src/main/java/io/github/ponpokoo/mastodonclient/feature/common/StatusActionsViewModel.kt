@@ -84,9 +84,8 @@ class StatusActionsViewModel(
         }
     }
 
-    fun unfollow(status: TimelineStatus) = accountAction("${status.author.displayName}さんのフォローを解除しました") {
-        timelineRepository.setFollowing(it, status.author.id, false)
-    }
+    fun follow(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, true)
+    fun unfollow(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, false)
 
     fun mute(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
     fun block(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
@@ -162,20 +161,6 @@ class StatusActionsViewModel(
                     } else error.message ?: "投稿を更新できませんでした"
                     _uiState.update { it.copy(actionMessage = message) }
                 }
-        }
-    }
-
-    private fun accountAction(
-        successMessage: String,
-        request: suspend (AccountSession) -> Result<*>,
-    ) {
-        val snapshot = currentSnapshot() ?: return
-        val session = snapshot.account!!
-        requestScope.launch {
-            request(session).forSession(snapshot).fold(
-                onSuccess = { _uiState.update { it.copy(actionMessage = successMessage) } },
-                onFailure = { showActionError(it, "アカウント操作に失敗しました") },
-            )
         }
     }
 

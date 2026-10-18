@@ -950,6 +950,77 @@ class DefaultTimelineRepositoryTest {
         }
     }
 
+    @Test fun listAccountsFollowLinkCursorAndRemovalUsesOnlyTheChosenMember() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""[{"id":"remote-user","username":"alice","acct":"alice@remote.example"}]""")
+                .addHeader("Link", "<https://other.example/api/v1/lists/friends/accounts?max_id=opaque%2Bcursor>; rel=\"next\""))
+            server.enqueue(MockResponse().setBody("[]"))
+            server.enqueue(MockResponse().setBody("{}"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            val page = repository.getListAccounts(session, "friends").getOrThrow()
+            assertEquals("remote-user", page.accounts.single().id)
+            assertEquals("opaque+cursor", page.nextMaxId)
+            assertFalse(page.endReached)
+            assertTrue(repository.getListAccounts(session, "friends", page.nextMaxId).getOrThrow().endReached)
+            repository.removeAccountFromList(session, "friends", page.accounts.single().id).getOrThrow()
+            assertEquals("/api/v1/lists/friends/accounts?limit=40", server.takeRequest().path)
+            assertEquals("/api/v1/lists/friends/accounts?max_id=opaque%2Bcursor&limit=40", server.takeRequest().path)
+            val removal = server.takeRequest()
+            assertEquals("DELETE", removal.method)
+            assertEquals("/api/v1/lists/friends/accounts", removal.path)
+            assertEquals("account_ids%5B%5D=remote-user", removal.body.readUtf8())
+        }
+    }
+
+    @Test fun listAccountFailuresRemainFailuresRatherThanEmptyOrRemovedAccounts() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(403).setBody("{}"))
+            server.enqueue(MockResponse().setResponseCode(500).setBody("{}"))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            assertTrue(repository.getListAccounts(testSession(server), "friends").isFailure)
+            assertTrue(repository.removeAccountFromList(testSession(server), "friends", "remote-user").isFailure)
+        }
+    }
+
+    @Test fun addsListMemberUsingStringIdsAndTheSelectedInstance() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("{}"))
+            val result = DefaultTimelineRepository(ApiClientFactory())
+                .addAccountToList(testSession(server), "friends", "remote-user")
+
+            assertTrue(result.isSuccess)
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/v1/lists/friends/accounts", request.path)
+            assertEquals("account_ids%5B%5D=remote-user", request.body.readUtf8())
+        }
+    }
+
+    @Test fun duplicateListMemberReturnsAnAlreadyAddedError() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(422)
+                .setBody("""{"error":"Validation failed: Account has already been taken"}"""))
+            val result = DefaultTimelineRepository(ApiClientFactory())
+                .addAccountToList(testSession(server), "friends", "remote-user")
+
+            assertTrue(result.isFailure)
+            assertEquals("このリストには追加済みです", result.exceptionOrNull()?.message)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test fun unrelatedListErrorsAreNotReportedAsAlreadyAdded() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            for (code in listOf(401, 403, 404, 500)) {
+                server.enqueue(MockResponse().setResponseCode(code).setBody("{}"))
+                val error = repository.addAccountToList(testSession(server), "friends", "remote-user").exceptionOrNull()
+                assertEquals(code, (error as retrofit2.HttpException).code())
+            }
+        }
+    }
+
     @Test
     fun pinsAndUnpinsUsingExpectedEndpoints() = runTest {
         MockWebServer().use { server ->

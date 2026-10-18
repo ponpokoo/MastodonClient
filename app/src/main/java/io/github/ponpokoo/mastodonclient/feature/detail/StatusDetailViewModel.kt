@@ -113,9 +113,8 @@ class StatusDetailViewModel(
         }
     }
 
-    fun unfollow(status: TimelineStatus) = runAccountAction("フォローを解除しました") {
-        timelineRepository.setFollowing(it, status.author.id, false)
-    }
+    fun follow(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, true)
+    fun unfollow(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, false)
 
     fun mute(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
     fun block(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)

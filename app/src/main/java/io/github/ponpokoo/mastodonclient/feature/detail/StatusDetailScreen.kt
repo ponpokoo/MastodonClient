@@ -80,7 +80,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
-import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
@@ -194,7 +194,10 @@ fun StatusDetailScreen(
                         onReply = { onReply(status.statusId) },
                         onBoost = viewModel::toggleReblog,
                         onQuote = { mode -> onQuote(status, mode) },
-                        onMoreClick = { menuStatus = it },
+                        onMoreClick = {
+                            if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
+                            menuStatus = it
+                        },
                         onFavourite = viewModel::toggleFavourite,
                         onVotePoll = viewModel::votePoll,
                         onReact = viewModel::setReaction,
@@ -238,9 +241,6 @@ fun StatusDetailScreen(
         }
     }
 
-    LaunchedEffect(menuStatus?.author?.id) {
-        menuStatus?.author?.id?.let { viewModel.loadModerationMenu(it) }
-    }
     menuStatus?.let { selected ->
         StatusMenuDialog(
             status = selected,
@@ -256,6 +256,7 @@ fun StatusDetailScreen(
             onEdit = { menuStatus = null; onEditStatus(selected.statusId) },
             onDelete = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Delete, selected) },
             onAddToList = { menuStatus = null; listStatus = selected; viewModel.loadLists() },
+            onFollow = { menuStatus = null; viewModel.follow(selected) },
             onUnfollow = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, selected) },
             onMute = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), selected) },
             onBlock = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), selected) },
@@ -287,7 +288,7 @@ fun StatusDetailScreen(
         )
     }
     listStatus?.let { selected ->
-        ListPickerSheet(
+        ListPickerDialog(
             lists = state.lists,
             loading = state.isLoadingLists,
             onDismiss = { listStatus = null },

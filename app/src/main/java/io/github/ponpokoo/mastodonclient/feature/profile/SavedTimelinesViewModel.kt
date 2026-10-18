@@ -12,6 +12,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+data class ListAccountsUiState(
+    val open: Boolean = false,
+    val accounts: List<StatusAuthor> = emptyList(),
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val nextMaxId: String? = null,
+    val error: String? = null,
+    val removingId: String? = null,
+    val actionError: String? = null,
+    val message: String? = null,
+)
+
 data class SavedTimelinesUiState(
     val lists: List<MastodonList> = emptyList(),
     val statuses: List<TimelineStatus> = emptyList(),
@@ -24,6 +36,7 @@ data class SavedTimelinesUiState(
     val error: String? = null,
     val appendFailed: Boolean = false,
     val sessionKey: String? = null,
+    val listAccounts: ListAccountsUiState = ListAccountsUiState(),
 )
 
 class SavedTimelinesViewModel(
@@ -38,6 +51,9 @@ class SavedTimelinesViewModel(
     }
     private var pageJob: Job? = null
     private var generation = 0L
+    private var accountsJob: Job? = null
+    private var accountsGeneration = 0L
+    val canManageAccounts: Boolean get() = kind == SavedTimelineKind.List && listId != null
     private val updatesDuringRequest = mutableMapOf<String, TimelineStatus>()
     private val deletedDuringRequest = mutableSetOf<String>()
 
@@ -47,6 +63,8 @@ class SavedTimelinesViewModel(
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         generation++
+        accountsGeneration++
+        accountsJob = null
         pageJob = null
         updatesDuringRequest.clear()
         deletedDuringRequest.clear()
@@ -73,6 +91,72 @@ class SavedTimelinesViewModel(
         val state = mutableState.value
         if (kind != null && !state.loading && !state.loadingMore && state.error == null &&
             !state.endReached && state.nextMaxId != null) requestPage(append = true, pull = false)
+    }
+
+    fun openListAccounts() {
+        if (!canManageAccounts || currentSnapshot() == null || mutableState.value.listAccounts.open) return
+        updateListAccounts { ListAccountsUiState(open = true) }
+        loadListAccounts()
+    }
+
+    fun dismissListAccounts() {
+        accountsGeneration++
+        accountsJob?.cancel()
+        updateListAccounts { ListAccountsUiState() }
+    }
+
+    fun loadListAccounts() {
+        val snapshot = currentSnapshot() ?: return
+        val current = mutableState.value.listAccounts
+        if (!canManageAccounts || !current.open || current.loading || current.removingId != null) return
+        val cursor = if (current.loaded) current.nextMaxId ?: return else null
+        val requestGeneration = ++accountsGeneration
+        updateListAccounts { it.copy(loading = true, error = null) }
+        accountsJob = requestScope.launch {
+            val result = repository.getListAccounts(snapshot.account!!, listId!!, cursor).forSession(snapshot)
+            if (requestGeneration != accountsGeneration) return@launch
+            result.fold(
+                onSuccess = { page -> updateListAccounts {
+                    it.copy(accounts = (it.accounts + page.accounts).distinctBy(StatusAuthor::id),
+                        loading = false, loaded = true,
+                        nextMaxId = page.nextMaxId.takeUnless { page.endReached || it == cursor })
+                } },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    updateListAccounts { it.copy(loading = false, error = "アカウントを取得できませんでした") }
+                },
+            )
+        }
+    }
+
+    fun removeListAccount(accountId: String) {
+        val snapshot = currentSnapshot() ?: return
+        val current = mutableState.value.listAccounts
+        if (!canManageAccounts || !current.open || current.loading || current.removingId != null ||
+            current.accounts.none { it.id == accountId }) return
+        val requestGeneration = ++accountsGeneration
+        updateListAccounts { it.copy(removingId = accountId, actionError = null, message = null) }
+        accountsJob = requestScope.launch {
+            val result = repository.removeAccountFromList(snapshot.account!!, listId!!, accountId).forSession(snapshot)
+            if (requestGeneration != accountsGeneration) return@launch
+            result.fold(
+                onSuccess = {
+                    updateListAccounts {
+                        it.copy(accounts = it.accounts.filterNot { account -> account.id == accountId },
+                            removingId = null, message = "リストから削除しました")
+                    }
+                    requestPage(append = false, pull = false)
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    updateListAccounts { it.copy(removingId = null, actionError = "リストから削除できませんでした") }
+                },
+            )
+        }
+    }
+
+    private fun updateListAccounts(update: (ListAccountsUiState) -> ListAccountsUiState) {
+        mutableState.update { it.copy(listAccounts = update(it.listAccounts)) }
     }
 
     private fun requestPage(append: Boolean, pull: Boolean): Job? {

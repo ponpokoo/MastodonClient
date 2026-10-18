@@ -15,6 +15,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenuState
 import io.github.ponpokoo.mastodonclient.feature.search.*
 import io.github.ponpokoo.mastodonclient.feature.tag.*
 import io.github.ponpokoo.mastodonclient.feature.timeline.SearchContent
@@ -54,7 +55,8 @@ class SearchTagStatusMenuDeviceTest {
                 onAccountClick = {}, onMediaClick = { _, _ -> },
                 onMoreClick = { selected = it; menu = it },
                 exploreState = ExploreUiState(tabs = mapOf(ExploreFeed.Posts to ExploreTabState(ExplorePage(statuses = posts)))))
-            menu?.let { post -> StatusMenuDialog(post, false, { menu = null }, {}, {}, {}, {}, {}, {}, {}, {}, {}) }
+            menu?.let { post -> StatusMenuDialog(post, false, { menu = null }, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                moderation = AccountModerationMenuState(post.author.id, AccountRelationship())) }
         } }
         rule.onAllNodesWithContentDescription("投稿メニュー")[1].performClick()
         rule.onNode(hasText("元の投稿者") and hasAnyAncestor(isDialog())).assertExists()
@@ -71,6 +73,7 @@ class SearchTagStatusMenuDeviceTest {
         var posts = listOf(first, boosted)
         var failLookup = false
         var failPin = false
+        var relationship = AccountRelationship()
         val reports = mutableListOf<Triple<String, String, String>>()
         val deletes = mutableListOf<String>()
         val pins = mutableListOf<String>()
@@ -81,7 +84,7 @@ class SearchTagStatusMenuDeviceTest {
         override suspend fun getTag(session: AccountSession, name: String) =
             Result.success(SearchTag(name, "https://one.example/tags/test", following = false))
         override suspend fun getRelationship(session: AccountSession, accountId: String): Result<AccountRelationship> =
-            if (failLookup) Result.failure(IllegalStateException("offline")) else Result.success(AccountRelationship())
+            if (failLookup) Result.failure(IllegalStateException("offline")) else Result.success(relationship)
         override suspend fun reportStatus(session: AccountSession, accountId: String, statusId: String, comment: String): Result<Unit> {
             reports += Triple(accountId, statusId, comment)
             return Result.success(Unit)
@@ -101,7 +104,8 @@ class SearchTagStatusMenuDeviceTest {
         val repository = Repository().apply { failLookup = true }
         withTag(repository) { _, _ ->
             openSecondMenu()
-            rule.onNodeWithText("ミュート").assertIsNotEnabled()
+            rule.onNodeWithText("ミュート").assertDoesNotExist()
+            rule.onNodeWithText("本文をコピー").assertDoesNotExist()
             rule.runOnIdle { repository.failLookup = false }
             rule.onNodeWithText("再試行").performClick()
             rule.onNodeWithText("ミュート").assertIsEnabled()
@@ -150,14 +154,14 @@ class SearchTagStatusMenuDeviceTest {
     }
 
     @Test fun accountChangeDiscardsTagMenuConfirmationAndReport() {
-        withTag(Repository()) { browsing, model ->
+        withTag(Repository().apply { relationship = AccountRelationship(following = true) }) { browsing, model ->
             openSecondMenu()
             switchAccount(browsing, model)
             rule.onNode(isDialog()).assertDoesNotExist()
             openSecondMenu()
             rule.onNodeWithText("フォロー解除").performClick()
             switchAccount(browsing, model)
-            rule.onNodeWithText("実行").assertDoesNotExist()
+            rule.onNode(isDialog()).assertDoesNotExist()
             openSecondMenu()
             rule.onNodeWithText("報告").performClick()
             rule.onNodeWithText("理由・補足").performTextInput("旧アカウントの入力")

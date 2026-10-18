@@ -4,17 +4,15 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +20,8 @@ import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.VolumeOff
@@ -29,15 +29,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -66,6 +65,7 @@ internal fun StatusMenuDialog(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onAddToList: () -> Unit,
+    onFollow: () -> Unit,
     onUnfollow: () -> Unit,
     onMute: () -> Unit,
     onBlock: () -> Unit,
@@ -75,6 +75,22 @@ internal fun StatusMenuDialog(
 ) {
     val context = LocalContext.current
     val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
+    val relationship = moderation?.takeIf { it.accountId == status.author.id }?.relationship
+    val relationshipReady = moderation != null && relationship != null && !moderation.loading && !moderation.busy
+    if (!isOwnStatus && !relationshipReady) {
+        val error = moderation?.takeIf { it.accountId == status.author.id && !it.loading && !it.busy }?.error
+        BackHandler { onDismiss() }
+        if (error != null) {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("メニューを開けませんでした") },
+                text = { Text(error) },
+                confirmButton = { TextButton(onClick = onRetryRelationship) { Text("再試行") } },
+                dismissButton = { TextButton(onClick = onDismiss) { Text("閉じる") } },
+            )
+        }
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -127,7 +143,16 @@ internal fun StatusMenuDialog(
                     Action("ブラウザで開く", Icons.Outlined.Public, action = onOpenBrowser)
                     Action("リストに追加", Icons.Outlined.PlaylistAdd, action = onAddToList)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    Action("フォロー解除", Icons.Outlined.PersonRemove, action = onUnfollow)
+                    if (relationship != null) {
+                        when {
+                            relationship.following -> Action("フォロー解除", Icons.Outlined.PersonRemove,
+                                destructive = true, enabled = relationshipReady, action = onUnfollow)
+                            relationship.requested -> Action("リクエスト中", Icons.Outlined.Schedule,
+                                enabled = false, action = {})
+                            else -> Action("フォロー", Icons.Outlined.PersonAdd,
+                                enabled = relationshipReady, action = onFollow)
+                        }
+                    }
                     Action(if (moderation?.relationship?.muting == true) "ミュート（解除）" else "ミュート",
                         Icons.Outlined.VolumeOff, destructive = true,
                         enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onMute)
@@ -135,7 +160,6 @@ internal fun StatusMenuDialog(
                         Icons.Outlined.Block, destructive = true,
                         enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onBlock)
                     Action("報告", Icons.Outlined.Flag, destructive = true, action = onReport)
-                    moderation?.error?.let { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = onRetryRelationship) { Text("再試行") } }
                 }
             }
         },
@@ -157,7 +181,13 @@ internal fun ConfirmStatusActionDialog(action: StatusConfirmationAction, status:
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(message) },
-        confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text("実行") } },
+        confirmButton = {
+            val unfollow = action == StatusConfirmationAction.Unfollow
+            TextButton(onClick = { onConfirm(); onDismiss() },
+                colors = ButtonDefaults.textButtonColors(contentColor =
+                    if (unfollow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
+            ) { Text(if (unfollow) "フォロー解除" else "実行") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
     )
 }
@@ -172,27 +202,4 @@ internal fun StatusReportDialog(status: TimelineStatus, onDismiss: () -> Unit, o
         confirmButton = { TextButton(enabled = comment.isNotBlank(), onClick = { onSubmit(comment) }) { Text("送信") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
     )
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-internal fun ListPickerSheet(
-    lists: List<io.github.ponpokoo.mastodonclient.domain.model.MastodonList>,
-    loading: Boolean,
-    onDismiss: () -> Unit,
-    onSelected: (String) -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Text("追加するリストを選択", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
-        when {
-            loading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            lists.isEmpty() -> Text("利用できるリストがありません", Modifier.padding(20.dp))
-            else -> lists.forEach { list ->
-                TextButton(onClick = { onSelected(list.id) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(list.title, Modifier.fillMaxWidth().padding(horizontal = 8.dp))
-                }
-            }
-        }
-        Spacer(Modifier.height(24.dp))
-    }
 }

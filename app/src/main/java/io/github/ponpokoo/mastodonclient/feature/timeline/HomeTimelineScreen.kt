@@ -13,7 +13,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
-import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
@@ -210,6 +210,10 @@ fun HomeTimelineScreen(
     var observedTimelineFeed by rememberSaveable { mutableStateOf<String?>(null) }
     var notificationFilter by rememberSaveable { mutableStateOf(NotificationFilter.All) }
     var menuStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
+    val openStatusMenu: (TimelineStatus) -> Unit = {
+        if (it.author.id != mainState.session?.accountId) actionsViewModel.loadModerationMenu(it.author.id)
+        menuStatus = it
+    }
     var confirmation by remember(mainState.session?.sessionId) { mutableStateOf<StatusConfirmation?>(null) }
     var reportStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
@@ -545,7 +549,7 @@ fun HomeTimelineScreen(
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
                     onVotePoll = actionsViewModel::votePoll,
-                    onMoreClick = { menuStatus = it },
+                    onMoreClick = openStatusMenu,
                     onUnavailableAction = { label ->
                         scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
                     },
@@ -583,7 +587,7 @@ fun HomeTimelineScreen(
                     onVotePoll = actionsViewModel::votePoll,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
-                    onMoreClick = { menuStatus = it },
+                    onMoreClick = openStatusMenu,
                     preferences = mainState.preferences,
                 )
                 MainDestination.Notifications -> NotificationsContent(
@@ -601,7 +605,7 @@ fun HomeTimelineScreen(
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
                     onVotePoll = actionsViewModel::votePoll,
-                    onMoreClick = { menuStatus = it },
+                    onMoreClick = openStatusMenu,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
@@ -647,7 +651,7 @@ fun HomeTimelineScreen(
                     onBookmark = actionsViewModel::toggleBookmark,
                     onReact = actionsViewModel::setReaction,
                     onVotePoll = actionsViewModel::votePoll,
-                    onMoreClick = { menuStatus = it },
+                    onMoreClick = openStatusMenu,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     preferences = mainState.preferences,
@@ -713,9 +717,6 @@ fun HomeTimelineScreen(
                 profileViewModel::dismissProfileEdit, profileViewModel::updateProfile)
         }
     }
-    LaunchedEffect(menuStatus?.author?.id) {
-        menuStatus?.author?.id?.let { actionsViewModel.loadModerationMenu(it) }
-    }
     menuStatus?.let { status ->
         StatusMenuDialog(
             status = status,
@@ -731,6 +732,7 @@ fun HomeTimelineScreen(
             onEdit = { menuStatus = null; onEditStatus(status.statusId) },
             onDelete = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Delete, status) },
             onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
+            onFollow = { menuStatus = null; actionsViewModel.follow(status) },
             onUnfollow = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, status) },
             onMute = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), status) },
             onBlock = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), status) },
@@ -762,7 +764,7 @@ fun HomeTimelineScreen(
         )
     }
     listStatus?.let { status ->
-        ListPickerSheet(
+        ListPickerDialog(
             lists = actionsState.lists,
             loading = actionsState.isLoadingLists,
             onDismiss = { listStatus = null },

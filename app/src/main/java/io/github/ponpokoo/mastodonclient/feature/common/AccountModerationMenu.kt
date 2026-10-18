@@ -85,13 +85,25 @@ class AccountModerationMenu(
         }
     }
 
+    fun setFollowing(accountId: String, following: Boolean) {
+        val relationship = mutableState.value.relationship ?: return
+        if (relationship.requested || relationship.following == following) return
+        mutate(accountId, { result ->
+            when {
+                !following -> "フォローを解除しました"
+                result.requested -> "フォローリクエストを送信しました"
+                else -> "フォローしました"
+            }
+        }) { repository.setFollowing(it, accountId, following) }
+    }
+
     fun mute(accountId: String, enabled: Boolean) = mutate(accountId,
-        if (enabled) "ミュートしました" else "ミュートを解除しました") { repository.setMuted(it, accountId, enabled) }
+        { if (enabled) "ミュートしました" else "ミュートを解除しました" }) { repository.setMuted(it, accountId, enabled) }
 
     fun block(accountId: String, enabled: Boolean) = mutate(accountId,
-        if (enabled) "ブロックしました" else "ブロックを解除しました") { repository.setBlocked(it, accountId, enabled) }
+        { if (enabled) "ブロックしました" else "ブロックを解除しました" }) { repository.setBlocked(it, accountId, enabled) }
 
-    private fun mutate(accountId: String, success: String,
+    private fun mutate(accountId: String, success: (AccountRelationship) -> String,
         request: suspend (AccountSession) -> Result<AccountRelationship>) {
         if (mutationJob?.isActive == true) return
         val before = mutableState.value
@@ -114,7 +126,7 @@ class AccountModerationMenu(
                             mutableState.update { it.copy(relationship = relationship) }
                         }
                         updated(accountId, relationship)
-                        message(success + if (repository.moderation.value.hasCleanupFailure(current, accountId))
+                        message(success(relationship) + if (repository.moderation.value.hasCleanupFailure(current, accountId))
                             "。端末の保存内容を更新できませんでした。オンラインで一覧を更新してください。" else "")
                     },
                     { message(it.message ?: "操作に失敗しました") },

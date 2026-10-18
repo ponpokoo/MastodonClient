@@ -225,6 +225,14 @@ interface MastodonApi {
     @POST("api/v1/lists/{id}/accounts")
     suspend fun addAccountsToList(@Path("id") id: String, @Field("account_ids[]") accountIds: List<String>)
 
+    @GET("api/v1/lists/{id}/accounts")
+    suspend fun getListAccounts(@Path("id") id: String, @Query("max_id") maxId: String? = null,
+        @Query("limit") limit: Int = 40): retrofit2.Response<List<AccountDto>>
+
+    @FormUrlEncoded
+    @retrofit2.http.HTTP(method = "DELETE", path = "api/v1/lists/{id}/accounts", hasBody = true)
+    suspend fun removeAccountsFromList(@Path("id") id: String, @Field("account_ids[]") accountIds: List<String>)
+
     @GET("api/v1/announcements")
     suspend fun getAnnouncements(): List<AnnouncementDto>
 

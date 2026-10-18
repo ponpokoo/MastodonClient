@@ -426,7 +426,7 @@ internal fun ProfileContent(
                     ProfileFeaturedTags(state, onSelectHashtag, onRetryFeaturedTags)
                     if (profile.fields.isNotEmpty()) {
                         Surface(
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = if (state.featuredTags.isNotEmpty()) 4.dp else 8.dp),
                             shape = RoundedCornerShape(6.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

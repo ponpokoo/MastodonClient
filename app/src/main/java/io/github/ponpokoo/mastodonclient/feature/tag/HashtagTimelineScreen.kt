@@ -50,7 +50,7 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
-import io.github.ponpokoo.mastodonclient.feature.status.ListPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
@@ -144,7 +144,10 @@ fun HashtagTimelineScreen(
                             onFavourite = { viewModel.toggleFavourite(status) },
                             onReact = { viewModel.setReaction(status, it) },
                             onUnavailableAction = {},
-                            onMoreClick = { menuStatus = it },
+                            onMoreClick = {
+                                if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
+                                menuStatus = it
+                            },
                             displayPreferences = preferences.timelineDisplay,
                             gifAutoplay = preferences.gifAutoplay,
                             videoAutoplay = preferences.videoAutoplay,
@@ -168,9 +171,6 @@ fun HashtagTimelineScreen(
             }
         }
     }
-    LaunchedEffect(state.sessionKey, menuStatus?.author?.id) {
-        menuStatus?.author?.id?.let { actionsViewModel.loadModerationMenu(it) }
-    }
     menuStatus?.let { status ->
         StatusMenuDialog(
             status = status,
@@ -186,6 +186,7 @@ fun HashtagTimelineScreen(
             onEdit = { menuStatus = null; onEditStatus(status.statusId) },
             onDelete = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Delete, status) },
             onAddToList = { menuStatus = null; listStatus = status; actionsViewModel.loadLists() },
+            onFollow = { menuStatus = null; actionsViewModel.follow(status) },
             onUnfollow = { menuStatus = null; confirmation = StatusConfirmation(StatusConfirmationAction.Unfollow, status) },
             onMute = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.muting == true) StatusConfirmationAction.Unmute else StatusConfirmationAction.Mute), status) },
             onBlock = { menuStatus = null; confirmation = StatusConfirmation((if (moderationMenu.relationship?.blocking == true) StatusConfirmationAction.Unblock else StatusConfirmationAction.Block), status) },
@@ -211,7 +212,7 @@ fun HashtagTimelineScreen(
         }
     }
     listStatus?.let { status ->
-        ListPickerSheet(actionsState.lists, actionsState.isLoadingLists, { listStatus = null }) { listId ->
+        ListPickerDialog(actionsState.lists, actionsState.isLoadingLists, { listStatus = null }) { listId ->
             actionsViewModel.addToList(status, listId)
             listStatus = null
         }
