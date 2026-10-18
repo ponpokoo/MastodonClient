@@ -101,6 +101,13 @@ interface TimelineRepository : ServerAccountSettingsRepository {
 
     suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String? = null): Result<TimelinePage> =
         Result.failure(UnsupportedOperationException("プロフィール投稿は未対応です"))
+
+    suspend fun getFeaturedTags(session: AccountSession, accountId: String): Result<List<io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag>> =
+        Result.failure(UnsupportedOperationException("注目のハッシュタグは未対応です"))
+
+    suspend fun getTaggedProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+        hashtag: String, maxId: String? = null): Result<TimelinePage> =
+        Result.failure(UnsupportedOperationException("プロフィールのタグ絞り込みは未対応です"))
     suspend fun getAccountList(session: AccountSession, accountId: String, followers: Boolean, maxId: String? = null): Result<List<StatusAuthor>> =
         Result.failure(UnsupportedOperationException("アカウント一覧は未対応です"))
     suspend fun getAccountListPage(session: AccountSession, accountId: String, followers: Boolean, maxId: String? = null): Result<AccountListPage> =

@@ -31,6 +31,8 @@ data class UserProfile(
 
 data class ProfileField(val name: String, val valueHtml: String, val verifiedAt: String?)
 
+data class FeaturedTag(val id: String, val name: String)
+
 @kotlinx.serialization.Serializable
 data class AccountRelationship(
     val following: Boolean = false,

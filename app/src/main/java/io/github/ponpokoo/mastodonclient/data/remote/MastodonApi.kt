@@ -133,6 +133,9 @@ interface MastodonApi {
     @GET("api/v1/accounts/{id}")
     suspend fun getAccount(@Path("id") id: String): AccountDto
 
+    @GET("api/v1/accounts/{id}/featured_tags")
+    suspend fun getFeaturedTags(@Path("id") id: String): List<io.github.ponpokoo.mastodonclient.data.remote.dto.FeaturedTagDto>
+
     @GET("api/v1/accounts/{id}/statuses")
     suspend fun getAccountStatuses(
         @Path("id") id: String,
@@ -142,6 +145,7 @@ interface MastodonApi {
         @Query("only_media") onlyMedia: Boolean = false,
         @Query("pinned") pinned: Boolean = false,
         @Query("max_id") maxId: String? = null,
+        @Query("tagged") tagged: String? = null,
     ): List<StatusDto>
 
     @GET("api/v1/accounts/{id}/followers")

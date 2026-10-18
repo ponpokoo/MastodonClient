@@ -133,9 +133,14 @@ fun AccountProfileScreen(
                 isRefreshingProfile = state.isRefreshing,
                 profileError = state.errorMessage,
                 profileTabs = state.profileTabs,
+                featuredTags = state.featuredTags,
+                featuredTagsError = state.featuredTagsError,
+                selectedHashtag = state.selectedHashtag,
             ),
             padding = padding,
             onRetry = viewModel::retry,
+            onSelectHashtag = viewModel::selectHashtag,
+            onRetryFeaturedTags = viewModel::retryFeaturedTags,
             onRefresh = {
                 scrollAfterRefresh = !preferences.keepPositionOnPullRefresh
                 refreshStarted = false

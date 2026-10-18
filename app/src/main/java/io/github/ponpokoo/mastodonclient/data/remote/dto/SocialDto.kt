@@ -20,6 +20,9 @@ data class SearchResultDto(
 )
 
 @Serializable
+data class FeaturedTagDto(val id: String, val name: String)
+
+@Serializable
 data class TagDto(
     val name: String,
     val url: String,

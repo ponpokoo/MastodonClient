@@ -48,13 +48,19 @@ internal fun ProfileTabUiState.pageFailed(error: Throwable) = copy(
 /** Pinned failure stays independent of the posts result; session checks remain in the caller. */
 internal suspend fun fetchProfileTab(
     repository: TimelineRepository, session: AccountSession, accountId: String, tab: ProfileStatusTab,
+    hashtag: String? = null,
 ): Pair<Result<TimelinePage>, Result<List<TimelineStatus>>?> = coroutineScope {
-    val posts = async { repository.getProfileStatuses(session, accountId, tab) }
-    val pinned = if (tab == ProfileStatusTab.Posts) {
+    val posts = async { repository.profileStatuses(session, accountId, tab, hashtag) }
+    val pinned = if (tab == ProfileStatusTab.Posts && hashtag == null) {
         async { repository.getPinnedProfileStatuses(session, accountId) }
     } else null
     posts.await() to pinned?.await()
 }
+
+internal suspend fun TimelineRepository.profileStatuses(session: AccountSession, accountId: String,
+    tab: ProfileStatusTab, hashtag: String?, maxId: String? = null): Result<TimelinePage> =
+    if (hashtag == null) getProfileStatuses(session, accountId, tab, maxId)
+    else getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId)
 
 internal fun UserProfile.withTab(tab: ProfileTabUiState) = copy(
     statuses = tab.statuses, nextMaxId = tab.nextMaxId, endReached = tab.endReached,

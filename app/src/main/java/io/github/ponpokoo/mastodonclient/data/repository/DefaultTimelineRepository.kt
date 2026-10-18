@@ -272,12 +272,31 @@ class DefaultTimelineRepository(
             .onEach { cacheStatus(session, it) }
     }
 
-    override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?): Result<TimelinePage> = runCatching {
+    override suspend fun getFeaturedTags(session: AccountSession, accountId: String) = runCatching {
+        try {
+            apiClientFactory.create(session.instanceUrl, session.accessToken).getFeaturedTags(accountId)
+                .filter { it.name.isNotBlank() }.distinctBy { it.name.lowercase(java.util.Locale.ROOT) }
+                .map { io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag(it.id, it.name) }
+        } catch (error: HttpException) {
+            if (error.code() == 404 || error.code() == 405 || error.code() == 501) emptyList() else throw error
+        }
+    }
+
+    override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab, maxId: String?) =
+        getProfileStatusesPage(session, accountId, tab, maxId)
+
+    override suspend fun getTaggedProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+        hashtag: String, maxId: String?) = getProfileStatusesPage(session, accountId, tab, maxId, hashtag)
+
+    private suspend fun getProfileStatusesPage(session: AccountSession, accountId: String, tab: ProfileStatusTab,
+        maxId: String?, hashtag: String? = null): Result<TimelinePage> = runCatching {
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken).getAccountStatuses(
             id = accountId,
             excludeReplies = tab == ProfileStatusTab.Posts,
             onlyMedia = tab == ProfileStatusTab.Media,
             maxId = maxId,
+            excludeReblogs = hashtag != null,
+            tagged = hashtag,
         )
         val statuses = response.map(StatusDto::toDomain)
         statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }

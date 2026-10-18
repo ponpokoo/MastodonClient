@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.UUID
 
 /** Opaque cache generation, independent of whether account metadata could be persisted. */
@@ -36,6 +38,9 @@ data class ProfileUiState(
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
     val imageSessionKey: String? = null,
     val imageRefreshRevision: Long = 0,
+    val featuredTags: List<io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag> = emptyList(),
+    val featuredTagsError: String? = null,
+    val selectedHashtag: String? = null,
 )
 
 class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession,
@@ -54,6 +59,9 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     }
     private var profileJob: Job? = null
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
+    private var postsGeneration = 0L
+    private var featuredTagsJob: Job? = null
+    private var featuredTagsGeneration = 0L
     private var requested = false
     init {
         observeSession()
@@ -74,6 +82,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         imageEditor.dismiss()
+        postsGeneration++
+        featuredTagsGeneration++
         tabJobs.clear()
         _uiState.value = ProfileUiState(imageSessionKey = UUID.randomUUID().toString())
         if (requested && snapshot.account != null) loadProfile()
@@ -91,6 +101,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                     _uiState.update { it.copy(profile = profile, isLoadingProfile = false,
                         imageRefreshRevision = newProfileImageRevision()) }
                     loadTab(ProfileStatusTab.Posts, initialPosts = true)
+                    retryFeaturedTags()
                 }
                 .onFailure { error ->
                     _uiState.update {
@@ -102,7 +113,43 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
 
     fun refreshProfile() {
         if (_uiState.value.profile == null) return loadProfile()
+        if (_uiState.value.selectedHashtag != null) resetHashtag(null)
+        retryFeaturedTags()
         loadTab(_uiState.value.profileSelectedTab, refresh = true)
+    }
+
+    fun retryFeaturedTags() {
+        val snapshot = currentSnapshot() ?: return
+        val accountId = _uiState.value.profile?.author?.id ?: return
+        val generation = ++featuredTagsGeneration
+        featuredTagsJob?.cancel()
+        _uiState.update { it.copy(featuredTagsError = null) }
+        featuredTagsJob = requestScope.launch {
+            val result = timelineRepository.getFeaturedTags(snapshot.account!!, accountId).forSession(snapshot)
+            if (generation != featuredTagsGeneration) return@launch
+            result.fold(
+                onSuccess = { tags -> _uiState.update { it.copy(featuredTags = tags) } },
+                onFailure = { error -> if (error !is UnsupportedOperationException) _uiState.update {
+                    it.copy(featuredTagsError = "注目のハッシュタグを取得できませんでした")
+                } },
+            )
+        }
+    }
+
+    fun selectHashtag(name: String) {
+        currentSnapshot() ?: return
+        if (_uiState.value.featuredTags.none { it.name == name }) return
+        resetHashtag(name.takeUnless { it == _uiState.value.selectedHashtag })
+        loadTab(_uiState.value.profileSelectedTab)
+    }
+
+    private fun resetHashtag(name: String?) {
+        postsGeneration++
+        tabJobs.values.forEach { it.cancel() }
+        tabJobs.clear()
+        _uiState.update { it.copy(selectedHashtag = name,
+            profile = it.profile?.copy(statuses = emptyList(), pinnedStatuses = emptyList(), nextMaxId = null, endReached = false),
+        ).withTabs(emptyMap()) }
     }
 
     fun updateProfile(request: ProfileEditRequest) {
@@ -142,6 +189,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         currentSnapshot() ?: return
         if (_uiState.value.profile == null) return
         if (_uiState.value.profileSelectedTab == tab) return
+        if (_uiState.value.selectedHashtag != null) resetHashtag(null)
         _uiState.update { it.copy(profileSelectedTab = tab).withTabs(it.profileTabs) }
         loadTab(tab)
     }
@@ -150,6 +198,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
 
     fun retryProfile() {
         if (_uiState.value.profileTabs[_uiState.value.profileSelectedTab]?.errorIsPagination == true) loadMoreProfile()
+        else if (_uiState.value.selectedHashtag != null) loadTab(_uiState.value.profileSelectedTab, refresh = true)
         else refreshProfile()
     }
 
@@ -162,14 +211,17 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val state = _uiState.value
         val profile = state.profile ?: return
         val tab = state.profileSelectedTab
+        val generation = postsGeneration
+        val hashtag = state.selectedHashtag
         val cached = state.profileTabs[tab] ?: return
         val cursor = cached.nextMaxId ?: return
         if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached ||
             automatic && !cached.canAutoLoadMore) return
         updateTab(tab) { it.copy(isLoadingMore = true, error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
-            timelineRepository.getProfileStatuses(session, profile.author.id, tab, cursor)
-                .forSession(snapshot).fold(
+            val result = timelineRepository.profileStatuses(session, profile.author.id, tab, hashtag, cursor).forSession(snapshot)
+            if (generation != postsGeneration) return@launch
+            result.fold(
                     onSuccess = { page ->
                         updateTab(tab) { it.appendPage(page, cursor) }
                     },
@@ -192,6 +244,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         val profile = _uiState.value.profile ?: return
+        val generation = postsGeneration
+        val hashtag = _uiState.value.selectedHashtag
         val cached = _uiState.value.profileTabs[tab] ?: ProfileTabUiState()
         if (cached.isLoading || cached.isRefreshing || (!refresh && (cached.isLoaded || cached.isLoadingMore))) return
         tabJobs[tab]?.cancel()
@@ -199,19 +253,22 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             isLoadingMore = initialPosts, isRefreshing = refresh, isPullRefreshing = refresh && cached.isLoaded && userInitiated,
             error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
-            if (refresh) {
+            if (refresh && hashtag == null) {
                 val header = timelineRepository.getProfileHeader(session, profile.author.id).forSession(snapshot)
                     .getOrElse { error ->
                         updateTab(tab) { it.copy(isRefreshing = false, isPullRefreshing = false,
                             error = error.message ?: "プロフィールを更新できませんでした") }
                         return@launch
                     }
+                if (generation != postsGeneration) return@launch
                 _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
                     imageRefreshRevision = newProfileImageRevision())
                     .withTabs(state.profileTabs) }
             }
-            val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab)
+            val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab, hashtag)
             result.forSession(snapshot)
+            currentCoroutineContext().ensureActive()
+            if (generation != postsGeneration) return@launch
             val pinnedStatuses = pinnedResult?.forSession(snapshot)?.getOrNull()
             result.fold(
                 onSuccess = { page -> updateTab(tab, pinnedStatuses) { it.replacePage(page) } },

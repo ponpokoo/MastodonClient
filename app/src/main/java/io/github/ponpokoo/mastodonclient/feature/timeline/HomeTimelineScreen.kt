@@ -631,6 +631,8 @@ fun HomeTimelineScreen(
                     padding = pagePadding,
                     onRetry = profileViewModel::loadProfile,
                     onRetryPosts = profileViewModel::retryProfile,
+                    onSelectHashtag = profileViewModel::selectHashtag,
+                    onRetryFeaturedTags = profileViewModel::retryFeaturedTags,
                     onRefresh = {
                         scrollProfileAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
                         profileRefreshStarted = false

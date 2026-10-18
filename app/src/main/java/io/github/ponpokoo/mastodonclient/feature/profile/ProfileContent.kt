@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +59,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.ponpokoo.mastodonclient.ui.theme.onReactionSelectedContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.reactionSelectedOutline
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -148,6 +152,8 @@ internal fun ProfileContent(
     isProfileBlocked: Boolean = false,
     listStates: List<LazyListState>? = null,
     headerListState: LazyListState? = null,
+    onSelectHashtag: (String) -> Unit = {},
+    onRetryFeaturedTags: () -> Unit = {},
 ) {
     val profile = state.profile
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
@@ -161,6 +167,14 @@ internal fun ProfileContent(
     check(resolvedListStates.size == ProfileStatusTab.entries.size)
     val resolvedListState = resolvedListStates[selectedTab.ordinal]
     val resolvedHeaderListState = headerListState ?: rememberLazyListState()
+    var previousHashtag by remember { mutableStateOf(state.selectedHashtag) }
+    LaunchedEffect(state.selectedHashtag) {
+        if (previousHashtag != state.selectedHashtag) {
+            // Reset only when changing the filter, preserving ordinary profile navigation.
+            resolvedListStates.forEach { it.scrollToItem(0) }
+            previousHashtag = state.selectedHashtag
+        }
+    }
     val headerScrollConnection = remember(resolvedHeaderListState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -409,6 +423,7 @@ internal fun ProfileContent(
                             onLinkClick = onOpenLink,
                         )
                     }
+                    ProfileFeaturedTags(state, onSelectHashtag, onRetryFeaturedTags)
                     if (profile.fields.isNotEmpty()) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -476,7 +491,7 @@ internal fun ProfileContent(
             val pageState = state.profileTabs[pageTab]
             val pageProfile = if (pageState != null) profile.withTab(pageState) else if (isSelectedPage) profile else null
             val postListState = resolvedListStates[page]
-            val pinnedStatusIds = pageProfile?.pinnedStatuses?.map { it.statusId }.orEmpty()
+            val pinnedStatusIds = if (state.selectedHashtag == null) pageProfile?.pinnedStatuses?.map { it.statusId }.orEmpty() else emptyList()
             if (pageTab == ProfileStatusTab.Posts) {
                 // Capture the position before LazyColumn preserves the old first item's key.
                 val wasAtTop = remember(postListState, pinnedStatusIds) {
@@ -489,7 +504,7 @@ internal fun ProfileContent(
             }
             val statuses = if (pageProfile == null) {
                 emptyList()
-            } else if (pageTab == ProfileStatusTab.Posts) {
+            } else if (pageTab == ProfileStatusTab.Posts && state.selectedHashtag == null) {
                 (pageProfile.pinnedStatuses + pageProfile.statuses).distinctBy { it.statusId }
             } else {
                 pageProfile.statuses
@@ -511,6 +526,9 @@ internal fun ProfileContent(
             }
                 if (statuses.isEmpty() && relationship?.let { it.muting || it.blocking } == true) {
                     item { Text("ミュートまたはブロック中のため、投稿を表示していません", modifier = Modifier.padding(20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                } else if (statuses.isEmpty() && state.selectedHashtag != null && pageLoaded && pageState?.error == null) {
+                    item { Text("このタグの投稿はありません", modifier = Modifier.padding(20.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 if (loadingMore && !isPullRefreshing) {
@@ -539,6 +557,35 @@ internal fun ProfileContent(
             }
             }
             }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun ProfileFeaturedTags(state: ProfileUiState, onSelect: (String) -> Unit, onRetry: () -> Unit) {
+    if (state.featuredTags.isEmpty() && state.featuredTagsError == null) return
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            state.featuredTags.forEach { tag ->
+                val active = state.selectedHashtag == tag.name
+                Surface(
+                    onClick = { onSelect(tag.name) },
+                    modifier = Modifier.heightIn(min = 32.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (active) MaterialTheme.colorScheme.onReactionSelectedContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    border = if (active) BorderStroke(1.dp, MaterialTheme.colorScheme.reactionSelectedOutline) else null,
+                ) {
+                    Box(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+                        Text("#${tag.name}", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+        }
+        if (state.featuredTagsError != null) {
+            Text(state.featuredTagsError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onRetry) { Text("再試行") }
         }
     }
 }
