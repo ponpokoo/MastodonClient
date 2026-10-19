@@ -1045,6 +1045,8 @@ internal fun StatusDto.toDomain(): TimelineStatus {
                 type = it.type,
                 url = it.url,
                 previewUrl = it.previewUrl,
+                previewWidth = it.meta?.small?.width,
+                previewHeight = it.meta?.small?.height,
                 description = it.description,
                 sensitive = displayed.sensitive,
                 authorAvatarUrl = displayed.account.avatar.takeIf { _ -> it.type == "audio" }

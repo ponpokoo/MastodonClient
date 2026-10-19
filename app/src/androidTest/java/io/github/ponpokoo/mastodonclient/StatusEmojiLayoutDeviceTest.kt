@@ -9,9 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -155,6 +157,16 @@ class StatusEmojiLayoutDeviceTest {
     @Test fun aspectRatiosFitAcrossFontSizesAndScalesAndLinksKeepWorking() {
         render()
         awaitImages()
+        val spokenText = rule.onNodeWithTag("body").fetchSemanticsNode().config[SemanticsProperties.Text]
+            .joinToString { it.text }
+        assertTrue("Shortcodes remain available to accessibility", ":wide:" in spokenText)
+        val pixels = rule.onNodeWithTag("body").captureToImage().toPixelMap()
+        val wide = layout().placeholderRects[1]!!
+        assertTrue("The inline image must be drawn in its placeholder", (wide.top.toInt() until wide.bottom.toInt()).any { y ->
+            (wide.left.toInt() until wide.right.toInt()).any { x ->
+                pixels[x, y].let { it.red < .2f && it.green > .7f && it.blue > .7f }
+            }
+        })
         listOf(14 to 1f, 20 to 1f, 14 to .85f, 16 to 1.5f, 20 to 2f).forEach { (size, scale) ->
             rule.runOnIdle { fontSize.value = size; fontScale.value = scale }
             checkGeometry()

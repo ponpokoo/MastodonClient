@@ -107,9 +107,11 @@ private fun StatusContentTextImpl(
         val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return null
         return text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
     }
+    val bodyEmojis = if (emojiSize != null) rememberBodyEmojiContent(source.text, customEmojis, emojiSize) else null
     Text(
         text = text,
         modifier = modifier.statusLinkDiagnostics(text) { layoutResult[0] }
+            .drawBodyEmojis(bodyEmojis) { layoutResult[0] }
             .onGloballyPositioned { textOrigin[0] = it.positionInWindow() }
             .drawBehind {
                 (menuLink ?: pressedLink)?.let { link ->
@@ -141,7 +143,7 @@ private fun StatusContentTextImpl(
                 )
             },
         style = style.copy(color = MaterialTheme.colorScheme.onSurface),
-        inlineContent = rememberEmojiInlineContent(source.text, customEmojis, emojiSize),
+        inlineContent = bodyEmojis?.inline ?: rememberEmojiInlineContent(source.text, customEmojis),
         onTextLayout = { layoutResult[0] = it },
     )
     menuLink?.let { link ->

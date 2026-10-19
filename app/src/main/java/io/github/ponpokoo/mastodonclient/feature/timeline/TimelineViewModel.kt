@@ -4,7 +4,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.RequestFailure
 import io.github.ponpokoo.mastodonclient.domain.model.requestFailure
 import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
-import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import io.github.ponpokoo.mastodonclient.feature.common.TimelineModerationCache
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -65,9 +65,10 @@ class TimelineViewModel(
     browsing: BrowsingSession,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : SessionScopedViewModel(browsing) {
+    private val moderationCache = TimelineModerationCache()
     private val _uiState = MutableStateFlow(TimelineUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        moderationCache.apply(state, moderation, account)
     }
     private var timelineJob: Job? = null
     private var streamGapProbeJob: Job? = null
@@ -142,6 +143,7 @@ class TimelineViewModel(
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        moderationCache.clear()
         streamGapProbeJob?.cancel()
         blockedAutomaticCursor = null
         followingTop = false

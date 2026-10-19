@@ -122,6 +122,9 @@ data class MediaAttachment(
     val authorAvatarUrl: String? = null,
     // Registered account avatars retain their version when opened in the image viewer.
     val cacheRevision: Long = 0,
+    // Optional server-reported pixel dimensions; old cached attachments omit these fields.
+    val previewWidth: Int? = null,
+    val previewHeight: Int? = null,
 )
 
 data class TimelinePage(

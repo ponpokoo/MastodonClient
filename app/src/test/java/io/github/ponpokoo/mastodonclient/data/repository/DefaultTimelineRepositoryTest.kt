@@ -21,6 +21,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    @Test fun imagePreviewDimensionsComeFromSmallMetadataWithoutAssumingAServerSize() = runTest {
+        MockWebServer().use { server ->
+            val media = """"media_attachments":[
+                {"id":"known","type":"image","url":"https://cdn.example/original","preview_url":"https://cdn.example/preview",
+                 "meta":{"original":{"width":2048,"height":1024},"small":{"width":720,"height":360}}},
+                {"id":"unknown","type":"image","url":"https://cdn.example/original","meta":{"width":2048,"height":1024}}
+            ]"""
+            server.enqueue(MockResponse().setBody("[" + basicStatusJson("images").dropLast(1) + ",$media}]"))
+            val attachments = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server)).getOrThrow().statuses.single().mediaAttachments
+            assertEquals(720, attachments.first().previewWidth)
+            assertEquals(360, attachments.first().previewHeight)
+            assertEquals(2f, attachments.first().aspectRatio)
+            assertNull(attachments.last().previewWidth)
+            assertNull(attachments.last().previewHeight)
+        }
+    }
+
     @Test fun interactionPagesUseLinkCursorsAndTheSelectedInstanceForAllThreeKinds() = runTest {
         for (kind in listOf("favourited_by", "reblogged_by", "emoji_reactioned_by")) {
             MockWebServer().use { server ->

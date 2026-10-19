@@ -45,7 +45,9 @@ internal fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, In
     var started by remember(url) { mutableStateOf(false) }
     var visible by remember(url) { mutableStateOf(false) }
     var resumed by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
-    val enabled = prepared && visible && resumed
+    val coveredByViewer = LocalMediaTransition.current?.active == true
+    val playbackAllowed by rememberUpdatedState(visible && resumed && !coveredByViewer)
+    val enabled = prepared && playbackAllowed
     DisposableEffect(lifecycle, url) {
         val observer = LifecycleEventObserver { _, _ ->
             resumed = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
@@ -85,7 +87,7 @@ internal fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, In
                         player.setVolume(0f, 0f)
                         prepared = true
                         // Surface recreation must resume a requested playback, but not a manual pause.
-                        if (requested && visible && resumed) view.start()
+                        if (requested && playbackAllowed) view.start()
                     }
                     view.setOnCompletionListener {
                         if (!loop) {

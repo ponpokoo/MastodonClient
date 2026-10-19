@@ -74,6 +74,7 @@ internal fun SocialStatus(
         displayPreferences = preferences.timelineDisplay,
         gifAutoplay = preferences.gifAutoplay,
         videoAutoplay = preferences.videoAutoplay,
+        useTimelineImagePreviews = true,
     )
     HorizontalDivider()
 }

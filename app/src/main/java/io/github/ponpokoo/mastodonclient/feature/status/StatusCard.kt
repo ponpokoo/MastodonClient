@@ -8,6 +8,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -78,6 +79,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,7 +87,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.media.AudioPlayer
 import io.github.ponpokoo.mastodonclient.feature.media.InlineVideo
@@ -98,6 +99,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.LinkActionsPopup
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.rememberEmojiImages
 import io.github.ponpokoo.mastodonclient.feature.common.ContentWarning
 import io.github.ponpokoo.mastodonclient.feature.common.FilterWarning
 import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences
@@ -148,6 +150,7 @@ internal fun StatusCard(
     onVotePoll: ((Set<Int>) -> Unit)? = null,
     afterActions: (@Composable () -> Unit)? = null,
     authorAvatarResource: Int? = null,
+    useTimelineImagePreviews: Boolean = false,
 ) {
     if (status.filterDisplay.hidden) return
     var filterRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { mutableStateOf(false) }
@@ -356,6 +359,7 @@ internal fun StatusCard(
                         gifAutoplay,
                         videoAutoplay,
                         audioAuthorAvatarUrl = status.author.avatarUrl,
+                        useTimelineImagePreviews = useTimelineImagePreviews,
                     )
                 } else if (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed) {
                     Surface(
@@ -381,6 +385,10 @@ internal fun StatusCard(
                 }
             }
             if (displayPreferences.showReactions && status.reactions.isNotEmpty()) {
+                val imageUrls = remember(status.reactions) {
+                    status.reactions.mapNotNull { it.imageUrl }.distinct()
+                }
+                val reactionImages = rememberEmojiImages(imageUrls, status.reactions)
                 BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     val availableWidth = maxWidth
                     @OptIn(ExperimentalLayoutApi::class)
@@ -425,21 +433,11 @@ internal fun StatusCard(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     if (reaction.imageUrl != null) {
-                                        var imageRatio by remember(reaction.imageUrl) { mutableStateOf(1f) }
+                                        val imageRatio = reactionImages.ratios.getValue(reaction.imageUrl)
                                         val tall = imageRatio < 0.65f
-                                        val imageRequest = remember(reaction.imageUrl) {
-                                            ImageRequest.Builder(context).data(reaction.imageUrl)
-                                                .size(1024, 128).build()
-                                        }
-                                        AsyncImage(
-                                            model = imageRequest,
+                                        Image(
+                                            painter = reactionImages.painters.getValue(reaction.imageUrl),
                                             contentDescription = reaction.name,
-                                            onSuccess = { result ->
-                                                val size = result.painter.intrinsicSize
-                                                if (size.width.isFinite() && size.height.isFinite() && size.height > 0f) {
-                                                    imageRatio = size.width / size.height
-                                                }
-                                            },
                                             modifier = Modifier.width((24f * imageRatio).dp.coerceIn(8.dp, maxImageWidth))
                                                 .height(24.dp),
                                             contentScale = ContentScale.Fit,
@@ -603,9 +601,11 @@ private fun MediaGrid(
     gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     audioAuthorAvatarUrl: String? = null,
+    useTimelineImagePreviews: Boolean = false,
 ) {
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
     val context = LocalContext.current
+    val density = LocalDensity.current
     val maxHeight = when (thumbnailSize) {
         ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
         ThumbnailSize.Standard -> null
@@ -649,11 +649,16 @@ private fun MediaGrid(
                     ) {
                         rowItems.forEachIndexed { index, media ->
                             key(media.id, media.url, media.previewUrl) {
+                                var previewFailed by remember(media.url, media.previewUrl) { mutableStateOf(false) }
                                 val imageUrl = if (media.type == "image") {
-                                    media.url ?: media.previewUrl
+                                    if (useTimelineImagePreviews && !previewFailed) with(density) {
+                                        media.timelineImageUrl(frames[index].width.toPx(), frames[index].height.toPx(), cropImageRow)
+                                    } else media.url ?: media.previewUrl
                                 } else {
                                     media.previewUrl ?: media.url
                                 }
+                                val usingPreview = media.type == "image" && useTimelineImagePreviews && media.url != null &&
+                                    imageUrl != media.url && imageUrl == media.previewUrl
                                 var displayedPainter by remember(imageUrl) {
                                     mutableStateOf<androidx.compose.ui.graphics.painter.Painter?>(null)
                                 }
@@ -705,8 +710,16 @@ private fun MediaGrid(
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = if (cropImageRow) ContentScale.Crop else ContentScale.Fit,
                                             onSuccess = {
-                                                onDimensionsKnown(it.result.image.width, it.result.image.height)
+                                                // Preview rounding/cropping must not change the original thumbnail geometry.
+                                                if (!usingPreview || media.aspectRatio == null) {
+                                                    onDimensionsKnown(it.result.image.width, it.result.image.height)
+                                                }
                                                 displayedPainter = it.painter
+                                            },
+                                            onError = {
+                                                if (media.type == "image" && usingPreview) {
+                                                    previewFailed = true
+                                                }
                                             },
                                         )
                                     }

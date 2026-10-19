@@ -1,6 +1,11 @@
 package io.github.ponpokoo.mastodonclient
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
@@ -9,6 +14,10 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -18,12 +27,16 @@ import coil3.decode.DataSource
 import coil3.fetch.Fetcher
 import coil3.fetch.ImageFetchResult
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
+import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.media.*
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import java.util.concurrent.ConcurrentLinkedQueue
 
 @OptIn(coil3.annotation.DelicateCoilApi::class)
 class MediaImageLoadingDeviceTest {
@@ -131,5 +144,60 @@ class MediaImageLoadingDeviceTest {
         rule.waitUntil(5_000) { motion.imageReady("delayed") }
         assertTrue(motion.imageReady("delayed"))
         assertCenterIsBlue()
+    }
+
+    @Test fun timelineUsesSufficientPreviewButViewerStillRequestsOriginal() {
+        val requests = renderTimelinePreview()
+        rule.waitUntil(5_000) { requests.contains("preview") }
+        rule.waitForIdle()
+        assertFalse(requests.contains("original"))
+        rule.onNodeWithTag("media_attachment").performClick()
+        rule.waitUntil(5_000) { requests.contains("original") }
+    }
+
+    @Test fun denserDisplaySwitchesToOriginal() {
+        val density = mutableStateOf(2f)
+        val requests = renderTimelinePreview(density = { density.value })
+        rule.waitUntil(5_000) { requests.contains("preview") }
+        rule.runOnIdle { density.value = 4f }
+        rule.waitUntil(5_000) { requests.contains("original") }
+    }
+
+    @Test fun failedTimelinePreviewFallsBackToOriginal() {
+        val requests = renderTimelinePreview(failPreview = true)
+        rule.waitUntil(5_000) { requests.contains("original") }
+        assertTrue(requests.contains("preview"))
+    }
+
+    private fun renderTimelinePreview(failPreview: Boolean = false, density: () -> Float = { 2f }): ConcurrentLinkedQueue<String> {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val requests = ConcurrentLinkedQueue<String>()
+        previousLoader = SingletonImageLoader.get(context)
+        loader = ImageLoader.Builder(context).components {
+            add(Fetcher.Factory<Uri> { uri, _, _ -> Fetcher {
+                val source = uri.toString().substringAfterLast('/')
+                if (source == "preview" || source == "original") requests.add(source)
+                if (source == "preview" && failPreview) error("Preview unavailable")
+                ImageFetchResult(Bitmap.createBitmap(200, 100, Bitmap.Config.ARGB_8888).asImage(), false, DataSource.MEMORY)
+            } })
+        }.build()
+        SingletonImageLoader.setUnsafe(loader!!)
+        val item = MediaAttachment("picture", "image", "https://images.example.test/original", "https://images.example.test/preview", null,
+            aspectRatio = 2f, previewWidth = 600, previewHeight = 300)
+        val status = TimelineStatus("picture", "picture", "2026-10-19T00:00:00Z",
+            StatusAuthor("author", "Author", "author", ""), null, "", "", false, "public", null,
+            0, 0, 0, mediaAttachments = listOf(item))
+        motion = MediaTransitionState()
+        rule.setContent { MaterialTheme {
+            CompositionLocalProvider(LocalDensity provides Density(density())) {
+                MediaTransitionHost(motion) {
+                    Box(Modifier.width(300.dp)) {
+                        StatusCard(status, onStatusClick = null, onUnavailableAction = {}, useTimelineImagePreviews = true,
+                            onMediaClick = { items, index -> motion.open(items, index, "standalone", "standalone") })
+                    }
+                }
+            }
+        } }
+        return requests
     }
 }

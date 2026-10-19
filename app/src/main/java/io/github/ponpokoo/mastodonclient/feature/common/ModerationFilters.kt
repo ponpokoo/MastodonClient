@@ -10,11 +10,13 @@ import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineUiState
 
 internal fun TimelineStatus.matchesWordMute(words: List<String>): Boolean {
     if (words.isEmpty()) return false
-    val text = if ('<' in contentHtml || '&' in contentHtml)
-        androidx.core.text.HtmlCompat.fromHtml(contentHtml, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
-    else contentHtml
+    val text = moderationPlainText(contentHtml)
     return words.any { it.isNotBlank() && (text.contains(it, ignoreCase = true) || spoilerText.contains(it, ignoreCase = true)) }
 }
+
+internal fun moderationPlainText(html: String): String = if ('<' in html || '&' in html)
+    androidx.core.text.HtmlCompat.fromHtml(html, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+else html
 
 private fun TimelineStatus.present(m: AccountModerationState, s: AccountSession, context: String?): TimelineStatus =
     if (!m.applyServerFilters || context == null) this else copy(filterDisplay = filterPresentation(context, current = m.serverFilters[s.sessionId]), filterScope = s.sessionId + s.instanceUrl)

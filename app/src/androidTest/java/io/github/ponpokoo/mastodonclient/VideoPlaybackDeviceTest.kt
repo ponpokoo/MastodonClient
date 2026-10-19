@@ -473,6 +473,37 @@ class VideoPlaybackDeviceTest {
         waitForPlayback()
     }
 
+    @Test fun inlineVideoPausesBehindViewerAndStaysPausedAfterClosing() = checkInlinePauseBehindViewer("video")
+    @Test fun inlineGifPausesBehindViewerAndStaysPausedAfterClosing() = checkInlinePauseBehindViewer("gifv")
+
+    private fun checkInlinePauseBehindViewer(type: String) {
+        val media = video(seconds = 10).copy(type = type)
+        val motion = MediaTransitionState()
+        rule.setContent { MaterialTheme { MediaTransitionHost(motion) {
+            StatusCard(TimelineStatus(
+                timelineId = "video", statusId = "video", createdAt = "2026-10-03T00:00:00Z",
+                author = StatusAuthor("author", "Example", "example", ""), boostedBy = null,
+                contentHtml = "", spoilerText = "", sensitive = false, visibility = "public", url = null,
+                repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = listOf(media),
+            ), onStatusClick = null, onUnavailableAction = {}, gifAutoplay = AutoplayPolicy.Always,
+                videoAutoplay = AutoplayPolicy.Always,
+                onMediaClick = { items, index -> motion.open(items, index, "standalone", "standalone") })
+        } } }
+        waitForPlayback()
+        rule.onNodeWithTag("media_attachment").performClick()
+        rule.waitUntil(10_000) {
+            var paused = false
+            rule.runOnIdle { paused = motion.active && findVideo(rule.activity.window.decorView)?.isPlaying == false }
+            paused
+        }
+        rule.runOnIdle { motion.clear() }
+        rule.onNodeWithTag("inline_video", useUnmergedTree = true)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "一時停止"))
+        rule.runOnIdle { assertTrue(findVideo(rule.activity.window.decorView)?.isPlaying == false) }
+        rule.onNodeWithContentDescription("動画を再生").performClick()
+        waitForPlayback()
+    }
+
     @Test fun fullScreenGifLoopsWithCommonControls() {
         val media = video(seconds = 1).copy(type = "gifv")
         rule.setContent { MaterialTheme { MediaViewerScreen(listOf(media), 0, {}) } }
