@@ -47,9 +47,15 @@ internal fun ListLoadingContent(modifier: Modifier = Modifier, label: String? = 
 }
 
 @Composable
-internal fun ListLoadingMoreIndicator() {
+internal fun ListLoadingMoreIndicator(label: String? = null) {
     Box(Modifier.fillMaxWidth().padding(vertical = 20.dp).testTag("list_loading_more"), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+            if (label != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
 

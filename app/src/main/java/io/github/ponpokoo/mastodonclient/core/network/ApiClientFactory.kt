@@ -32,7 +32,8 @@ class ApiClientFactory(
     private val profileTagsFactory by lazy {
         ApiClientFactory(
             client.newBuilder()
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .callTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
                 .build(), json,
         )
     }

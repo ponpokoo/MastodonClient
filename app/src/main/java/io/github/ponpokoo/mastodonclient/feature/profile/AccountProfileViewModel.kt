@@ -185,14 +185,16 @@ class AccountProfileViewModel(
         val cursor = cached.nextMaxId ?: return
         if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached ||
             automatic && !cached.canAutoLoadMore) return
-        updateTab(tab) { it.copy(isLoadingMore = true, error = null, errorIsPagination = false) }
+        updateTab(tab) { it.copy(isLoadingMore = true, isSlowLoading = false, error = null, errorIsPagination = false) }
         tabJobs[tab] = viewModelScope.launch {
-            val result = timelineRepository.profileStatuses(current, accountId, tab, hashtag, cursor)
+            val result = timelineRepository.profileStatuses(current, accountId, tab, hashtag, cursor) {
+                if (generation == postsGeneration) updateTab(tab) { it.copy(isSlowLoading = true) }
+            }
             currentCoroutineContext().ensureActive()
             if (generation != postsGeneration) return@launch
             result.fold(
                 { page -> updateTab(tab) { it.appendPage(page, cursor) } },
-                { error -> updateTab(tab) { it.copy(isLoadingMore = false,
+                { error -> updateTab(tab) { it.copy(isLoadingMore = false, isSlowLoading = false,
                     error = error.message ?: "投稿の続きを取得できませんでした", errorIsPagination = true) } },
             )
         }
@@ -218,7 +220,7 @@ class AccountProfileViewModel(
         tabJobs[tab]?.cancel()
         updateTab(tab) { it.copy(isLoading = !refresh && !initialPosts,
             isLoadingMore = initialPosts, isRefreshing = refresh, isPullRefreshing = refresh && cached.isLoaded && userInitiated,
-            error = null, errorIsPagination = false) }
+            isSlowLoading = false, error = null, errorIsPagination = false) }
         tabJobs[tab] = viewModelScope.launch {
             if (refresh && hashtag == null) {
                 val result = timelineRepository.getProfileHeader(current, accountId)
@@ -233,7 +235,9 @@ class AccountProfileViewModel(
                     imageRefreshRevision = if (header.isOwnProfile) newProfileImageRevision() else state.imageRefreshRevision)
                     .withTabs(state.profileTabs) }
             }
-            val (result, pinnedResult) = fetchProfileTab(timelineRepository, current, accountId, tab, hashtag)
+            val (result, pinnedResult) = fetchProfileTab(timelineRepository, current, accountId, tab, hashtag) {
+                if (generation == postsGeneration) updateTab(tab) { it.copy(isSlowLoading = true) }
+            }
             currentCoroutineContext().ensureActive()
             if (generation != postsGeneration) return@launch
             val pinnedStatuses = pinnedResult?.getOrNull()

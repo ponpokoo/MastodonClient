@@ -12,11 +12,10 @@ import retrofit2.HttpException
 class ProfileFeaturedTagsRepositoryTest {
     private fun account(server: MockWebServer) = AccountSession("one", server.url("/").toString(), "me", "me", "Me", "", "test-token")
 
-    @Test fun tagFilteringWaitsForSlowResponseWithoutExtendingUnfilteredProfiles() = runTest {
+    @Test fun tagFilteringWaitsBeyondThirtySecondsWithoutExtendingUnfilteredProfiles() = runTest {
         MockWebServer().use { server ->
-            repeat(2) {
-                server.enqueue(MockResponse().setHeadersDelay(200, java.util.concurrent.TimeUnit.MILLISECONDS).setBody("[]"))
-            }
+            server.enqueue(MockResponse().setHeadersDelay(31, java.util.concurrent.TimeUnit.SECONDS).setBody("[]"))
+            server.enqueue(MockResponse().setHeadersDelay(200, java.util.concurrent.TimeUnit.MILLISECONDS).setBody("[]"))
             val client = okhttp3.OkHttpClient.Builder().readTimeout(50, java.util.concurrent.TimeUnit.MILLISECONDS).build()
             val repository = DefaultTimelineRepository(ApiClientFactory(client))
             val session = account(server)

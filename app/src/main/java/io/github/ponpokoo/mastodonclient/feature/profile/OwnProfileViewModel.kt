@@ -217,15 +217,17 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val cursor = cached.nextMaxId ?: return
         if (cached.isLoading || cached.isRefreshing || cached.isLoadingMore || cached.endReached ||
             automatic && !cached.canAutoLoadMore) return
-        updateTab(tab) { it.copy(isLoadingMore = true, error = null, errorIsPagination = false) }
+        updateTab(tab) { it.copy(isLoadingMore = true, isSlowLoading = false, error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
-            val result = timelineRepository.profileStatuses(session, profile.author.id, tab, hashtag, cursor).forSession(snapshot)
+            val result = timelineRepository.profileStatuses(session, profile.author.id, tab, hashtag, cursor) {
+                if (generation == postsGeneration) updateTab(tab) { it.copy(isSlowLoading = true) }
+            }.forSession(snapshot)
             if (generation != postsGeneration) return@launch
             result.fold(
                     onSuccess = { page ->
                         updateTab(tab) { it.appendPage(page, cursor) }
                     },
-                    onFailure = { error -> updateTab(tab) { it.copy(isLoadingMore = false,
+                    onFailure = { error -> updateTab(tab) { it.copy(isLoadingMore = false, isSlowLoading = false,
                         error = error.message ?: "投稿の続きを取得できませんでした", errorIsPagination = true) } },
                 )
         }
@@ -251,7 +253,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         tabJobs[tab]?.cancel()
         updateTab(tab) { it.copy(isLoading = !refresh && !initialPosts,
             isLoadingMore = initialPosts, isRefreshing = refresh, isPullRefreshing = refresh && cached.isLoaded && userInitiated,
-            error = null, errorIsPagination = false) }
+            isSlowLoading = false, error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
             if (refresh && hashtag == null) {
                 val header = timelineRepository.getProfileHeader(session, profile.author.id).forSession(snapshot)
@@ -265,7 +267,9 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                     imageRefreshRevision = newProfileImageRevision())
                     .withTabs(state.profileTabs) }
             }
-            val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab, hashtag)
+            val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab, hashtag) {
+                if (generation == postsGeneration) updateTab(tab) { it.copy(isSlowLoading = true) }
+            }
             result.forSession(snapshot)
             currentCoroutineContext().ensureActive()
             if (generation != postsGeneration) return@launch

@@ -41,6 +41,38 @@ class ProfileFeaturedTagsDeviceTest {
     @Test fun chipsFilterInPlaceAndRemovePinnedPriorityInDarkTheme() = verify(ThemeMode.Dark)
     @Test fun longTagsRemainUsableWithLargeText() = verify(ThemeMode.Light, 1.6f)
 
+    @Test fun slowLoadingNoticeReplacesInitialLabelAndClearsOnFailureAndCompletion() {
+        val emptyProfile = profile.copy(statuses = emptyList(), pinnedStatuses = emptyList())
+        val state = mutableStateOf(ProfileUiState(profile = emptyProfile, selectedHashtag = "写真",
+            profileTabs = mapOf(ProfileStatusTab.Posts to ProfileTabUiState(isLoading = true))))
+        rule.setContent {
+            MastodonClientTheme {
+                ProfileContent(state = state.value, padding = PaddingValues(), onRetry = {}, onRefresh = {},
+                    onStatusClick = {}, onOpenLink = {}, onReply = {}, onBoost = {}, onQuote = { _, _ -> },
+                    onFavourite = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> })
+            }
+        }
+        rule.onNodeWithText("読み込み中…").assertExists()
+        rule.onNodeWithText("取得に時間がかかっています").assertDoesNotExist()
+        rule.runOnIdle { state.value = state.value.copy(profileTabs = mapOf(ProfileStatusTab.Posts to
+            ProfileTabUiState(isLoading = true, isSlowLoading = true))) }
+        rule.onNodeWithText("取得に時間がかかっています").assertExists()
+        rule.onNodeWithText("読み込み中…").assertDoesNotExist()
+        rule.runOnIdle { state.value = state.value.copy(profileTabs = mapOf(ProfileStatusTab.Posts to
+            ProfileTabUiState(error = "投稿を取得できませんでした"))) }
+        rule.onNodeWithText("取得に時間がかかっています").assertDoesNotExist()
+        rule.onNodeWithText("再試行").assertExists()
+        rule.runOnIdle { state.value = state.value.copy(profile = profile.copy(pinnedStatuses = emptyList()),
+            profileTabs = mapOf(ProfileStatusTab.Posts to ProfileTabUiState(statuses = profile.statuses,
+                isLoaded = true, isLoadingMore = true, isSlowLoading = true))) }
+        rule.onNodeWithText("通常の投稿").assertExists()
+        rule.onNodeWithText("取得に時間がかかっています").assertExists()
+        rule.runOnIdle { state.value = state.value.copy(profileTabs = mapOf(ProfileStatusTab.Posts to
+            ProfileTabUiState(statuses = profile.statuses, isLoaded = true, endReached = true))) }
+        rule.onNodeWithText("取得に時間がかかっています").assertDoesNotExist()
+        rule.onNodeWithText("通常の投稿").assertExists()
+    }
+
     private fun verify(theme: ThemeMode, fontScale: Float = 1f) {
         val state = mutableStateOf(ProfileUiState(profile = profile,
             featuredTags = listOf(FeaturedTag("one", "写真", 350), FeaturedTag("two", "NowPlaying", 0),

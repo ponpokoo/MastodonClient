@@ -514,6 +514,8 @@ internal fun ProfileContent(
                 (pageState?.isLoading == true || pageState?.isLoadingMore == true || pageState?.isRefreshing == true ||
                     (pageState == null && isSelectedPage && (state.isLoadingProfile || isLoadingMore))))
             val loadingMore = pageLoaded && (pageState?.isLoadingMore ?: (isSelectedPage && isLoadingMore))
+            val slowLoadingLabel = if (state.selectedHashtag != null && pageState?.isSlowLoading == true)
+                "取得に時間がかかっています" else null
             Box(Modifier.fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize(), state = postListState) {
             items(statuses, key = { it.timelineId }) { status ->
@@ -532,7 +534,7 @@ internal fun ProfileContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 if (loadingMore && !isPullRefreshing) {
-                    item { ListLoadingMoreIndicator() }
+                    item { ListLoadingMoreIndicator(label = slowLoadingLabel) }
                 } else if (pageState?.error != null) {
                     item {
                         Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -550,7 +552,7 @@ internal fun ProfileContent(
                 // Pager pages keep the full viewport height; exclude the part hidden
                 // below the screen while the shared profile header is still visible.
                 val hiddenHeight = with(density) { visibleHeaderHeight.toDp() }.coerceAtMost(pagerHeight)
-                ListLoadingContent(Modifier.padding(bottom = hiddenHeight))
+                ListLoadingContent(Modifier.padding(bottom = hiddenHeight), label = slowLoadingLabel ?: "読み込み中…")
             }
             }
             }

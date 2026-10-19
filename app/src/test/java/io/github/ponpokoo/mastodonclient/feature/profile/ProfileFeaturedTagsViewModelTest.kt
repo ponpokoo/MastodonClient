@@ -8,6 +8,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
@@ -111,12 +113,64 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
         }
         val model = create(repository)
         advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
-        model.select("写真"); advanceUntilIdle()
+        model.select("写真"); runCurrent()
+        advanceTimeBy(9_000)
         model.select("art"); advanceUntilIdle()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
         old.complete(Result.success(TimelinePage(listOf(testStatus("stale")), null, true)))
         advanceUntilIdle()
         assertEquals("art", model.state().selectedHashtag)
         assertEquals(listOf("art"), model.state().profile!!.statuses.map { it.statusId })
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+    }
+
+    @Test fun slowTaggedFirstPageShowsNoticeAtTenSecondsAndClearsItOnSuccess() = runTest(dispatcher) {
+        val finish = CompletableDeferred<Result<TimelinePage>>()
+        val repository = object : Repository() {
+            override suspend fun getTaggedProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, hashtag: String, maxId: String?) = finish.await()
+        }
+        val model = create(repository)
+        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        model.select("写真"); runCurrent()
+        advanceTimeBy(9_999); runCurrent()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        advanceTimeBy(1); runCurrent()
+        assertTrue(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        finish.complete(Result.success(TimelinePage(listOf(testStatus("tagged")), null, true)))
+        advanceUntilIdle()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        assertEquals("tagged", model.state().profile!!.statuses.single().statusId)
+    }
+
+    @Test fun slowTaggedPaginationClearsNoticeOnFailureAndRestartsDelayOnRetry() = runTest(dispatcher) {
+        var finish = CompletableDeferred<Result<TimelinePage>>()
+        val repository = object : Repository() {
+            override suspend fun getTaggedProfileStatuses(session: AccountSession, accountId: String,
+                tab: ProfileStatusTab, hashtag: String, maxId: String?) = if (maxId == null)
+                super.getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId) else finish.await()
+        }
+        val model = create(repository)
+        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        model.select("写真"); advanceUntilIdle()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        model.more(); runCurrent()
+        advanceTimeBy(10_000); runCurrent()
+        assertTrue(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        finish.complete(Result.failure(IllegalStateException("offline")))
+        advanceUntilIdle()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        assertEquals(listOf("写真"), model.state().profile!!.statuses.map { it.statusId })
+        finish = CompletableDeferred()
+        model.retry(); runCurrent()
+        advanceTimeBy(9_999); runCurrent()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        advanceTimeBy(1); runCurrent()
+        assertTrue(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        finish.complete(Result.success(TimelinePage(listOf(testStatus("older")), null, true)))
+        advanceUntilIdle()
+        assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
+        assertEquals(listOf("写真", "older"), model.state().profile!!.statuses.map { it.statusId })
     }
 
     @Test fun failedTaggedPaginationRetriesSameFilterAndCursorAndStopsAutomaticRequests() = runTest(dispatcher) {
@@ -233,5 +287,6 @@ class OwnProfileFeaturedTagsSessionTest : ScreenViewModelTestBase() {
         assertNull(model.uiState.value.selectedHashtag)
         assertEquals(listOf("写真"), model.uiState.value.featuredTags.map { it.name })
         assertEquals("post", model.uiState.value.profile!!.statuses.single().statusId)
+        assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
     }
 }

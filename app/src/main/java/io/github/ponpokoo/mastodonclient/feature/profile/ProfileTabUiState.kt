@@ -8,6 +8,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class ProfileTabUiState(
     val statuses: List<TimelineStatus> = emptyList(),
@@ -20,6 +22,7 @@ data class ProfileTabUiState(
     val error: String? = null,
     val errorIsPagination: Boolean = false,
     val isPullRefreshing: Boolean = false,
+    val isSlowLoading: Boolean = false,
 ) {
     val canAutoLoadMore: Boolean get() = isLoaded && !isLoading && !isRefreshing && !isLoadingMore &&
         error == null && !endReached && nextMaxId != null
@@ -28,29 +31,30 @@ data class ProfileTabUiState(
 internal fun ProfileTabUiState.appendPage(page: TimelinePage, requestedCursor: String) = copy(
     statuses = (statuses + page.statuses).distinctBy(TimelineStatus::statusId),
     nextMaxId = page.nextMaxId, endReached = page.endReached || page.nextMaxId == requestedCursor,
-    isLoadingMore = false, error = null, errorIsPagination = false,
+    isLoadingMore = false, isSlowLoading = false, error = null, errorIsPagination = false,
 )
 
 internal fun ProfileTabUiState.replacePage(page: TimelinePage) = copy(
     statuses = page.statuses, nextMaxId = page.nextMaxId, endReached = page.endReached,
     isLoaded = true, isLoading = false, isLoadingMore = false, isRefreshing = false,
     error = null, errorIsPagination = false,
-    isPullRefreshing = false,
+    isPullRefreshing = false, isSlowLoading = false,
 )
 
 internal fun ProfileTabUiState.pageFailed(error: Throwable) = copy(
     isLoading = false, isLoadingMore = false, isRefreshing = false,
     error = error.message ?: "投稿を取得できませんでした",
     errorIsPagination = false,
-    isPullRefreshing = false,
+    isPullRefreshing = false, isSlowLoading = false,
 )
 
 /** Pinned failure stays independent of the posts result; session checks remain in the caller. */
 internal suspend fun fetchProfileTab(
     repository: TimelineRepository, session: AccountSession, accountId: String, tab: ProfileStatusTab,
     hashtag: String? = null,
+    onSlowLoading: () -> Unit = {},
 ): Pair<Result<TimelinePage>, Result<List<TimelineStatus>>?> = coroutineScope {
-    val posts = async { repository.profileStatuses(session, accountId, tab, hashtag) }
+    val posts = async { repository.profileStatuses(session, accountId, tab, hashtag, onSlowLoading = onSlowLoading) }
     val pinned = if (tab == ProfileStatusTab.Posts && hashtag == null) {
         async { repository.getPinnedProfileStatuses(session, accountId) }
     } else null
@@ -58,9 +62,20 @@ internal suspend fun fetchProfileTab(
 }
 
 internal suspend fun TimelineRepository.profileStatuses(session: AccountSession, accountId: String,
-    tab: ProfileStatusTab, hashtag: String?, maxId: String? = null): Result<TimelinePage> =
-    if (hashtag == null) getProfileStatuses(session, accountId, tab, maxId)
-    else getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId)
+    tab: ProfileStatusTab, hashtag: String?, maxId: String? = null,
+    onSlowLoading: () -> Unit = {},
+): Result<TimelinePage> = coroutineScope {
+    val noticeJob = if (hashtag != null) launch {
+        delay(10_000)
+        onSlowLoading()
+    } else null
+    try {
+        if (hashtag == null) getProfileStatuses(session, accountId, tab, maxId)
+        else getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId)
+    } finally {
+        noticeJob?.cancel()
+    }
+}
 
 internal fun UserProfile.withTab(tab: ProfileTabUiState) = copy(
     statuses = tab.statuses, nextMaxId = tab.nextMaxId, endReached = tab.endReached,
