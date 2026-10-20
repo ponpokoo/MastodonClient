@@ -531,7 +531,7 @@ fun HomeTimelineScreen(
                     onVotePoll = actionsViewModel::votePoll,
                     onMoreClick = openStatusMenu,
                     onUnavailableAction = { label ->
-                        scope.launch { snackbarHostState.showSnackbar("$label は次の実装で追加します") }
+                        scope.launch { snackbarHostState.showSnackbar("${label}は現在利用できません") }
                     },
                     preferences = mainState.preferences,
                 )
@@ -938,7 +938,7 @@ internal fun TimelineContent(
             TextButton(onClick = onRetry) { Text("再試行") }
         }
         rows.isEmpty() -> CenteredMessage(padding) {
-            Text("ホームタイムラインに投稿がありません")
+            Text("投稿がありません")
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onRetry) { Text("再読み込み") }
         }

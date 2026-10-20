@@ -447,7 +447,7 @@ fun ComposePostScreen(
                         decorationBox = { innerTextField ->
                             Box(contentAlignment = Alignment.CenterStart) {
                                 if (state.spoilerText.isEmpty()) {
-                                    Text("内容警告", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("CW", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 innerTextField()
                             }
@@ -532,7 +532,7 @@ fun ComposePostScreen(
                         Text("メディアを閲覧注意にする")
                         if (state.spoilerText.isNotBlank()) {
                             Text(
-                                "内容警告により自動で設定されます",
+                                "CWにより自動で設定されます",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

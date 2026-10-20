@@ -82,7 +82,7 @@ class ExploreScreenDeviceTest {
         } } }
         rule.onNodeWithTag("tag_subscription").assertDoesNotExist()
         rule.onNodeWithTag("tag_menu").performClick()
-        rule.onNodeWithText("購読する").performClick()
+        rule.onNodeWithText("フォローする").performClick()
         rule.runOnIdle { assertEquals(1, calls); assertTrue(following.value); trend.value = true }
         rule.onNodeWithTag("tag_menu").assertDoesNotExist()
         rule.onNodeWithTag("tag_subscription").performClick()

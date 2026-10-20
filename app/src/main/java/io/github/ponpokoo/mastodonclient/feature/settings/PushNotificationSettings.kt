@@ -25,8 +25,8 @@ internal fun PushNotificationSettings(viewModel: PushSettingsViewModel, sessions
         pendingPermission = null
     }
     Column(Modifier.fillMaxWidth().padding(20.dp).testTag("push_settings")) {
-        Text("バックグラウンドの通知（Push）", style = MaterialTheme.typography.titleMedium)
-        Text("アプリが画面にない間も通知を受信します。ストリーミングがオフの場合でも動作します。", style = MaterialTheme.typography.bodySmall)
+        Text("プッシュ通知", style = MaterialTheme.typography.titleMedium)
+        Text("アプリを表示していない間も通知を受信します。ストリーミングがオフでも動作します。", style = MaterialTheme.typography.bodySmall)
         if (busy) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(8.dp))
@@ -63,7 +63,7 @@ internal fun PushNotificationSettings(viewModel: PushSettingsViewModel, sessions
         }
         // Includes cleanup of accounts already logged out, without retaining their profile in UI.
         if (states.any { (id, value) -> sessions.none { it.sessionId == id } && value.status == PushControlStatus.REMOVING }) {
-            Text("ログアウト済みアカウントの通知を解除待ちです。", style = MaterialTheme.typography.bodySmall)
+            Text("ログアウト済みアカウントの通知は解除待ちです。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = viewModel::retry) { Text("解除を再試行") }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = viewModel::retry) { Text("再試行") } }

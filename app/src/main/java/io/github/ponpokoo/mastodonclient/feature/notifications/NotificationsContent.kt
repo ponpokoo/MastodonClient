@@ -274,7 +274,7 @@ private fun NotificationHeader(
         "mention" -> Icons.AutoMirrored.Filled.Reply to "返信"
         "reply" -> Icons.AutoMirrored.Filled.Reply to "返信しました"
         "reblog" -> Icons.Filled.Repeat to "ブーストしました"
-        "favourite" -> Icons.Filled.Star to "お気に入りしました"
+        "favourite" -> Icons.Filled.Star to "お気に入りにしました"
         "follow" -> Icons.Filled.PersonAdd to "フォローしました"
         "follow_request" -> Icons.Filled.HowToReg to "フォローをリクエストしました"
         "poll" -> Icons.Filled.Poll to "アンケートが終了しました"

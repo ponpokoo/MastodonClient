@@ -138,7 +138,7 @@ internal fun InstanceLoginContent(
             Text("ログイン", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
-                "アカウントのドメインを入力してください。",
+                "利用しているサーバーのドメインを入力してください。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
@@ -186,9 +186,9 @@ internal fun InstanceLoginContent(
                     Text(when (state.operation) {
                         LoginOperation.Discover -> "サーバーを確認中…"
                         LoginOperation.PrepareAuthorization -> "ログインを準備中…"
-                        LoginOperation.CompleteAuthorization -> "認証を完了中…"
+                        LoginOperation.CompleteAuthorization -> "ログイン処理中…"
                         LoginOperation.Logout -> "処理中…"
-                        null -> if (state.instance == null) "接続を確認" else "ブラウザでログイン"
+                        null -> if (state.instance == null) "接続を確認" else "ブラウザーでログイン"
                     })
                 }
             }

@@ -99,7 +99,7 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                     HorizontalDivider()
                 }
                 if (state.words.isEmpty()) item { Text("登録したワードはありません", Modifier.padding(vertical = 24.dp)) }
-                item { Text("端末内だけで適用します。本文・CWの部分一致で判定し、英字の大文字・小文字は区別しません。", Modifier.padding(top = 20.dp),
+                item { Text("この端末でのみ適用されます。", Modifier.padding(top = 20.dp),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } else if (state.page == ModerationPage.Filters) {
                 item {
@@ -114,12 +114,12 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                     when (state.filterListStatus) {
                         FilterListStatus.Unsupported -> Text("このサーバーは公式フィルターに対応していません。端末内のワードミュートをご利用ください。")
                         FilterListStatus.Failed -> Text(fetch?.error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                        FilterListStatus.NotFetched -> Text("フィルターは未取得です。設定内の更新ボタンから取得してください。")
+                        FilterListStatus.NotFetched -> Text("フィルターをまだ読み込んでいません。更新ボタンで読み込んでください。")
                         FilterListStatus.Loading -> Unit
                         FilterListStatus.Ready -> Unit
                     }
                     if (state.filterListStatus == FilterListStatus.Unsupported) TextButton(onClick = { viewModel.open(ModerationPage.Words) }) { Text("端末内のワードミュート") }
-                    if (state.server?.pendingCreation != null) Text("作成結果の確認待ちです。次の同期で確認します。")
+                    if (state.server?.pendingCreation != null) Text("フィルターの作成結果を確認できていません。フィルターの一覧を更新してください。")
                 }
                 items(state.server?.filters.orEmpty(), key = { it.id }) { filter ->
                     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
@@ -160,7 +160,7 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                     }
                     HorizontalDivider()
                 }
-                if (!list.loaded && !isProcessing) item { Text("未取得の一覧です。設定内の更新ボタンから取得してください。") }
+                if (!list.loaded && !isProcessing) item { Text("一覧をまだ読み込んでいません。更新ボタンで読み込んでください。") }
                 state.server?.fetch?.get(if (kind == ModerationListKind.Mutes) ServerSetting.Mutes else ServerSetting.Blocks)?.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error) } }
                 if (list.loaded && list.accounts.isEmpty() && !isProcessing) item { Text("${state.page.label()}のアカウントはありません", Modifier.padding(vertical = 24.dp)) }
                 if (list.nextMaxId != null && !isProcessing) item { TextButton(viewModel::loadMore, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }

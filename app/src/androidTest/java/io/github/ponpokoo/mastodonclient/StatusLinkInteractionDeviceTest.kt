@@ -91,14 +91,14 @@ class StatusLinkInteractionDeviceTest {
         rule.runOnIdle { assertEquals(listOf("open:$url"), events); events.clear() }
         holdLink()
         rule.onNodeWithText("開く").assertExists()
-        rule.onNodeWithText("ブラウザで開く").assertExists()
+        rule.onNodeWithText("ブラウザーで開く").assertExists()
         rule.onNodeWithText("コピー").assertExists()
         rule.runOnIdle { assertTrue(events.isEmpty()) }
         save(rule.onNode(isPopup()).captureToImage(), "menu.png")
         rule.onNodeWithText("開く").performClick()
         rule.runOnIdle { assertEquals(listOf("open:$url"), events); events.clear() }
         holdLink()
-        rule.onNodeWithText("ブラウザで開く").performClick()
+        rule.onNodeWithText("ブラウザーで開く").performClick()
         rule.runOnIdle { assertEquals(listOf("browser:$url"), events); events.clear() }
         holdLink()
         rule.onNodeWithText("コピー").performClick()
@@ -231,7 +231,7 @@ class StatusLinkInteractionDeviceTest {
             assertEquals(url, context.getSystemService(ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString())
         }
         thumbnail.performTouchInput { longClick(center) }
-        rule.onNodeWithText("ブラウザで開く").performClick()
+        rule.onNodeWithText("ブラウザーで開く").performClick()
         rule.runOnIdle {
             assertTrue(events.isEmpty())
             assertEquals(url, context.intents.single().dataString)

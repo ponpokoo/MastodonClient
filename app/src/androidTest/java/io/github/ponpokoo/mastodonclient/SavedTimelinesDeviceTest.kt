@@ -204,9 +204,9 @@ class SavedTimelinesDeviceTest {
         rule.waitUntil(5_000) { bookmarks.get() == 1 && !model.state.value.statuses.single().bookmarked }
         rule.onNodeWithText("Saved fixture post").assertIsDisplayed()
         rule.onNodeWithContentDescription("投稿メニュー").performClick()
-        rule.onNodeWithText("ブラウザで開く").assertIsDisplayed()
+        rule.onNodeWithText("ブラウザーで開く").assertIsDisplayed()
         rule.runOnIdle { browsing.activate(account.copy(sessionId = "another")) }
-        rule.onNodeWithText("ブラウザで開く").assertDoesNotExist()
+        rule.onNodeWithText("ブラウザーで開く").assertDoesNotExist()
     }
 
     @Test fun titleReturnsScrolledListToTop() {

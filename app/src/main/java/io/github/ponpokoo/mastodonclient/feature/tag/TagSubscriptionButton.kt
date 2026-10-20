@@ -13,6 +13,6 @@ import androidx.compose.ui.unit.dp
 internal fun TagSubscriptionButton(following: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     FilledTonalButton(onClick = onClick, enabled = enabled, modifier = modifier.height(32.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-        Text(if (following) "購読中" else "購読する", style = MaterialTheme.typography.labelSmall)
+        Text(if (following) "フォロー中" else "フォローする", style = MaterialTheme.typography.labelSmall)
     }
 }

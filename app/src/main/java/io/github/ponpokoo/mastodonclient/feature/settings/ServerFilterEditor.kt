@@ -95,7 +95,7 @@ internal fun ServerFilterEditor(
                 .padding(horizontal = 20.dp, vertical = 16.dp).testTag("filter_editor"),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            if (editor.awaitingConfirmation) Text("作成結果の確認待ちです。次の同期で確認します。", style = MaterialTheme.typography.bodyMedium)
+            if (editor.awaitingConfirmation) Text("フィルターの作成結果を確認できていません。フィルターの一覧を更新してください。", style = MaterialTheme.typography.bodyMedium)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedTextField(
                 value = edit.title, onValueChange = { onChange(edit.copy(title = it)) },

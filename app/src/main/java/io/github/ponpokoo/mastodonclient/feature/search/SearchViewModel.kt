@@ -46,7 +46,7 @@ data class SearchUiState(
 }
 
 internal fun SearchFailure.message(): String = when (this) {
-    SearchFailure.Timeout -> "検索に時間がかかっています。時間内に結果を取得できませんでした。"
+    SearchFailure.Timeout -> "時間内に検索結果を取得できませんでした。"
     SearchFailure.Connection -> "サーバーに接続できませんでした。通信状態を確認してください。"
     SearchFailure.Authentication -> "検索する権限を確認できませんでした。アカウントの再認証をお試しください。"
     SearchFailure.RateLimited -> "検索回数の上限に達しました。少し待ってからお試しください。"

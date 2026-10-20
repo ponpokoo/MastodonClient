@@ -86,7 +86,7 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
                         }
                         items(page.news, key = { it.url }) { NewsRow(it, onOpenLink) }
                         if (page.count() == 0 && !tab.loading && tab.error == null) item {
-                            MessageContent(if (feed == ExploreFeed.Followed) "購読中のハッシュタグはありません" else "表示する${feed.label()}はありません")
+                            MessageContent(if (feed == ExploreFeed.Followed) "フォロー中のハッシュタグはありません" else "表示する${feed.label()}はありません")
                             if (feed == ExploreFeed.Followed) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 TextButton(onClick = onFindTags) { Text("タグを検索") }
                             }
@@ -106,7 +106,7 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
             }
         }
     }
-    confirm?.let { tag -> AlertDialog(onDismissRequest = { confirm = null }, title = { Text("購読を解除しますか？") },
+    confirm?.let { tag -> AlertDialog(onDismissRequest = { confirm = null }, title = { Text("フォローを解除しますか？") },
         text = { Text("#${tag.name}") }, confirmButton = { TextButton(onClick = { confirm = null; onUnfollow(tag) }) { Text("解除する") } },
         dismissButton = { TextButton(onClick = { confirm = null }) { Text("キャンセル") } }) }
 }
@@ -133,5 +133,5 @@ private fun ExploreFeed.label() = when (this) {
     ExploreFeed.Posts -> "投稿"
     ExploreFeed.Hashtags -> "ハッシュタグ"
     ExploreFeed.News -> "ニュース"
-    ExploreFeed.Followed -> "購読中"
+    ExploreFeed.Followed -> "フォロー中"
 }

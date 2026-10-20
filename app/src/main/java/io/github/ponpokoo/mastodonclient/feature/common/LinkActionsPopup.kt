@@ -62,7 +62,7 @@ internal fun LinkActionsPopup(
         Surface(shape = MaterialTheme.shapes.extraSmall, tonalElevation = 3.dp, shadowElevation = 6.dp) {
             Column(Modifier.width(IntrinsicSize.Max).widthIn(min = 160.dp, max = 280.dp)) {
                 DropdownMenuItem(text = { Text("開く") }, onClick = onOpen)
-                DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = {
+                DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = {
                     onDismiss()
                     if (onOpenInBrowser != null) onOpenInBrowser(url)
                     else if (!launcher.openInBrowser(url.toUri())) {

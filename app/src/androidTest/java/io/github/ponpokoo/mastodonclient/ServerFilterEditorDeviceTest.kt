@@ -204,7 +204,7 @@ class ServerFilterEditorDeviceTest {
             rule.runOnIdle {
                 repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) -> saved.copy(displayPending = true) }
             }
-            val notice = "設定保存済み・投稿への反映待ちです"
+            val notice = "フィルターは保存済みです。投稿への反映待ちです"
             rule.onNode(hasText(notice) and hasAnyAncestor(hasTestTag("management_snackbar"))).assertIsDisplayed()
             capture("filter-list-update")
             rule.waitUntil(4_000) { rule.onAllNodesWithText(notice).fetchSemanticsNodes().isEmpty() }

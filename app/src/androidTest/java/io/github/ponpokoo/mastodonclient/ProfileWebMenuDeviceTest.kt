@@ -25,7 +25,7 @@ class ProfileWebMenuDeviceTest {
         val settingsBounds = rule.onNodeWithText("マストドンの設定").fetchSemanticsNode().boundsInRoot
         val aboutBounds = rule.onNodeWithText("このサーバーについて").fetchSemanticsNode().boundsInRoot
         assertTrue(aboutBounds.top >= settingsBounds.bottom)
-        select("ブラウザで開く")
+        select("ブラウザーで開く")
         openMenu()
         select("マストドンの設定")
         openMenu()
@@ -40,7 +40,7 @@ class ProfileWebMenuDeviceTest {
         showProfile(own = false, profileUrl = "https://remote.example/@alice")
         openMenu()
         rule.onNodeWithText("マストドンの設定").assertDoesNotExist()
-        select("ブラウザで開く")
+        select("ブラウザーで開く")
         openMenu()
         select("このサーバーについて")
         rule.runOnIdle {

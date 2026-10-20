@@ -40,7 +40,7 @@ class HomeTimelineDeviceTest {
             composeRule.onAllNodesWithTag("status_detail").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithContentDescription("投稿メニュー").performClick()
-        composeRule.onNodeWithText("ブラウザで開く").assertExists()
+        composeRule.onNodeWithText("ブラウザーで開く").assertExists()
     }
 
     @Test
@@ -117,7 +117,7 @@ class HomeTimelineDeviceTest {
         }
 
         composeRule.onAllNodesWithContentDescription("投稿メニュー")[0].performClick()
-        composeRule.onNodeWithText("ブラウザで開く").assertExists()
+        composeRule.onNodeWithText("ブラウザーで開く").assertExists()
         composeRule.onNodeWithText("閉じる").performClick()
         composeRule.waitForIdle()
 

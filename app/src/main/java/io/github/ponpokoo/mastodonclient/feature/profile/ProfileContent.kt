@@ -338,7 +338,7 @@ internal fun ProfileContent(
                         ) {
                             if (profile.isOwnProfile) {
                                 onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
-                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
+                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
                                 DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
                                 DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })
                                 DropdownMenuItem(text = { Text("お気に入り") }, onClick = { profileMenuExpanded = false; onOpenFavourites() })
@@ -346,11 +346,11 @@ internal fun ProfileContent(
                                 webLinks?.settings?.let { url -> DropdownMenuItem(text = { Text("マストドンの設定") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
                             } else {
                                 onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
-                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
+                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
                                 onAddProfileToList?.let { action -> DropdownMenuItem(text = { Text("リストに追加") }, onClick = { profileMenuExpanded = false; action() }) }
                                 if (onMuteProfile != null || onBlockProfile != null || onReportProfile != null) HorizontalDivider()
-                                onMuteProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileMuted) "ミュート（解除）" else "ミュート", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
-                                onBlockProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileBlocked) "ブロック（解除）" else "ブロック", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
+                                onMuteProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileMuted) "ミュートを解除" else "ミュート", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
+                                onBlockProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileBlocked) "ブロックを解除" else "ブロック", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
                                 onReportProfile?.let { action -> DropdownMenuItem(text = { Text("報告", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
                                 moderationError?.let { error -> DropdownMenuItem(text = { Text("$error・再試行", color = MaterialTheme.colorScheme.error) }, onClick = onRetryModeration) }
 

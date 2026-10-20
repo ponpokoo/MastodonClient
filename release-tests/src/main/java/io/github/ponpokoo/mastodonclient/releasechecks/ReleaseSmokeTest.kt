@@ -88,7 +88,7 @@ class ReleaseSmokeTest {
         input().text = requireNotNull(server)
         await(By.text(CONNECT).enabled(true)).click()
         await(By.textEndsWith(" に接続できました。"), NETWORK_TIMEOUT)
-        await(By.text("ブラウザでログイン").enabled(true))
+        await(By.text("ブラウザーでログイン").enabled(true))
     }
 
     private fun coldStart() {

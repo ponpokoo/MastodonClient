@@ -136,7 +136,7 @@ class StatusActionsViewModel(
         requestScope.launch {
             statusActionManager.complete(pending).forSession(snapshot).onFailure { error ->
                 val message = if (error.requiresAuthentication) {
-                    "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
+                    "もう一度ログインして、必要な権限を許可してください。"
                 } else error.message ?: "投稿を更新できませんでした"
                 _uiState.update { it.copy(actionMessage = message) }
             }
@@ -157,7 +157,7 @@ class StatusActionsViewModel(
                 }
                 .onFailure { error ->
                     val message = if (error.requiresAuthentication) {
-                        "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
+                        "もう一度ログインして、必要な権限を許可してください。"
                     } else error.message ?: "投稿を更新できませんでした"
                     _uiState.update { it.copy(actionMessage = message) }
                 }

@@ -24,12 +24,12 @@ internal fun HashtagHeader(name: String, fromTrend: Boolean, following: Boolean?
             else {
                 IconButton(onClick = { menu = true }, modifier = Modifier.testTag("tag_menu")) { Icon(Icons.Outlined.MoreVert, "ハッシュタグのメニュー") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(if (following == null) "購読状態を確認" else if (following) "購読を解除" else "購読する") },
+                    DropdownMenuItem(text = { Text(if (following == null) "フォロー状態を確認" else if (following) "フォローを解除" else "フォローする") },
                         enabled = !busy, onClick = { menu = false; if (following == null) onRetry() else toggle() })
                 }
             }
         })
-    if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("購読を解除しますか？") },
+    if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("フォローを解除しますか？") },
         text = { Text("#$name") }, confirmButton = { TextButton(onClick = { confirm = false; onToggle() }) { Text("解除する") } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text("キャンセル") } })
 }

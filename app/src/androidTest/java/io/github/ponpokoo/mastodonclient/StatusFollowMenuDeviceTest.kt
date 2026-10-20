@@ -106,7 +106,7 @@ class StatusFollowMenuDeviceTest {
             rule.onNode(isDialog()).assertDoesNotExist()
             rule.runOnIdle { lookup.complete(Result.success(AccountRelationship(following = true, muting = true))) }
             rule.onNodeWithText("フォロー解除").assertIsEnabled()
-            rule.onNodeWithText("ミュート（解除）").assertIsEnabled()
+            rule.onNodeWithText("ミュートを解除").assertIsEnabled()
             rule.onNodeWithText("ブロック").assertIsEnabled()
             rule.onNodeWithText("フォロー").assertDoesNotExist()
             rule.onNodeWithText("ミュート").assertDoesNotExist()

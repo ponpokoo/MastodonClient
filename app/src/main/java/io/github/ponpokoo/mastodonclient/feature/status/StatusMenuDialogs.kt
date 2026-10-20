@@ -135,12 +135,12 @@ internal fun StatusMenuDialog(
                 }
                 if (isOwnStatus) {
                     Action(if (status.pinned) "プロフィールへの固定解除" else "プロフィールに固定", Icons.Outlined.PushPin, action = onPin)
-                    Action("ブラウザで開く", Icons.Outlined.Public, action = onOpenBrowser)
+                    Action("ブラウザーで開く", Icons.Outlined.Public, action = onOpenBrowser)
                     Action("編集", Icons.Outlined.Edit, action = onEdit)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     Action("削除", Icons.Outlined.Delete, destructive = true, action = onDelete)
                 } else {
-                    Action("ブラウザで開く", Icons.Outlined.Public, action = onOpenBrowser)
+                    Action("ブラウザーで開く", Icons.Outlined.Public, action = onOpenBrowser)
                     Action("リストに追加", Icons.Outlined.PlaylistAdd, action = onAddToList)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     if (relationship != null) {
@@ -153,10 +153,10 @@ internal fun StatusMenuDialog(
                                 enabled = relationshipReady, action = onFollow)
                         }
                     }
-                    Action(if (moderation?.relationship?.muting == true) "ミュート（解除）" else "ミュート",
+                    Action(if (moderation?.relationship?.muting == true) "ミュートを解除" else "ミュート",
                         Icons.Outlined.VolumeOff, destructive = true,
                         enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onMute)
-                    Action(if (moderation?.relationship?.blocking == true) "ブロック（解除）" else "ブロック",
+                    Action(if (moderation?.relationship?.blocking == true) "ブロックを解除" else "ブロック",
                         Icons.Outlined.Block, destructive = true,
                         enabled = moderation?.relationship != null && !moderation.loading && !moderation.busy, action = onBlock)
                     Action("報告", Icons.Outlined.Flag, destructive = true, action = onReport)

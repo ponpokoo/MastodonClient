@@ -87,21 +87,21 @@ class ModerationMenuDeviceTest {
             }
             rule.waitUntil(10_000) { rule.onAllNodesWithContentDescription("投稿メニュー").fetchSemanticsNodes().isNotEmpty() }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
-            rule.onNodeWithText("ミュート（解除）").assertIsEnabled()
+            rule.onNodeWithText("ミュートを解除").assertIsEnabled()
             snapshot("moderation-light.png")
             rule.runOnIdle { theme.value = ThemeMode.Dark }
             rule.waitForIdle()
             snapshot("moderation-dark.png")
-            rule.onNodeWithText("ミュート（解除）").performClick()
+            rule.onNodeWithText("ミュートを解除").performClick()
             rule.onNodeWithText("キャンセル").performClick()
             rule.runOnIdle { assertTrue(repository.changes.isEmpty()) }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
-            rule.onNodeWithText("ミュート（解除）").performClick()
+            rule.onNodeWithText("ミュートを解除").performClick()
             rule.onNodeWithText("ミュートを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.size == 1 }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
             rule.onNodeWithText("ミュート").assertIsEnabled()
-            rule.onNodeWithText("ブロック（解除）").performClick()
+            rule.onNodeWithText("ブロックを解除").performClick()
             rule.onNodeWithText("ブロックを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.size == 2 }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
@@ -136,7 +136,7 @@ class ModerationMenuDeviceTest {
             rule.onNodeWithText("ブロック").assertIsNotEnabled()
             rule.runOnIdle { repository.failLookup = false }
             rule.onNodeWithText("関係状態を取得できませんでした・再試行").performClick()
-            rule.onNodeWithText("ブロック（解除）").assertIsEnabled().performClick()
+            rule.onNodeWithText("ブロックを解除").assertIsEnabled().performClick()
             rule.onNodeWithText("ブロックを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.isNotEmpty() }
             rule.runOnIdle { assertEquals(listOf("block" to false), repository.changes) }
@@ -175,7 +175,7 @@ class ModerationMenuDeviceTest {
             rule.runOnIdle { assertEquals(calls, repository.profilePageCalls) }
             rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
             rule.onNodeWithText("関係状態を確認中").assertDoesNotExist()
-            rule.onNodeWithText("ミュート（解除）").assertIsEnabled()
+            rule.onNodeWithText("ミュートを解除").assertIsEnabled()
         } finally { rule.runOnIdle { store.clear() } }
     }
 

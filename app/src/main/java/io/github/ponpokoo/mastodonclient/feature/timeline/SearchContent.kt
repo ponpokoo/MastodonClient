@@ -164,13 +164,13 @@ internal fun SearchContent(
                         }
                     }
                     if (results == null && !tab.isSearching && tab.error == null) item {
-                        MessageContent("対象を選び、キーボードの検索キーで検索してください")
+                        MessageContent("検索対象のタブを選び、キーボードの検索キーを押してください")
                     }
                 }
                 if (tab.isSearching) ListLoadingContent()
                 }
             }
-        } else if (state.isSearchActive) MessageContent("キーワード、アカウントID、URLを入力してください")
+        } else if (state.isSearchActive) MessageContent("キーワード、ユーザー名、URLを入力してください")
         else ExploreContent(exploreState, onSelectExploreFeed, onRefreshExplore, onLoadMoreExplore, onRetryExplore,
             onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxWidth().weight(1f), post = { status ->
                 SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,

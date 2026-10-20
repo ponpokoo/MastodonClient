@@ -255,7 +255,7 @@ class NotificationsViewModel(
                 persistNotifications(snapshot, category)
             }.onFailure { error ->
                 val message = if (error.requiresAuthentication)
-                    "通知を表示するには、ログアウト後に再ログインして通知の読み取りを許可してください。"
+                    "もう一度ログインして、必要な権限を許可してください。"
                 else error.message ?: "通知を取得できませんでした"
                 updateList(category) { it.copy(isLoading = false, isRefreshing = false, error = message) }
             }

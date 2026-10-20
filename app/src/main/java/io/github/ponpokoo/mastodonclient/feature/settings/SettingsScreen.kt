@@ -306,7 +306,7 @@ internal fun SettingsPageContent(
                 }
                 item { SectionTitle("Android通知の表示") }
                 item {
-                    SwitchRow("起動中のAndroid通知", preferences.foregroundNotificationsEnabled) {
+                    SwitchRow("アプリ表示中のAndroid通知", preferences.foregroundNotificationsEnabled) {
                         scope.launch { store.setForegroundNotificationsEnabled(it) }
                     }
                 }
@@ -576,7 +576,7 @@ private fun Any?.displayLabel(): String = when (this) {
     StreamingPolicy.On -> "オン"
     StreamingPolicy.WifiOnly -> "Wi-Fiのみ"
     StreamingPolicy.Off -> "オフ"
-    ThemeMode.Light -> "ホワイト"
+    ThemeMode.Light -> "ライト"
     ThemeMode.Dark -> "ダーク"
     ThemeMode.System -> "端末の設定に合わせる"
     PostVisibility.Public -> "公開"

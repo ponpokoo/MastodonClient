@@ -195,7 +195,7 @@ class StatusDetailViewModel(
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(errorMessage = if (error.requiresAuthentication) {
-                            "投稿操作には追加権限が必要です。再ログインしてください。"
+                            "もう一度ログインして、必要な権限を許可してください。"
                         } else error.message ?: "投稿を更新できませんでした")
                     }
                 }

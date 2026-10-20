@@ -311,7 +311,7 @@ class ComposePostViewModel(
         if (state.isSavingDraft || state.isImportingMedia || state.isPosting || state.isLoading || state.selectedSession == null) return
         if (uris.isEmpty()) return
         if (state.configuration.supportedMimeTypes == null) {
-            _uiState.update { it.copy(errorMessage = "サーバーの対応ファイル形式を確認できません。設定を再取得してください") }
+            _uiState.update { it.copy(errorMessage = "対応ファイル形式を確認できません。サーバー設定を再取得してください") }
             return
         }
         if (state.pollOptions.isNotEmpty() || state.quotingNative) {
@@ -445,7 +445,7 @@ class ComposePostViewModel(
         MediaRejectionReason.PermissionDenied -> "ファイルの読み取り権限がありません。もう一度共有してください"
         MediaRejectionReason.TooManyAttachments -> "サーバーの添付上限を超えています"
         MediaRejectionReason.IncompatibleCombination -> "動画・音声は他のメディアと同時に添付できません"
-        MediaRejectionReason.ConfigurationUnavailable -> "サーバーの対応ファイル形式を確認できません。設定を再取得してください"
+        MediaRejectionReason.ConfigurationUnavailable -> "対応ファイル形式を確認できません。サーバー設定を再取得してください"
     }
 
     fun removeAttachment(uri: String) {
@@ -1005,7 +1005,7 @@ class ComposePostViewModel(
 
     private fun showPostError(error: Throwable, fallback: String) {
         val message = if (error.requiresAuthentication) {
-            "投稿またはメディア操作には追加権限が必要です。再ログインしてください。"
+            "もう一度ログインして、必要な権限を許可してください。"
         } else error.message ?: fallback
         _uiState.update { it.copy(isPosting = false, errorMessage = message) }
     }

@@ -149,7 +149,7 @@ class ModerationManagementViewModel(private val timeline: TimelineRepository, pr
         mutable.update { current ->
             val editor = current.editor
             val notice = if (current.page == ModerationPage.Filters && saved.displayPending && current.server?.displayPending != true && current.notice == null)
-                ManagementNotice(++noticeId, "設定保存済み・投稿への反映待ちです", false) else current.notice
+                ManagementNotice(++noticeId, "フィルターは保存済みです。投稿への反映待ちです", false) else current.notice
             if (editor?.awaitingConfirmation == true && saved.pendingCreation == null) {
                 val confirmed = saved.filters?.any { it.title == editor.edit.title.trim() && it.context == editor.edit.context &&
                     it.action == editor.edit.action && it.keywords.map { word -> word.keyword to word.wholeWord } == editor.edit.keywords.map { word -> word.keyword to word.wholeWord } } == true

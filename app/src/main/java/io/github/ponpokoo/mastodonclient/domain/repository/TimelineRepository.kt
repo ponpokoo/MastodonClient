@@ -45,10 +45,10 @@ interface TimelineRepository : ServerAccountSettingsRepository {
         Result.failure(UnsupportedOperationException("探索は未対応です"))
 
     suspend fun getTag(session: AccountSession, name: String): Result<io.github.ponpokoo.mastodonclient.domain.model.SearchTag> =
-        Result.failure(UnsupportedOperationException("ハッシュタグ購読は未対応です"))
+        Result.failure(UnsupportedOperationException("ハッシュタグのフォローは未対応です"))
 
     suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<io.github.ponpokoo.mastodonclient.domain.model.SearchTag> =
-        Result.failure(UnsupportedOperationException("ハッシュタグ購読は未対応です"))
+        Result.failure(UnsupportedOperationException("ハッシュタグのフォローは未対応です"))
 
     fun isNetworkAvailable(): Boolean = true
     suspend fun getCachedHomeWindow(session: AccountSession): Result<TimelinePage?> = Result.success(null)
