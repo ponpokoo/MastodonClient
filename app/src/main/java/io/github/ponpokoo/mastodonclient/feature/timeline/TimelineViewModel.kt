@@ -654,7 +654,7 @@ class TimelineViewModel(
             }
             return
         }
-        if (change is BrowsingSession.Change.TagUpdated) return
+        if (change is BrowsingSession.Change.TagUpdated || change is BrowsingSession.Change.ProfileUpdated) return
         homeChangesDuringRequest?.add(change)
         if (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived) currentSnapshot()?.let { snapshot -> requestScope.launch {
             timelineRepository.updateHomeTimelineCache(snapshot.account!!, change).forSession(snapshot)
@@ -663,7 +663,7 @@ class TimelineViewModel(
         val previousGaps = _uiState.value.homeIndex?.gaps.orEmpty()
         _uiState.update { current ->
             val next = when (change) {
-                is BrowsingSession.Change.TagUpdated -> current
+                is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated -> current
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.applyHomeChange(change))
                 is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {
@@ -726,7 +726,7 @@ class TimelineViewModel(
     ) {
         val message = when (error.requestFailure) {
             RequestFailure.Unauthorized -> "ログインの有効期限が切れました。ログインし直してください。"
-            RequestFailure.RateLimited -> "アクセスが集中しています。しばらく待ってから再試行してください。"
+            RequestFailure.RateLimited -> "サーバーへのアクセス回数の上限に達しました。"
             else -> error.message ?: "ホームタイムラインを取得できませんでした。"
         }
         _uiState.update {

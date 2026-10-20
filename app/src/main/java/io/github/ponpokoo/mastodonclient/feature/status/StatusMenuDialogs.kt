@@ -182,11 +182,16 @@ internal fun ConfirmStatusActionDialog(action: StatusConfirmationAction, status:
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            val unfollow = action == StatusConfirmationAction.Unfollow
             TextButton(onClick = { onConfirm(); onDismiss() },
-                colors = ButtonDefaults.textButtonColors(contentColor =
-                    if (unfollow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
-            ) { Text(if (unfollow) "フォロー解除" else "実行") }
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text(when (action) {
+                StatusConfirmationAction.Delete -> "投稿を削除"
+                StatusConfirmationAction.Unfollow -> "フォロー解除"
+                StatusConfirmationAction.Mute -> "ミュートする"
+                StatusConfirmationAction.Unmute -> "ミュートを解除"
+                StatusConfirmationAction.Block -> "ブロックする"
+                StatusConfirmationAction.Unblock -> "ブロックを解除"
+            }) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
     )

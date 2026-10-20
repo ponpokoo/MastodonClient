@@ -34,7 +34,7 @@ class ProfileImageRefreshViewModelTest : ScreenViewModelTestBase() {
 
     @Test fun ownProfileRefreshesSameUrlsWithoutPersistedRevisionAndKeepsGenerationOnApiFailure() = runTest(dispatcher) {
         val repository = Repository()
-        val vm = own(OwnProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        val vm = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
         advanceUntilIdle()
         vm.loadProfile()
         advanceUntilIdle()
@@ -60,15 +60,15 @@ class ProfileImageRefreshViewModelTest : ScreenViewModelTestBase() {
 
     @Test fun accountProfileRefreshAndEditReloadImagesAndApplyEditedHeader() = runTest(dispatcher) {
         val repository = Repository()
-        val vm = own(AccountProfileViewModel("me", repository, Auth()))
+        val vm = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, Auth(), accountId = "me"))
         advanceUntilIdle()
         val initial = vm.uiState.value
-        vm.refresh()
+        vm.refreshProfile()
         advanceUntilIdle()
         val refreshed = vm.uiState.value
         assertNotEquals(initial.imageRefreshRevision, refreshed.imageRefreshRevision)
         repository.header = Result.failure(IllegalStateException("offline"))
-        vm.refresh()
+        vm.refreshProfile()
         advanceUntilIdle()
         assertEquals(refreshed.imageRefreshRevision, vm.uiState.value.imageRefreshRevision)
         assertEquals(refreshed.profile, vm.uiState.value.profile)
@@ -88,7 +88,7 @@ class ProfileImageRefreshViewModelTest : ScreenViewModelTestBase() {
                 else Result.success(testProfile().copy(noteHtml = session.sessionId))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val vm = own(OwnProfileViewModel(repository, browsing))
+        val vm = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         vm.loadProfile()
         advanceUntilIdle()
@@ -111,7 +111,7 @@ class ProfileImageRefreshViewModelTest : ScreenViewModelTestBase() {
 
     @Test fun registeredAvatarUpdatesTriggerImageReloadWithoutReloadingForNameOnlyChanges() = runTest(dispatcher) {
         val auth = Auth()
-        val vm = own(OwnProfileViewModel(Repository(), BrowsingSession().apply { activate(testAccount) }, auth))
+        val vm = own(ProfileViewModel(Repository(), BrowsingSession().apply { activate(testAccount) }, auth))
         advanceUntilIdle()
         vm.loadProfile()
         advanceUntilIdle()

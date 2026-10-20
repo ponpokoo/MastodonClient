@@ -86,7 +86,7 @@ fun SavedTimelinesScreen(
                         Icon(Icons.Outlined.MoreVert, "リストのその他メニュー")
                     }
                     DropdownMenu(expanded = listMenuOpen, onDismissRequest = { listMenuOpen = false }) {
-                        DropdownMenuItem(text = { Text("アカウントを管理") }, onClick = {
+                        DropdownMenuItem(text = { Text("リストのメンバー") }, onClick = {
                             listMenuOpen = false
                             viewModel.openListAccounts()
                         })

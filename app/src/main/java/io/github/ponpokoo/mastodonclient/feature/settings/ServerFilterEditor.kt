@@ -151,7 +151,7 @@ internal fun ServerFilterEditor(
             Column {
                 FilterSectionTitle("一致した投稿の表示")
                 FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (listOf("warn" to "警告（CW）", "hide" to "非表示") + if (editor.original?.action == "blur") listOf("blur" to "メディアを隠す") else emptyList()).forEach { (value, label) ->
+                    (listOf("warn" to "内容警告(CW)", "hide" to "非表示") + if (editor.original?.action == "blur") listOf("blur" to "メディアを隠す") else emptyList()).forEach { (value, label) ->
                         Row(
                             Modifier.heightIn(min = 48.dp).selectable(edit.action == value, enabled = enabled, role = Role.RadioButton,
                                 onClick = { onChange(edit.copy(action = value)) }),

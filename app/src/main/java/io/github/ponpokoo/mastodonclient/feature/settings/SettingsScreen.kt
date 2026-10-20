@@ -227,7 +227,7 @@ internal fun SettingsPageContent(
                     }
                 }
                 item {
-                    SwitchRow("CWを常に展開する", accountPreferences.expandSpoilers, disabled = activeSession == null) { enabled ->
+                    SwitchRow("内容警告(CW)を常に展開する", accountPreferences.expandSpoilers, disabled = activeSession == null) { enabled ->
                         activeSession?.let { session -> scope.launch { store.setExpandSpoilers(session.sessionId, enabled) } }
                     }
                 }
@@ -256,7 +256,7 @@ internal fun SettingsPageContent(
                     }
                 }
                 item {
-                    SwitchRow("引っ張って更新時に元の場所にとどまる", preferences.keepPositionOnPullRefresh) {
+                    SwitchRow("更新時に元の場所にとどまる", preferences.keepPositionOnPullRefresh) {
                         scope.launch { store.setKeepPositionOnPullRefresh(it) }
                     }
                 }
@@ -379,7 +379,7 @@ internal fun SettingsPageContent(
             }
             if (page == SettingsPage.Accounts) {
                 item { SectionTitle("アカウント管理") }
-                item { Text("アイコンをドラッグして並びを変更できます。アカウント切替や投稿画面にも反映されます。",
+                item { Text("アカウント切替や投稿画面にも反映されます。",
                     Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.bodyMedium) }
                 accountOrderError?.let { message -> item {
                     Text(message, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error)
@@ -541,7 +541,7 @@ private fun ComposerAction.label() = when (this) {
     ComposerAction.Media -> "画像・動画"
     ComposerAction.Poll -> "アンケート"
     ComposerAction.Emoji -> "絵文字"
-    ComposerAction.ContentWarning -> "内容警告（CW）"
+    ComposerAction.ContentWarning -> "内容警告(CW)"
     ComposerAction.Mention -> "メンション（@）"
     ComposerAction.Language -> "投稿の言語"
     ComposerAction.Hashtag -> "ハッシュタグ（#）"

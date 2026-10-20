@@ -53,9 +53,7 @@ internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: A
         shownNewNotice = if (pending.isEmpty()) null else shownNewNotice?.copy(count = pending.size))
 }
 
-internal fun ProfileUiState.withModeration(m: AccountModerationState, s: AccountSession) =
-    copy(profile = profile?.visible(m, s), profileTabs = profileTabs.visible(m, s))
-internal fun AccountProfileUiState.withModeration(m: AccountModerationState, s: AccountSession): AccountProfileUiState {
+internal fun ProfileUiState.withModeration(m: AccountModerationState, s: AccountSession): ProfileUiState {
     val relationship = profile?.author?.id?.let { m.relationship(s, it) } ?: relationship
     if (relationship?.let { it.muting || it.blocking } == true) {
         // An empty, suppressed profile must not keep fetching every older page.
@@ -66,7 +64,7 @@ internal fun AccountProfileUiState.withModeration(m: AccountModerationState, s: 
         }
         return copy(profile = profile?.visible(m, s)?.copy(
             nextMaxId = null, endReached = true), profileTabs = tabs, relationship = relationship,
-            isLoading = false, isRefreshing = false, isLoadingMore = false)
+            isLoadingProfile = false, isRefreshingProfile = false, isLoadingMoreProfile = false)
     }
     return copy(profile = profile?.visible(m, s), profileTabs = profileTabs.visible(m, s), relationship = relationship)
 }

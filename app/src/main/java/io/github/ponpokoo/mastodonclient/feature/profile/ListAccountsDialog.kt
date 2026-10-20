@@ -30,7 +30,7 @@ internal fun ListAccountsDialog(
     val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("アカウントを管理") },
+        title = { Text("リストのメンバー") },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = maxHeight).testTag("list_accounts")) {
@@ -56,7 +56,7 @@ internal fun ListAccountsDialog(
                                 modifier = Modifier.testTag("remove_list_account_${account.id}")) {
                                 if (state.removingId == account.id) {
                                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                } else Text("削除")
+                                } else Text("リストから外す")
                             }
                         }
                     }

@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
@@ -51,7 +53,7 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
                 return Result.success(AccountRelationship(following = following))
             }
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         viewModel.toggleFollow(); advanceUntilIdle()
         viewModel.loadModerationMenu(); advanceUntilIdle()
@@ -70,13 +72,15 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         val calls = mutableListOf<Pair<String, String>>()
         var result = Result.success(Unit)
         val repository = object : ScreenRepositoryFake() {
+            override suspend fun getProfileHeader(session: AccountSession, accountId: String) =
+                Result.success(testProfile().copy(author = testStatus().author.copy(id = accountId), isOwnProfile = false))
             override suspend fun addAccountToList(session: AccountSession, listId: String, accountId: String): Result<Unit> {
                 assertEquals(testAccount, session)
                 calls += listId to accountId
                 return result
             }
         }
-        val model = own(AccountProfileViewModel("author", repository, auth))
+        val model = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         model.clearMessage()
         model.addProfileToList("friends"); advanceUntilIdle()
@@ -84,12 +88,11 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
 
         result = Result.failure(IllegalStateException("このリストには追加済みです"))
         model.addProfileToList("friends"); advanceUntilIdle()
-        assertNull(model.uiState.value.message)
-        assertEquals("このリストには追加済みです", model.uiState.value.errorMessage)
+        assertEquals("このリストには追加済みです", model.uiState.value.message)
 
         result = Result.success(Unit)
         model.addProfileToList("work"); advanceUntilIdle()
-        assertNull(model.uiState.value.errorMessage)
+        assertNull(model.uiState.value.profileError)
         assertEquals("リストに追加しました", model.uiState.value.message)
         assertEquals(listOf("friends" to "author", "friends" to "author", "work" to "author"), calls)
     }
@@ -104,21 +107,21 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
             override suspend fun getProfileStatuses(session: AccountSession, accountId: String,
                 tab: ProfileStatusTab, maxId: String?) = if (++calls == 1) Result.success(page) else finish.await()
         }
-        val model = own(AccountProfileViewModel("author", repository, auth)); advanceUntilIdle()
+        val model = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author")); advanceUntilIdle()
         repository.serverSettings.value = repository.serverSettings.value.mapValues { (_, saved) ->
             saved.copy(filters = listOf(ServerFilter("filter", "新しいフィルター")))
         }
         runCurrent()
         assertEquals(2, calls)
-        assertTrue(model.uiState.value.isRefreshing)
+        assertTrue(model.uiState.value.isRefreshingProfile)
         assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
         finish.complete(Result.success(page)); advanceUntilIdle()
         val preservedPosts = model.uiState.value.profile!!.statuses
         finish = CompletableDeferred()
-        model.refresh(); runCurrent()
+        model.refreshProfile(); runCurrent()
         assertTrue(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
         finish.complete(Result.failure(IllegalStateException("offline"))); advanceUntilIdle()
-        assertFalse(model.uiState.value.isRefreshing)
+        assertFalse(model.uiState.value.isRefreshingProfile)
         assertFalse(model.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isPullRefreshing)
         assertEquals(preservedPosts, model.uiState.value.profile!!.statuses)
     }
@@ -136,13 +139,13 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
                 }
             }
         }
-        val model = own(AccountProfileViewModel("author", repository, auth))
-        advanceUntilIdle(); model.loadMoreAutomatically(); advanceUntilIdle()
+        val model = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
+        advanceUntilIdle(); model.loadMoreProfileAutomatically(); advanceUntilIdle()
         model.clearMessage()
-        model.loadMoreAutomatically(); advanceUntilIdle()
+        model.loadMoreProfileAutomatically(); advanceUntilIdle()
         assertEquals(listOf(null, "next"), cursors)
-        assertFalse(model.uiState.value.isLoadingMore)
-        model.retry(); advanceUntilIdle()
+        assertFalse(model.uiState.value.isLoadingMoreProfile)
+        model.retryProfile(); advanceUntilIdle()
         assertEquals(listOf(null, "next", "next"), cursors)
         assertEquals(listOf("first", "second"), model.uiState.value.profile?.statuses?.map { it.statusId })
         assertNull(model.uiState.value.profileTabs[ProfileStatusTab.Posts]?.error)
@@ -151,7 +154,7 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
     @Test fun postsAndPinsAppearTogetherRegardlessOfWhichRequestFinishesFirst() = runTest(dispatcher) {
         for (pinsFirst in listOf(false, true)) {
             val repository = ProfileLoadingRepositoryFake()
-            val viewModel = own(AccountProfileViewModel("author", repository, auth))
+            val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
             advanceUntilIdle()
             assertTrue(repository.postsRequested && repository.pinsRequested)
             val page = Result.success(TimelinePage(listOf(testStatus("normal")), "next", false))
@@ -160,13 +163,13 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
             advanceUntilIdle()
             assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
             assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
-            assertTrue(viewModel.uiState.value.isLoadingMore)
-            viewModel.loadMore()
+            assertTrue(viewModel.uiState.value.isLoadingMoreProfile)
+            viewModel.loadMoreProfile()
             if (pinsFirst) repository.posts.complete(page) else repository.pinned.complete(pins)
             advanceUntilIdle()
             assertEquals(listOf("normal"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
             assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
-            assertFalse(viewModel.uiState.value.isLoadingMore)
+            assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
         }
     }
 
@@ -175,21 +178,21 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
             posts.complete(Result.success(TimelinePage(listOf(testStatus()), null, true)))
             pinned.complete(Result.failure(IllegalStateException("pins unavailable")))
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         assertEquals(listOf("post"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
         assertTrue(viewModel.uiState.value.profile!!.pinnedStatuses.isEmpty())
-        assertFalse(viewModel.uiState.value.isLoadingMore)
+        assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
         repository.pinned = CompletableDeferred(Result.success(listOf(testStatus("pinned"))))
-        viewModel.refresh()
+        viewModel.refreshProfile()
         advanceUntilIdle()
         repository.posts = CompletableDeferred(Result.success(TimelinePage(listOf(testStatus("fresh")), null, true)))
         repository.pinned = CompletableDeferred(Result.failure(IllegalStateException("pins unavailable")))
-        viewModel.refresh()
+        viewModel.refreshProfile()
         advanceUntilIdle()
         assertEquals(listOf("fresh"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
         assertEquals(listOf("pinned"), viewModel.uiState.value.profile!!.pinnedStatuses.map { it.statusId })
-        assertFalse(viewModel.uiState.value.isRefreshing)
+        assertFalse(viewModel.uiState.value.isRefreshingProfile)
     }
 
     @Test fun refreshRejectsPostsWaitingForAnOlderPinRequest() = runTest(dispatcher) {
@@ -199,11 +202,11 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         }
         repository.posts.complete(Result.success(TimelinePage(listOf(testStatus("old post")), null, true)))
         val oldPins = repository.pinned
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         repository.posts = CompletableDeferred(Result.success(TimelinePage(listOf(testStatus("fresh post")), null, true)))
         repository.pinned = CompletableDeferred(Result.success(listOf(testStatus("fresh pin"))))
-        viewModel.refresh()
+        viewModel.refreshProfile()
         advanceUntilIdle()
         oldPins.complete(Result.success(listOf(testStatus("old pin"))))
         advanceUntilIdle()
@@ -235,21 +238,21 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
                 return Result.success(relationship)
             }
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         viewModel.loadModerationMenu(); advanceUntilIdle()
         assertEquals(1, lookups)
-        viewModel.loadMore(); runCurrent()
-        assertTrue(viewModel.uiState.value.isLoadingMore)
+        viewModel.loadMoreProfile(); runCurrent()
+        assertTrue(viewModel.uiState.value.isLoadingMoreProfile)
         viewModel.setProfileMuted(true); advanceUntilIdle()
         assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
         assertNull(viewModel.uiState.value.profile!!.nextMaxId)
         assertTrue(viewModel.uiState.value.profile!!.endReached)
         assertTrue(viewModel.uiState.value.profileTabs.values.all { it.isLoaded && !it.isLoading && !it.isLoadingMore && !it.isRefreshing })
-        assertFalse(viewModel.uiState.value.isLoadingMore)
-        viewModel.loadMore()
-        viewModel.selectTab(ProfileStatusTab.Replies)
-        viewModel.refresh(); advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isLoadingMoreProfile)
+        viewModel.loadMoreProfile()
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        viewModel.refreshProfile(); advanceUntilIdle()
         assertEquals(2, calls.size)
         older.complete(Result.success(TimelinePage(listOf(testStatus("late")), "next", false)))
         advanceUntilIdle()
@@ -257,10 +260,10 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
         viewModel.loadModerationMenu(); advanceUntilIdle()
         viewModel.setProfileMuted(false); advanceUntilIdle()
         assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
-        viewModel.refresh(); advanceUntilIdle()
+        viewModel.refreshProfile(); advanceUntilIdle()
         assertEquals(3, calls.size)
         assertEquals(1, viewModel.uiState.value.profile!!.statuses.size)
-        assertFalse(viewModel.uiState.value.isRefreshing)
+        assertFalse(viewModel.uiState.value.isRefreshingProfile)
     }
 
     @Test fun cachedTabsReflectFavouriteAndDeletion() = runTest(dispatcher) {
@@ -268,13 +271,13 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
             override suspend fun getProfileStatuses(session: AccountSession, accountId: String, tab: ProfileStatusTab,
                 maxId: String?) = Result.success(TimelinePage(listOf(testStatus()), null, true))
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
-        viewModel.prepareTab(ProfileStatusTab.Replies)
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
         viewModel.toggleFavourite(testStatus())
         advanceUntilIdle()
-        viewModel.selectTab(ProfileStatusTab.Replies)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
         assertTrue(viewModel.uiState.value.profile!!.statuses.single().favourited)
         viewModel.deleteStatus(testStatus())
         advanceUntilIdle()
@@ -293,34 +296,34 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
                     if (maxId == null) "next" else "older-cursor", false))
             }
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
-        viewModel.prepareTab(ProfileStatusTab.Replies)
+        viewModel.prepareProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
-        assertEquals(ProfileStatusTab.Posts, viewModel.uiState.value.selectedTab)
-        viewModel.selectTab(ProfileStatusTab.Replies)
-        viewModel.loadMore()
+        assertEquals(ProfileStatusTab.Posts, viewModel.uiState.value.profileSelectedTab)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
+        viewModel.loadMoreProfile()
         advanceUntilIdle()
-        viewModel.selectTab(ProfileStatusTab.Posts)
-        viewModel.selectTab(ProfileStatusTab.Replies)
+        viewModel.selectProfileTab(ProfileStatusTab.Posts)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
         assertEquals(3, calls.size)
         assertEquals(listOf("Replies", "older"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
         assertEquals("older-cursor", viewModel.uiState.value.profile!!.nextMaxId)
-        viewModel.refresh()
+        viewModel.refreshProfile()
         advanceUntilIdle()
         assertEquals(4, calls.size)
         assertEquals(listOf("Replies"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
         assertTrue(viewModel.uiState.value.profileTabs.getValue(ProfileStatusTab.Posts).isLoaded)
         failRefresh = true
-        viewModel.refresh()
+        viewModel.refreshProfile()
         advanceUntilIdle()
-        viewModel.selectTab(ProfileStatusTab.Posts)
-        viewModel.selectTab(ProfileStatusTab.Replies)
+        viewModel.selectProfileTab(ProfileStatusTab.Posts)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
         assertEquals(5, calls.size)
         assertEquals(listOf("Replies"), viewModel.uiState.value.profile!!.statuses.map { it.statusId })
-        assertFalse(viewModel.uiState.value.isRefreshing)
+        assertFalse(viewModel.uiState.value.isRefreshingProfile)
     }
 
     @Test fun failedTabLoadDoesNotDisplayThePreviousTabsPostsOrCursor() = runTest(dispatcher) {
@@ -331,18 +334,18 @@ class AccountProfileViewModelTest : ScreenViewModelTestBase() {
                 if (tab == ProfileStatusTab.Replies) replies.await()
                 else super.getProfileStatuses(session, accountId, tab, maxId)
         }
-        val viewModel = own(AccountProfileViewModel("author", repository, auth))
+        val viewModel = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "author"))
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.profile!!.statuses.isEmpty())
-        viewModel.selectTab(ProfileStatusTab.Replies)
+        viewModel.selectProfileTab(ProfileStatusTab.Replies)
         advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.isLoading)
+        assertTrue(viewModel.uiState.value.isLoadingProfile)
         assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
         assertNull(viewModel.uiState.value.profile!!.nextMaxId)
         replies.complete(Result.failure(IllegalStateException("cannot load replies")))
         advanceUntilIdle()
-        assertEquals(ProfileStatusTab.Replies, viewModel.uiState.value.selectedTab)
-        assertFalse(viewModel.uiState.value.isLoading)
+        assertEquals(ProfileStatusTab.Replies, viewModel.uiState.value.profileSelectedTab)
+        assertFalse(viewModel.uiState.value.isLoadingProfile)
         assertTrue(viewModel.uiState.value.profile!!.statuses.isEmpty())
     }
 }

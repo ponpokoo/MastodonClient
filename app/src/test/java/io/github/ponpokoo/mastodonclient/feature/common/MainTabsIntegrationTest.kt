@@ -5,7 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -216,7 +216,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         val timeline = own(TimelineViewModel(repository, browsing))
         val search = own(SearchViewModel(repository, browsing))
         val notifications = own(NotificationsViewModel(repository, browsing))
-        val profile = own(OwnProfileViewModel(repository, browsing))
+        val profile = own(ProfileViewModel(repository, browsing))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
         search.onQueryChanged("post")
@@ -372,7 +372,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
         val timeline = own(TimelineViewModel(repository, main.browsing))
         val notifications = own(NotificationsViewModel(repository, main.browsing))
         own(SearchViewModel(repository, main.browsing))
-        own(OwnProfileViewModel(repository, main.browsing))
+        own(ProfileViewModel(repository, main.browsing))
         advanceUntilIdle()
         assertEquals(1, repository.connections)
         stream.emit(TimelineStreamEvent.StatusAdded(testStatus("live")))

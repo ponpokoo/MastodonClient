@@ -104,7 +104,7 @@ class SavedTimelinesDeviceTest {
 
     private fun openAccountManagement() {
         rule.onNodeWithContentDescription("リストのその他メニュー").performClick()
-        rule.onNodeWithText("アカウントを管理").performClick()
+        rule.onNodeWithText("リストのメンバー").performClick()
         rule.waitUntil(5_000) { model.state.value.listAccounts.loaded }
         rule.onNode(isDialog()).assertExists()
     }

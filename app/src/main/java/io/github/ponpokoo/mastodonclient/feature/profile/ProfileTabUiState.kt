@@ -88,11 +88,3 @@ internal fun ProfileUiState.withTabs(tabs: Map<ProfileStatusTab, ProfileTabUiSta
         isLoadingProfile = selected.isLoading, isRefreshingProfile = selected.isRefreshing,
         isLoadingMoreProfile = selected.isLoadingMore, profileError = selected.error)
 }
-
-internal fun AccountProfileUiState.withTabs(tabs: Map<ProfileStatusTab, ProfileTabUiState>): AccountProfileUiState {
-    if (profile == null) return copy(profileTabs = tabs)
-    val selected = tabs[selectedTab] ?: ProfileTabUiState()
-    return copy(profileTabs = tabs, profile = profile?.withTab(selected),
-        isLoading = selected.isLoading, isRefreshing = selected.isRefreshing,
-        isLoadingMore = selected.isLoadingMore, errorMessage = selected.error)
-}

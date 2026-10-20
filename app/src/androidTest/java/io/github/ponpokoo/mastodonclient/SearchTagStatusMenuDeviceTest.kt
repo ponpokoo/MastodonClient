@@ -143,7 +143,7 @@ class SearchTagStatusMenuDeviceTest {
             rule.runOnIdle { assertTrue(repository.deletes.isEmpty()) }
             openSecondMenu()
             rule.onNodeWithText("削除").performClick()
-            rule.onNodeWithText("実行").performClick()
+            rule.onNode(hasText("投稿を削除") and hasClickAction()).performClick()
             rule.waitUntil(5_000) { model.uiState.value.statuses.size == 1 }
             rule.runOnIdle {
                 assertEquals(listOf("original-post", "original-post"), repository.pins)

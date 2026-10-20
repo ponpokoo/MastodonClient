@@ -95,7 +95,7 @@ class ComposeReferenceDeviceTest {
             rule.waitForIdle()
             rule.onNodeWithText("Target body").assertDoesNotExist()
             rule.onNodeWithContentDescription("引用を解除").assertDoesNotExist()
-            rule.onNodeWithContentDescription("投票を追加").performScrollTo().performClick()
+            rule.onNodeWithContentDescription("アンケートを追加").performScrollTo().performClick()
             rule.runOnIdle {
                 assertEquals("comment", model.uiState.value.text)
                 assertEquals(2, model.uiState.value.pollOptions.size)

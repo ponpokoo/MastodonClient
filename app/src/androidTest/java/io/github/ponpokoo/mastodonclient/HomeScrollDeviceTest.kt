@@ -29,7 +29,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.media.*
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
@@ -374,14 +374,14 @@ class HomeScrollDeviceTest {
         lateinit var timeline: TimelineViewModel
         lateinit var search: SearchViewModel
         lateinit var notifications: NotificationsViewModel
-        lateinit var profile: OwnProfileViewModel
+        lateinit var profile: ProfileViewModel
         lateinit var actions: StatusActionsViewModel
         rule.runOnIdle {
             main = MainSessionViewModel(auth, repository).also(models::add)
             timeline = TimelineViewModel(repository, main.browsing).also(models::add)
             search = SearchViewModel(repository, main.browsing).also(models::add)
             notifications = NotificationsViewModel(repository, main.browsing).also(models::add)
-            profile = OwnProfileViewModel(repository, main.browsing).also(models::add)
+            profile = ProfileViewModel(repository, main.browsing).also(models::add)
             actions = StatusActionsViewModel(repository, main.browsing).also(models::add)
         }
         try {

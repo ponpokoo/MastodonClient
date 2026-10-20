@@ -298,7 +298,7 @@ fun ComposePostScreen(
                                 ) }
                                 ComposerAction.Poll -> ComposerToolbarButton(
                                     icon = Icons.Outlined.Poll,
-                                    contentDescription = if (state.pollOptions.isEmpty()) "投票を追加" else "投票を解除",
+                                    contentDescription = if (state.pollOptions.isEmpty()) "アンケートを追加" else "アンケートを削除",
                                     enabled = !state.quotingNative && state.attachments.isEmpty() && !state.isImportingMedia,
                                 ) {
                                     if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll()
@@ -559,7 +559,7 @@ fun ComposePostScreen(
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = viewModel::disablePoll) { Text("投票を削除") }
+                        TextButton(onClick = viewModel::disablePoll) { Text("アンケートを削除") }
                         TextButton(onClick = viewModel::addPollOption, enabled = state.pollOptions.size < 4) {
                             Text("選択肢を追加")
                         }

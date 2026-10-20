@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -95,12 +97,12 @@ class ModerationMenuDeviceTest {
             rule.runOnIdle { assertTrue(repository.changes.isEmpty()) }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
             rule.onNodeWithText("ミュート（解除）").performClick()
-            rule.onNodeWithText("実行").performClick()
+            rule.onNodeWithText("ミュートを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.size == 1 }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
             rule.onNodeWithText("ミュート").assertIsEnabled()
             rule.onNodeWithText("ブロック（解除）").performClick()
-            rule.onNodeWithText("実行").performClick()
+            rule.onNodeWithText("ブロックを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.size == 2 }
             rule.onNodeWithContentDescription("投稿メニュー").performClick()
             rule.onNodeWithText("ブロック").assertIsEnabled()
@@ -119,8 +121,8 @@ class ModerationMenuDeviceTest {
     @Test fun profileMenuDisablesUnknownStateAndRetriesBeforeUnblocking() {
         val repository = Repository().apply { failLookup = true }
         val store = ViewModelStore()
-        lateinit var model: AccountProfileViewModel
-        rule.runOnIdle { model = AccountProfileViewModel("author", repository, auth); store.put("profile", model) }
+        lateinit var model: ProfileViewModel
+        rule.runOnIdle { model = ProfileViewModel(repository, BrowsingSession().apply { activate(session) }, auth, accountId = "author"); store.put("profile", model) }
         try {
             rule.setContent {
                 MastodonClientTheme(themeMode = ThemeMode.Dark) {
@@ -135,7 +137,7 @@ class ModerationMenuDeviceTest {
             rule.runOnIdle { repository.failLookup = false }
             rule.onNodeWithText("関係状態を取得できませんでした・再試行").performClick()
             rule.onNodeWithText("ブロック（解除）").assertIsEnabled().performClick()
-            rule.onNodeWithText("実行").performClick()
+            rule.onNodeWithText("ブロックを解除").performClick()
             rule.waitUntil(5_000) { repository.changes.isNotEmpty() }
             rule.runOnIdle { assertEquals(listOf("block" to false), repository.changes) }
         } finally { rule.runOnIdle { store.clear() } }
@@ -148,8 +150,8 @@ class ModerationMenuDeviceTest {
             publishModeration = true
         }
         val store = ViewModelStore()
-        lateinit var model: AccountProfileViewModel
-        rule.runOnIdle { model = AccountProfileViewModel("author", repository, auth); store.put("profile", model) }
+        lateinit var model: ProfileViewModel
+        rule.runOnIdle { model = ProfileViewModel(repository, BrowsingSession().apply { activate(session) }, auth, accountId = "author"); store.put("profile", model) }
         try {
             rule.setContent {
                 MastodonClientTheme(themeMode = ThemeMode.Dark) {
@@ -161,14 +163,14 @@ class ModerationMenuDeviceTest {
             rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
             rule.onNodeWithText("関係状態を確認中").assertDoesNotExist()
             rule.onNodeWithText("ミュート").performClick()
-            rule.onNodeWithText("実行").performClick()
+            rule.onNodeWithText("ミュートする").performClick()
             rule.waitUntil(5_000) { model.uiState.value.relationship?.muting == true &&
                 model.uiState.value.profileTabs.values.all { !it.isLoading && !it.isLoadingMore && it.endReached } }
             rule.onAllNodes(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo))
                 .assertCountEquals(0)
             rule.onAllNodesWithText("対象の投稿").assertCountEquals(0)
             var calls = 0
-            rule.runOnIdle { calls = repository.profilePageCalls; model.loadMore(); model.prepareTab(ProfileStatusTab.Media) }
+            rule.runOnIdle { calls = repository.profilePageCalls; model.loadMoreProfile(); model.prepareProfileTab(ProfileStatusTab.Media) }
             rule.waitForIdle()
             rule.runOnIdle { assertEquals(calls, repository.profilePageCalls) }
             rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()

@@ -69,7 +69,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
-import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
@@ -82,7 +82,6 @@ import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileScreen
-import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountListScreen
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountListViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.SavedTimelinesScreen
@@ -400,8 +399,8 @@ fun AppNavigation(
                     pushSync = pushRuntime.sync,
                 )
             })
-            val profileViewModel: OwnProfileViewModel = viewModel(factory = ScreenViewModelFactory {
-                OwnProfileViewModel(timelineRepository, browsing, authRepository, profileImages)
+            val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
+                ProfileViewModel(timelineRepository, browsing, authRepository, profileImages, statusActionManager = statusActionManager)
             })
             val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
                 StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
@@ -600,15 +599,12 @@ fun AppNavigation(
         }
         composable<Route.AccountProfile> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.AccountProfile>()
-            val profileViewModel: AccountProfileViewModel = viewModel(
-                factory = AccountProfileViewModel.Factory(
-                    route.accountId,
-                    timelineRepository,
-                    authRepository,
-                    statusActionManager,
-                    profileImages,
-                ),
-            )
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry<Route.Timeline>() }
+            val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry, factory = mainSessionFactory)
+            val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
+                ProfileViewModel(timelineRepository, mainModel.browsing, authRepository, profileImages,
+                    accountId = route.accountId, statusActionManager = statusActionManager)
+            })
             AccountProfileScreen(
                 viewModel = profileViewModel,
                 openEditor = route.openEditor,

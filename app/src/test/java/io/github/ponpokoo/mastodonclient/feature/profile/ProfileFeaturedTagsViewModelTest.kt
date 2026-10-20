@@ -1,7 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
 import io.github.ponpokoo.mastodonclient.domain.model.*
-import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.CompletableDeferred
@@ -41,38 +40,24 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
         val state: () -> ProfileUiState,
         val select: (String) -> Unit,
         val tab: (ProfileStatusTab) -> Unit,
-        val refresh: () -> Unit,
-        val retry: () -> Unit,
+        val refreshProfile: () -> Unit,
+        val retryProfile: () -> Unit,
         val more: () -> Unit,
         val autoMore: () -> Unit,
         val retryTags: () -> Unit,
     )
 
     private fun create(repository: Repository, browsing: BrowsingSession = BrowsingSession().apply { activate(testAccount) }): Model {
-        if (ownProfile) {
-            val vm = own(OwnProfileViewModel(repository, browsing))
-            // Initial session binding is asynchronous; callers start loading after advancing it.
-            return Model({ vm.uiState.value }, vm::selectHashtag, vm::selectProfileTab,
-                { if (vm.uiState.value.profile == null) vm.loadProfile() else vm.refreshProfile() },
-                vm::retryProfile, vm::loadMoreProfile, vm::loadMoreProfileAutomatically, vm::retryFeaturedTags)
-        }
-        val auth = object : AuthRepository {
-            override suspend fun restoreSession() = testAccount
-            override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
-            override suspend fun completeAuthorization(callbackUrl: String) = Result.success(testAccount)
-            override suspend fun logout() = Unit
-        }
-        val vm = own(AccountProfileViewModel("author", repository, auth))
-        return Model({ vm.uiState.value.let { ProfileUiState(profile = it.profile, profileSelectedTab = it.selectedTab,
-            profileTabs = it.profileTabs, featuredTags = it.featuredTags, featuredTagsError = it.featuredTagsError,
-            selectedHashtag = it.selectedHashtag) } }, vm::selectHashtag, vm::selectTab, vm::refresh,
-            vm::retry, vm::loadMore, vm::loadMoreAutomatically, vm::retryFeaturedTags)
+        val vm = own(ProfileViewModel(repository, browsing, accountId = if (ownProfile) null else "author"))
+        return Model({ vm.uiState.value }, vm::selectHashtag, vm::selectProfileTab,
+            { if (vm.uiState.value.profile == null) vm.loadProfile() else vm.refreshProfile() },
+            vm::retryProfile, vm::loadMoreProfile, vm::loadMoreProfileAutomatically, vm::retryFeaturedTags)
     }
 
     @Test fun singleSelectionSwitchesAndTogglesOffWithoutKeepingPinnedRows() = runTest(dispatcher) {
         val repository = Repository()
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         assertEquals(listOf("写真", "art"), model.state().featuredTags.map { it.name })
         assertEquals("pin", model.state().profile!!.pinnedStatuses.single().statusId)
         model.select("写真"); advanceUntilIdle()
@@ -91,14 +76,14 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
     @Test fun allTabsCanFilterAndSwitchingTabsOrRefreshingClearsSelection() = runTest(dispatcher) {
         val repository = Repository()
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         for (tab in ProfileStatusTab.entries) {
             model.tab(tab); advanceUntilIdle()
             assertNull(model.state().selectedHashtag)
             model.select("写真"); advanceUntilIdle()
             assertEquals(Triple(tab, "写真", null), repository.taggedRequests.last())
         }
-        model.refresh(); advanceUntilIdle()
+        model.refreshProfile(); advanceUntilIdle()
         assertNull(model.state().selectedHashtag)
         assertEquals("Media", model.state().profile!!.statuses.single().statusId)
     }
@@ -112,7 +97,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 else super.getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId)
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); runCurrent()
         advanceTimeBy(9_000)
         model.select("art"); advanceUntilIdle()
@@ -131,7 +116,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 tab: ProfileStatusTab, hashtag: String, maxId: String?) = finish.await()
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); runCurrent()
         advanceTimeBy(9_999); runCurrent()
         assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
@@ -151,7 +136,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 super.getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId) else finish.await()
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); advanceUntilIdle()
         assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
         model.more(); runCurrent()
@@ -162,7 +147,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
         assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
         assertEquals(listOf("写真"), model.state().profile!!.statuses.map { it.statusId })
         finish = CompletableDeferred()
-        model.retry(); runCurrent()
+        model.retryProfile(); runCurrent()
         advanceTimeBy(9_999); runCurrent()
         assertFalse(model.state().profileTabs.getValue(ProfileStatusTab.Posts).isSlowLoading)
         advanceTimeBy(1); runCurrent()
@@ -185,13 +170,13 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
             }
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); advanceUntilIdle()
         model.more(); advanceUntilIdle()
         model.autoMore(); advanceUntilIdle()
         assertEquals(1, attempts)
         assertEquals(listOf("写真"), model.state().profile!!.statuses.map { it.statusId })
-        model.retry(); advanceUntilIdle()
+        model.retryProfile(); advanceUntilIdle()
         assertEquals("写真", model.state().selectedHashtag)
         assertEquals(listOf("写真", "older"), model.state().profile!!.statuses.map { it.statusId })
         assertEquals(listOf(null, "older", "older"), repository.taggedRequests.map { it.third })
@@ -205,7 +190,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 if (pending) finish.await() else tags
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         assertNotNull(model.state().profile)
         assertEquals("post", model.state().profile!!.statuses.single().statusId)
         finish.complete(Result.failure(IllegalStateException("offline"))); advanceUntilIdle()
@@ -216,7 +201,7 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
         assertFalse(previous.isEmpty())
         assertNull(model.state().featuredTagsError)
         repository.tags = Result.failure(IllegalStateException("offline"))
-        model.refresh(); advanceUntilIdle()
+        model.refreshProfile(); advanceUntilIdle()
         assertEquals(previous, model.state().featuredTags)
         assertNotNull(model.state().featuredTagsError)
         repository.tags = Result.success(emptyList())
@@ -232,9 +217,9 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 tab: ProfileStatusTab, hashtag: String, maxId: String?) = withContext(NonCancellable) { finish.await() }
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); advanceUntilIdle()
-        model.refresh(); advanceUntilIdle()
+        model.refreshProfile(); advanceUntilIdle()
         assertNull(model.state().selectedHashtag)
         assertEquals("post", model.state().profile!!.statuses.single().statusId)
         finish.complete(Result.success(TimelinePage(listOf(testStatus("stale")), null, true)))
@@ -252,11 +237,11 @@ class ProfileFeaturedTagsViewModelTest(private val ownProfile: Boolean) : Screen
                 else super.getTaggedProfileStatuses(session, accountId, tab, hashtag, maxId)
         }
         val model = create(repository)
-        advanceUntilIdle(); if (ownProfile) model.refresh(); advanceUntilIdle()
+        advanceUntilIdle(); if (ownProfile) model.refreshProfile(); advanceUntilIdle()
         model.select("写真"); advanceUntilIdle()
         assertNotNull(model.state().profileTabs.getValue(ProfileStatusTab.Posts).error)
         assertTrue(model.state().profile!!.statuses.isEmpty())
-        model.retry(); advanceUntilIdle()
+        model.retryProfile(); advanceUntilIdle()
         assertEquals("写真", model.state().selectedHashtag)
         assertEquals("写真", model.state().profile!!.statuses.single().statusId)
     }
@@ -276,7 +261,7 @@ class OwnProfileFeaturedTagsSessionTest : ScreenViewModelTestBase() {
                 tab: ProfileStatusTab, hashtag: String, maxId: String?) = withContext(NonCancellable) { oldPosts.await() }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val model = own(OwnProfileViewModel(repository, browsing))
+        val model = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
         pending = true
         model.retryFeaturedTags(); model.selectHashtag("写真"); advanceUntilIdle()

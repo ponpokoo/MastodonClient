@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -35,18 +36,26 @@ class RequestFailureViewModelTest : ScreenViewModelTestBase() {
             val notifications = own(NotificationsViewModel(repository, browsing))
             val actions = own(StatusActionsViewModel(repository, browsing))
             val detail = own(StatusDetailViewModel("post", repository, Auth()))
+            val profiles = listOf(null, testAccount.accountId).map { target ->
+                own(ProfileViewModel(repository, browsing, accountId = target))
+            }
             advanceUntilIdle()
+            profiles.forEach { it.loadProfile(); it.toggleBookmark(testStatus()) }
             notifications.onNotificationsVisible(); actions.toggleBookmark(testStatus()); detail.setReaction("smile")
             advanceUntilIdle()
             assertTrue(notifications.uiState.value.notificationsError.orEmpty().contains("再ログイン"))
             assertTrue(actions.uiState.value.actionMessage.orEmpty().contains("再ログイン"))
             assertTrue(detail.uiState.value.errorMessage.orEmpty().contains("再ログイン"))
             assertFalse(actions.uiState.value.actionMessage.orEmpty().contains("cause"))
+            profiles.forEach { profile ->
+                assertTrue(profile.uiState.value.message.orEmpty().contains("再ログイン"))
+                assertFalse(profile.uiState.value.message.orEmpty().contains("cause"))
+            }
         }
     }
 
     @Test fun timelineKeepsExpiredLoginAndRateLimitGuidanceDistinct() = runTest(dispatcher) {
-        for ((kind, expected) in listOf(RequestFailure.Unauthorized to "ログインの有効期限", RequestFailure.RateLimited to "しばらく待って")) {
+        for ((kind, expected) in listOf(RequestFailure.Unauthorized to "ログインの有効期限", RequestFailure.RateLimited to "アクセス回数の上限")) {
             val repository = object : ScreenRepositoryFake() {
                 override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = Result.failure(failure(kind))
             }

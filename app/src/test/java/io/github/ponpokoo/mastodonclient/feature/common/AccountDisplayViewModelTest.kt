@@ -1,13 +1,14 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -194,8 +195,8 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
         val auth = Auth()
         val repository = ScreenRepositoryFake()
         val main = own(MainSessionViewModel(auth, repository))
-        val ownProfile = own(OwnProfileViewModel(repository, main.browsing, auth))
-        val accountProfile = own(AccountProfileViewModel(testAccount.accountId, repository, auth))
+        val ownProfile = own(ProfileViewModel(repository, main.browsing, auth))
+        val accountProfile = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = testAccount.accountId))
         runCurrent()
         ownProfile.loadProfile()
         runCurrent()
@@ -216,7 +217,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
             val repository = object : ScreenRepositoryFake() {
                 override suspend fun getRelationship(session: AccountSession, accountId: String) = Result.success(relation.await())
             }
-            val profile = own(AccountProfileViewModel(testAccount.accountId, repository, auth))
+            val profile = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = testAccount.accountId))
             runCurrent()
             profile.loadModerationMenu("other-user")
             runCurrent()

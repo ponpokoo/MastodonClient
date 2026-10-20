@@ -125,7 +125,7 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                         Text(filter.title, style = MaterialTheme.typography.titleMedium)
                         Text(filter.context.joinToString("、") { filterContexts[it] ?: it }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("動作：" + when (filter.action) { "hide" -> "非表示"; "blur" -> "メディアを隠す"; else -> "警告（CW）" },
+                        Text("動作：" + when (filter.action) { "hide" -> "非表示"; "blur" -> "メディアを隠す"; else -> "内容警告(CW)" },
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("期限：" + formatFilterExpiry(filter.expiresAt), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row {

@@ -14,7 +14,6 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
-import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
@@ -121,8 +120,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsLifecycleEffect
-import io.github.ponpokoo.mastodonclient.feature.profile.OwnProfileViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.EditProfileDialog
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
@@ -150,7 +149,7 @@ fun HomeTimelineScreen(
     mainViewModel: MainSessionViewModel,
     searchViewModel: SearchViewModel,
     notificationsViewModel: NotificationsViewModel,
-    profileViewModel: OwnProfileViewModel,
+    profileViewModel: ProfileViewModel,
     actionsViewModel: StatusActionsViewModel,
     notificationOpenRequest: NotificationOpenRequest? = null,
     onNotificationOpenHandled: (NotificationOpenRequest) -> Unit = {},
@@ -201,8 +200,9 @@ fun HomeTimelineScreen(
         mentionsNotificationsListState,
         reactionsNotificationsListState,
     )
-    val profileListStates = List(ProfileStatusTab.entries.size) { rememberLazyListState() }
-    val profileHeaderListState = rememberLazyListState()
+    val (profileListStates, profileHeaderListState) = key(profileState.imageSessionKey) {
+        List(ProfileStatusTab.entries.size) { rememberLazyListState() } to rememberLazyListState()
+    }
     val profileListState = profileListStates[profileState.profileSelectedTab.ordinal]
     // NavHost can recreate this destination after a detail route is popped.
     var hasObservedTimelineContext by rememberSaveable { mutableStateOf(false) }
@@ -217,12 +217,8 @@ fun HomeTimelineScreen(
     var confirmation by remember(mainState.session?.sessionId) { mutableStateOf<StatusConfirmation?>(null) }
     var reportStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember(mainState.session?.sessionId) { mutableStateOf<TimelineStatus?>(null) }
-    val imageEdit by profileViewModel.profileImageEditState.collectAsStateWithLifecycle()
-    DisposableEffect(profileViewModel) { onDispose { profileViewModel.dismissProfileEdit() } }
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
-    var scrollProfileAfterRefresh by remember { mutableStateOf(false) }
-    var profileRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
     val topScrollScope = key(
         mainState.session?.sessionId, destination, state.selectedFeed,
@@ -365,12 +361,6 @@ fun HomeTimelineScreen(
             actionsViewModel.consumeActionMessage()
         }
     }
-    LaunchedEffect(profileState.editMessage) {
-        profileState.editMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            profileViewModel.clearEditMessage()
-        }
-    }
     LaunchedEffect(state.isRefreshing) {
         if (state.isRefreshing) {
             homeRefreshStarted = true
@@ -389,16 +379,6 @@ fun HomeTimelineScreen(
         notificationsState.shownNewNotice?.let { notice ->
             delay(1_800)
             notificationsViewModel.consumeShownNewNotice(notice.id)
-        }
-    }
-    LaunchedEffect(profileState.isRefreshingProfile, mainState.session?.sessionId, profileState.profileSelectedTab) {
-        if (profileState.isRefreshingProfile) {
-            profileRefreshStarted = true
-        } else if (profileRefreshStarted) {
-            val returnToTop = scrollProfileAfterRefresh
-            profileRefreshStarted = false
-            scrollProfileAfterRefresh = false
-            if (returnToTop) profileListState.animateToTimelineTop(profileHeaderListState)
         }
     }
     NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
@@ -629,57 +609,25 @@ fun HomeTimelineScreen(
                         }
                     } else null,
                 )
-                MainDestination.Profile -> ProfileContent(
-                    state = profileState,
-                    instanceUrl = mainState.session?.instanceUrl,
+                MainDestination.Profile -> ProfileScreen(
+                    viewModel = profileViewModel,
+                    preferences = mainState.preferences,
                     padding = pagePadding,
-                    onRetry = profileViewModel::loadProfile,
-                    onRetryPosts = profileViewModel::retryProfile,
-                    onSelectHashtag = profileViewModel::selectHashtag,
-                    onRetryFeaturedTags = profileViewModel::retryFeaturedTags,
-                    onRefresh = {
-                        scrollProfileAfterRefresh = !mainState.preferences.keepPositionOnPullRefresh
-                        profileRefreshStarted = false
-                        profileViewModel.refreshProfile()
-                    },
+                    snackbarHostState = snackbarHostState,
                     onStatusClick = onStatusClick,
-                    onOpenLink = onOpenLink,
                     onReply = { onCompose(it.statusId) },
-                    onBoost = actionsViewModel::toggleReblog,
                     onQuote = onQuote,
-                    onFavourite = actionsViewModel::toggleFavourite,
-                    onBookmark = actionsViewModel::toggleBookmark,
-                    onReact = actionsViewModel::setReaction,
-                    onVotePoll = actionsViewModel::votePoll,
-                    onMoreClick = openStatusMenu,
+                    onOpenLink = onOpenLink,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
-                    preferences = mainState.preferences,
-                    selectedTab = profileState.profileSelectedTab,
-                    isLoadingMore = profileState.isLoadingMoreProfile,
-                    onSelectTab = profileViewModel::selectProfileTab,
-                    onLoadMore = profileViewModel::loadMoreProfile,
-                    onAutoLoadMore = profileViewModel::loadMoreProfileAutomatically,
-                    onFollowers = { profileState.profile?.author?.id?.let(onFollowers) },
-                    onFollowing = { profileState.profile?.author?.id?.let(onFollowing) },
-                    onHeaderClick = {
-                        profileState.profile?.headerUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(listOf(MediaAttachment("profile-header", "image", url, url, "ヘッダー画像",
-                                cacheRevision = profileState.imageRefreshRevision)), 0)
-                        }
-                    },
-                    onAvatarClick = {
-                        profileState.profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { url ->
-                            onMediaClick(listOf(MediaAttachment("profile-avatar", "image", url, url, "プロフィール画像",
-                                cacheRevision = profileState.imageRefreshRevision)), 0)
-                        }
-                    },
-                    onEditProfile = profileViewModel::beginProfileEdit,
+                    onFollowers = onFollowers,
+                    onFollowing = onFollowing,
                     onOpenLists = onOpenLists,
                     onOpenBookmarks = onOpenBookmarks,
                     onOpenFavourites = onOpenFavourites,
-                    listStates = profileListStates,
-                    headerListState = profileHeaderListState,
+                    onEditStatus = onEditStatus,
+                    profileListStates = profileListStates,
+                    profileHeaderListState = profileHeaderListState,
                 )
             }
             }
@@ -711,12 +659,7 @@ fun HomeTimelineScreen(
         }
     }
 
-    if (imageEdit.isOpen) {
-        profileState.profile?.let { profile ->
-            EditProfileDialog(profile, imageEdit, profileViewModel::selectProfileImage,
-                profileViewModel::dismissProfileEdit, profileViewModel::updateProfile)
-        }
-    }
+
     menuStatus?.let { status ->
         StatusMenuDialog(
             status = status,

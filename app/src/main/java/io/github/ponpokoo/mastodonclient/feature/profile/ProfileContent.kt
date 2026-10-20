@@ -138,8 +138,6 @@ internal fun ProfileContent(
     onShareProfile: (() -> Unit)? = null,
     instanceUrl: String? = null,
     onAddProfileToList: (() -> Unit)? = null,
-    onCopyProfileUrl: (() -> Unit)? = null,
-    onShowProfileQr: (() -> Unit)? = null,
     onOpenFollowedTags: (() -> Unit)? = null,
     onMuteProfile: (() -> Unit)? = null,
     onBlockProfile: (() -> Unit)? = null,
@@ -340,8 +338,6 @@ internal fun ProfileContent(
                         ) {
                             if (profile.isOwnProfile) {
                                 onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
-                                onCopyProfileUrl?.let { action -> DropdownMenuItem(text = { Text("リンクをコピー") }, onClick = { profileMenuExpanded = false; action() }) }
-                                onShowProfileQr?.let { action -> DropdownMenuItem(text = { Text("QRコードを表示") }, onClick = { profileMenuExpanded = false; action() }) }
                                 webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
                                 DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
                                 DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })

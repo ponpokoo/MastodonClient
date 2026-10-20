@@ -3,20 +3,17 @@ package io.github.ponpokoo.mastodonclient.feature.profile
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
-import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
-import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
-import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
-import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
-import io.github.ponpokoo.mastodonclient.domain.model.withAccountDisplay
-import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
+import io.github.ponpokoo.mastodonclient.domain.model.*
+import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenu
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
+import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
@@ -28,11 +25,17 @@ import java.util.UUID
 internal fun newProfileImageRevision(): Long = UUID.randomUUID().mostSignificantBits
 
 data class ProfileUiState(
+    val currentAccountId: String? = null,
+    val instanceUrl: String? = null,
+    val relationship: AccountRelationship? = null,
+    val isMutating: Boolean = false,
+    val lists: List<MastodonList> = emptyList(),
+    val isLoadingLists: Boolean = false,
+    val message: String? = null,
     val profile: UserProfile? = null,
     val isLoadingProfile: Boolean = false,
     val isRefreshingProfile: Boolean = false,
     val profileError: String? = null,
-    val editMessage: String? = null,
     val profileSelectedTab: ProfileStatusTab = ProfileStatusTab.Posts,
     val isLoadingMoreProfile: Boolean = false,
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
@@ -43,13 +46,18 @@ data class ProfileUiState(
     val selectedHashtag: String? = null,
 )
 
-class OwnProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession,
+/** One implementation, with an independent instance for each navigation entry.
+ * A null accountId follows the active account; an explicit ID is scoped to that session's server.
+ */
+class ProfileViewModel(private val timelineRepository: TimelineRepository, browsing: BrowsingSession,
     authRepository: io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository? = null,
     profileImageRepository: io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageRepository? = null,
+    private val accountId: String? = null,
+    private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : SessionScopedViewModel(browsing) {
     private val imageEditor = ProfileImageEditor(profileImageRepository, viewModelScope)
     val profileImageEditState = imageEditor.state
-    fun beginProfileEdit() = imageEditor.open()
+    fun beginProfileEdit() { if (_uiState.value.profile?.isOwnProfile == true) imageEditor.open() }
     fun dismissProfileEdit() = imageEditor.dismiss()
     fun selectProfileImage(slot: ProfileImageSlot, uri: String) = imageEditor.select(slot, uri)
     override fun onCleared() { imageEditor.dismiss(); super.onCleared() }
@@ -62,7 +70,21 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     private var postsGeneration = 0L
     private var featuredTagsJob: Job? = null
     private var featuredTagsGeneration = 0L
-    private var requested = false
+    private var metadataRevision = 0L
+    private var requested = accountId != null
+    private var targetInstanceUrl: String? = null
+    private val moderationMenu = AccountModerationMenu(timelineRepository, requestScope,
+        session = { currentSnapshot()?.account }, context = { currentSnapshot() },
+        isCurrent = { authRepository == null || it.hasSameCredentials(authRepository.restoreSession()) },
+        message = { message -> _uiState.update { it.copy(message = message) } },
+        updated = { target, relationship ->
+            if (target == _uiState.value.profile?.author?.id) _uiState.update { it.copy(relationship = relationship) }
+        })
+    val moderationMenuState = moderationMenu.state
+    fun loadModerationMenu(target: String? = _uiState.value.profile?.author?.id) = moderationMenu.load(target)
+    fun setProfileMuted(enabled: Boolean) { _uiState.value.profile?.author?.id?.let { moderationMenu.mute(it, enabled) } }
+    fun setProfileBlocked(enabled: Boolean) { _uiState.value.profile?.author?.id?.let { moderationMenu.block(it, enabled) } }
+
     init {
         observeSession()
         if (authRepository != null) viewModelScope.launch {
@@ -70,7 +92,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                 val current = browsing.snapshot.value.account ?: return@collect
                 val updated = sessions.firstOrNull { current.hasSameCredentials(it) } ?: return@collect
                 _uiState.update { state ->
-                    val profile = state.profile ?: return@update state
+                    val profile = state.profile?.takeIf { it.isOwnProfile } ?: return@update state
                     val author = profile.author.withAccountDisplay(updated)
                     state.copy(profile = profile.copy(author = author), imageRefreshRevision =
                         if (author.avatarRevision != profile.author.avatarRevision) newProfileImageRevision()
@@ -78,14 +100,57 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                 }
             }
         }
+        viewModelScope.launch {
+            timelineRepository.moderation.collect { moderation ->
+                val snapshot = currentSnapshot() ?: return@collect
+                val target = _uiState.value.profile?.author?.id ?: return@collect
+                if (moderation.relationship(snapshot.account!!, target)?.let { it.muting || it.blocking } == true) {
+                    postsGeneration++
+                    tabJobs.values.forEach { it.cancel() }
+                    _uiState.update { it.withModeration(moderation, snapshot.account) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            statusActionManager.updates.collect { update ->
+                val snapshot = currentSnapshot() ?: return@collect
+                val session = snapshot.account!!
+                if (update.sessionId == session.sessionId && update.instanceUrl == session.instanceUrl) {
+                    _uiState.update { state -> state.copy(profile = state.profile?.let { profile ->
+                        profile.copy(statuses = profile.statuses.map { it.withStatusActionUpdate(update) },
+                            pinnedStatuses = profile.pinnedStatuses.map { it.withStatusActionUpdate(update) })
+                    }).withTabs(state.profileTabs.mapValues { (_, tab) -> tab.copy(
+                        statuses = tab.statuses.map { it.withStatusActionUpdate(update) }) }) }
+                }
+            }
+        }
+        if (accountId != null) io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(
+            viewModelScope, timelineRepository, { currentSnapshot()?.account }, "account:$accountId",
+        ) {
+            tabJobs.values.toList().forEach { it.join() }
+            loadTab(_uiState.value.profileSelectedTab, refresh = true, userInitiated = false)
+            tabJobs.values.toList().forEach { it.join() }
+            _uiState.value.profileTabs[_uiState.value.profileSelectedTab]?.error == null
+        }
     }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         imageEditor.dismiss()
+        moderationMenu.reset()
+        metadataRevision++
         postsGeneration++
         featuredTagsGeneration++
         tabJobs.clear()
-        _uiState.value = ProfileUiState(imageSessionKey = UUID.randomUUID().toString())
+        _uiState.value = ProfileUiState(imageSessionKey = UUID.randomUUID().toString(),
+            currentAccountId = snapshot.account?.accountId, instanceUrl = snapshot.account?.instanceUrl)
+        if (accountId != null && snapshot.account != null) {
+            val instance = snapshot.account.instanceUrl.trimEnd('/')
+            if (targetInstanceUrl == null) targetInstanceUrl = instance
+            if (targetInstanceUrl != instance) {
+                _uiState.update { it.copy(profileError = "閲覧アカウントが変更されました。プロフィールを開き直してください") }
+                return
+            }
+        }
         if (requested && snapshot.account != null) loadProfile()
     }
 
@@ -93,13 +158,22 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         requested = true
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
+        if (accountId != null && targetInstanceUrl != session.instanceUrl.trimEnd('/')) return
         if (_uiState.value.isLoadingProfile || _uiState.value.profile != null) return
         profileJob = requestScope.launch {
+            val revision = metadataRevision
             _uiState.update { it.copy(isLoadingProfile = true, profileError = null) }
-            timelineRepository.getProfileHeader(session)
-                .forSession(snapshot).onSuccess { profile ->
+            timelineRepository.getProfileHeader(session, accountId ?: session.accountId)
+                .forSession(snapshot).onSuccess { response ->
+                    val profile = _uiState.value.profile?.takeIf { revision != metadataRevision } ?: response
                     _uiState.update { it.copy(profile = profile, isLoadingProfile = false,
-                        imageRefreshRevision = newProfileImageRevision()) }
+                        imageRefreshRevision = if (profile.isOwnProfile) newProfileImageRevision() else 0) }
+                    if (!profile.isOwnProfile) requestScope.launch {
+                        timelineRepository.getRelationship(session, profile.author.id).forSession(snapshot).onSuccess { relation ->
+                            moderationMenu.remember(profile.author.id, relation)
+                            _uiState.update { it.copy(relationship = relation) }
+                        }
+                    }
                     loadTab(ProfileStatusTab.Posts, initialPosts = true)
                     retryFeaturedTags()
                 }
@@ -155,6 +229,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     fun updateProfile(request: ProfileEditRequest) {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account ?: return
+        if (_uiState.value.profile?.isOwnProfile != true) return
         val save = imageEditor.beginSave(request) ?: return
         requestScope.launch(start = CoroutineStart.UNDISPATCHED) {
             var success = false
@@ -162,28 +237,16 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                 timelineRepository.updateProfile(session, save.request).forSession(snapshot).fold(
                     onSuccess = { updated ->
                         success = true
-                        _uiState.update { state -> state.copy(
-                            profile = state.profile?.copy(
-                                author = updated.author,
-                                headerUrl = updated.headerUrl,
-                                noteHtml = updated.noteHtml,
-                                locked = updated.locked,
-                                fields = updated.fields,
-                                customEmojis = updated.customEmojis,
-                            ),
-                            editMessage = "プロフィールを更新しました",
-                            imageRefreshRevision = newProfileImageRevision(),
-                        ) }
+                        browsing.publish(snapshot, BrowsingSession.Change.ProfileUpdated(updated))
+                        _uiState.update { it.copy(message = "プロフィールを更新しました") }
                     },
                     onFailure = { error -> _uiState.update {
-                        it.copy(editMessage = error.message ?: "プロフィールを更新できませんでした")
+                        it.copy(message = error.message ?: "プロフィールを更新できませんでした")
                     } },
                 )
             } finally { imageEditor.finishSave(save, success) }
         }
     }
-
-    fun clearEditMessage() = _uiState.update { it.copy(editMessage = null) }
 
     fun selectProfileTab(tab: ProfileStatusTab) {
         currentSnapshot() ?: return
@@ -210,6 +273,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val session = snapshot.account!!
         val state = _uiState.value
         val profile = state.profile ?: return
+        if (postsHidden(session)) return
         val tab = state.profileSelectedTab
         val generation = postsGeneration
         val hashtag = state.selectedHashtag
@@ -246,6 +310,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         val profile = _uiState.value.profile ?: return
+        if (postsHidden(session)) return
         val generation = postsGeneration
         val hashtag = _uiState.value.selectedHashtag
         val cached = _uiState.value.profileTabs[tab] ?: ProfileTabUiState()
@@ -256,6 +321,7 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             isSlowLoading = false, error = null, errorIsPagination = false) }
         tabJobs[tab] = requestScope.launch {
             if (refresh && hashtag == null) {
+                val revision = metadataRevision
                 val header = timelineRepository.getProfileHeader(session, profile.author.id).forSession(snapshot)
                     .getOrElse { error ->
                         updateTab(tab) { it.copy(isRefreshing = false, isPullRefreshing = false,
@@ -263,8 +329,8 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
                         return@launch
                     }
                 if (generation != postsGeneration) return@launch
-                _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
-                    imageRefreshRevision = newProfileImageRevision())
+                if (revision == metadataRevision) _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
+                    imageRefreshRevision = if (header.isOwnProfile) newProfileImageRevision() else state.imageRefreshRevision)
                     .withTabs(state.profileTabs) }
             }
             val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab, hashtag) {
@@ -282,7 +348,22 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
     }
 
     override fun onChange(change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.ProfileUpdated) {
+            val updated = change.profile
+            val target = accountId ?: currentSnapshot()?.account?.accountId
+            if (target != updated.author.id) return
+            metadataRevision++
+            _uiState.update { state ->
+                val current = state.profile
+                state.copy(profile = updated.copy(statuses = current?.statuses.orEmpty(),
+                    pinnedStatuses = current?.pinnedStatuses.orEmpty(), nextMaxId = current?.nextMaxId,
+                    endReached = current?.endReached ?: false), imageRefreshRevision = newProfileImageRevision())
+            }
+            return
+        }
         if (change is BrowsingSession.Change.Stream && change.event is TimelineStreamEvent.FiltersChanged) {
+            // Explicit profiles observe repository filter changes; the main tab receives stream events.
+            if (accountId != null) return
             val snapshot = currentSnapshot() ?: return
             requestScope.launch {
                 io.github.ponpokoo.mastodonclient.feature.common.trackServerFilterDisplay(timelineRepository, snapshot.account!!, "own-profile") {
@@ -303,20 +384,121 @@ class OwnProfileViewModel(private val timelineRepository: TimelineRepository, br
             val updated = (change as? BrowsingSession.Change.StatusUpdated)?.status
             profile.copy(
                 statuses = profile.statuses.filterNot { it.statusId == deleted }.map { status ->
-                    if (updated != null) status.withUpdatedActions(updated) else status
+                    if (updated != null) status.withUpdatedActions(updated).copy(poll = updated.poll) else status
                 },
                 pinnedStatuses = when {
                     updated != null && updated.author.id == profile.author.id && updated.pinned ->
                         (listOf(updated) + profile.pinnedStatuses.filterNot { it.statusId == updated.statusId })
                     else -> profile.pinnedStatuses.filterNot {
                         it.statusId == deleted || (updated != null && it.statusId == updated.statusId && !updated.pinned)
-                    }.map { if (updated != null) it.withUpdatedActions(updated) else it }
+                    }.map { if (updated != null) it.withUpdatedActions(updated).copy(poll = updated.poll) else it }
                 },
             )
         }).withTabs(state.profileTabs.mapValues { (_, tab) -> tab.copy(statuses = tab.statuses
             .filterNot { it.statusId == deleted }.map { status ->
                 val updated = (change as? BrowsingSession.Change.StatusUpdated)?.status
-                if (updated != null) status.withUpdatedActions(updated) else status
+                if (updated != null) status.withUpdatedActions(updated).copy(poll = updated.poll) else status
             }) }) }
+    }
+
+    private fun postsHidden(session: AccountSession): Boolean {
+        val target = _uiState.value.profile?.author?.id ?: return false
+        val relation = timelineRepository.moderation.value.relationship(session, target) ?: _uiState.value.relationship
+        return relation?.let { it.muting || it.blocking } == true
+    }
+
+    fun toggleFollow() {
+        val snapshot = currentSnapshot() ?: return
+        val profile = _uiState.value.profile ?: return
+        if (profile.isOwnProfile || _uiState.value.isMutating) return
+        val relation = _uiState.value.relationship ?: return
+        _uiState.update { it.copy(isMutating = true) }
+        requestScope.launch {
+            timelineRepository.setFollowing(snapshot.account!!, profile.author.id, !(relation.following || relation.requested))
+                .forSession(snapshot).fold(
+                    { updated ->
+                        moderationMenu.remember(profile.author.id, updated)
+                        _uiState.update { it.copy(relationship = updated, isMutating = false) }
+                    }, { showActionError(it); _uiState.update { state -> state.copy(isMutating = false) } },
+                )
+        }
+    }
+
+    fun report(comment: String, forward: Boolean) {
+        val profile = _uiState.value.profile ?: return
+        if (profile.isOwnProfile) return
+        accountRequest("報告を送信しました") { timelineRepository.reportAccount(it, profile.author.id, comment, forward) }
+    }
+
+    fun toggleFavourite(status: TimelineStatus) = optimisticAction(status, statusActionManager::beginFavourite)
+    fun toggleReblog(status: TimelineStatus) = optimisticAction(status, statusActionManager::beginReblog)
+    fun toggleBookmark(status: TimelineStatus) = mutateStatus { timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked) }
+    fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus { timelineRepository.setFedibirdReaction(it, status.statusId, emoji) }
+    fun votePoll(status: TimelineStatus, choices: Set<Int>) {
+        val poll = status.poll ?: return
+        mutateStatus("投票しました") { timelineRepository.votePoll(it, status.statusId, poll.id, choices) }
+    }
+    fun setPinned(status: TimelineStatus) = mutateStatus(
+        if (status.pinned) "プロフィールの固定を解除しました" else "プロフィールに固定しました",
+    ) { timelineRepository.setPinned(it, status.statusId, !status.pinned) }
+
+    fun deleteStatus(status: TimelineStatus) {
+        val snapshot = currentSnapshot() ?: return
+        requestScope.launch {
+            timelineRepository.deleteStatus(snapshot.account!!, status.statusId).forSession(snapshot).fold(
+                { browsing.publish(snapshot, BrowsingSession.Change.StatusDeleted(status.statusId))
+                    _uiState.update { it.copy(message = "投稿を削除しました") } }, ::showActionError,
+            )
+        }
+    }
+    fun followStatus(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, true)
+    fun unfollowStatus(status: TimelineStatus) = moderationMenu.setFollowing(status.author.id, false)
+    fun muteStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.mute(status.author.id, enabled)
+    fun blockStatus(status: TimelineStatus, enabled: Boolean = true) = moderationMenu.block(status.author.id, enabled)
+    fun reportStatus(status: TimelineStatus, comment: String) = accountRequest("報告を送信しました") {
+        timelineRepository.reportStatus(it, status.author.id, status.statusId, comment)
+    }
+    fun loadLists() {
+        val snapshot = currentSnapshot() ?: return
+        if (_uiState.value.isLoadingLists) return
+        _uiState.update { it.copy(isLoadingLists = true) }
+        requestScope.launch {
+            timelineRepository.getLists(snapshot.account!!).forSession(snapshot).fold(
+                { lists -> _uiState.update { it.copy(lists = lists, isLoadingLists = false) } },
+                { error -> _uiState.update { it.copy(isLoadingLists = false) }; showActionError(error) },
+            )
+        }
+    }
+    fun addToList(status: TimelineStatus, listId: String) = accountRequest("リストに追加しました") {
+        timelineRepository.addAccountToList(it, listId, status.author.id)
+    }
+    fun addProfileToList(listId: String) {
+        val target = _uiState.value.profile?.author?.id ?: return
+        accountRequest("リストに追加しました") { timelineRepository.addAccountToList(it, listId, target) }
+    }
+    fun clearMessage(expected: String? = _uiState.value.message) = _uiState.update {
+        if (it.message == expected) it.copy(message = null) else it
+    }
+    private fun showActionError(error: Throwable) {
+        val message = if (error.requiresAuthentication) {
+            "投稿操作には追加権限が必要です。設定からログアウト後、再ログインしてください。"
+        } else error.message ?: "操作に失敗しました"
+        _uiState.update { it.copy(message = message) }
+    }
+    private fun accountRequest(message: String, request: suspend (AccountSession) -> Result<Unit>) {
+        val snapshot = currentSnapshot() ?: return
+        requestScope.launch { request(snapshot.account!!).forSession(snapshot).fold(
+            { _uiState.update { it.copy(message = message) } }, ::showActionError) }
+    }
+    private fun mutateStatus(successMessage: String? = null, request: suspend (AccountSession) -> Result<TimelineStatus>) {
+        val snapshot = currentSnapshot() ?: return
+        requestScope.launch { request(snapshot.account!!).forSession(snapshot).fold(
+            { browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(it))
+                _uiState.update { state -> state.copy(message = successMessage) } }, ::showActionError) }
+    }
+    private fun optimisticAction(status: TimelineStatus, begin: (AccountSession, TimelineStatus) -> PendingStatusAction?) {
+        val snapshot = currentSnapshot() ?: return
+        val pending = begin(snapshot.account!!, status) ?: return
+        requestScope.launch { statusActionManager.complete(pending).forSession(snapshot).onFailure(::showActionError) }
     }
 }

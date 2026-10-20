@@ -177,14 +177,17 @@ v4ではホームの境界情報テーブルを追加し、既存の投稿・通
 | TimelineViewModel | ホーム・ローカル・連合、更新・追加取得、お知らせ |
 | SearchViewModel | 検索語・検索結果、古い検索のキャンセル、探索4一覧とタグ購読 |
 | NotificationsViewModel | 通知・追加取得・未読件数・既読位置 |
-| OwnProfileViewModel | 自分のプロフィール・タブ・更新・追加取得 |
+| ProfileViewModel | 自分・他ユーザーのプロフィール、タブ・更新・追加取得、編集・投稿・関係操作。入口ごとに独立したインスタンスを保持 |
 | StatusActionsViewModel | メイン4タブの投稿・アカウント操作、リスト選択 |
 | StatusInteractionsViewModel | メインのナビゲーションエントリに保持するお気に入り／ブースト／リアクションのアカウント一覧。通常画面と投稿詳細で取得・ページ追加・再試行・キャンセルを共用する。カスタム絵文字取得・キャッシュ、既存Storeの反応履歴への接続 |
 | SettingsMaintenanceViewModel | 画像キャッシュ削除の実行状態・結果、インストール済みAPKの版情報 |
 | ModerationManagementViewModel | 管理対象アカウントの隔離、サーバーのミュート・ブロック一覧と解除・取り消し、端末保存のワード管理 |
 
-`HomeTimelineScreen`は各状態を個別に購読する。別画面のプロフィール編集・関係操作は
-`AccountProfileViewModel`が担当し、表示には共通の`ProfileUiState`を使う。
+`HomeTimelineScreen`は各状態を個別に購読する。メインのプロフィールタブと別画面は共通の
+`ProfileScreen`・`ProfileViewModel`・`ProfileUiState`を使う。ViewModelはそれぞれのナビゲーションエントリに保持し、
+選択タブ・取得済み投稿・閲覧位置を入口間で共有しない。メインは閲覧中の自アカウントを追従し、別画面は取得先のサーバーに属する対象IDを保持する。
+両方とも同じ`BrowsingSession`の世代照合とキャンセルを使い、別画面の対象IDを異なるサーバーへの要求に流用しない。
+プロフィール編集の成功はセッション付きイベントで同じ対象の表示情報へ反映し、投稿一覧と選択タブを維持する。
 
 ### セッション隔離
 

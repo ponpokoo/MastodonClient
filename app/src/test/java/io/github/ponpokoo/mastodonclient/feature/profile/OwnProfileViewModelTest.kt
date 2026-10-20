@@ -27,7 +27,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 tab: ProfileStatusTab, maxId: String?) = if (++calls == 1) Result.success(page) else finish.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val model = own(OwnProfileViewModel(repository, browsing))
+        val model = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
         browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.FiltersChanged))
         runCurrent()
@@ -55,7 +55,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 else Result.success(TimelinePage(listOf(testStatus("recovered")), null, true))
             }
         }
-        val model = own(OwnProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        val model = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
         advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
         assertNotNull(model.uiState.value.profile)
         assertEquals("offline", model.uiState.value.profileError)
@@ -81,7 +81,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 }
             }
         }
-        val model = own(OwnProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        val model = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
         advanceUntilIdle(); model.loadProfile(); advanceUntilIdle()
         model.loadMoreProfileAutomatically(); advanceUntilIdle()
         assertNotNull(model.uiState.value.profileError)
@@ -101,7 +101,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
         for (pinsFirst in listOf(false, true)) {
             val repository = ProfileLoadingRepositoryFake()
             val browsing = BrowsingSession().apply { activate(testAccount) }
-            val viewModel = own(OwnProfileViewModel(repository, browsing))
+            val viewModel = own(ProfileViewModel(repository, browsing))
             advanceUntilIdle()
             viewModel.loadProfile()
             advanceUntilIdle()
@@ -128,7 +128,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
             pinned.complete(Result.failure(IllegalStateException("pins unavailable")))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -160,7 +160,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
         }
         repository.posts.complete(Result.success(TimelinePage(listOf(testStatus("old post")), null, true)))
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -178,7 +178,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 maxId: String?) = Result.success(TimelinePage(listOf(testStatus()), null, true))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -205,7 +205,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
             }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -242,7 +242,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
             }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -272,7 +272,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 } else Result.success(TimelinePage(listOf(testStatus("${session.sessionId}-${tab.name}")), null, true))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -295,7 +295,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 delayedStatuses.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -319,7 +319,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
             }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()
@@ -349,7 +349,7 @@ class OwnProfileViewModelTest : ScreenViewModelTestBase() {
                 else Result.success(testProfile().copy(noteHtml = "second"))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val viewModel = own(OwnProfileViewModel(repository, browsing))
+        val viewModel = own(ProfileViewModel(repository, browsing))
         advanceUntilIdle()
         viewModel.loadProfile()
         advanceUntilIdle()

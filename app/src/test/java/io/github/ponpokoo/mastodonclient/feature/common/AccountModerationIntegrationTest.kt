@@ -6,7 +6,7 @@ import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
-import io.github.ponpokoo.mastodonclient.feature.profile.AccountProfileViewModel
+import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,7 +60,7 @@ class AccountModerationIntegrationTest : ScreenViewModelTestBase() {
         val timeline = own(TimelineViewModel(repository, browsing))
         val notifications = own(NotificationsViewModel(repository, browsing))
         val search = own(SearchViewModel(repository, browsing))
-        val profile = own(AccountProfileViewModel("target-author", repository, auth))
+        val profile = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "target-author"))
         val detail = own(StatusDetailViewModel("kept", repository, auth))
         val targetDetail = own(StatusDetailViewModel("target", repository, auth))
         val actions = own(StatusActionsViewModel(repository, browsing))

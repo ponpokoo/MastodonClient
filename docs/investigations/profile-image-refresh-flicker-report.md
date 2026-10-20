@@ -33,8 +33,8 @@
 - [AccountAvatar.kt:19](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/common/AccountAvatar.kt#L19)：URL・更新番号をキーとしてImageRequestを生成。
 - [SecureAuthStore.kt:81](../../app/src/main/java/io/github/ponpokoo/mastodonclient/core/security/SecureAuthStore.kt#L81)：表示情報が同じでもavatarRevisionを加算。
 - [修正前のSocialScreens.kt:407](https://github.com/ponpokoo/MastodonClient/blob/cd75da317a7f3d7bdd82dc51f45df1095ddd888b/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/SocialScreens.kt#L407)：削除された同名ファイルの参照用。修正前コミットの固定キーprofile_header内のヘッダーとアイコンを示し、調査時の未コミット変更を含む作業ツリー全体を示すものではない。
-- [OwnProfileViewModel.kt:174](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/OwnProfileViewModel.kt#L174)：再取得したprofileへの置換。
-- [AccountProfileViewModel.kt:156](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/AccountProfileViewModel.kt#L156)：別画面での同じ置換。
+- [調査時点のOwnProfileViewModel.kt:159](https://github.com/ponpokoo/MastodonClient/blob/cd75da317a7f3d7bdd82dc51f45df1095ddd888b/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/OwnProfileViewModel.kt#L159)：再取得したprofileへの置換。
+- [調査時点のAccountProfileViewModel.kt:147](https://github.com/ponpokoo/MastodonClient/blob/cd75da317a7f3d7bdd82dc51f45df1095ddd888b/app/src/main/java/io/github/ponpokoo/mastodonclient/feature/profile/AccountProfileViewModel.kt#L147)：別画面での同じ置換。
 - [DefaultTimelineRepository.kt:203](../../app/src/main/java/io/github/ponpokoo/mastodonclient/data/repository/DefaultTimelineRepository.kt#L203)：Account取得と登録表示情報の同期。
 
 ## 点滅の直接原因

@@ -54,7 +54,7 @@ class ReadingSettingsDeviceTest {
                 assertEquals(media, runBlocking { UserPreferencesStore(data).preferences.first().forAccount("a").mediaDisplay })
             }
         }
-        rule.onNodeWithText("CWを常に展開する").performClick()
+        rule.onNodeWithText("内容警告(CW)を常に展開する").performClick()
         rule.runOnIdle {
             assertEquals(true, runBlocking { UserPreferencesStore(data).preferences.first().forAccount("a").expandSpoilers })
             active.value = other
@@ -72,7 +72,7 @@ class ReadingSettingsDeviceTest {
         }
         rule.onNodeWithText(labels[2]).assertExists()
         rule.onNode(isToggleable()).assertIsOn()
-        rule.onNodeWithText("CWを常に展開する").performClick()
+        rule.onNodeWithText("内容警告(CW)を常に展開する").performClick()
         rule.runOnIdle {
             assertEquals(false, runBlocking { UserPreferencesStore(data).preferences.first().forAccount("a").expandSpoilers })
         }
