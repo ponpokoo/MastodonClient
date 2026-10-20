@@ -290,7 +290,7 @@ fun AppNavigation(
                     )
                 }
             } else if (tagIndex >= 0 && !hashtag.isNullOrBlank()) {
-                navController.navigate(Route.HashtagTimeline(hashtag)) { launchSingleTop = true }
+                navController.openHashtag(hashtag)
             } else {
                 if (!webLinkLauncher.open(uri, inApp = openLinksInApp)) {
                     Toast.makeText(browserContext, "リンクを開けるブラウザーが見つかりません", Toast.LENGTH_SHORT).show()
@@ -434,7 +434,7 @@ fun AppNavigation(
                 onQuote = openQuote,
                 onOpenLink = openLink,
                 openLinksInApp = openLinksInApp,
-                onOpenTag = { name, trend -> navController.navigate(Route.HashtagTimeline(name, trend)) { launchSingleTop = true } },
+                onOpenTag = { name, trend -> navController.openHashtag(name, trend) },
                 onOpenLinksInAppChange = { enabled ->
                     scope.launch { preferences.setOpenLinksInApp(enabled) }
                 },
