@@ -72,6 +72,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ScrollAxisRange
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.verticalScrollAxisRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -173,15 +176,6 @@ internal fun ProfileContent(
             previousHashtag = state.selectedHashtag
         }
     }
-    val headerScrollConnection = remember(resolvedHeaderListState) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // Scroll the shared header away before scrolling the selected post list.
-                if (available.y >= 0f) return Offset.Zero
-                return Offset(0f, -resolvedHeaderListState.dispatchRawDelta(-available.y))
-            }
-        }
-    }
     val density = LocalDensity.current
     var tabRowHeight by remember { mutableStateOf(44.dp) }
     val profileTabs = key(profile?.url, profile?.author?.id) {
@@ -193,21 +187,34 @@ internal fun ProfileContent(
     val postsScrollConnection = remember(resolvedHeaderListState, resolvedListState, profileTabs) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                // A reverse drag/fling owned by the outer list must return posts first.
-                // Child-owned gestures consume their own deltas without raw dispatch.
+                // The stationary outer list owns all vertical input and fling velocity.
+                // Return posts before revealing the shared profile header.
                 if (available.y <= 0f || resolvedListState.isScrollInProgress || profileTabs.isMoving) return Offset.Zero
                 return Offset(0f, -resolvedListState.dispatchRawDelta(-available.y))
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                // A gesture starting on the header belongs to the outer list. Keep its
-                // drag/fling running by consuming the remainder in the selected post list.
-                // Child-owned gestures already scroll posts through their own scroll scope.
+                // After the outer list hides the header, continue the same scrolling
+                // session in posts. Touching either region interrupts that session.
                 if (available.y >= 0f || !resolvedHeaderListState.isScrollInProgress ||
                     resolvedListState.isScrollInProgress || profileTabs.isMoving) return Offset.Zero
                 return Offset(0f, -resolvedListState.dispatchRawDelta(-available.y))
             }
         }
+    }
+    val profileScrollRange = remember(resolvedHeaderListState, resolvedListState) {
+        // Like LazyColumn's own semantics, this is an estimated position: services
+        // need changing offsets and accurate start/end boundaries, not pixel totals.
+        fun position(): Float = (
+            resolvedHeaderListState.firstVisibleItemIndex * 500f + resolvedHeaderListState.firstVisibleItemScrollOffset +
+                resolvedListState.firstVisibleItemIndex * 500f + resolvedListState.firstVisibleItemScrollOffset
+            )
+        ScrollAxisRange(
+            value = { position() },
+            maxValue = {
+                position() + if (resolvedHeaderListState.canScrollForward || resolvedListState.canScrollForward) 100f else 0f
+            },
+        )
     }
     val selectedPageState = state.profileTabs[selectedTab]
     val selectedPageLoaded = selectedPageState?.isLoaded ?: (profile != null && !state.isLoadingProfile && !isLoadingMore)
@@ -246,7 +253,11 @@ internal fun ProfileContent(
             BoxWithConstraints(Modifier.fillMaxSize()) {
             val pagerHeight = (maxHeight - tabRowHeight).coerceAtLeast(0.dp)
             LazyColumn(
-                modifier = Modifier.fillMaxSize().nestedScroll(postsScrollConnection),
+                modifier = Modifier.fillMaxSize().nestedScroll(postsScrollConnection)
+                    // Accessibility scroll actions belong to this same outer list,
+                    // including when only its nested posts can move further.
+                    .semantics { verticalScrollAxisRange = profileScrollRange }
+                    .testTag("profile_scroll"),
                 state = resolvedHeaderListState,
             ) {
             item(key = "profile_header") {
@@ -479,7 +490,7 @@ internal fun ProfileContent(
             HorizontalPager(
                 state = tabPagerState,
                 modifier = Modifier.fillMaxWidth().height(pagerHeight)
-                    .nestedScroll(headerScrollConnection).testTag("profile_status_pager"),
+                    .testTag("profile_status_pager"),
                 key = { ProfileStatusTab.entries[it] },
             ) { page ->
             val pageTab = ProfileStatusTab.entries[page]
@@ -492,7 +503,8 @@ internal fun ProfileContent(
                 // Capture the position before LazyColumn preserves the old first item's key.
                 val wasAtTop = remember(postListState, pinnedStatusIds) {
                     postListState.firstVisibleItemIndex == 0 &&
-                        postListState.firstVisibleItemScrollOffset == 0 && !postListState.isScrollInProgress
+                        postListState.firstVisibleItemScrollOffset == 0 && !postListState.isScrollInProgress &&
+                        !resolvedHeaderListState.isScrollInProgress
                 }
                 LaunchedEffect(postListState, pinnedStatusIds) {
                     if (pinnedStatusIds.isNotEmpty() && wasAtTop) postListState.requestScrollToItem(0)
@@ -513,7 +525,12 @@ internal fun ProfileContent(
             val slowLoadingLabel = if (state.selectedHashtag != null && pageState?.isSlowLoading == true)
                 "取得に時間がかかっています" else null
             Box(Modifier.fillMaxSize()) {
-            LazyColumn(Modifier.fillMaxSize(), state = postListState) {
+            LazyColumn(
+                Modifier.fillMaxSize(), state = postListState,
+                // A moving pager must not estimate its own vertical fling velocity.
+                // Keep one input owner while retaining each tab's list state.
+                userScrollEnabled = false,
+            ) {
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,

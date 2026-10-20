@@ -75,11 +75,17 @@ class ProfileScrollDeviceTest {
             val stopped = position()
             rule.mainClock.advanceTimeBy(200)
             assertEquals("Holding a finger should stop the inherited fling", stopped, position())
+            // Stay within the remaining posts: a drag past their top may legitimately
+            // reveal the header. The new gesture owner no longer includes child motion.
+            val reverseDistance = if (stopped < 1_000_000L) stopped / 2f else 180f
             pager.performTouchInput {
-                moveTo(Offset(width * 0.6f, height * 0.4f), delayMillis = 300)
+                moveTo(Offset(width * 0.6f, height * 0.3f + minOf(height * 0.1f, reverseDistance)), delayMillis = 300)
             }
             rule.mainClock.advanceTimeByFrame()
-            rule.runOnIdle { assertTrue("Reverse drag should scroll posts before revealing the header", !header.canScrollForward) }
+            rule.runOnIdle {
+                assertTrue("The reverse drag must leave posts above the viewport", posts.canScrollBackward)
+                assertTrue("Reverse drag should scroll posts before revealing the header", !header.canScrollForward)
+            }
             assertTrue("Reverse drag did not move the post list", position() < stopped)
             pager.performTouchInput { advanceEventTime(200); up() }
         } finally {

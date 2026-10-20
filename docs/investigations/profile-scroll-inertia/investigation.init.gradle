@@ -1,0 +1,9 @@
+// Opt-in measurements; normal CI uses ProfileScrollOwnershipDeviceTest instead.
+gradle.beforeProject { project ->
+    if (project.path == ':app') {
+        project.plugins.withId('com.android.application') {
+            project.android.sourceSets.getByName('androidTest').kotlin.srcDir(
+                new File(project.rootDir, 'docs/investigations/profile-scroll-inertia/tests'))
+        }
+    }
+}
