@@ -141,7 +141,6 @@ internal fun ProfileContent(
     onShareProfile: (() -> Unit)? = null,
     instanceUrl: String? = null,
     onAddProfileToList: (() -> Unit)? = null,
-    onOpenFollowedTags: (() -> Unit)? = null,
     onMuteProfile: (() -> Unit)? = null,
     onBlockProfile: (() -> Unit)? = null,
     onReportProfile: (() -> Unit)? = null,
@@ -353,7 +352,6 @@ internal fun ProfileContent(
                                 DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
                                 DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })
                                 DropdownMenuItem(text = { Text("お気に入り") }, onClick = { profileMenuExpanded = false; onOpenFavourites() })
-                                onOpenFollowedTags?.let { action -> DropdownMenuItem(text = { Text("フォロー中のハッシュタグ") }, onClick = { profileMenuExpanded = false; action() }) }
                                 webLinks?.settings?.let { url -> DropdownMenuItem(text = { Text("マストドンの設定") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
                             } else {
                                 onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }

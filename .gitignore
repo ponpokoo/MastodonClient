@@ -10,6 +10,7 @@
 /.idea/assetWizardSettings.xml
 /.idea/deploymentTargetSelector.xml
 /.idea/deviceManager.xml
+/.idea/deviceHardwareInput.xml
 .DS_Store
 /build
 /captures
@@ -31,5 +32,6 @@ local.properties
 /app/release/**/*.apk.sha256
 /app/release/**/*.aab.sha256
 /app/release/**/output-metadata.json
+/app/release/**/mapping.txt
 /app/release/**/baselineProfiles/
 /app/release/branch-backups-*/

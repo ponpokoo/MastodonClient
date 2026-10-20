@@ -134,7 +134,6 @@ internal fun ProfileScreen(
                 ))
             } },
             onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
-            onOpenFollowedTags = { profile?.url?.let { onOpenLink("$it/followed_tags") } },
             onProfileMenuOpen = { if (profile?.isOwnProfile == false) viewModel.loadModerationMenu() },
             moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
             moderationError = moderationMenu.error,

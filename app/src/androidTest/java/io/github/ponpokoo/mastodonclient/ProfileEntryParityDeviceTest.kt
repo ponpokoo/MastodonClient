@@ -76,6 +76,7 @@ class ProfileEntryParityDeviceTest {
             rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
             rule.onNodeWithText("リンクをコピー").assertDoesNotExist()
             rule.onNodeWithText("QRコードを表示").assertDoesNotExist()
+            rule.onNodeWithText("フォロー中のハッシュタグ").assertDoesNotExist()
             val share = rule.onNodeWithText("共有").fetchSemanticsNode().boundsInRoot
             val menuItems = rule.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).fetchSemanticsNodes()
             assertTrue(menuItems.isNotEmpty())
@@ -84,8 +85,8 @@ class ProfileEntryParityDeviceTest {
             File(rule.activity.getExternalFilesDir(null), name).outputStream().use {
                 rule.onNode(isPopup()).captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
             }
-            rule.onNodeWithText("フォロー中のハッシュタグ").performClick()
-            rule.runOnIdle { assertEquals(listOf("https://fixture.example/@me/followed_tags"), links) }
+            rule.onNodeWithText("ブラウザーで開く").performClick()
+            rule.runOnIdle { assertEquals(listOf("https://fixture.example/@me"), links) }
             rule.onNodeWithText("First option").performScrollTo().performClick()
             rule.onNodeWithText("投票する").performScrollTo().performClick()
             rule.waitUntil(5_000) { votes.isNotEmpty() }
