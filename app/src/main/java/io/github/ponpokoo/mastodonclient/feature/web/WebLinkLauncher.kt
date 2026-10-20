@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.net.toUri
 
 /** Opens browsing links only. Page navigation and intent: links belong to the browser. */
 internal class WebLinkLauncher(
@@ -60,7 +61,7 @@ internal class WebLinkLauncher(
 
 @Suppress("DEPRECATION")
 private fun findCustomTabsPackage(context: Context): String? {
-    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.example.com"))
+    val browserIntent = Intent(Intent.ACTION_VIEW, "https://www.example.com".toUri())
         .addCategory(Intent.CATEGORY_BROWSABLE)
     val candidates = context.packageManager
         .queryIntentActivities(browserIntent, PackageManager.MATCH_DEFAULT_ONLY)

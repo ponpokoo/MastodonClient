@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import androidx.core.net.toUri
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.MediaImportResult
 import io.github.ponpokoo.mastodonclient.domain.model.MediaRejectionReason
@@ -38,7 +39,7 @@ class DraftMediaDataSource(context: Context, private val isAccountPresent: suspe
                 val rejected = mutableListOf<RejectedMedia>()
                 uris.distinct().forEach { value ->
                     currentCoroutineContext().ensureActive()
-                    val uri = Uri.parse(value)
+                    val uri = value.toUri()
                     var name = "attachment"
                     var mimeType: String? = null
                     var target: File? = null

@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.get
 import coil3.Image
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
@@ -134,7 +135,7 @@ private fun audioArtworkBackground(image: Image): Color {
     val bitmap = image.toBitmap(32, 32)
     var red = 0L; var green = 0L; var blue = 0L; var weight = 0L
     for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
-        val pixel = bitmap.getPixel(x, y)
+        val pixel = bitmap[x, y]
         val alpha = android.graphics.Color.alpha(pixel)
         red += android.graphics.Color.red(pixel).toLong() * alpha
         green += android.graphics.Color.green(pixel).toLong() * alpha

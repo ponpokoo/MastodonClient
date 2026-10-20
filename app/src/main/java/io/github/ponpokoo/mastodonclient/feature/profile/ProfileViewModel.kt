@@ -60,7 +60,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     fun beginProfileEdit() { if (_uiState.value.profile?.isOwnProfile == true) imageEditor.open() }
     fun dismissProfileEdit() = imageEditor.dismiss()
     fun selectProfileImage(slot: ProfileImageSlot, uri: String) = imageEditor.select(slot, uri)
-    override fun onCleared() { imageEditor.dismiss(); super.onCleared() }
+    override fun onCleared() { imageEditor.dismiss() }
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
         state.withModeration(moderation, account)

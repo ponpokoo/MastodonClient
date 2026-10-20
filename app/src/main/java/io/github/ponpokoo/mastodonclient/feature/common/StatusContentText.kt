@@ -42,8 +42,8 @@ import androidx.core.net.toUri
 @Composable
 fun StatusContentText(
     contentHtml: String,
-    customEmojis: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier,
+    customEmojis: Map<String, String> = emptyMap(),
     style: TextStyle = MaterialTheme.typography.bodyLarge,
     onLinkClick: (String) -> Unit,
     onNonLinkClick: (() -> Unit)? = null,

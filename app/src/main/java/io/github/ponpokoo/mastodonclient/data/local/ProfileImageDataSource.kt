@@ -1,7 +1,7 @@
 package io.github.ponpokoo.mastodonclient.data.local
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -19,7 +19,7 @@ class ProfileImageDataSource(context: Context) {
         var created: File? = null
         try {
             return withContext(Dispatchers.IO) {
-                val uri = Uri.parse(value)
+                val uri = value.toUri()
                 require(uri.scheme == "content") { "Unsupported URI" }
                 check(directory.isDirectory || directory.mkdirs()) { "画像の保存先を作成できません" }
                 val file = File(directory, UUID.randomUUID().toString()).also { created = it }

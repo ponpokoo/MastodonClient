@@ -20,7 +20,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
@@ -109,6 +108,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.net.toUri
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
@@ -669,7 +669,7 @@ fun HomeTimelineScreen(
             onDismiss = { menuStatus = null },
             onOpenBrowser = {
                 menuStatus = null
-                status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) }
+                status.url?.let { context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri())) }
             },
             onPin = { menuStatus = null; actionsViewModel.setPinned(status) },
             onEdit = { menuStatus = null; onEditStatus(status.statusId) },

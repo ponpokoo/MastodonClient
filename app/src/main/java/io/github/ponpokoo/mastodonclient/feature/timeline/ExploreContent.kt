@@ -35,9 +35,10 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     onRefresh: () -> Unit, onLoadMore: () -> Unit, onRetry: () -> Unit,
     onOpenTag: (String, Boolean) -> Unit, onOpenLink: (String) -> Unit,
     onUnfollow: (SearchTag) -> Unit, post: @Composable (TimelineStatus) -> Unit,
+    modifier: Modifier = Modifier,
     onFindTags: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
-    modifier: Modifier = Modifier) {
+) {
     val tabs = key(state.sessionKey) {
         rememberSwipeTabs(state.selectedFeed.ordinal, ExploreFeed.entries.size) { onSelect(ExploreFeed.entries[it]) }
     }

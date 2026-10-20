@@ -71,7 +71,6 @@ class MainSessionViewModel(
     override fun onCleared() {
         foregroundLifecycle?.removeObserver(foregroundObserver)
         foregroundLifecycle = null
-        super.onCleared()
     }
 
     init {

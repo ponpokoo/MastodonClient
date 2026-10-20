@@ -1016,7 +1016,6 @@ class ComposePostViewModel(
         clearPendingShare()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
         retainInput()
-        super.onCleared()
     }
 
     class Factory(

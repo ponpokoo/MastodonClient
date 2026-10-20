@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.graphics.drawable.ColorDrawable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,6 +23,7 @@ import androidx.core.view.WindowCompat
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.graphics.drawable.toDrawable
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
             MastodonClientTheme(themeMode = preferences.themeMode) {
                 val windowBackground = MaterialTheme.colorScheme.background
                 SideEffect {
-                    window.setBackgroundDrawable(ColorDrawable(windowBackground.toArgb()))
+                    window.setBackgroundDrawable(windowBackground.toArgb().toDrawable())
                     WindowCompat.getInsetsController(window, window.decorView).apply {
                         isAppearanceLightStatusBars = !darkTheme && !mediaVisible
                         isAppearanceLightNavigationBars = !darkTheme && !mediaVisible

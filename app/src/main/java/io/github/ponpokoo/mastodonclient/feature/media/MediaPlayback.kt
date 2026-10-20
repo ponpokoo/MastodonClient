@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,9 +43,9 @@ private object MediaPlaybackOwner {
 internal class MediaPlayback(private val context: Context, val url: String?, private val loop: Boolean) {
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
-    var position by mutableStateOf(0L)
+    var position by mutableLongStateOf(0L)
         private set
-    var duration by mutableStateOf(0L)
+    var duration by mutableLongStateOf(0L)
         private set
     var requested by mutableStateOf(false)
         private set
@@ -57,11 +59,11 @@ internal class MediaPlayback(private val context: Context, val url: String?, pri
         private set
     var seekable by mutableStateOf(false)
         private set
-    var videoAspectRatio by mutableStateOf(16f / 9f)
+    var videoAspectRatio by mutableFloatStateOf(16f / 9f)
         private set
     var videoFrameRendered by mutableStateOf(false)
         private set
-    var volume by mutableStateOf(1f)
+    var volume by mutableFloatStateOf(1f)
         private set
     private var audibleVolume = 1f
     private var seekedToEnd = false

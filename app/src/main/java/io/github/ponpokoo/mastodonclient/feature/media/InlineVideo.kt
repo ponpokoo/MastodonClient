@@ -1,6 +1,5 @@
 package io.github.ponpokoo.mastodonclient.feature.media
 
-import android.net.Uri
 import android.widget.VideoView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +31,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.core.net.toUri
 
 @Composable
 internal fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, Int) -> Unit) {
@@ -80,7 +80,7 @@ internal fun InlineVideo(url: String, loop: Boolean, onDimensionsKnown: (Int, In
             AndroidView(factory = { context ->
                 VideoView(context).also { view ->
                     videoView = view
-                    view.setVideoURI(Uri.parse(url))
+                    view.setVideoURI(url.toUri())
                     view.setOnPreparedListener { player ->
                         dimensionsKnown(player.videoWidth, player.videoHeight)
                         player.isLooping = loop

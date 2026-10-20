@@ -80,6 +80,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -128,6 +129,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.core.text.HtmlCompat
+import androidx.core.net.toUri
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -159,7 +161,7 @@ fun ComposePostScreen(
     val contentScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
     val dismissOffset = remember { Animatable(0f) }
-    var screenHeightPx by remember { mutableStateOf(0) }
+    var screenHeightPx by remember { mutableIntStateOf(0) }
     val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
     var textFieldValue by remember { mutableStateOf(TextFieldValue()) }
     fun applyToolbarEdit(value: TextFieldValue) {
@@ -809,7 +811,7 @@ private fun ComposerAttachmentTile(
         confirmButton = { TextButton(onClick = { showDetails = false }) { Text("閉じる") } },
     )
     val context = LocalContext.current
-    val bytes = remember(attachment.uri) { Uri.parse(attachment.uri).path?.let(::File)?.length() ?: 0L }
+    val bytes = remember(attachment.uri) { attachment.uri.toUri().path?.let(::File)?.length() ?: 0L }
     Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), tonalElevation = 1.dp) {
         Column(Modifier.padding(6.dp)) {
             Box {

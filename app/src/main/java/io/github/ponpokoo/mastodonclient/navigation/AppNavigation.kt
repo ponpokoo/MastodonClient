@@ -4,7 +4,6 @@ import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.ActivityNotFoundException
 import android.widget.Toast
-import android.graphics.drawable.ColorDrawable
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.view.WindowManager
@@ -46,6 +45,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.toRoute
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.core.graphics.drawable.toDrawable
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultInstanceRepository
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultAuthRepository
@@ -494,7 +494,7 @@ fun AppNavigation(
             }
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
-                dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow?.setBackgroundDrawable(android.graphics.Color.TRANSPARENT.toDrawable())
                 dialogWindow?.let { window ->
                     WindowCompat.getInsetsController(window, window.decorView).apply {
                         isAppearanceLightStatusBars = false
@@ -757,7 +757,7 @@ fun AppNavigation(
             val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
             SideEffect {
                 dialogWindow?.setDimAmount(0f)
-                dialogWindow?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+                dialogWindow?.setBackgroundDrawable(android.graphics.Color.TRANSPARENT.toDrawable())
             }
             val route = backStackEntry.toRoute<Route.MediaViewer>()
             val media = remember(route.mediaJson) {

@@ -6,12 +6,13 @@ import android.app.PendingIntent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Build
 import android.text.Html
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
 import io.github.ponpokoo.mastodonclient.R
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
@@ -163,7 +164,7 @@ class SystemNotificationDataSource(private val context: android.content.Context,
     }
 
     private fun loadAvatarIcon(url: String): Bitmap? {
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+        val uri = runCatching { url.toUri() }.getOrNull() ?: return null
         if (uri.scheme != "https" || uri.host.isNullOrBlank()) return null
         return runCatching {
             avatarClient.newCall(Request.Builder().url(url).get().build()).execute().use responseUse@ { response ->
@@ -183,7 +184,7 @@ class SystemNotificationDataSource(private val context: android.content.Context,
                 } ?: return@responseUse null
                 val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@responseUse null
                 if (decoded.width <= AVATAR_ICON_SIZE && decoded.height <= AVATAR_ICON_SIZE) decoded
-                else Bitmap.createScaledBitmap(decoded, AVATAR_ICON_SIZE, AVATAR_ICON_SIZE, true)
+                else decoded.scale(AVATAR_ICON_SIZE, AVATAR_ICON_SIZE, filter = true)
             }
         }.getOrNull()
     }

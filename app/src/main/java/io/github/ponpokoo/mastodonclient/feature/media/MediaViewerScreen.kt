@@ -3,7 +3,6 @@ package io.github.ponpokoo.mastodonclient.feature.media
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.net.Uri
 import android.os.Build
 import android.os.CancellationSignal
 import android.widget.Toast
@@ -50,6 +49,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsAnimationControlListenerCompat
 import androidx.core.view.WindowInsetsAnimationControllerCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import java.net.URL
@@ -210,7 +210,7 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
             scope.launch {
                 val saved = withContext(Dispatchers.IO) {
                     runCatching {
-                        require(Uri.parse(source).scheme == "https")
+                        require(source.toUri().scheme == "https")
                         URL(source).openStream().use { input ->
                             context.contentResolver.openOutputStream(destination)?.use { output ->
                                 input.copyTo(output)
@@ -327,7 +327,7 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                         val source = item.url ?: item.previewUrl
                         if (source != null) {
                             pendingSaveSource = source
-                            val path = Uri.parse(source).lastPathSegment.orEmpty().substringBefore('?')
+                            val path = source.toUri().lastPathSegment.orEmpty().substringBefore('?')
                             val extension = path.substringAfterLast('.', "").lowercase()
                                 .takeIf { it.isNotBlank() && it.length <= 5 }
                                 ?: if (item.type == "video" || item.type == "gifv") "mp4" else "jpg"
