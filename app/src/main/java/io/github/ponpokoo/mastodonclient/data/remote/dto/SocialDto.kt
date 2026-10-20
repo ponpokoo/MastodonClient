@@ -10,6 +10,9 @@ data class NotificationDto(
     @SerialName("created_at") val createdAt: String,
     val account: AccountDto,
     val status: StatusDto? = null,
+    val emoji: String? = null,
+    @SerialName("emoji_url") val emojiUrl: String? = null,
+    @SerialName("emoji_reaction") val emojiReaction: EmojiReactionDto? = null,
 )
 
 @Serializable

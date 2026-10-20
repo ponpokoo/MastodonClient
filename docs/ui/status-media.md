@@ -246,3 +246,8 @@ URLカードには画像を含めて内側に10 dpの余白を設け、影は付
 画像の取得失敗時・URLが空の場合だけ代替アイコンを表示する。
 **各件数が0の場合はそのリンクを無効化し、一覧ダイアログを開かない。**
 アカウント選択、お知らせなどの他の表示まで中央ダイアログに統一したわけではない。
+
+### Pleroma／Akkomaのリアクション情報
+
+投稿の`pleroma.emoji_reactions`も読み取り、Akkomaのトップレベル`emoji_reactions`と共通の集計表示へ変換する。通知の対応判定と投稿操作の対応は分ける。Pleroma形式の投稿は集計表示だけとし、Fedibird向けの追加・解除・反応者一覧APIを呼ぶ操作を提供しない。
+Pleromaの追加・解除は`PUT`／`DELETE /api/v1/pleroma/statuses/:id/reactions/:emoji`を必要とする。AkkomaにはFedibird互換の追加APIもあるが、Nagisaの解除処理は`emoji_unreaction`のため、投稿操作のAPI切替は別途対応する。通知の取得・表示・Push購読は[通知仕様](notifications.md)に従う。

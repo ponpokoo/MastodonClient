@@ -242,7 +242,15 @@ interface MastodonApi {
         @Query("limit") limit: Int = 40,
         @Query("types[]") types: List<String>? = null,
         @Query("since_id") sinceId: String? = null,
+        @Query("include_types[]") includeTypes: List<String>? = null,
     ): List<NotificationDto>
+
+    @GET(".well-known/nodeinfo")
+    suspend fun getNodeInfoDiscovery(): io.github.ponpokoo.mastodonclient.data.remote.dto.NodeInfoDiscoveryDto
+
+    // Only called on an unauthenticated service after validating the discovered URL.
+    @GET
+    suspend fun getNodeInfo(@retrofit2.http.Url url: String): io.github.ponpokoo.mastodonclient.data.remote.dto.NodeInfoDto
 
     @GET("api/v1/markers")
     suspend fun getNotificationMarker(@Query("timeline[]") timeline: String = "notifications"): MarkerResponseDto

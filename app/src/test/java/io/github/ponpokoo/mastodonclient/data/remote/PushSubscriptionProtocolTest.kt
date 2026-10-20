@@ -13,6 +13,57 @@ import retrofit2.HttpException
 import java.net.URLDecoder
 
 class PushSubscriptionProtocolTest {
+    @Test fun pleromaUsesCommonStandardAlertContractAndDiscoversReactionPush() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("{}"))
+            server.enqueue(MockResponse().setBody("""{"links":[{"rel":"http://nodeinfo.diaspora.software/ns/schema/2.0","href":"${server.url("/info")}"}]}"""))
+            server.enqueue(MockResponse().setBody("""{"metadata":{"features":["pleroma_emoji_reactions"]}}"""))
+            val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
+            assertEquals(setOf("pleroma:emoji_reaction"), repository.additionalAlerts(session(server)))
+            assertEquals(mapOf("mention" to true, "follow" to true), repository.subscriptionAlerts(session(server),
+                mapOf("mention" to true, "follow" to false, "follow_request" to true, "poll" to true)))
+            assertEquals(3, server.requestCount)
+        }
+    }
+    @Test fun onlyTheKnownColonAlertIsAcceptedAndRejectionRetriesNormalSubscription() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
+            for (invalid in listOf("pleroma:other", "other:emoji_reaction", "pleroma:emoji_reaction]", "x[y]", "mention\n")) {
+                try {
+                    repository.register(session(server), PushSubscriptionRequest("https://relay.example/push/opaque", "key", "auth", mapOf(invalid to true)))
+                    fail("Invalid notification name was accepted")
+                } catch (_: IllegalArgumentException) { }
+            }
+            assertEquals(0, server.requestCount)
+            server.enqueue(MockResponse().setResponseCode(422))
+            server.enqueue(response())
+            val subscription = repository.register(session(server), PushSubscriptionRequest(
+                "https://relay.example/push/opaque", "key", "auth", mapOf("mention" to true, "pleroma:emoji_reaction" to true)))
+            val first = URLDecoder.decode(server.takeRequest().body.readUtf8(), "UTF-8")
+            val retry = URLDecoder.decode(server.takeRequest().body.readUtf8(), "UTF-8")
+            assertTrue(first.contains("data[alerts][pleroma:emoji_reaction]=true"))
+            assertFalse(retry.contains("pleroma:emoji_reaction"))
+            assertTrue(retry.contains("data[alerts][mention]=true"))
+            assertEquals(true, subscription.alerts["mention"])
+        }
+    }
+
+    @Test fun optionalPushRejectionIsCachedSeparatelyFromRestReactionSupport() = runTest {
+        MockWebServer().use { server ->
+            val clients = ApiClientFactory()
+            val caps = io.github.ponpokoo.mastodonclient.data.repository.ServerCapabilitiesRepository(clients)
+            val repository = DefaultPushSubscriptionRepository(clients, caps)
+            server.enqueue(MockResponse().setBody("""{"fedibird_capabilities":["emoji_reaction"]}"""))
+            assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(server)))
+            server.enqueue(MockResponse().setResponseCode(400))
+            server.enqueue(response())
+            repository.register(session(server), PushSubscriptionRequest(
+                "https://relay.example/push/opaque", "key", "auth", mapOf("mention" to true, "emoji_reaction" to true)))
+            assertTrue(repository.additionalAlerts(session(server)).isEmpty())
+            assertTrue(caps.get(session(server).instanceUrl).supportsEmojiReactions)
+            assertEquals(3, server.requestCount)
+        }
+    }
     @Test fun vapidMetadataIsNullableAndOnlyNotFoundPermitsSubscriptionFallback() = runTest {
         MockWebServer().use { server ->
             val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
@@ -34,6 +85,7 @@ class PushSubscriptionProtocolTest {
         MockWebServer().use { fedibird -> MockWebServer().use { standard ->
             fedibird.enqueue(MockResponse().setBody("""{"fedibird_capabilities":["emoji_reaction","future_feature"]}"""))
             standard.enqueue(MockResponse().setBody("""{"version":"4.5.0"}"""))
+            standard.enqueue(MockResponse().setResponseCode(404))
             val repository = DefaultPushSubscriptionRepository(ApiClientFactory())
             assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(fedibird)))
             assertTrue(repository.additionalAlerts(session(standard)).isEmpty())
@@ -56,10 +108,8 @@ class PushSubscriptionProtocolTest {
             assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(server)))
             assertEquals("/api/v2/instance", server.takeRequest().path)
             assertEquals("/api/v1/instance", server.takeRequest().path)
-            server.enqueue(MockResponse().setResponseCode(503))
-            try { repository.additionalAlerts(session(server)); fail() }
-            catch (error: HttpException) { assertEquals(503, error.code()) }
-            assertEquals(3, server.requestCount)
+            assertEquals(setOf("emoji_reaction"), repository.additionalAlerts(session(server)))
+            assertEquals(2, server.requestCount)
         }
     }
 

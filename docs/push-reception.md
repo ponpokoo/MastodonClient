@@ -14,6 +14,8 @@ RelayとAndroidの責務を分ける背景は、
 確認済みの範囲と実運用での確認事項は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、
 Relay側のテストと測定記録は[検証ガイド](../relay/workers/testing.md)を参照する。
 
+Pleroma互換のリアクションPushで、サーバーの`hide_notification_contents`設定により`title`がなく`body`だけが届く場合は、汎用のリアクション通知タイトルで表示する。通知IDと既存の共通配信履歴による重複抑止は維持する。
+
 ## ビルド設定
 
 `app/google-services.json`のパッケージ名とNagisaのapplication IDを照合し、

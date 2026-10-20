@@ -158,7 +158,7 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
             val vm = model(repository); runCurrent(); vm.onTextChanged("keep input")
             vm.post(skipAltReminder = true); advanceUntilIdle()
             assertEquals("keep input", vm.uiState.value.text)
-            assertTrue(vm.uiState.value.errorMessage.orEmpty().contains("再ログイン"))
+            assertTrue(vm.uiState.value.errorMessage.orEmpty().contains("もう一度ログイン"))
             assertFalse(vm.uiState.value.isPosting); assertFalse(vm.uiState.value.posted)
         }
     }

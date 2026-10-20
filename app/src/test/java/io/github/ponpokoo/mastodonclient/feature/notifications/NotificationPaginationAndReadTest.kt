@@ -14,6 +14,68 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
+    @Test fun refreshTimeoutKeepsConfirmedReactionTabAndRetriesBeforeAcceptingDisablement() = runTest(dispatcher) {
+        var now = 1_000L
+        var checks = 0
+        val pending = CompletableDeferred<Result<NotificationCapabilities>>()
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+                checks++
+                return when (checks) {
+                    1 -> Result.success(NotificationCapabilities(true, true, checkedAtEpochMillis = now))
+                    2 -> pending.await()
+                    else -> Result.success(NotificationCapabilities(reactionApi = EmojiReactionApi.Unsupported, checkedAtEpochMillis = now))
+                }
+            }
+            override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean) =
+                Result.success(NotificationPage(listOf(testNotification("kept").copy(type = "emoji_reaction")), null, true))
+        }
+        val vm = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }, capabilityClock = { now }))
+        runCurrent(); vm.onNotificationsVisible(); advanceUntilIdle()
+        vm.selectCategory(NotificationCategory.Reactions); advanceUntilIdle()
+        now += NotificationCapabilities.TTL_MILLIS
+        vm.refreshNotifications(); runCurrent()
+        assertTrue(vm.uiState.value.isCheckingCapabilities)
+        assertTrue(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+        assertEquals("kept", vm.uiState.value.list(NotificationCategory.Reactions).notifications.single().id)
+        advanceTimeBy(5_001); runCurrent()
+        assertFalse(vm.uiState.value.isCheckingCapabilities)
+        assertTrue(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+        now += NotificationCapabilities.RETRY_MILLIS - 1
+        vm.refreshNotifications(); advanceUntilIdle()
+        assertEquals(2, checks)
+        now++
+        vm.refreshNotifications(); advanceUntilIdle()
+        assertEquals(3, checks)
+        assertFalse(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+    }
+
+    @Test fun expiredUnsupportedResultIsRecheckedOnRefreshAndCanEnablePleromaReactions() = runTest(dispatcher) {
+        var now = 1_000L
+        var checks = 0
+        var reactionPages = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+                checks++
+                return Result.success(if (checks == 1) NotificationCapabilities(reactionApi = EmojiReactionApi.Unsupported, checkedAtEpochMillis = now)
+                    else NotificationCapabilities(true, true, EmojiReactionApi.Pleroma, usesIncludeTypes = true, checkedAtEpochMillis = now))
+            }
+            override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
+                if (category == NotificationCategory.Reactions) reactionPages++
+                return Result.success(NotificationPage(emptyList(), null, true))
+            }
+        }
+        val vm = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }, capabilityClock = { now }))
+        runCurrent(); vm.onNotificationsVisible(); advanceUntilIdle()
+        vm.selectCategory(NotificationCategory.Reactions); advanceUntilIdle()
+        assertFalse(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+        assertEquals(0, reactionPages)
+        now += 24 * 60 * 60 * 1_000L
+        vm.refreshNotifications(); advanceUntilIdle()
+        assertEquals(2, checks)
+        assertTrue(vm.uiState.value.canExplore(NotificationCategory.Reactions))
+        assertEquals(1, reactionPages)
+    }
     @Test fun refreshAndForegroundUseInitialCapabilitiesWithoutCheckingAgain() = runTest(dispatcher) {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         var checks = 0

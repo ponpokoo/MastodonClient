@@ -63,10 +63,22 @@ data class TimelineNotification(
     val createdAt: String,
     val account: StatusAuthor,
     val status: TimelineStatus?,
+    val reactionEmoji: String? = null,
+    val reactionEmojiUrl: String? = null,
 ) {
-    /** The status aggregate can change; show an emoji only when this actor has one unique match. */
+    val isEmojiReaction: Boolean get() = type == "emoji_reaction" || type == "pleroma:emoji_reaction" || type == "reaction"
+    /** Prefer the event's emoji; infer from a changing aggregate only for a unique actor match. */
     val matchingReaction: EmojiReaction?
-        get() = status?.reactions?.singleOrNull { account.id in it.accountIds }
+        get() {
+            val name = reactionEmoji?.takeIf { it.isNotBlank() }
+            if (name != null) {
+                val image = reactionEmojiUrl?.takeIf { it.isNotBlank() }
+                    ?: status?.reactions?.singleOrNull { it.name.trim(':') == name.trim(':') }?.imageUrl
+                    ?: status?.customEmojis?.get(name.trim(':'))
+                return EmojiReaction(name, 1, false, image, setOf(account.id))
+            }
+            return status?.reactions?.singleOrNull { account.id in it.accountIds }
+        }
 }
 
 data class NotificationPage(

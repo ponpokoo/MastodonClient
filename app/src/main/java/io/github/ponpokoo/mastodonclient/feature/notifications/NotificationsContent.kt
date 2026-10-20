@@ -280,7 +280,7 @@ private fun NotificationHeader(
         "poll" -> Icons.Filled.Poll to "アンケートが終了しました"
         "status" -> Icons.Filled.Campaign to "新しい投稿があります"
         "update" -> Icons.Filled.Edit to "投稿を編集しました"
-        "emoji_reaction", "reaction" -> Icons.Filled.AutoAwesome to "リアクションしました"
+        "emoji_reaction", "pleroma:emoji_reaction", "reaction" -> Icons.Filled.AutoAwesome to "リアクションしました"
         else -> Icons.Filled.Notifications to "通知"
     }
     Row(
@@ -288,7 +288,7 @@ private fun NotificationHeader(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (notification.type == "emoji_reaction" || notification.type == "reaction") {
+        if (notification.isEmojiReaction) {
             NotificationReactionIcon(notification)
         } else {
             NotificationTypeIcon(icon, action, notification.type)
@@ -434,7 +434,7 @@ private fun NotificationReactionIcon(notification: TimelineNotification) {
     val imageUrl = reaction?.imageUrl
     var imageLoadFailed by remember(imageUrl) { mutableStateOf(false) }
     when {
-        reaction == null || imageLoadFailed ->
+        reaction == null || imageLoadFailed || imageUrl == null && reaction.name.all { it.code < 128 } ->
             NotificationTypeIcon(Icons.Filled.AutoAwesome, "リアクション", notification.type)
         imageUrl != null -> AsyncImage(
             model = imageUrl,

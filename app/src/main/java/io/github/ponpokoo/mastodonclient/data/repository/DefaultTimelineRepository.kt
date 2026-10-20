@@ -29,7 +29,6 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationPage
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
-import io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationReadState
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
@@ -55,7 +54,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -88,6 +86,7 @@ class DefaultTimelineRepository(
     private val settingsStore: io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore? = null,
     private val settingsScope: kotlinx.coroutines.CoroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO),
     private val wordMuteRepository: io.github.ponpokoo.mastodonclient.domain.repository.WordMuteRepository? = null,
+    private val capabilitiesRepository: ServerCapabilitiesRepository = ServerCapabilitiesRepository(apiClientFactory, settingsStore),
 ) : TimelineRepository {
     override val wordMutes get() = wordMuteRepository?.words ?: super.wordMutes
     private val settingsRepository by lazy { DefaultServerAccountSettingsRepository(apiClientFactory, settingsStore, settingsScope,
@@ -155,8 +154,6 @@ class DefaultTimelineRepository(
     private val moderationMutex = Mutex()
     private data class CachedConfiguration(val value: ComposerConfiguration, val fetchedAt: Long)
     private val configurationMutex = Mutex()
-    private val notificationCapabilitiesMutex = Mutex()
-    private val notificationCapabilityCache = mutableMapOf<String, NotificationCapabilities>()
     private val configurations = object : LinkedHashMap<String, CachedConfiguration>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedConfiguration>?) = size > 8
     }
@@ -507,44 +504,29 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getNotificationCapabilities(session: AccountSession) = runCatching {
-        notificationCapabilitiesMutex.withLock {
-            val instanceUrl = session.instanceUrl.trimEnd('/')
-            notificationCapabilityCache[instanceUrl]?.let { return@withLock it }
-            settingsStore?.preferences?.first()?.notificationCapabilities?.get(instanceUrl)?.let {
-                notificationCapabilityCache[instanceUrl] = it
-                return@withLock it
-            }
-            val api = apiClientFactory.create(session.instanceUrl)
-            val instance = try { api.getInstance() } catch (error: HttpException) {
-                if (error.code() != 404) throw error
-                api.getLegacyInstance()
-            }
-            val version = Regex("""^(\d+)\.(\d+)""").find(instance.version.orEmpty())
-            val major = version?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val minor = version?.groupValues?.get(2)?.toIntOrNull() ?: 0
-            val capabilities = NotificationCapabilities(
-                supportsTypeFiltering = major > 3 || major == 3 && minor >= 5,
-                supportsEmojiReactions = "emoji_reaction" in instance.fedibirdCapabilities.orEmpty(),
-            )
-            // A failed request is never persisted as an unsupported instance.
-            runCatching { settingsStore?.saveNotificationCapabilities(instanceUrl, capabilities) }
-            notificationCapabilityCache[instanceUrl] = capabilities
-            capabilities
-        }
+        capabilitiesRepository.get(session.instanceUrl)
     }
 
     override suspend fun getNotificationPage(
         session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean,
     ): Result<NotificationPage> = requestResult {
         require(limit in 1..40) { "通知の取得件数が範囲外です" }
+        val capabilities = if (category == NotificationCategory.Reactions) capabilitiesRepository.get(session.instanceUrl)
+            else capabilitiesRepository.cached(session.instanceUrl)
+        if (category == NotificationCategory.Reactions && capabilities?.supportsEmojiReactions != true) {
+            return@requestResult NotificationPage(emptyList(), null, true)
+        }
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
-        val types = if (!supportsTypeFiltering) null else when (category) {
+        val types = if (!supportsTypeFiltering || capabilities?.supportsTypeFiltering == false) null else when (category) {
             NotificationCategory.All -> null
             NotificationCategory.Mentions -> listOf("mention")
-            NotificationCategory.Reactions -> listOf("emoji_reaction")
+            NotificationCategory.Reactions -> capabilities?.reactionNotificationTypes
         }
         var usedFilter = types != null
-        val dtos = try { api.getNotifications(maxId, limit, types) } catch (error: HttpException) {
+        val dtos = try {
+            if (capabilities?.usesIncludeTypes == true) api.getNotifications(maxId, limit, includeTypes = types)
+            else api.getNotifications(maxId, limit, types)
+        } catch (error: HttpException) {
             // A query rejected by an older/forked API can use bounded local filtering.
             // Authentication, rate limiting and transport failures are not incompatibility.
             if (types == null || error.code() !in setOf(400, 422)) throw error
@@ -1013,7 +995,7 @@ internal fun StatusDto.toDomain(): TimelineStatus {
         bookmarked = displayed.bookmarked,
         pinned = displayed.pinned == true,
         applicationName = displayed.application?.name,
-        reactions = displayed.emojiReactions.orEmpty().map {
+        reactions = (displayed.emojiReactions ?: displayed.pleroma?.emojiReactions).orEmpty().map {
             EmojiReaction(
                 name = it.name,
                 count = it.count,
@@ -1024,7 +1006,9 @@ internal fun StatusDto.toDomain(): TimelineStatus {
                 domain = it.domain,
             )
         },
-        supportsEmojiReactions = displayed.emojiReactions != null,
+        // Pleroma's aggregate (also exposed at the top level by Akkoma) does not
+        // advertise Fedibird's emoji_unreaction or emoji_reactioned_by contract.
+        supportsEmojiReactions = displayed.emojiReactions != null && displayed.pleroma == null,
         previewCard = displayed.card?.let { card ->
             PreviewCard(
                 url = card.url,
@@ -1114,6 +1098,10 @@ internal fun NotificationDto.toDomain() = TimelineNotification(
     createdAt = createdAt,
     account = account.toDomain(),
     status = status?.toDomain(),
+    reactionEmoji = emoji?.takeIf { it.isNotBlank() } ?: emojiReaction?.name,
+    reactionEmojiUrl = emojiUrl?.takeIf { it.isNotBlank() }
+        ?: emojiReaction?.url?.takeIf { it.isNotBlank() }
+        ?: emojiReaction?.staticUrl?.takeIf { it.isNotBlank() },
 )
 
 /** Pure shared account mapping; each retrieval path supplies its own paging defaults. */

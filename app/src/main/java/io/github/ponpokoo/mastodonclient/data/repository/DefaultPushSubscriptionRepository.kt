@@ -9,6 +9,7 @@ import retrofit2.HttpException
 
 class DefaultPushSubscriptionRepository(
     private val clients: ApiClientFactory,
+    private val capabilities: ServerCapabilitiesRepository = ServerCapabilitiesRepository(clients),
 ) : PushSubscriptionRepository {
     override suspend fun serverKey(session: AccountSession): String? = try {
         clients.create(session.instanceUrl).getInstance().configuration?.vapid?.publicKey
@@ -17,19 +18,16 @@ class DefaultPushSubscriptionRepository(
     }
 
     override suspend fun additionalAlerts(session: AccountSession): Set<String> {
-        val publicApi = clients.create(session.instanceUrl)
-        val instance = try {
-            publicApi.getInstance()
-        } catch (error: HttpException) {
-            if (error.code() != 404) throw error
-            try { publicApi.getLegacyInstance() } catch (legacyError: HttpException) {
-                if (legacyError.code() != 404) throw legacyError
-                return emptySet()
-            }
+        return capabilities.get(session.instanceUrl).additionalPushAlerts
+    }
+
+    override suspend fun subscriptionAlerts(session: AccountSession, alerts: Map<String, Boolean>): Map<String, Boolean> {
+        if (capabilities.get(session.instanceUrl).reactionApi != io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Pleroma) return alerts
+        // Pleroma maps follow_request to follow and older implementations discard
+        // poll. Use the common contract rather than failing response verification.
+        return (alerts - "follow_request" - "poll").toMutableMap().apply {
+            if ("follow_request" in alerts) put("follow", alerts["follow"] == true || alerts["follow_request"] == true)
         }
-        // Fedibird's push API permits data[alerts][emoji_reaction]. Other capabilities
-        // are not automatically treated as push alert types.
-        return if ("emoji_reaction" in instance.fedibirdCapabilities.orEmpty()) setOf("emoji_reaction") else emptySet()
     }
 
     override suspend fun get(session: AccountSession) = try {
@@ -44,7 +42,7 @@ class DefaultPushSubscriptionRepository(
             "Push endpoint must be an HTTPS URL without credentials or fragment"
         }
         require(request.publicKey.isNotBlank() && request.authSecret.isNotBlank()) { "Push keys are required" }
-        require(request.alerts.keys.all { it.matches(Regex("[a-z_]+(?:\\.[a-z_]+)?")) }) { "Invalid alert type" }
+        require(request.alerts.keys.all { it.matches(Regex("[a-z_]+(?:\\.[a-z_]+)?")) || it == "pleroma:emoji_reaction" }) { "Invalid alert type" }
         val fields = buildMap {
             put("subscription[endpoint]", request.endpoint)
             put("subscription[keys][p256dh]", request.publicKey)
@@ -52,7 +50,16 @@ class DefaultPushSubscriptionRepository(
             request.standard?.let { put("subscription[standard]", it.toString()) }
             request.alerts.forEach { (type, enabled) -> put("data[alerts][$type]", enabled.toString()) }
         }
-        api(session).registerPushSubscription(fields).toDomain()
+        val extensionKeys = request.alerts.keys.filter { it in REACTION_PUSH_ALERTS }
+        val result = try { api(session).registerPushSubscription(fields).toDomain() } catch (error: HttpException) {
+            if (extensionKeys.isEmpty() || error.code() !in setOf(400, 422)) throw error
+            // Retry once without optional extension alerts; normal Push must still work.
+            api(session).registerPushSubscription(fields.filterKeys { field ->
+                extensionKeys.none { field == "data[alerts][$it]" }
+            }).toDomain()
+        }
+        if (extensionKeys.any { result.alerts[it] != request.alerts[it] }) capabilities.rejectPushAlerts(session.instanceUrl)
+        result
     }
 
     override suspend fun remove(session: AccountSession) {
@@ -62,3 +69,5 @@ class DefaultPushSubscriptionRepository(
 
     private fun api(session: AccountSession) = clients.create(session.instanceUrl, session.accessToken)
 }
+
+internal val REACTION_PUSH_ALERTS = setOf("emoji_reaction", "pleroma:emoji_reaction")

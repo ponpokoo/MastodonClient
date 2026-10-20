@@ -4,6 +4,7 @@ import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationCategory
 import io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities
+import io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences
@@ -33,19 +34,20 @@ class NotificationPagingRepositoryTest {
         MockWebServer().use { supported -> MockWebServer().use { unsupported ->
             supported.enqueue(MockResponse().setBody("""{"version":"4.0.0","fedibird_capabilities":["emoji_reaction"]}"""))
             unsupported.enqueue(MockResponse().setBody("""{"version":"3.4.6"}"""))
+            unsupported.enqueue(MockResponse().setResponseCode(404))
             val first = DefaultTimelineRepository(ApiClientFactory(), settingsStore = preferences, settingsScope = backgroundScope)
-            assertEquals(NotificationCapabilities(true, true), first.getNotificationCapabilities(session(supported)).getOrThrow())
-            assertEquals(NotificationCapabilities(), first.getNotificationCapabilities(session(unsupported)).getOrThrow())
+            assertTrue(first.getNotificationCapabilities(session(supported)).getOrThrow().supportsEmojiReactions)
+            assertEquals(EmojiReactionApi.Unsupported, first.getNotificationCapabilities(session(unsupported)).getOrThrow().reactionApi)
             // Extra network calls would receive an error instead of a queued capability response.
             supported.enqueue(MockResponse().setResponseCode(500))
             unsupported.enqueue(MockResponse().setResponseCode(500))
             val restoredStore = UserPreferencesStore(data)
             val restarted = DefaultTimelineRepository(ApiClientFactory(), settingsStore = restoredStore, settingsScope = backgroundScope)
-            assertEquals(NotificationCapabilities(true, true), restarted.getNotificationCapabilities(
-                session(supported).copy(sessionId = "other-account", accountId = "other", instanceUrl = session(supported).instanceUrl.trimEnd('/'))).getOrThrow())
-            assertEquals(NotificationCapabilities(), restarted.getNotificationCapabilities(session(unsupported)).getOrThrow())
+            assertTrue(restarted.getNotificationCapabilities(
+                session(supported).copy(sessionId = "other-account", accountId = "other", instanceUrl = session(supported).instanceUrl.trimEnd('/'))).getOrThrow().supportsEmojiReactions)
+            assertEquals(EmojiReactionApi.Unsupported, restarted.getNotificationCapabilities(session(unsupported)).getOrThrow().reactionApi)
             assertEquals(1, supported.requestCount)
-            assertEquals(1, unsupported.requestCount)
+            assertEquals(2, unsupported.requestCount)
             restoredStore.setOpenLinksInApp(false)
             restoredStore.removeAccountData("one")
             val restored = UserPreferencesStore(data).preferences.first()
@@ -59,8 +61,9 @@ class NotificationPagingRepositoryTest {
         val data = MemoryAuthPreferences()
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(500))
+            server.enqueue(MockResponse().setResponseCode(503))
             val first = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            assertTrue(first.getNotificationCapabilities(session(server)).isFailure)
+            assertEquals(EmojiReactionApi.Unknown, first.getNotificationCapabilities(session(server)).getOrThrow().reactionApi)
             assertTrue(UserPreferencesStore(data).preferences.first().notificationCapabilities.isEmpty())
             server.enqueue(MockResponse().setBody("""{"version":"4.0.0","fedibird_capabilities":["emoji_reaction"]}"""))
             val restarted = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
@@ -68,7 +71,7 @@ class NotificationPagingRepositoryTest {
             server.enqueue(MockResponse().setResponseCode(500))
             val next = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
             assertTrue(next.getNotificationCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
-            assertEquals(2, server.requestCount)
+            assertEquals(3, server.requestCount)
         }
     }
 
@@ -81,7 +84,7 @@ class NotificationPagingRepositoryTest {
                 listOf(async { repository.getNotificationCapabilities(session(server)) },
                     async { repository.getNotificationCapabilities(session(server).copy(sessionId = "second")) }).awaitAll()
             }
-            assertTrue(results.all { it.getOrThrow() == NotificationCapabilities(true, true) })
+            assertTrue(results.all { it.getOrThrow().supportsEmojiReactions })
             assertEquals(1, server.requestCount)
         }
     }
@@ -104,11 +107,14 @@ class NotificationPagingRepositoryTest {
 
     @Test fun filteredMentionAndReactionRequestsKeepTypeAndCursorAtFortyRows() = runTest {
         MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""{"version":"4.0.0","fedibird_capabilities":["emoji_reaction"]}"""))
             server.enqueue(MockResponse().setBody("[${notification("opaque-mention", "mention")}]"))
             server.enqueue(MockResponse().setBody("[]"))
             server.enqueue(MockResponse().setBody("[${notification("reaction", "emoji_reaction")}]"))
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val account = session(server)
+            repository.getNotificationCapabilities(account).getOrThrow()
+            server.takeRequest()
             val first = repository.getNotificationPage(account, NotificationCategory.Mentions, supportsTypeFiltering = true).getOrThrow()
             repository.getNotificationPage(account, NotificationCategory.Mentions, first.nextMaxId, supportsTypeFiltering = true).getOrThrow()
             repository.getNotificationPage(account, NotificationCategory.Reactions, supportsTypeFiltering = true).getOrThrow()
@@ -165,14 +171,16 @@ class NotificationPagingRepositoryTest {
         }
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(403))
-            assertTrue(DefaultTimelineRepository(ApiClientFactory()).getNotificationCapabilities(session(server)).isFailure)
-            assertEquals(1, server.requestCount)
+            server.enqueue(MockResponse().setResponseCode(503))
+            assertEquals(EmojiReactionApi.Unknown, DefaultTimelineRepository(ApiClientFactory()).getNotificationCapabilities(session(server)).getOrThrow().reactionApi)
+            assertEquals(2, server.requestCount)
         }
     }
 
     @Test fun missingCapabilitiesAndOldVersionUseBoundedLocalFiltering() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("""{"version":"3.4.6"}"""))
+            server.enqueue(MockResponse().setResponseCode(404))
             server.enqueue(MockResponse().setBody("[${notification("favourite", "favourite")}]"))
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val account = session(server)
@@ -180,6 +188,7 @@ class NotificationPagingRepositoryTest {
             assertFalse(capability.supportsEmojiReactions)
             assertFalse(capability.supportsTypeFiltering)
             val page = repository.getNotificationPage(account, NotificationCategory.Mentions, supportsTypeFiltering = capability.supportsTypeFiltering).getOrThrow()
+            server.takeRequest()
             server.takeRequest()
             assertNull(server.takeRequest().requestUrl!!.queryParameter("types[]"))
             assertFalse(page.serverFiltered)

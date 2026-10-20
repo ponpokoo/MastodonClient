@@ -402,7 +402,7 @@ internal fun StatusCard(
                                 .coerceAtLeast(48.dp)
                             Surface(
                                 modifier = Modifier.testTag("displayed_reaction").then(
-                                    if (onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
+                                    if (!status.supportsEmojiReactions || onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
                                     else Modifier.combinedClickable(
                                         onClick = {
                                             onReact?.invoke(if (reaction.reactedByMe) null else reaction.apiName)

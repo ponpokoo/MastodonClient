@@ -33,10 +33,13 @@ class RelayMessageDto(
 internal class WebPushNotificationDto(
     @SerialName("notification_id") @Serializable(with = PushSubscriptionIdSerializer::class) val id: String,
     @SerialName("notification_type") val type: String? = null,
-    val title: String, val body: String = "", val icon: String? = null,
+    val title: String? = null, val body: String = "", val icon: String? = null,
 ) {
     fun toDomain(): PushNotification {
-        require(id.isNotBlank() && id.length <= 256 && title.isNotBlank()) { "Invalid push notification" }
-        return PushNotification(id, type, title.take(256), body.take(2048), icon?.takeIf { it.length <= 2048 })
+        // Pleroma's hide_notification_contents mode sends only a generic body.
+        val displayTitle = title?.takeIf { it.isNotBlank() }
+            ?: "リアクションの通知".takeIf { type == "pleroma:emoji_reaction" && body.isNotBlank() }
+        require(id.isNotBlank() && id.length <= 256 && displayTitle != null) { "Invalid push notification" }
+        return PushNotification(id, type, displayTitle.take(256), body.take(2048), icon?.takeIf { it.length <= 2048 })
     }
 }

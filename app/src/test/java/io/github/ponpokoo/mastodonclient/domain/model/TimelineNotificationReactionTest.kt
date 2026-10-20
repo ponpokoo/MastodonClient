@@ -24,6 +24,26 @@ class TimelineNotificationReactionTest {
         assertNull(notificationWith(first, second).matchingReaction)
     }
 
+    @Test fun responseEmojiTakesPriorityOverChangingStatusAggregate() {
+        val notification = notificationWith(EmojiReaction("👍", 1, false, null, setOf(actor.id)))
+            .copy(type = "pleroma:emoji_reaction", reactionEmoji = "☕")
+        assertEquals("☕", notification.matchingReaction?.name)
+        assertEquals(true, NotificationCategory.Reactions.includes(notification))
+    }
+
+    @Test fun customEmojiUsesResponseUrlAndMissingDirectEmojiRetainsUniqueActorFallback() {
+        val reaction = EmojiReaction("blob", 1, false, "https://example.org/old.png", setOf(actor.id))
+        val notification = notificationWith(reaction).copy(reactionEmoji = ":blob:", reactionEmojiUrl = "https://example.org/new.png")
+        assertEquals("https://example.org/new.png", notification.matchingReaction?.imageUrl)
+        assertEquals(reaction.imageUrl, notification.copy(reactionEmojiUrl = null).matchingReaction?.imageUrl)
+        assertEquals(reaction, notification.copy(reactionEmoji = " ", reactionEmojiUrl = null).matchingReaction)
+        assertNull(notification.copy(status = null, reactionEmoji = null).matchingReaction)
+    }
+
+    @Test fun unknownNotificationTypeIsNotMistakenForAReaction() {
+        assertEquals(false, NotificationCategory.Reactions.includes(notificationWith().copy(type = "future_reaction_request")))
+    }
+
     private fun notificationWith(vararg reactions: EmojiReaction) = TimelineNotification(
         id = "notification",
         type = "emoji_reaction",

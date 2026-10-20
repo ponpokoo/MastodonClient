@@ -25,6 +25,7 @@ data class StatusDto(
     val bookmarked: Boolean = false,
     val pinned: Boolean? = null,
     @SerialName("emoji_reactions") val emojiReactions: List<EmojiReactionDto>? = null,
+    val pleroma: PleromaStatusDto? = null,
     val emojis: List<AccountEmojiDto> = emptyList(),
     val mentions: List<StatusMentionDto> = emptyList(),
     @SerialName("quote_approval") val quoteApproval: QuoteApprovalDto? = null,
@@ -33,6 +34,11 @@ data class StatusDto(
     @SerialName("media_attachments") val mediaAttachments: List<MediaAttachmentDto> = emptyList(),
     val reblog: StatusDto? = null,
     val filtered: List<FilterResultDto>? = null,
+)
+
+@Serializable
+data class PleromaStatusDto(
+    @SerialName("emoji_reactions") val emojiReactions: List<EmojiReactionDto>? = null,
 )
 
 @Serializable

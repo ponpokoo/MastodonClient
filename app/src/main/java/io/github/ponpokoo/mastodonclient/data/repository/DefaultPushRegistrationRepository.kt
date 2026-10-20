@@ -46,14 +46,18 @@ class DefaultPushRegistrationRepository(
         store.write(session.sessionId, record)
         val current = subscriptions.get(session)
         check(current == null || current.endpoint == endpoint) { "Another push subscription already exists" }
-        val requestedAlerts = subscriptions.additionalAlerts(session).associateWith { true } + alerts
+        val additionalAlerts = subscriptions.additionalAlerts(session)
+        val standardAlerts = subscriptions.subscriptionAlerts(session, alerts)
+        val requestedAlerts = additionalAlerts.associateWith { true } + standardAlerts
         val confirmed = if (current == null || requestedAlerts.any { (type, enabled) -> current.alerts[type] != enabled } ||
+            current.alerts.any { (type, enabled) -> enabled && type in REACTION_PUSH_ALERTS && type !in requestedAlerts } ||
             (standard != null && current.standard != standard)) {
             val created = subscriptions.register(session, PushSubscriptionRequest(
                 endpoint, record.keys.publicKey, record.keys.authSecret, requestedAlerts, standard,
             ))
             check(created.endpoint == endpoint) { "Server returned a different push endpoint" }
-            check(requestedAlerts.all { (type, enabled) -> created.alerts[type] == enabled } &&
+            check(requestedAlerts.filterKeys { it !in additionalAlerts || it in standardAlerts }
+                .all { (type, enabled) -> created.alerts[type] == enabled } &&
                 (standard == null || created.standard == standard)) { "Server did not accept the requested push options" }
             created
         } else current
@@ -68,7 +72,9 @@ class DefaultPushRegistrationRepository(
             check(bound == endpoint) { "Relay changed an existing delivery endpoint" }
         }
         store.write(session.sessionId, record.copy(state = PushRegistrationState.ACTIVE,
-            notificationTypes = confirmed.alerts.filterValues { it }.keys.toList()))
+            notificationTypes = (confirmed.alerts.filterValues { it }.keys +
+                // Pleroma delivers follow requests through its follow subscription.
+                if (alerts["follow_request"] == true && confirmed.alerts["follow"] == true) setOf("follow_request") else emptySet()).toList()))
     }
 
     override suspend fun disable(session: AccountSession) = mutex.withLock {

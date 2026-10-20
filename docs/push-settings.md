@@ -65,13 +65,20 @@ GET照合とPOST／DELETEの間の外部クライアントによる変更には�
 Fedibirdの絵文字リアクションは、インスタンス情報の`fedibird_capabilities`に
 `emoji_reaction`がある場合だけ`data[alerts][emoji_reaction]=true`で購読する。
 ホスト名やバージョン文字列では判定せず、通常のMastodonへ独自の通知種類を送らない。
-機能情報はv2を優先し、404の場合だけv1へフォールバックする。
+Pleroma／Akkoma互換ではNodeInfoの`pleroma_emoji_reactions`を確認できた場合だけ
+`data[alerts][pleroma:emoji_reaction]=true`を追加する。コロン付き通知名はこの1種類だけ許可する。
+機能情報は通知一覧と共通のサーバーURL別キャッシュを使う（24時間）。期限後の再確認に失敗しても、前回確定した追加Pushの対応情報を維持し、失敗を理由に購読から外さない。失敗は永続保存せず、5分後から再試行できる。
+判定と再確認の詳細は[通知の対応判定](ui/notifications.md#リアクション通知の対応判定)を参照する。
+Pleroma互換では通常通知の共通購読項目（mention・favourite・reblog・follow）を使い、follow_requestはfollowへ統合する。古い実装が購読結果からpollを落とすため、この系統の投票終了Pushは今回購読しない。通常のMastodon／Fedibirdの購読項目は従来どおり。根拠は[Pleromaの購読保存処理](https://github.com/pleroma-social/pleroma/blob/develop/lib/pleroma/web/push/subscription.ex)。
 新規購読と既存購読の再照合の両方に適用し、更新後のアプリ起動時のトークン同期で反映する。
+追加通知種別が400／422で拒否された場合は、通常通知だけで1回再登録する。追加種別が応答に反映されない場合も通常通知の購読を維持し、追加Pushだけを次の対応情報の再確認まで停止する。REST通知の対応判定は変えない。機能が無効化された場合は、既存購読を通常通知だけで更新する。
 購読のendpoint・暗号鍵・Relay登録IDは維持する。再認証やRelayの更新は不要。
 受信側は通知種類による除外をせず、復号したタイトル・本文を既存の共通通知処理へ渡す。
 
-根拠: Fedibird公式の[Push購読パラメーター](https://github.com/fedibird/mastodon/blob/main/app/controllers/api/v1/push/subscriptions_controller.rb)と
-[公開機能情報](https://github.com/fedibird/mastodon/blob/main/app/serializers/rest/instance_serializer.rb)。
+根拠: Fedibird公式の[Push購読パラメーター](https://github.com/fedibird/mastodon/blob/fedibird/app/controllers/api/v1/push/subscriptions_controller.rb)と
+[公開機能情報](https://github.com/fedibird/mastodon/blob/fedibird/app/serializers/rest/instance_serializer.rb)、
+[Pleroma](https://docs-develop.pleroma.social/backend/development/API/differences_in_mastoapi_responses/#push-subscription)と
+[Akkoma](https://docs.akkoma.dev/develop/development/API/differences_in_mastoapi_responses/#push-subscription)のPush購読仕様。
 
 `secure_push_control` DataStoreに設定、FCMトークン、解除待ち情報をAndroid Keystoreで
 暗号化保存する。このファイルはバックアップと端末移行の対象外。

@@ -15,6 +15,9 @@ class PushRuntime private constructor(context: Context) {
     @Volatile private var relayUrl: String? = BuildConfig.RELAY_URL.takeIf { BuildConfig.FIREBASE_CONFIGURED && it.isNotBlank() }
     private val auth = SecureAuthStore(context)
     private val registrations = EncryptedPushRegistrationStore(context)
+    private val clients = ApiClientFactory()
+    val capabilities = ServerCapabilitiesRepository(clients, UserPreferencesStore(context))
+    private val subscriptions = DefaultPushSubscriptionRepository(clients, capabilities)
     private val syncSource = MastodonPushSyncSource(ApiClientFactory())
     val sync = DefaultPushSyncRepository(auth::getSessions, registrations, syncSource,
         SyncedNotificationPresenter { session, notification, current ->
@@ -31,7 +34,7 @@ class PushRuntime private constructor(context: Context) {
         repository = { saved ->
             DefaultPushRegistrationRepository(registrations,
                 DefaultPushRelayDataSource(saved?.relayIdentity ?: checkNotNull(relayUrl)),
-                DefaultPushSubscriptionRepository(ApiClientFactory()), syncBaseline = syncSource::baseline)
+                subscriptions, syncBaseline = syncSource::baseline)
         },
     )
     /** An explicit transport override for integration environments. */

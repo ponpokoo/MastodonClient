@@ -26,6 +26,8 @@ interface PushSubscriptionRepository {
     suspend fun serverKey(session: AccountSession): String? = null
     /** Known optional alert types advertised by this instance, never inferred from its hostname. */
     suspend fun additionalAlerts(session: AccountSession): Set<String> = emptySet()
+    /** Adapt standard options to the confirmed server API contract before reconciliation. */
+    suspend fun subscriptionAlerts(session: AccountSession, alerts: Map<String, Boolean>): Map<String, Boolean> = alerts
     suspend fun get(session: AccountSession): PushSubscription?
     suspend fun register(session: AccountSession, request: PushSubscriptionRequest): PushSubscription
     suspend fun remove(session: AccountSession)

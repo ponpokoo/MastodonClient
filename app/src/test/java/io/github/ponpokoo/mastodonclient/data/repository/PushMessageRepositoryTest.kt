@@ -14,6 +14,14 @@ import org.junit.Test
 import java.io.IOException
 
 class PushMessageRepositoryTest {
+    @Test fun pleromaReactionPayloadPreservesOpaqueIdAndSupportsHiddenContents() {
+        val decoded = RelayMessageDto.json.decodeFromString<io.github.ponpokoo.mastodonclient.data.remote.dto.WebPushNotificationDto>(
+            """{"notification_id":123456789012345678901234567890,"notification_type":"pleroma:emoji_reaction","body":"New reaction","access_token":"ignored"}""").toDomain()
+        assertEquals("123456789012345678901234567890", decoded.id)
+        assertEquals("pleroma:emoji_reaction", decoded.type)
+        assertEquals("リアクションの通知", decoded.title)
+        assertEquals("New reaction", decoded.body)
+    }
     private val json = RelayMessageDto.json
     private val fixtures = javaClass.getResourceAsStream("/push/encrypted.json")!!.bufferedReader().use { json.parseToJsonElement(it.readText()).jsonObject }
     private val session = AccountSession("one", "https://instance.example", "a", "user", "User", "", "token")

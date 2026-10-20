@@ -64,7 +64,7 @@ data class NotificationsUiState(
     } else lists[category] ?: NotificationListState()
 
     fun canExplore(category: NotificationCategory): Boolean = category != NotificationCategory.Reactions ||
-        (!isCheckingCapabilities && capabilities?.supportsEmojiReactions == true)
+        capabilities?.supportsEmojiReactions == true
 
     fun forCategory(category: NotificationCategory): NotificationsUiState {
         val tab = list(category)
@@ -93,6 +93,7 @@ class NotificationsViewModel(
     browsing: BrowsingSession,
     private val systemNotifications: SystemNotificationRepository? = null,
     private val pushSync: io.github.ponpokoo.mastodonclient.domain.repository.PushSyncRepository? = null,
+    private val capabilityClock: () -> Long = System::currentTimeMillis,
 ) : SessionScopedViewModel(browsing) {
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
@@ -106,6 +107,7 @@ class NotificationsViewModel(
     private var readJob: Job? = null
     private var capabilityJob: Job? = null
     private var capabilityCheckRequested = false
+    private var capabilityCheckedAt = 0L
     private var readWriteJob: Job? = null
     private var markerWriteJob: Job? = null
     private var readState = NotificationReadState()
@@ -126,6 +128,7 @@ class NotificationsViewModel(
         cacheReady = CompletableDeferred()
         readJob = null; capabilityJob = null; readWriteJob = null; markerWriteJob = null
         capabilityCheckRequested = false
+        capabilityCheckedAt = 0L
         readState = NotificationReadState(); markerId = null; initialAllPage = emptyList()
         waitingAllMarkerId = null; lastSentMarkerId = null
         reactionRefreshRequested = false; reactionPullRefreshRequested = false
@@ -179,14 +182,28 @@ class NotificationsViewModel(
 
     private fun checkCapabilities() {
         val snapshot = currentSnapshot() ?: return
-        if (capabilityCheckRequested) return
+        val now = capabilityClock()
+        val capabilities = _uiState.value.capabilities
+        val age = now - capabilityCheckedAt
+        val ttl = if (capabilities?.reactionApi == EmojiReactionApi.Unknown || capabilities == null)
+            NotificationCapabilities.RETRY_MILLIS else NotificationCapabilities.TTL_MILLIS
+        val fresh = if (capabilities?.retryAtEpochMillis != null && capabilities.retryAtEpochMillis > 0)
+            capabilities.isRetryPending(now) else age in 0 until ttl
+        if (capabilityJob?.isActive == true || capabilityCheckRequested && fresh) return
         capabilityCheckRequested = true
+        capabilityCheckedAt = capabilityClock()
         _uiState.update { it.copy(isCheckingCapabilities = true) }
         capabilityJob = requestScope.launch {
+            val previous = _uiState.value.capabilities?.takeIf { it.reactionApi != EmojiReactionApi.Unknown }
             val result = withTimeoutOrNull(5_000) {
                 timelineRepository.getNotificationCapabilities(snapshot.account!!).forSession(snapshot)
             }
-            _uiState.update { it.copy(capabilities = result?.getOrNull(), isCheckingCapabilities = false) }
+            val fetched = result?.getOrNull()
+            val resolved = if (fetched == null || fetched.reactionApi == EmojiReactionApi.Unknown)
+                previous?.copy(retryAtEpochMillis = capabilityClock() + NotificationCapabilities.RETRY_MILLIS) ?: fetched
+                else fetched
+            _uiState.update { it.copy(capabilities = resolved, isCheckingCapabilities = false) }
+            capabilityCheckedAt = resolved?.checkedAtEpochMillis?.takeIf { it > 0 } ?: capabilityClock()
             val refresh = reactionRefreshRequested
             val pull = reactionPullRefreshRequested
             reactionRefreshRequested = false; reactionPullRefreshRequested = false

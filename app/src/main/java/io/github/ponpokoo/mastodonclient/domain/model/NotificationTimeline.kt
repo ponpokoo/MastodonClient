@@ -8,7 +8,7 @@ enum class NotificationCategory(val label: String) {
     fun includes(notification: TimelineNotification): Boolean = when (this) {
         All -> true
         Mentions -> notification.type.equals("mention", true) || notification.type.equals("reply", true)
-        Reactions -> notification.type.contains("reaction", true)
+        Reactions -> notification.isEmojiReaction
     }
 }
 
@@ -16,7 +16,34 @@ enum class NotificationCategory(val label: String) {
 data class NotificationCapabilities(
     val supportsTypeFiltering: Boolean = false,
     val supportsEmojiReactions: Boolean = false,
-)
+    val reactionApi: EmojiReactionApi = if (supportsEmojiReactions) EmojiReactionApi.Fedibird else EmojiReactionApi.Unknown,
+    val supportsCustomEmojiReactions: Boolean = false,
+    val usesIncludeTypes: Boolean = false,
+    val checkedAtEpochMillis: Long = 0,
+    val pushAlerts: Set<String>? = null,
+    // A failed refresh does not change the durable confirmation time or capabilities.
+    @kotlinx.serialization.Transient val retryAtEpochMillis: Long = 0,
+) {
+    fun isRetryPending(now: Long): Boolean =
+        retryAtEpochMillis > 0 && now in (retryAtEpochMillis - RETRY_MILLIS) until retryAtEpochMillis
+
+    val reactionNotificationTypes: List<String>
+        get() = when (reactionApi) {
+            EmojiReactionApi.Fedibird -> listOf("emoji_reaction")
+            EmojiReactionApi.Pleroma -> listOf("pleroma:emoji_reaction")
+            else -> emptyList()
+        }
+    // Kept separate from notification filtering and status DTO field availability.
+    val additionalPushAlerts: Set<String> get() = pushAlerts ?: reactionNotificationTypes.toSet()
+
+    companion object {
+        const val TTL_MILLIS = 24 * 60 * 60 * 1_000L
+        const val RETRY_MILLIS = 5 * 60 * 1_000L
+    }
+}
+
+@Serializable
+enum class EmojiReactionApi { Unknown, Unsupported, Fedibird, Pleroma }
 
 /** IDs remain opaque. A missing boundary is not evidence that an entire page is unread. */
 @Serializable

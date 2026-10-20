@@ -53,10 +53,13 @@ class PushRegistrationRepositoryTest {
         var deletes = 0
         var ignoreOptions = false
         var additional = emptySet<String>()
+        var pleromaStandardAlerts = false
         var signingKey: String? = io.github.ponpokoo.mastodonclient.core.security.WebPushKeyGenerator().generate().publicKey
         var metadataAvailable = true
         override suspend fun serverKey(session: AccountSession) = if (metadataAvailable) signingKey else null
         override suspend fun additionalAlerts(session: AccountSession) = additional
+        override suspend fun subscriptionAlerts(session: AccountSession, alerts: Map<String, Boolean>) =
+            if (pleromaStandardAlerts) alerts - "poll" - "follow_request" else alerts
         override suspend fun get(session: AccountSession): PushSubscription? {
             getError?.let { throw it }
             return current
@@ -263,6 +266,32 @@ class PushRegistrationRepositoryTest {
         repository.enable(account, "fcm", alerts)
         assertEquals(alerts + ("emoji_reaction" to true), remote.current!!.alerts)
         assertEquals(PushRegistrationState.ACTIVE, repository.state(account))
+    }
+
+    @Test fun pleromaAlertUpdatesExistingSubscriptionAndDisablingFeatureRemovesIt() = runTest {
+        val store = MemoryStore(); val relay = Relay(); val remote = Mastodon()
+        val repository = DefaultPushRegistrationRepository(store, relay, remote)
+        repository.enable(account, "fcm", alerts)
+        val before = store.records.getValue(account.sessionId)
+        remote.additional = setOf("pleroma:emoji_reaction")
+        repository.enable(account, "fcm", alerts)
+        assertEquals(true, remote.current!!.alerts["pleroma:emoji_reaction"])
+        assertEquals(before.endpoint, remote.current!!.endpoint)
+        assertEquals(before.keys, store.records.getValue(account.sessionId).keys)
+        remote.additional = emptySet()
+        repository.enable(account, "fcm", alerts)
+        assertEquals(alerts, remote.current!!.alerts)
+        assertEquals(listOf("mention"), store.records.getValue(account.sessionId).notificationTypes)
+        assertEquals(3, remote.posts)
+    }
+
+    @Test fun pleromaFollowRequestsRemainIncludedInApiSyncAfterAlertNormalization() = runTest {
+        val store = MemoryStore()
+        val remote = Mastodon().apply { pleromaStandardAlerts = true; additional = setOf("pleroma:emoji_reaction") }
+        DefaultPushRegistrationRepository(store, Relay(), remote).enable(account, "fcm",
+            alerts + mapOf("follow" to true, "follow_request" to true, "poll" to true))
+        assertFalse(remote.current!!.alerts.containsKey("follow_request"))
+        assertTrue(store.records.getValue(account.sessionId).notificationTypes!!.contains("follow_request"))
     }
 
     @Test fun existingSubscriptionGainsReactionOnRestartWithoutChangingKeysOrEndpoint() = runTest {

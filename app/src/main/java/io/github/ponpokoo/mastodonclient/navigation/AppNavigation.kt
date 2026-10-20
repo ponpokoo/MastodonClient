@@ -213,6 +213,7 @@ fun AppNavigation(
         io.github.ponpokoo.mastodonclient.data.repository.DefaultWordMuteRepository(preferences, scope)
     }
     val timelineRepository = remember { DefaultTimelineRepository(apiClientFactory,
+        capabilitiesRepository = io.github.ponpokoo.mastodonclient.notification.PushRuntime.get(context).capabilities,
         wordMuteRepository = wordMuteRepository,
         settingsStore = preferences, settingsScope = scope,
         accountDisplay = accountDisplay,
