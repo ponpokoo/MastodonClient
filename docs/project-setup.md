@@ -472,7 +472,7 @@ adb -s emulator-5554 exec-out run-as io.github.ponpokoo.mastodonclient cat files
 
 #### 署名設定
 
-配布用Release APKは、Git管理外の`release-signing.properties`がある場合だけ自動署名する。
+配布用Release APK／AABは、Git管理外の`release-signing.properties`がある場合だけ自動署名する。
 このファイルには`storeFile`（PKCS12鍵の絶対パス）、`passwordFile`（パスワードを1行で保存したファイルの絶対パス）、
 `keyAlias`を指定する。鍵とパスワードは別の安全な場所へバックアップし、GitやReleasesにはアップロードしない。
 
@@ -485,6 +485,11 @@ adb -s emulator-5554 exec-out run-as io.github.ponpokoo.mastodonclient cat files
 署名済みAPKは`app/build/outputs/apk/release/app-release.apk`に出力される。
 署名設定がない場合は`app-release-unsigned.apk`となり、そのまま配布しない。
 Debug版とRelease版は署名が異なるため、同じapplication IDのまま上書きインストールできない。
+
+Google Playへ提出するAABは`./gradlew :app:bundleRelease`で生成し、
+`app/build/outputs/bundle/release/app-release.aab`から取得する。このタスクだけではテストを実行しない。
+配布候補では、[変更範囲に応じた確認](#変更範囲に応じた確認)に従って単体テスト全体・Release lintも確認し、
+AABの版番号・署名・SHA-256と対応ソースを[内部リリースノート](release-plan.md#内部リリースノートの保管)へ記録する。
 
 #### 確認用APKの生成と保管
 
