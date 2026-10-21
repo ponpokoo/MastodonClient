@@ -4,10 +4,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,7 +32,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Apps
@@ -43,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -67,24 +75,28 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
+import io.github.ponpokoo.mastodonclient.feature.common.SearchInput
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
@@ -166,6 +178,12 @@ private fun ReactionPickerContent(
     val loadFavorites = LocalEmojiFavoritesLoader.current
     val updateFavorite = LocalEmojiFavoriteUpdater.current
     val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val headerDismissOffset = remember { Animatable(0f) }
+    val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+    val headerDragState = rememberDraggableState { delta ->
+        scope.launch { headerDismissOffset.snapTo((headerDismissOffset.value + delta).coerceAtLeast(0f)) }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var previewEmoji by remember { mutableStateOf<PickerEmoji?>(null) }
     var pendingDeletion by remember { mutableStateOf<String?>(null) }
@@ -175,7 +193,8 @@ private fun ReactionPickerContent(
     var favoritesError by remember { mutableStateOf<String?>(null) }
     var favoriteSaving by remember { mutableStateOf(false) }
     var favoritesLoadAttempt by remember { mutableStateOf(0) }
-    var query by rememberSaveable { mutableStateOf("") }
+    var searchValue by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    val query = searchValue.text
     var selectedCategoryKey by rememberSaveable { mutableStateOf("all") }
     var categoryMenuOpen by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -325,36 +344,75 @@ private fun ReactionPickerContent(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Box(Modifier.fillMaxWidth()) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.graphicsLayer { translationY = headerDismissOffset.value },
+        sheetState = sheetState,
+        sheetGesturesEnabled = false,
+        dragHandle = null,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // The parent has already removed the IME area. Keep background visible above the sheet.
+        val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
+        val maxSheetHeight = minOf(
+            LocalConfiguration.current.screenHeightDp.dp * 0.82f,
+            (maxHeight - statusBarHeight - 48.dp).coerceAtLeast(0.dp),
+        )
         Column(Modifier.fillMaxWidth()
-            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.82f)
+            .heightIn(max = maxSheetHeight)
             .testTag("reaction_picker_sheet")
-            .padding(horizontal = 16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(12.dp))
-            BasicTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth().height(44.dp)
-                    .testTag("reaction_search")
-                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { input ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Box(Modifier.weight(1f)) {
-                            if (query.isEmpty()) Text("絵文字を検索", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium)
-                            input()
+            .padding(horizontal = 16.dp).padding(top = 8.dp)) {
+            Column(Modifier.fillMaxWidth().testTag("reaction_picker_header")
+                .semantics(mergeDescendants = true) {
+                    dismiss {
+                        scope.launch {
+                            sheetState.hide()
+                            if (!sheetState.isVisible) onDismiss()
                         }
+                        true
                     }
-                },
-            )
+                }
+                .draggable(
+                    state = headerDragState,
+                    orientation = Orientation.Vertical,
+                    onDragStarted = { headerDismissOffset.stop() },
+                    onDragStopped = {
+                        if (headerDismissOffset.value >= dismissThresholdPx) {
+                            sheetState.hide()
+                            if (!sheetState.isVisible) onDismiss()
+                        } else {
+                            headerDismissOffset.animateTo(0f, animationSpec = tween(140))
+                        }
+                    },
+                )) {
+                Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.width(32.dp).height(4.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp))
+                        .testTag("reaction_picker_drag_handle"))
+                }
+                Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 4.dp),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                    .padding(start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                SearchInput(
+                    value = searchValue,
+                    onValueChange = { searchValue = it },
+                    placeholder = "絵文字を検索",
+                    onClear = { searchValue = TextFieldValue("") },
+                    modifier = Modifier.weight(1f),
+                    inputModifier = Modifier.padding(vertical = 12.dp).testTag("reaction_search"),
+                    clearButtonModifier = Modifier.testTag("reaction_search_clear"),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
+            }
             PickerCategoryStrip(categories, selectedCategory, { selectedCategoryKey = it.key }, { categoryMenuOpen = true })
             Text(buildAnnotatedString {
                 append(selectedCategory.label)

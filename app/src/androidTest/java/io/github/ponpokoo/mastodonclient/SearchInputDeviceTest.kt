@@ -2,6 +2,7 @@ package io.github.ponpokoo.mastodonclient
 
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inspector.WindowInspector
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +24,7 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.filters.SdkSuppress
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
@@ -31,9 +33,11 @@ import io.github.ponpokoo.mastodonclient.domain.model.ExplorePage
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreTabState
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import io.github.ponpokoo.mastodonclient.feature.search.SearchBar
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.timeline.SearchContent
+import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -91,6 +95,90 @@ class SearchInputDeviceTest {
         rule.onNodeWithTag("search_open").performClick()
         rule.onNodeWithTag("search_input").performTextInput("新しい検索")
         rule.onNodeWithTag("search_input").assertTextEquals("新しい検索")
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 29)
+    fun emojiClearDiscardsUnconfirmedTextAndKeepsEditing() {
+        rule.setContent { MaterialTheme {
+            ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, customEmojisOverride = emptyList())
+        } }
+        rule.onNodeWithTag("reaction_search").performClick()
+        var connection: InputConnection? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            // The bottom sheet owns a dialog window, separate from the activity's focus.
+            connection = WindowInspector.getGlobalWindowViews().firstOrNull { it.hasWindowFocus() }
+                ?.findFocus()?.onCreateInputConnection(EditorInfo())
+            assertNotNull(connection)
+            connection!!.setComposingText("へんかんちゅう", 1)
+        }
+        rule.onNodeWithTag("reaction_search").assertTextEquals("へんかんちゅう")
+        rule.onNodeWithTag("reaction_search_clear").performClick()
+        rule.onNodeWithTag("reaction_search").assertIsFocused().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")),
+        )
+        rule.onNodeWithTag("reaction_search_clear").assertDoesNotExist()
+        rule.onNodeWithTag("reaction_search").performTextInput("笑顔")
+        rule.onNodeWithTag("reaction_search").assertTextEquals("笑顔")
+        rule.onNodeWithTag("reaction_search_clear").performClick()
+        rule.onNodeWithText("😊").assertExists()
+    }
+
+    @Test
+    @SdkSuppress(minSdkVersion = 29)
+    fun emojiSheetLeavesBackgroundAboveTheKeyboardAndRestoresItsHeight() {
+        rule.setContent { MaterialTheme {
+            ReactionPickerSheet(canUndo = true, onDismiss = {}, onSelected = {}, customEmojisOverride = emptyList())
+        } }
+        val sheet = rule.onNodeWithTag("reaction_picker_sheet")
+        val original = sheet.fetchSemanticsNode().boundsInWindow
+        rule.onNodeWithTag("reaction_search").performTextInput("笑顔")
+        fun waitForPickerKeyboard(visible: Boolean) {
+            rule.waitUntil(5_000) {
+                var matches = false
+                rule.runOnUiThread {
+                    val root = WindowInspector.getGlobalWindowViews().firstOrNull { it.hasWindowFocus() }
+                    matches = root?.let { ViewCompat.getRootWindowInsets(it) }
+                        ?.isVisible(WindowInsetsCompat.Type.ime()) == visible
+                }
+                matches
+            }
+            InstrumentationRegistry.getInstrumentation().uiAutomation.waitForIdle(200, 5_000)
+            rule.waitForIdle()
+        }
+        waitForPickerKeyboard(true)
+        rule.waitForIdle()
+        var keyboardTop = 0f
+        var contentTop = 0f
+        rule.runOnUiThread {
+            val root = WindowInspector.getGlobalWindowViews().first { it.hasWindowFocus() }
+            val insets = requireNotNull(ViewCompat.getRootWindowInsets(root))
+            val location = IntArray(2)
+            root.getLocationInWindow(location)
+            keyboardTop = (location[1] + root.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom).toFloat()
+            contentTop = (location[1] + insets.getInsets(WindowInsetsCompat.Type.statusBars()).top).toFloat()
+        }
+        val withKeyboard = sheet.fetchSemanticsNode().boundsInWindow
+        val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        val directory = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir,
+            "reaction-picker-previews").apply { mkdirs() }
+        java.io.File(directory, "keyboard.png").outputStream().use {
+            screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        screenshot.recycle()
+        assertTrue("Sheet $withKeyboard should leave background below status bar bottom $contentTop",
+            withKeyboard.top > contentTop)
+        assertTrue("Sheet $withKeyboard should stay above keyboard top $keyboardTop (content top $contentTop)",
+            withKeyboard.bottom <= keyboardTop + 1f)
+        assertTrue("Emoji list should shrink for the keyboard", withKeyboard.height < original.height)
+        assertTrue(rule.onNodeWithTag("reaction_emoji_list").fetchSemanticsNode().boundsInWindow.height > 0f)
+        rule.onNodeWithContentDescription("カテゴリ：履歴").performClick()
+        val emptyCategory = sheet.fetchSemanticsNode().boundsInWindow
+        assertEquals(withKeyboard.top, emptyCategory.top, 1f)
+        assertEquals(withKeyboard.height, emptyCategory.height, 1f)
+        androidx.test.espresso.Espresso.pressBackUnconditionally()
+        waitForPickerKeyboard(false)
+        assertEquals(original.height, sheet.fetchSemanticsNode().boundsInWindow.height, 1f)
     }
 
     @Test fun searchTargetsSwitchWithTabsAndSwipes() {

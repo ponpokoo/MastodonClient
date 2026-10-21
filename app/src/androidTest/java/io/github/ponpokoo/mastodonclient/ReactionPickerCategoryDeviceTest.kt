@@ -2,13 +2,19 @@ package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,6 +23,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
@@ -30,6 +41,116 @@ import java.io.File
 
 class ReactionPickerCategoryDeviceTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun scrollingAndPullingAtTheListStartNeverMovesOrDismissesTheSheet() {
+        var dismissed = false
+        composeRule.setContent {
+            MastodonClientTheme {
+                ReactionPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = {},
+                    customEmojisOverride = (0 until 160).map { emoji("custom_$it", "多数") })
+            }
+        }
+        chooseCategory("カスタム · 多数")
+        val sheet = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+        val list = composeRule.onNodeWithTag("reaction_emoji_list")
+        fun assertSheetFixed() {
+            val current = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+            assertEquals(sheet.top, current.top, 1f)
+            assertEquals(sheet.height, current.height, 1f)
+            composeRule.runOnIdle { assertEquals(false, dismissed) }
+        }
+        list.performTouchInput { swipeDown() }
+        assertSheetFixed()
+        list.performTouchInput { swipeUp() }
+        assertTrue("Emoji list should scroll", list.fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value() > 0f)
+        assertSheetFixed()
+        list.performScrollToNode(androidx.compose.ui.test.hasContentDescription(":custom_0:"))
+        list.performTouchInput { swipeDown() }
+        assertSheetFixed()
+    }
+
+    @Test fun onlyDownwardHeaderDragDismissesAndShortDragReturnsToItsPosition() {
+        val visible = mutableStateOf(true)
+        composeRule.setContent {
+            MastodonClientTheme {
+                if (visible.value) ReactionPickerSheet(canUndo = false, onDismiss = { visible.value = false },
+                    onSelected = {}, customEmojisOverride = emptyList())
+            }
+        }
+        val sheet = composeRule.onNodeWithTag("reaction_picker_sheet")
+        val header = composeRule.onNodeWithTag("reaction_picker_header")
+        val originalTop = sheet.fetchSemanticsNode().boundsInWindow.top
+        header.performTouchInput { click(center) }
+        header.performTouchInput {
+            swipe(start = center, end = Offset(centerX, centerY - height * 2), durationMillis = 350)
+        }
+        assertEquals(originalTop, sheet.fetchSemanticsNode().boundsInWindow.top, 1f)
+        header.performTouchInput {
+            down(center)
+            moveTo(Offset(centerX, centerY + height), delayMillis = 150)
+        }
+        assertTrue("Sheet should follow a drag that started on its header",
+            sheet.fetchSemanticsNode().boundsInWindow.top > originalTop)
+        header.performTouchInput { up() }
+        assertEquals(originalTop, sheet.fetchSemanticsNode().boundsInWindow.top, 1f)
+        composeRule.runOnIdle { assertEquals(true, visible.value) }
+        header.performTouchInput {
+            swipeDown(startY = centerY, endY = centerY + height * 4, durationMillis = 350)
+        }
+        sheet.assertDoesNotExist()
+    }
+
+    @Test fun sheetClosesWithAccessibilityActionOutsideTapAndBack() {
+        val visible = mutableStateOf(true)
+        composeRule.setContent {
+            MastodonClientTheme {
+                if (visible.value) ReactionPickerSheet(canUndo = false, onDismiss = { visible.value = false },
+                    onSelected = {}, customEmojisOverride = emptyList())
+            }
+        }
+        composeRule.onNodeWithTag("reaction_picker_header").performSemanticsAction(SemanticsActions.Dismiss) { it() }
+        composeRule.onNodeWithTag("reaction_picker_sheet").assertDoesNotExist()
+        composeRule.runOnIdle { visible.value = true }
+        val sheetTop = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow.top
+        val dialogTop = composeRule.onNode(isDialog()).fetchSemanticsNode().boundsInWindow.top
+        composeRule.onNode(isDialog()).performTouchInput { click(Offset(centerX, (sheetTop - dialogTop) / 2f)) }
+        composeRule.onNodeWithTag("reaction_picker_sheet").assertDoesNotExist()
+        composeRule.runOnIdle { visible.value = true }
+        composeRule.onNodeWithTag("reaction_picker_header").assertIsDisplayed()
+        androidx.test.espresso.Espresso.pressBackUnconditionally()
+        composeRule.onNodeWithTag("reaction_picker_sheet").assertDoesNotExist()
+    }
+
+    @Test fun clearingSearchRestoresOnlyTheSelectedCategoryAndAllowsMoreInput() {
+        var dismissed = false
+        var selection: String? = null
+        composeRule.setContent {
+            MastodonClientTheme {
+                ReactionPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = { selection = it },
+                    customEmojisOverride = listOf(emoji("first", "選択中"), emoji("second", "選択中"), emoji("other", "別カテゴリ")))
+            }
+        }
+        chooseCategory("カスタム · 選択中")
+        composeRule.onNodeWithTag("reaction_search_clear").assertDoesNotExist()
+        composeRule.onNodeWithTag("reaction_search").performTextInput("missing")
+        composeRule.onNodeWithText("該当する絵文字がありません").assertIsDisplayed()
+        val sheet = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+        composeRule.onNodeWithTag("reaction_search_clear").performClick()
+        composeRule.onNodeWithTag("reaction_search_clear").assertDoesNotExist()
+        composeRule.onNodeWithTag("reaction_search").assertIsFocused()
+        composeRule.onNodeWithContentDescription("カテゴリ：カスタム · 選択中").assertIsSelected()
+        composeRule.onNodeWithContentDescription(":first:").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(":second:").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(":other:").assertDoesNotExist()
+        val clearedSheet = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+        assertEquals(sheet.height, clearedSheet.height, 1f)
+        assertEquals(sheet.top, clearedSheet.top, 1f)
+        composeRule.onNodeWithTag("reaction_search").performTextInput("second")
+        composeRule.onNodeWithContentDescription(":first:").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription(":second:").assertIsDisplayed()
+        composeRule.runOnIdle { assertEquals(false, dismissed); assertEquals(null, selection) }
+    }
 
     @Test fun switchingBetweenDenseAndEmptyCategoriesKeepsSheetAndSearchInPlace() {
         composeRule.setContent {

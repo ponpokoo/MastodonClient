@@ -2,23 +2,19 @@ package io.github.ponpokoo.mastodonclient.feature.search
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -38,6 +33,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import io.github.ponpokoo.mastodonclient.feature.common.SearchInput
 
 /** The same input survives search/explore mode changes; composition remains local to the editor. */
 @Composable
@@ -91,19 +87,28 @@ internal fun SearchBar(
                 Icon(if (active) Icons.AutoMirrored.Outlined.ArrowBack else Icons.Outlined.Search,
                     contentDescription = if (active) "探索に戻る" else "検索を開く")
             }
-            BasicTextField(
+            SearchInput(
                 value = value,
                 onValueChange = { next ->
                     // Ignore a late IME commit after clear/back has closed this editing session.
                     if (acceptingEdits) { value = next; onQueryChanged(next.text) }
                 },
-                modifier = Modifier.weight(1f).padding(vertical = 12.dp)
+                modifier = Modifier.weight(1f),
+                inputModifier = Modifier.padding(vertical = 12.dp)
                     .focusRequester(focusRequester).onFocusChanged {
                         if (it.isFocused) { acceptingEdits = true; onEnterSearch() }
                     }.testTag("search_input"),
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                placeholder = "Mastodon を検索",
+                showClear = active && value.text.isNotEmpty(),
+                clearButtonModifier = Modifier.testTag("search_clear"),
+                clearContentDescription = "入力を消して探索に戻る",
+                onClear = {
+                    acceptingEdits = false
+                    value = TextFieldValue("")
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    onClear()
+                },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (value.composition == null && value.text.isNotBlank()) {
@@ -113,23 +118,7 @@ internal fun SearchBar(
                         onSearch()
                     }
                 }),
-                decorationBox = { editor ->
-                    Box {
-                        if (value.text.isEmpty()) Text("Mastodon を検索", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge)
-                        editor()
-                    }
-                },
             )
-            if (active && value.text.isNotEmpty()) {
-                IconButton(modifier = Modifier.testTag("search_clear"), onClick = {
-                    acceptingEdits = false
-                    value = TextFieldValue("")
-                    focusManager.clearFocus()
-                    keyboard?.hide()
-                    onClear()
-                }) { Icon(Icons.Outlined.Close, contentDescription = "入力を消して探索に戻る") }
-            }
         }
     }
 }
