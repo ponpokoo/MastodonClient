@@ -8,6 +8,12 @@ import io.github.ponpokoo.mastodonclient.domain.model.MastodonInstance
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.InstanceRepository
+import io.github.ponpokoo.mastodonclient.domain.repository.ServerSuggestionsRepository
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.catch
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,17 +33,34 @@ data class LoginUiState(
     val errorMessage: String? = null,
     val inputErrorMessage: String? = null,
     val operation: LoginOperation? = null,
+    val serverSuggestions: List<String> = emptyList(),
 )
 
 class LoginViewModel(
     private val instanceRepository: InstanceRepository,
     private val authRepository: AuthRepository,
     private val restoreExistingSession: Boolean = true,
+    private val serverSuggestionsRepository: ServerSuggestionsRepository = ServerSuggestionsRepository { flowOf(emptyList()) },
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+    private var suggestionDomains: List<String> = emptyList()
 
     init {
+        viewModelScope.launch {
+            combine(
+                serverSuggestionsRepository.observeDomains().onStart { emit(emptyList()) }.catch { emit(emptyList()) },
+                authRepository.observeSessions().onStart { emit(emptyList()) }.catch { emit(emptyList()) },
+            ) { catalog, sessions ->
+                (sessions.map { it.instanceUrl } + catalog).mapNotNull {
+                    InstanceUrlNormalizer.normalize(it).getOrNull()?.removePrefix("https://")
+                }.distinct()
+            }.collect { domains ->
+                ensureActive()
+                suggestionDomains = domains
+                _uiState.update { it.copy(serverSuggestions = suggestions(it.instanceInput)) }
+            }
+        }
         if (restoreExistingSession) {
             viewModelScope.launch {
                 authRepository.restoreSession()?.let { session ->
@@ -51,8 +74,16 @@ class LoginViewModel(
         if (_uiState.value.isLoading) return
         _uiState.update {
             it.copy(instanceInput = value, instance = null, authorizationUrl = null,
-                errorMessage = null, inputErrorMessage = null)
+                errorMessage = null, inputErrorMessage = null, serverSuggestions = suggestions(value))
         }
+    }
+
+    private fun suggestions(input: String): List<String> {
+        val query = input.trim().lowercase(Locale.ROOT).removePrefix("https://").removeSuffix("/")
+        if (query.isBlank()) return emptyList()
+        return suggestionDomains.filter { it.contains(query) }
+            .sortedBy { if (it.startsWith(query)) 0 else 1 }
+            .take(5)
     }
 
     fun discover() {
@@ -165,9 +196,10 @@ class LoginViewModel(
         private val instanceRepository: InstanceRepository,
         private val authRepository: AuthRepository,
         private val restoreExistingSession: Boolean = true,
+        private val serverSuggestionsRepository: ServerSuggestionsRepository = ServerSuggestionsRepository { flowOf(emptyList()) },
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            LoginViewModel(instanceRepository, authRepository, restoreExistingSession) as T
+            LoginViewModel(instanceRepository, authRepository, restoreExistingSession, serverSuggestionsRepository) as T
     }
 }

@@ -13,6 +13,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonInstance
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.InstanceRepository
+import io.github.ponpokoo.mastodonclient.domain.repository.ServerSuggestionsRepository
+import kotlinx.coroutines.flow.flowOf
 import io.github.ponpokoo.mastodonclient.feature.login.InstanceLoginContent
 import io.github.ponpokoo.mastodonclient.feature.login.LoginViewModel
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
@@ -41,7 +43,7 @@ class LoginScreenDeviceTest {
         override suspend fun restoreSession(): AccountSession? = null
         override suspend fun logout() { }
     }
-    private fun show(failFirstConnection: Boolean = false, addingAccount: Boolean = true) {
+    private fun show(failFirstConnection: Boolean = false, addingAccount: Boolean = true, domains: List<String> = emptyList()) {
         compose.runOnUiThread {
             model = LoginViewModel(object : InstanceRepository {
                 override suspend fun discover(input: String): Result<MastodonInstance> {
@@ -49,7 +51,8 @@ class LoginScreenDeviceTest {
                     return if (failFirstConnection && connections == 1) Result.failure(IOException("synthetic"))
                     else Result.success(MastodonInstance(input, "https://$input", "Test server", null, 500, 4))
                 }
-            }, auth, restoreExistingSession = false)
+            }, auth, restoreExistingSession = false,
+                serverSuggestionsRepository = ServerSuggestionsRepository { flowOf(domains) })
         }
         compose.setContent {
             val state by model.uiState.collectAsStateWithLifecycle()
@@ -88,6 +91,26 @@ class LoginScreenDeviceTest {
         compose.onNodeWithTag("instance_input").assertIsFocused()
         compose.onNodeWithTag("instance_input").assert(hasText("two.example"))
         compose.onNodeWithTag("authorize_button").assertDoesNotExist()
+    }
+
+    @Test fun standardSuggestionsKeepInputFocusAndSelectionDoesNotConnectUntilConfirmed() {
+        show(domains = listOf("fedibird.com", "mstdn.jp"))
+        compose.onNodeWithTag("instance_input").performTextInput("fedi")
+        compose.onNodeWithTag("server_suggestions").assertIsDisplayed()
+        compose.onNodeWithTag("instance_input").assertIsFocused()
+        compose.onNodeWithText("fedibird.com").performClick()
+        compose.onNodeWithTag("server_suggestions").assertDoesNotExist()
+        compose.onNodeWithTag("instance_input").assert(hasText("fedibird.com")).assertIsFocused()
+        compose.runOnIdle { assertEquals(0, connections); assertEquals(0, auth.prepares) }
+        capture("login-server-suggestion-selected.png")
+        compose.onNodeWithTag("instance_input").performImeAction()
+        compose.onNodeWithTag("instance_success").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(1, connections); assertEquals(0, auth.prepares) }
+        compose.onNodeWithTag("instance_input").performTextReplacement("private.example")
+        compose.onNodeWithTag("server_suggestions").assertDoesNotExist()
+        compose.onNodeWithTag("authorize_button").assertDoesNotExist()
+        compose.onNodeWithTag("instance_input").performImeAction()
+        compose.runOnIdle { assertEquals(2, connections) }
     }
 
     @Test fun connectionAndAuthorizationFailuresAllowRetryInTheSameScreen() {

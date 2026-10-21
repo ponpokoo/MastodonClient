@@ -124,6 +124,12 @@ fun AppNavigation(
     val scope = rememberCoroutineScope()
     val apiClientFactory = remember { ApiClientFactory() }
     val authStore = remember { SecureAuthStore(context) }
+    val serverSuggestionsRepository = remember {
+        io.github.ponpokoo.mastodonclient.data.repository.DefaultServerSuggestionsRepository(
+            io.github.ponpokoo.mastodonclient.data.remote.ServerCatalogRemoteDataSource(),
+            io.github.ponpokoo.mastodonclient.data.local.FileServerSuggestionsLocalDataSource(context),
+        )
+    }
     val notificationLocalDataSource = remember {
         io.github.ponpokoo.mastodonclient.data.local.RoomNotificationLocalDataSource(
             io.github.ponpokoo.mastodonclient.data.local.BrowsingDatabase.get(context),
@@ -390,6 +396,7 @@ fun AppNavigation(
                 factory = LoginViewModel.Factory(
                     DefaultInstanceRepository(apiClientFactory),
                     authRepository,
+                    serverSuggestionsRepository = serverSuggestionsRepository,
                 ),
             )
             InstanceLoginScreen(loginViewModel) {
@@ -404,6 +411,7 @@ fun AppNavigation(
                     DefaultInstanceRepository(apiClientFactory),
                     authRepository,
                     restoreExistingSession = false,
+                    serverSuggestionsRepository = serverSuggestionsRepository,
                 ),
             )
             InstanceLoginScreen(loginViewModel, onBack = { navController.popBackStack() }) {

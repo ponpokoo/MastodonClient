@@ -4,6 +4,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonInstance
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.InstanceRepository
+import io.github.ponpokoo.mastodonclient.domain.repository.ServerSuggestionsRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelTestBase
 import io.github.ponpokoo.mastodonclient.feature.common.testAccount
 import androidx.lifecycle.viewModelScope
@@ -24,6 +27,8 @@ class LoginViewModelTest : ScreenViewModelTestBase() {
     private class Auth : AuthRepository {
         var current: AccountSession? = testAccount
         var restoreCalls = 0
+        val sessions = MutableStateFlow<List<AccountSession>>(emptyList())
+        override fun observeSessions() = sessions
         val preparationCalls = mutableListOf<String>()
         var completionCalls = 0
         var prepare: suspend (String) -> Result<String> = { Result.success("https://one.example/oauth/authorize") }
@@ -39,10 +44,66 @@ class LoginViewModelTest : ScreenViewModelTestBase() {
         override suspend fun restoreSession(): AccountSession? { restoreCalls++; return current }
         override suspend fun logout() { current = null }
     }
-    private fun model(auth: Auth = Auth(), discovery: suspend (String) -> Result<MastodonInstance> = { Result.success(instance) }) =
+    private fun model(auth: Auth = Auth(),
+        suggestions: ServerSuggestionsRepository = ServerSuggestionsRepository { flowOf(emptyList()) },
+        discovery: suspend (String) -> Result<MastodonInstance> = { Result.success(instance) }) =
         own(LoginViewModel(object : InstanceRepository {
             override suspend fun discover(input: String) = discovery(input)
-        }, auth, restoreExistingSession = false))
+        }, auth, restoreExistingSession = false, serverSuggestionsRepository = suggestions))
+
+    @Test fun suggestionsPrioritizePrefixThenRegisteredServersDeduplicateAndTrackRemovedAccounts() = runTest(dispatcher) {
+        val auth = Auth().apply {
+            sessions.value = listOf(testAccount.copy(instanceUrl = "https://REGISTERED.EXAMPLE/"))
+        }
+        val catalog = MutableStateFlow(listOf("registered.example", "xregistered.example", "register.example"))
+        val model = model(auth, ServerSuggestionsRepository { catalog })
+        model.onInstanceChanged("HTTPS://REG")
+        runCurrent()
+        assertEquals(listOf("registered.example", "register.example", "xregistered.example"), model.uiState.value.serverSuggestions)
+        auth.sessions.value = emptyList()
+        catalog.value = listOf("register.example", "xregistered.example")
+        runCurrent()
+        assertEquals(listOf("register.example", "xregistered.example"), model.uiState.value.serverSuggestions)
+        assertEquals("HTTPS://REG", model.uiState.value.instanceInput)
+        assertEquals(0, auth.restoreCalls)
+        assertNull(model.uiState.value.errorMessage)
+    }
+
+    @Test fun suggestionsAreLimitedAndSelectingOneStillRequiresExplicitConnectionAndAuthorization() = runTest(dispatcher) {
+        val auth = Auth()
+        var connections = 0
+        val model = model(auth, ServerSuggestionsRepository { flowOf((1..8).map { "server$it.example" }) }) {
+            connections++; Result.success(instance)
+        }
+        runCurrent()
+        assertTrue(model.uiState.value.serverSuggestions.isEmpty())
+        model.onInstanceChanged("server")
+        assertEquals(5, model.uiState.value.serverSuggestions.size)
+        model.onInstanceChanged(model.uiState.value.serverSuggestions.first())
+        assertEquals(0, connections)
+        assertTrue(auth.preparationCalls.isEmpty())
+        model.discover(); runCurrent()
+        assertEquals(1, connections)
+        model.onInstanceChanged("unknown.example")
+        assertNull(model.uiState.value.instance)
+        assertTrue(model.uiState.value.serverSuggestions.isEmpty())
+        model.discover(); runCurrent()
+        assertEquals(2, connections)
+    }
+
+    @Test fun lateCatalogUpdatesMatchCurrentInputAndAreIgnoredAfterLeaving() = runTest(dispatcher) {
+        val catalog = MutableStateFlow(emptyList<String>())
+        val model = model(suggestions = ServerSuggestionsRepository { catalog })
+        model.onInstanceChanged("old")
+        model.onInstanceChanged("new")
+        catalog.value = listOf("old.example", "new.example")
+        runCurrent()
+        assertEquals(listOf("new.example"), model.uiState.value.serverSuggestions)
+        model.viewModelScope.cancel(); runCurrent()
+        catalog.value = listOf("new.other.example")
+        runCurrent()
+        assertEquals(listOf("new.example"), model.uiState.value.serverSuggestions)
+    }
 
     @Test fun editingConfirmedInputInvalidatesDestinationAndRequiresAnotherCheck() = runTest(dispatcher) {
         val auth = Auth()

@@ -31,6 +31,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -38,12 +41,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.testTag
@@ -112,7 +118,12 @@ internal fun InstanceLoginContent(
 
     val focusManager = LocalFocusManager.current
     val inputFocus = remember { FocusRequester() }
+    var suggestionsExpanded by remember { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
+    val suggestionsVisible = suggestionsExpanded && inputFocused && !state.isLoading && state.instance == null &&
+        state.authorizationUrl == null && state.serverSuggestions.isNotEmpty()
     val primaryAction = {
+        suggestionsExpanded = false
         focusManager.clearFocus()
         if (state.instance == null) onDiscover() else onStartAuthorization()
     }
@@ -142,20 +153,45 @@ internal fun InstanceLoginContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
-            OutlinedTextField(
-                value = state.instanceInput,
-                onValueChange = onInstanceChanged,
-                modifier = Modifier.fillMaxWidth().focusRequester(inputFocus).testTag("instance_input"),
-                label = { Text("サーバーのドメイン") },
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                enabled = !state.isLoading,
-                isError = state.inputErrorMessage != null,
-                supportingText = { Text(state.inputErrorMessage ?: "（https:// も入力できます）") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri,
-                    autoCorrectEnabled = false, imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { if (!state.isLoading && state.authorizationUrl == null) primaryAction() }),
-            )
+            ExposedDropdownMenuBox(
+                expanded = suggestionsVisible,
+                onExpandedChange = { suggestionsExpanded = it },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                OutlinedTextField(
+                    value = state.instanceInput,
+                    onValueChange = { suggestionsExpanded = true; onInstanceChanged(it) },
+                    modifier = Modifier.fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable, enabled = !state.isLoading)
+                        .focusRequester(inputFocus)
+                        .onFocusChanged { inputFocused = it.isFocused }
+                        .testTag("instance_input"),
+                    label = { Text("サーバーのドメイン") },
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    enabled = !state.isLoading,
+                    isError = state.inputErrorMessage != null,
+                    supportingText = { Text(state.inputErrorMessage ?: "（https:// も入力できます）") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri,
+                        autoCorrectEnabled = false, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { if (!state.isLoading && state.authorizationUrl == null) primaryAction() }),
+                )
+                ExposedDropdownMenu(
+                    expanded = suggestionsVisible,
+                    onDismissRequest = { suggestionsExpanded = false },
+                    modifier = Modifier.testTag("server_suggestions"),
+                ) {
+                    state.serverSuggestions.forEach { domain ->
+                        DropdownMenuItem(
+                            text = { Text(domain) },
+                            onClick = {
+                                onInstanceChanged(domain)
+                                suggestionsExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
             state.instance?.let { instance ->
                 Spacer(Modifier.height(20.dp))
                 Text(
