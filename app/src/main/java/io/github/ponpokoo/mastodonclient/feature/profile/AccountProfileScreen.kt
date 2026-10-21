@@ -32,6 +32,7 @@ fun AccountProfileScreen(
     onOpenBookmarks: () -> Unit,
     onOpenFavourites: () -> Unit,
     onEditStatus: (String) -> Unit,
+    onOpenReactions: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -49,6 +50,6 @@ fun AccountProfileScreen(
     }, snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
         ProfileScreen(viewModel, preferences, padding, snackbarHostState, onStatusClick, onReply, onQuote,
             onOpenLink, onAccountClick, onMediaClick, onFollowers, onFollowing, onOpenLists,
-            onOpenBookmarks, onOpenFavourites, onEditStatus, openEditor = openEditor)
+            onOpenBookmarks, onOpenFavourites, onEditStatus, openEditor = openEditor, onOpenReactions = onOpenReactions)
     }
 }

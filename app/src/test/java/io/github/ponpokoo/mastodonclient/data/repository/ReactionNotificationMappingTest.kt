@@ -31,22 +31,27 @@ class ReactionNotificationMappingTest {
         assertEquals("https://example.org/blob.gif", mapped.matchingReaction?.imageUrl)
     }
 
-    @Test fun pleromaNestedAggregateSupportsActorFallbackWithoutEnablingFedibirdOperations() {
+    @Test fun pleromaNestedAggregateSupportsActorFallback() {
         val aggregate = """[{"name":"☕","count":1,"account_ids":["actor"]}]"""
         for (extra in listOf("", "\"emoji_reactions\":$aggregate,")) {
             val post = status("""$extra"pleroma":{"emoji_reactions":$aggregate}""")
             val mapped = json.decodeFromString<StatusDto>(post).toDomain()
-            assertFalse(mapped.supportsEmojiReactions)
             assertEquals("☕", mapped.reactions.single().name)
             val source = """{"id":"opaque","type":"pleroma:emoji_reaction","created_at":"now","account":$author,"status":$post}"""
             assertEquals("☕", json.decodeFromString<NotificationDto>(source).toDomain().matchingReaction?.name)
         }
-        assertTrue(json.decodeFromString<StatusDto>(status(""""emoji_reactions":[]""")).toDomain().supportsEmojiReactions)
     }
 
     @Test fun legacyCachedNotificationStillDecodesWithoutDirectEmojiFields() {
         val old = """{"id":"old","type":"emoji_reaction","createdAt":"now",
             "account":{"id":"actor","displayName":"Actor","accountName":"actor","avatarUrl":""},"status":null}"""
         assertNull(json.decodeFromString<TimelineNotification>(old).matchingReaction)
+    }
+
+    @Test fun oldCachedStatusCapabilityFlagIsIgnoredWithoutLosingReactionData() {
+        val mapped = json.decodeFromString<StatusDto>(status(""""emoji_reactions":[{"name":"👍","count":1,"me":true}]""")).toDomain()
+        val old = json.encodeToString(io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus.serializer(), mapped)
+            .dropLast(1) + ",\"supportsEmojiReactions\":true}"
+        assertEquals(mapped, json.decodeFromString<io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus>(old))
     }
 }

@@ -23,7 +23,6 @@ data class TimelineStatus(
     val pinned: Boolean = false,
     val applicationName: String? = null,
     val reactions: List<EmojiReaction> = emptyList(),
-    val supportsEmojiReactions: Boolean = false,
     val previewCard: PreviewCard? = null,
     val poll: StatusPoll? = null,
     val mediaAttachments: List<MediaAttachment>,

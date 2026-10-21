@@ -19,7 +19,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         var checks = 0
         val pending = CompletableDeferred<Result<NotificationCapabilities>>()
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+            override suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> {
                 checks++
                 return when (checks) {
                     1 -> Result.success(NotificationCapabilities(true, true, checkedAtEpochMillis = now))
@@ -55,7 +55,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         var checks = 0
         var reactionPages = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+            override suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> {
                 checks++
                 return Result.success(if (checks == 1) NotificationCapabilities(reactionApi = EmojiReactionApi.Unsupported, checkedAtEpochMillis = now)
                     else NotificationCapabilities(true, true, EmojiReactionApi.Pleroma, usesIncludeTypes = true, checkedAtEpochMillis = now))
@@ -81,7 +81,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         var checks = 0
         var reactions = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+            override suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> {
                 checks++
                 return Result.success(NotificationCapabilities(true, true))
             }
@@ -109,7 +109,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         var checks = 0
         var reactions = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+            override suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> {
                 checks++
                 return check.await()
             }
@@ -220,7 +220,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
     @Test fun categoryPagesHaveIndependentCursorsAndOnlyRequestSelectedKinds() = runTest(dispatcher) {
         val requests = mutableListOf<Triple<NotificationCategory, String?, Int>>()
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession) = Result.success(NotificationCapabilities(true, true))
+            override suspend fun getServerCapabilities(session: AccountSession) = Result.success(NotificationCapabilities(true, true))
             override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
                 requests += Triple(category, maxId, limit)
                 val id = "${category.name}-${if (maxId == null) "first" else "next"}"
@@ -248,7 +248,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
             var checks = 0
             val requests = mutableListOf<NotificationCategory>()
             val repository = object : ScreenRepositoryFake() {
-                override suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> {
+                override suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> {
                     checks++
                     return if (!supported && failedCheck) Result.failure(IllegalStateException("offline"))
                         else Result.success(NotificationCapabilities(true, supported))
@@ -296,7 +296,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
     @Test fun previousAccountCapabilityResponseCannotEnableReactionsForNewAccount() = runTest(dispatcher) {
         val first = CompletableDeferred<Result<NotificationCapabilities>>()
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotificationCapabilities(session: AccountSession) =
+            override suspend fun getServerCapabilities(session: AccountSession) =
                 if (session == testAccount) withContext(NonCancellable) { first.await() } else Result.success(NotificationCapabilities(true, false))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }

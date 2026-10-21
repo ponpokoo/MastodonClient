@@ -8,15 +8,15 @@
 
 表示はUI → LicensesViewModel → AppLicensesRepository → DefaultAppLicensesRepository → AppLicensesLocalDataSourceの順で行う。本文は `app/src/main/assets/licenses/` に収録し、IOディスパッチャーで読み込む。読み込み失敗は再試行でき、ViewModel破棄時には読み込みをキャンセルする。長いSDK通知は文字を欠落させずに分割表示し、Unicodeのサロゲートペアを分断しない。
 
-## 収録内容（2026-10-11）
+## 収録内容（2026-10-21）
 
-現在の作業ツリーで `releaseRuntimeClasspath` を解決し、155個の元のAAR/JARから同一Maven座標の重複をまとめた153件と、Nagisa本体1件を収録した。計154項目、共通本文を共有する10個のテキストをAPKへ同梱する。
+現在の作業ツリーで `releaseRuntimeClasspath` を解決し、163個の元のAAR/JARから同一Maven座標の重複をまとめた160件と、Nagisa本体1件を収録した。計161項目、共通本文を共有する10個のテキストをAPKへ同梱する。
 
-以前の231件は既存AGP依存メタデータから得たBOM・プラットフォーム別の参照などを含む座標一覧だった。今回の153件は現在のソースで解決した実体のあるRuntimeアーカイブを数えたもので、単純に依存を減らした件数ではない。ReorderableのRelease用Android実装も今回の解決結果に含まれる。
+以前の231件は既存AGP依存メタデータから得たBOM・プラットフォーム別の参照などを含む座標一覧だった。現在の160件は現在のソースで解決した実体のあるRuntimeアーカイブを数えたもので、単純に依存を減らした件数ではない。ReorderableのRelease用Android実装も解決結果に含まれる。
 
 | POMの宣言・上流確認による区分 | Maven座標数 |
 | --- | ---: |
-| Apache License 2.0 | 145 |
+| Apache License 2.0 | 152 |
 | BSD 3-Clause | 1 |
 | Google SDK利用条件 | 7 |
 
@@ -24,6 +24,7 @@
 
 - LazyColumnはCompose Foundationの一部。`androidx.compose.foundation:foundation-android:1.10.5` を収録している。
 - 並べ替え補助には `sh.calvin.reorderable:reorderable-android:3.1.0` を収録し、同版POMのApache-2.0宣言を確認した。
+- APNG再生には `com.github.penfeizhou.android.animation:apng:3.0.5` と `frameanimation:3.0.5` を収録し、同版POMと[上流のLICENSE](https://github.com/penfeizhou/APNG4Android/blob/v3.0.5/LICENSE)のApache-2.0宣言を確認した。
 - AAR/JARと内部の `classes.jar`・`libs/*.jar` からLICENSE・NOTICE・COPYING・Googleの第三者通知本文を抽出した。空の通知と同一本文の重複は追加しない。
 - DataStoreのExternal Protobufには同梱BSD本文と、Protocol Buffers上流の著作権表示を含むライセンス本文を収録した。
 - OkHttpのPublic Suffix Listには元のNOTICEとMPL 2.0全文を収録する。原文の取得先案内も保持する。
@@ -81,6 +82,7 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.annotation:annotation-experimental:1.5.0` | Apache License 2.0 | 1 |
 | `androidx.annotation:annotation-jvm:1.10.0` | Apache License 2.0 | 1 |
 | `androidx.appcompat:appcompat-resources:1.7.0` | Apache License 2.0 | 0 |
+| `androidx.appcompat:appcompat:1.7.0` | Apache License 2.0 | 0 |
 | `androidx.arch.core:core-common:2.2.0` | Apache License 2.0 | 0 |
 | `androidx.arch.core:core-runtime:2.2.0` | Apache License 2.0 | 0 |
 | `androidx.autofill:autofill:1.0.0` | Apache License 2.0 | 0 |
@@ -111,6 +113,7 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.core:core-ktx:1.19.0` | Apache License 2.0 | 1 |
 | `androidx.core:core-viewtree:1.0.0` | Apache License 2.0 | 1 |
 | `androidx.core:core:1.19.0` | Apache License 2.0 | 1 |
+| `androidx.cursoradapter:cursoradapter:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.customview:customview-poolingcontainer:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.customview:customview:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.datastore:datastore-android:1.2.1` | Apache License 2.0 | 1 |
@@ -121,7 +124,9 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.datastore:datastore-preferences-external-protobuf:1.2.1` | BSD 3-Clause | 1 |
 | `androidx.datastore:datastore-preferences-proto:1.2.1` | Apache License 2.0 | 1 |
 | `androidx.documentfile:documentfile:1.0.0` | Apache License 2.0 | 0 |
+| `androidx.drawerlayout:drawerlayout:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.dynamicanimation:dynamicanimation:1.0.0` | Apache License 2.0 | 0 |
+| `androidx.emoji2:emoji2-views-helper:1.4.0` | Apache License 2.0 | 0 |
 | `androidx.emoji2:emoji2:1.4.0` | Apache License 2.0 | 0 |
 | `androidx.exifinterface:exifinterface:1.4.1` | Apache License 2.0 | 1 |
 | `androidx.fragment:fragment:1.9.1` | Apache License 2.0 | 1 |
@@ -159,6 +164,7 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.navigationevent:navigationevent-compose-android:1.1.2` | Apache License 2.0 | 1 |
 | `androidx.print:print:1.0.0` | Apache License 2.0 | 0 |
 | `androidx.profileinstaller:profileinstaller:1.4.1` | Apache License 2.0 | 1 |
+| `androidx.resourceinspection:resourceinspection-annotation:1.0.1` | Apache License 2.0 | 0 |
 | `androidx.room:room-common-jvm:2.8.4` | Apache License 2.0 | 1 |
 | `androidx.room:room-ktx:2.8.4` | Apache License 2.0 | 1 |
 | `androidx.room:room-runtime-android:2.8.4` | Apache License 2.0 | 1 |
@@ -178,6 +184,8 @@ Gradleキャッシュの場所を変更している環境では、生成スク�
 | `androidx.window:window-core-android:1.5.0` | Apache License 2.0 | 1 |
 | `androidx.window:window:1.5.0` | Apache License 2.0 | 1 |
 | `androidx.work:work-runtime:2.11.2` | Apache License 2.0 | 1 |
+| `com.github.penfeizhou.android.animation:apng:3.0.5` | Apache License 2.0 | 0 |
+| `com.github.penfeizhou.android.animation:frameanimation:3.0.5` | Apache License 2.0 | 0 |
 | `com.google.accompanist:accompanist-drawablepainter:0.37.3` | Apache License 2.0 | 0 |
 | `com.google.android.datatransport:transport-api:3.1.0` | Apache License 2.0 | 0 |
 | `com.google.android.datatransport:transport-backend-cct:3.1.9` | Apache License 2.0 | 0 |

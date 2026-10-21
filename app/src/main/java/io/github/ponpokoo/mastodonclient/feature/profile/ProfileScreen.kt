@@ -48,6 +48,7 @@ internal fun ProfileScreen(
     openEditor: Boolean = false,
     profileListStates: List<androidx.compose.foundation.lazy.LazyListState>? = null,
     profileHeaderListState: androidx.compose.foundation.lazy.LazyListState? = null,
+    onOpenReactions: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.loadProfile() }
@@ -127,6 +128,7 @@ internal fun ProfileScreen(
             onOpenLists = onOpenLists,
             onOpenBookmarks = onOpenBookmarks,
             onOpenFavourites = onOpenFavourites,
+            onOpenReactions = onOpenReactions,
             onShareProfile = { profile?.url?.let {
                 context.startActivity(Intent.createChooser(
                     Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it),
@@ -134,7 +136,10 @@ internal fun ProfileScreen(
                 ))
             } },
             onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
-            onProfileMenuOpen = { if (profile?.isOwnProfile == false) viewModel.loadModerationMenu() },
+            onProfileMenuOpen = {
+                if (profile?.isOwnProfile == true) viewModel.loadReactionHistorySupport()
+                else if (profile != null) viewModel.loadModerationMenu()
+            },
             moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
             moderationError = moderationMenu.error,
             onRetryModeration = { viewModel.loadModerationMenu() },

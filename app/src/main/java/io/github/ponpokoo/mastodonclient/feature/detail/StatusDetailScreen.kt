@@ -170,6 +170,7 @@ fun StatusDetailScreen(
                         items(ancestors, key = { "ancestor-${it.timelineId}" }) { ancestor ->
                             StatusCard(
                                 status = ancestor,
+                                collapseLongContent = false,
                                 onStatusClick = onStatusClick,
                                 onAuthorClick = onAccountClick,
                                 onMediaClick = onMediaClick,
@@ -187,6 +188,7 @@ fun StatusDetailScreen(
                 item(key = "selected-${status.statusId}") {
                     StatusCard(
                         status = status,
+                        collapseLongContent = false,
                         onStatusClick = null,
                         onAuthorClick = onAccountClick,
                         onMediaClick = onMediaClick,
@@ -223,6 +225,7 @@ fun StatusDetailScreen(
                         items(replies, key = { it.timelineId }) { reply ->
                             StatusCard(
                                 reply,
+                                collapseLongContent = false,
                                 onStatusClick = onStatusClick,
                                 onAuthorClick = onAccountClick,
                                 onMediaClick = onMediaClick,

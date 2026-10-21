@@ -132,7 +132,22 @@ class NotificationsViewModel(
         readState = NotificationReadState(); markerId = null; initialAllPage = emptyList()
         waitingAllMarkerId = null; lastSentMarkerId = null
         reactionRefreshRequested = false; reactionPullRefreshRequested = false
-        if (snapshot.account != null) checkCapabilities()
+        snapshot.account?.let { account ->
+            requestScope.launch {
+                timelineRepository.observeServerCapabilities(account).collect { capabilities ->
+                    Result.success(capabilities).forSession(snapshot)
+                    val previous = _uiState.value.capabilities
+                    _uiState.update { it.copy(capabilities = capabilities) }
+                    if (!capabilities.supportsEmojiReactions) {
+                        pageJobs.remove(NotificationCategory.Reactions)?.cancel()
+                        updateList(NotificationCategory.Reactions) { it.copy(isLoading = false, isLoadingMore = false, isRefreshing = false) }
+                    } else if (previous?.supportsEmojiReactions != true && NotificationCategory.Reactions in requestedCategories) {
+                        loadCategory(NotificationCategory.Reactions)
+                    }
+                }
+            }
+            checkCapabilities()
+        }
         if (requestedCategories.isNotEmpty() && snapshot.account != null) {
             requestedCategories.toList().forEach { loadCategory(it) }
         }
@@ -196,7 +211,7 @@ class NotificationsViewModel(
         capabilityJob = requestScope.launch {
             val previous = _uiState.value.capabilities?.takeIf { it.reactionApi != EmojiReactionApi.Unknown }
             val result = withTimeoutOrNull(5_000) {
-                timelineRepository.getNotificationCapabilities(snapshot.account!!).forSession(snapshot)
+                timelineRepository.getServerCapabilities(snapshot.account!!).forSession(snapshot)
             }
             val fetched = result?.getOrNull()
             val resolved = if (fetched == null || fetched.reactionApi == EmojiReactionApi.Unknown)

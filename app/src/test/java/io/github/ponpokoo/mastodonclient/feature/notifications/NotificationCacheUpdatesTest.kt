@@ -17,7 +17,7 @@ class NotificationCacheUpdatesTest : ScreenViewModelTestBase() {
         val reaction = testNotification("reaction").copy(type = "emoji_reaction", status = testStatus("reaction-post"))
         val writes = mutableListOf<Pair<NotificationCategory, List<TimelineNotification>>>()
 
-        override suspend fun getNotificationCapabilities(session: AccountSession) =
+        override suspend fun getServerCapabilities(session: AccountSession) =
             Result.success(NotificationCapabilities(true, true))
 
         override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =

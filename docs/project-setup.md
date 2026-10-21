@@ -138,14 +138,18 @@ v4ではホームの境界情報テーブルを追加し、既存の投稿・通
 
 コルーチンのキャンセルを一般エラーとして握りつぶさない。メディア取り込みのファイルI/Oは背景処理に分離する。
 
-### 通知の対応情報
+### サーバーのリアクション対応情報
 
-通知の対応情報は、成功したInstance APIの確認結果だけをサーバーURL別にUserPreferencesStoreへ保存する。
+通知・Push・投稿操作・反応者一覧・リアクションした投稿の対応判定は、`ServerCapabilitiesRepository`のサーバーURL別キャッシュを共用する。Instance APIと必要なNodeInfoの正常な確認結果をUserPreferencesStoreへ保存し、確認から24時間再利用する。
 公開されているサーバー機能の情報として、同じサーバーのアカウント間で共有し、ログアウト後も保持する。
 既存設定に保存項目がない場合は未確認として扱う。
 
-通信失敗・タイムアウトの結果は保存しない。
+通信失敗・タイムアウトの結果は保存せず、確認済みのAPI系統・能力と確定日時を保つ。メモリ内で5分間再試行を抑制し、正常な再確認で無効化を確認した場合だけ非対応へ変更する。
 通知一覧・認証情報の保存と混同しない。
+
+ドメインRepositoryの`getServerCapabilities()`と`observeServerCapabilities()`から同じ確認結果を取得・購読する。`ServerCapabilitiesViewModel`が閲覧セッションに対応する値をComposeへ渡し、前景復帰・画面遷移時に再確認を要求する。実際の通信要否は共通キャッシュが決める。通知とプロフィールも更新を購読し、別の呼び出し元による再確認・Push対応の変更を反映する。切替時は購読・要求をキャンセルし、旧セッションの遅延応答を採用しない。
+
+通知、追加・解除、反応者一覧、リアクションした投稿の能力を分ける。投稿操作・反応者一覧・履歴は実装済みのFedibird互換契約だけを有効にし、Pleroma互換の通知対応から推測しない。投稿DTOの`emoji_reactions`の有無や、旧端末キャッシュの投稿単位フラグをサーバー対応の根拠にしない。操作のAPI呼び出し前にも共通キャッシュを確認し、投稿ごとの権限・制約・サーバーの拒否は従来どおり操作結果で扱う。投稿・通知キャッシュのJSONは未知項目を無視して旧フラグを読み飛ばすため、保存形式やDBスキーマの移行は不要。
 
 ### 関連する設計判断
 
@@ -180,6 +184,7 @@ v4ではホームの境界情報テーブルを追加し、既存の投稿・通
 | ProfileViewModel | 自分・他ユーザーのプロフィール、タブ・更新・追加取得、編集・投稿・関係操作。入口ごとに独立したインスタンスを保持 |
 | StatusActionsViewModel | メイン4タブの投稿・アカウント操作、リスト選択 |
 | StatusInteractionsViewModel | メインのナビゲーションエントリに保持するお気に入り／ブースト／リアクションのアカウント一覧。通常画面と投稿詳細で取得・ページ追加・再試行・キャンセルを共用する。カスタム絵文字取得・キャッシュ、既存Storeの反応履歴への接続 |
+| ServerCapabilitiesViewModel | 同じエントリに保持するサーバー対応情報の購読・再確認。閲覧セッションと照合した結果を投稿の操作UIへ渡す |
 | SettingsMaintenanceViewModel | 画像キャッシュ削除の実行状態・結果、インストール済みAPKの版情報 |
 | ModerationManagementViewModel | 管理対象アカウントの隔離、サーバーのミュート・ブロック一覧と解除・取り消し、端末保存のワード管理 |
 
@@ -467,6 +472,29 @@ adb -s emulator-5554 exec-out run-as io.github.ponpokoo.mastodonclient cat files
 ```
 
 数値は合成本文と指定端末・密度・フォント設定での測定結果であり、すべての実投稿の境界を保証しない。
+
+### 長文省略の小規模スクロール確認
+
+長文省略の変更時は、まず`StatusCollapseDeviceTest`と影響する既存の本文・リンク・絵文字テストを確認する。
+性能の傾向を確認する必要があるときだけ、以下の小規模診断を追加で使う。
+専用テスト端末へDebug本体・テストAPKをインストールして実行する。アカウントやサーバーは使用しない。
+
+```powershell
+adb -s emulator-5560 shell am instrument -w -e class io.github.ponpokoo.mastodonclient.StatusCollapseScrollMeasurementDeviceTest -e measureStatusCollapse true io.github.ponpokoo.mastodonclient.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+固定60件の短文と、10件に1件だけ約2,000文字の本文を含む2条件で、省略の無効／有効を各3回比較する。
+ローカルのアバター画像だけを使用し、ネットワークと画像配信の変動を除く。両モードをウォームアップし、測定順は交互にする。
+通常の連続スクロール、高速フリング、惰性終端を実際のComposeフレームクロックで動かす。
+出力は対象アプリ内の`files/status-collapse-frames.csv`。`adb exec-out run-as io.github.ponpokoo.mastodonclient cat files/status-collapse-frames.csv`で取得できる。
+テスト端末のOS・解像度・密度・リフレッシュレート、ビルド条件と測定回数を結果に添える。
+
+CSVはFrameMetricsの総時間・レイアウト計測時間・描画時間・deadlineとコールバック欠落数を記録する。
+P95等は各回の分布と合わせて比較し、コールバック欠落がある場合はその限界を記す。
+deadline超過率はアプリ側の時間超過であり、画面全体のJank率やフレーム落ちと同一視しない。
+Debugエミュレーターの小規模診断であり、Release実機の性能保証には使用しない。CPU、GC、再コンポジション全体は計測しない。
+フラグがなければ診断テストはスキップする。通常のCIに性能の合否判定や新しいビルド種別・依存関係は追加しない。
+明らかな異常があるときだけ原因に応じて測定範囲を広げる。
 
 ### Release APKの署名と生成
 

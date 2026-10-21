@@ -228,7 +228,7 @@ class ServerCapabilitiesRepositoryTest {
             server.enqueue(discovery(server))
             server.enqueue(features("pleroma_emoji_reactions", "pleroma:api/v1/notifications:include_types_filter"))
             val repo = DefaultTimelineRepository(clients, capabilitiesRepository = caps)
-            repo.getNotificationCapabilities(session(server)).getOrThrow()
+            repo.getServerCapabilities(session(server)).getOrThrow()
             repeat(3) { server.takeRequest() }
             server.enqueue(MockResponse().setBody("""[{"id":"opaque","type":"pleroma:emoji_reaction","emoji":"☕","created_at":"now","account":{"id":"actor","username":"actor","acct":"actor"}}]"""))
             val first = repo.getNotificationPage(session(server), NotificationCategory.Reactions, supportsTypeFiltering = true).getOrThrow()

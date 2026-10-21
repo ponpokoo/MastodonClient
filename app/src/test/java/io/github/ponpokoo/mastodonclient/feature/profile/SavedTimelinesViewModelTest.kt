@@ -152,7 +152,7 @@ class SavedTimelinesViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun accountManagementIsUnavailableOutsideAnIndividualList() = runTest(dispatcher) {
-        for (kind in listOf(null, SavedTimelineKind.Bookmarks, SavedTimelineKind.Favourites)) {
+        for (kind in listOf(null, SavedTimelineKind.Bookmarks, SavedTimelineKind.Favourites, SavedTimelineKind.Reactions)) {
             val browsing = BrowsingSession().apply { activate(testAccount) }
             val model = own(SavedTimelinesViewModel(kind, null, ScreenRepositoryFake(), browsing))
             advanceUntilIdle(); model.openListAccounts()
@@ -215,44 +215,48 @@ class SavedTimelinesViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun appendFailureStopsAutomaticLoadingAndRetryUsesSameCursor() = runTest(dispatcher) {
-        val cursors = mutableListOf<String?>()
-        var fail = true
-        val repository = object : ScreenRepositoryFake() {
-            override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> {
-                cursors += maxId
-                return when {
-                    maxId == null -> Result.success(TimelinePage(listOf(testStatus("one")), "relationship-cursor", false))
-                    fail -> Result.failure(IOException("offline"))
-                    else -> Result.success(TimelinePage(listOf(testStatus("one"), testStatus("two")), null, true))
+        for (kind in listOf(SavedTimelineKind.Bookmarks, SavedTimelineKind.Reactions)) {
+            val cursors = mutableListOf<String?>()
+            var fail = true
+            val repository = object : ScreenRepositoryFake() {
+                override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> {
+                    cursors += maxId
+                    return when {
+                        maxId == null -> Result.success(TimelinePage(listOf(testStatus("one")), "relationship-cursor", false))
+                        fail -> Result.failure(IOException("offline"))
+                        else -> Result.success(TimelinePage(listOf(testStatus("one"), testStatus("two")), null, true))
+                    }
                 }
             }
+            val model = own(SavedTimelinesViewModel(kind, null, repository, BrowsingSession().apply { activate(testAccount) }))
+            advanceUntilIdle(); model.loadMore(); advanceUntilIdle()
+            model.loadMore(); advanceUntilIdle()
+            assertEquals(listOf(null, "relationship-cursor"), cursors)
+            assertEquals("one", model.state.value.statuses.single().statusId)
+            fail = false; model.retry(); advanceUntilIdle()
+            assertEquals(listOf(null, "relationship-cursor", "relationship-cursor"), cursors)
+            assertEquals(listOf("one", "two"), model.state.value.statuses.map { it.statusId })
+            assertTrue(model.state.value.endReached)
         }
-        val model = own(SavedTimelinesViewModel(SavedTimelineKind.Bookmarks, null, repository, BrowsingSession().apply { activate(testAccount) }))
-        advanceUntilIdle(); model.loadMore(); advanceUntilIdle()
-        model.loadMore(); advanceUntilIdle()
-        assertEquals(listOf(null, "relationship-cursor"), cursors)
-        assertEquals("one", model.state.value.statuses.single().statusId)
-        fail = false; model.retry(); advanceUntilIdle()
-        assertEquals(listOf(null, "relationship-cursor", "relationship-cursor"), cursors)
-        assertEquals(listOf("one", "two"), model.state.value.statuses.map { it.statusId })
-        assertTrue(model.state.value.endReached)
     }
 
     @Test fun switchingAwayAndBackRejectsOldResponseEvenWhenCancellationIsIgnored() = runTest(dispatcher) {
-        val old = CompletableDeferred<Result<TimelinePage>>()
-        var calls = 0
-        val repository = object : ScreenRepositoryFake() {
-            override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> =
-                if (++calls == 1) withContext(NonCancellable) { old.await() }
-                else Result.success(TimelinePage(listOf(testStatus("new-$calls")), null, true))
+        for (kind in listOf(SavedTimelineKind.Favourites, SavedTimelineKind.Reactions)) {
+            val old = CompletableDeferred<Result<TimelinePage>>()
+            var calls = 0
+            val repository = object : ScreenRepositoryFake() {
+                override suspend fun getSavedTimeline(session: AccountSession, kind: SavedTimelineKind, listId: String?, maxId: String?): Result<TimelinePage> =
+                    if (++calls == 1) withContext(NonCancellable) { old.await() }
+                    else Result.success(TimelinePage(listOf(testStatus("new-$calls")), null, true))
+            }
+            val browsing = BrowsingSession().apply { activate(testAccount) }
+            val model = own(SavedTimelinesViewModel(kind, null, repository, browsing))
+            runCurrent(); browsing.activate(secondAccount); advanceUntilIdle()
+            browsing.activate(testAccount); advanceUntilIdle()
+            old.complete(Result.success(TimelinePage(listOf(testStatus("old")), "old-cursor", false))); advanceUntilIdle()
+            assertEquals("new-3", model.state.value.statuses.single().statusId)
+            assertNull(model.state.value.nextMaxId)
         }
-        val browsing = BrowsingSession().apply { activate(testAccount) }
-        val model = own(SavedTimelinesViewModel(SavedTimelineKind.Favourites, null, repository, browsing))
-        runCurrent(); browsing.activate(secondAccount); advanceUntilIdle()
-        browsing.activate(testAccount); advanceUntilIdle()
-        old.complete(Result.success(TimelinePage(listOf(testStatus("old")), "old-cursor", false))); advanceUntilIdle()
-        assertEquals("new-3", model.state.value.statuses.single().statusId)
-        assertNull(model.state.value.nextMaxId)
     }
 
     @Test fun newRefreshRejectsCancelledAppendAndPreservesActionsAndDeletesDuringRequest() = runTest(dispatcher) {

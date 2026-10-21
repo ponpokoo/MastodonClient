@@ -22,6 +22,7 @@ class ProfileWebMenuDeviceTest {
     @Test fun ownProfileMenuOpensProfileSettingsAndServerAboutAndClosesAfterSelection() {
         showProfile(own = true, profileUrl = "https://fedibird.com/@alice")
         openMenu()
+        rule.onNodeWithText("リアクションした投稿").assertDoesNotExist()
         val settingsBounds = rule.onNodeWithText("マストドンの設定").fetchSemanticsNode().boundsInRoot
         val aboutBounds = rule.onNodeWithText("このサーバーについて").fetchSemanticsNode().boundsInRoot
         assertTrue(aboutBounds.top >= settingsBounds.bottom)
@@ -37,8 +38,9 @@ class ProfileWebMenuDeviceTest {
     }
 
     @Test fun remoteProfileOpensItsCanonicalUrlAndItsOwnServerAbout() {
-        showProfile(own = false, profileUrl = "https://remote.example/@alice")
+        showProfile(own = false, profileUrl = "https://remote.example/@alice", supportsReactionHistory = true)
         openMenu()
+        rule.onNodeWithText("リアクションした投稿").assertDoesNotExist()
         rule.onNodeWithText("マストドンの設定").assertDoesNotExist()
         select("ブラウザーで開く")
         openMenu()
@@ -48,7 +50,7 @@ class ProfileWebMenuDeviceTest {
         }
     }
 
-    private fun showProfile(own: Boolean, profileUrl: String) {
+    private fun showProfile(own: Boolean, profileUrl: String, supportsReactionHistory: Boolean = false) {
         val profile = UserProfile(
             author = StatusAuthor("alice", "Alice", "alice", ""),
             headerUrl = "", noteHtml = "", followersCount = 0, followingCount = 0,
@@ -58,7 +60,7 @@ class ProfileWebMenuDeviceTest {
         rule.setContent {
             MaterialTheme {
                 ProfileContent(
-                    state = ProfileUiState(profile = profile),
+                    state = ProfileUiState(profile = profile, supportsReactionHistory = supportsReactionHistory),
                     instanceUrl = "https://fedibird.com/",
                     padding = PaddingValues(), onRetry = {}, onRefresh = {}, onStatusClick = {},
                     onOpenLink = { openedLinks += it }, onReply = {}, onBoost = {},

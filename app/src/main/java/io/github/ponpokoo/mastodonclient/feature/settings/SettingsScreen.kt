@@ -592,9 +592,13 @@ internal fun TimelineDisplayPreview(preferences: AppPreferences) {
     CompositionLocalProvider(
         LocalFavouriteListOpener provides null,
         LocalReactionListOpener provides null,
+        io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities provides
+            io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities(
+                reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Fedibird),
     ) {
         StatusCard(
             status = previewStatus,
+            collapseLongContent = false,
             onStatusClick = null,
             onUnavailableAction = {},
             displayPreferences = preferences.timelineDisplay,
@@ -619,7 +623,6 @@ private val previewStatus = TimelineStatus(
     repliesCount = 2,
     boostsCount = 3,
     favouritesCount = 5,
-    supportsEmojiReactions = true,
     reactions = listOf(io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction(
         name = "👍", count = 2, reactedByMe = false, imageUrl = null, accountIds = emptySet(),
     )),

@@ -51,6 +51,13 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
+      "id": "androidx.appcompat:appcompat:1.7.0",
+      "title": "AppCompat",
+      "version": "1.7.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
       "id": "androidx.arch.core:core-common:2.2.0",
       "title": "Android Arch-Common",
       "version": "2.2.0",
@@ -261,6 +268,13 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
+      "id": "androidx.cursoradapter:cursoradapter:1.0.0",
+      "title": "Android Support Library Cursor Adapter",
+      "version": "1.0.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
       "id": "androidx.customview:customview-poolingcontainer:1.0.0",
       "title": "androidx.customview:poolingcontainer",
       "version": "1.0.0",
@@ -331,9 +345,23 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
+      "id": "androidx.drawerlayout:drawerlayout:1.0.0",
+      "title": "Android Support Library Drawer Layout",
+      "version": "1.0.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
       "id": "androidx.dynamicanimation:dynamicanimation:1.0.0",
       "title": "Android Support DynamicAnimation",
       "version": "1.0.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
+      "id": "androidx.emoji2:emoji2-views-helper:1.4.0",
+      "title": "Emoji2 Views Helper",
+      "version": "1.4.0",
       "license": "Apache License 2.0",
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
@@ -597,6 +625,13 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
+      "id": "androidx.resourceinspection:resourceinspection-annotation:1.0.1",
+      "title": "Android Resource Inspection - Annotations",
+      "version": "1.0.1",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
       "id": "androidx.room:room-common-jvm:2.8.4",
       "title": "Room-Common",
       "version": "2.8.4",
@@ -728,6 +763,20 @@
       "version": "2.11.2",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "com.github.penfeizhou.android.animation:apng:3.0.5",
+      "title": "APNG4Android",
+      "version": "3.0.5",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
+      "id": "com.github.penfeizhou.android.animation:frameanimation:3.0.5",
+      "title": "APNG4Android",
+      "version": "3.0.5",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
       "id": "com.google.accompanist:accompanist-drawablepainter:0.37.3",

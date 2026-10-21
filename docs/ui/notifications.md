@@ -67,6 +67,8 @@ OS通知から対象詳細への直接遷移は今後の確認・改善対象と
 
 ### リアクション通知の対応判定
 
+サーバーの対応情報は通知・Push・投稿操作・リアクション履歴で共有する。[共通キャッシュとセッション分離](../project-setup.md#サーバーのリアクション対応情報)に従い、別画面での正常な再確認結果も表示中の通知画面へ反映する。
+
 Fedibird／kmyblue互換はInstance APIの`fedibird_capabilities`に`emoji_reaction`があるかで判定する。v2を優先し、404だけv1へフォールバックする。このフラグを確認できた場合はNodeInfoを取得しない。
 それ以外では`/.well-known/nodeinfo`のリンクから2.1、2.0の順に選び、`metadata.features`の`pleroma_emoji_reactions`でPleroma／Akkoma互換を確認する。`custom_emoji_reactions`はカスタム絵文字の対応情報として別に保持する。ドメイン名やソフトウェア名で固定判定しない。
 

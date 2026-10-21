@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
@@ -33,6 +34,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.getTextLayoutResult
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
@@ -49,6 +54,8 @@ fun StatusContentText(
     onNonLinkClick: (() -> Unit)? = null,
     onOpenInBrowser: ((String) -> Unit)? = null,
     emojiHeight: Dp? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
     if (emojiHeight != null && customEmojis.isNotEmpty()) {
         BoxWithConstraints(modifier.semantics(mergeDescendants = true) {}, propagateMinConstraints = true) {
@@ -76,10 +83,12 @@ fun StatusContentText(
                 contentHtml, customEmojis, Modifier, emojiStyle,
                 onLinkClick, onNonLinkClick, onOpenInBrowser,
                 EmojiInlineSize(emojiHeight, if (maxWidth.value.isFinite()) maxWidth else emojiHeight * 10),
+                maxLines, onTextLayout,
             )
         }
     } else {
-        StatusContentTextImpl(contentHtml, customEmojis, modifier, style, onLinkClick, onNonLinkClick, onOpenInBrowser)
+        StatusContentTextImpl(contentHtml, customEmojis, modifier, style, onLinkClick, onNonLinkClick, onOpenInBrowser,
+            maxLines = maxLines, onTextLayout = onTextLayout)
     }
 }
 
@@ -93,24 +102,40 @@ private fun StatusContentTextImpl(
     onNonLinkClick: (() -> Unit)?,
     onOpenInBrowser: ((String) -> Unit)?,
     emojiSize: EmojiInlineSize? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    onTextLayout: ((TextLayoutResult) -> Unit)? = null,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val source = remember(contentHtml, linkColor) { htmlToAnnotatedString(contentHtml, linkColor) }
     val text = remember(source, customEmojis) { replaceCustomEmojiShortcodes(source, customEmojis) }
     val layoutResult = remember { arrayOfNulls<TextLayoutResult>(1) }
+    // Read only by semantics, so measurement never schedules a body recomposition.
+    val semanticLayout = if (maxLines != Int.MAX_VALUE) remember(text) { mutableStateOf<TextLayoutResult?>(null) } else null
     var pressedLink by remember(text) { mutableStateOf<AnnotatedString.Range<String>?>(null) }
     var menuLink by remember(text) { mutableStateOf<AnnotatedString.Range<String>?>(null) }
     val textOrigin = remember { arrayOf(Offset.Zero) }
     var menuPosition by remember { mutableStateOf(IntOffset.Zero) }
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = .18f)
     fun linkAt(position: Offset): AnnotatedString.Range<String>? {
-        val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return null
+        val layout = layoutResult[0] ?: return null
+        val offset = layout.getOffsetForPosition(position)
+        if (layout.hasVisualOverflow) {
+            val end = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
+            // Offset mapping can map ellipsis/blank space to a hidden link. Only visible glyphs count.
+            if (offset >= end || !layout.getBoundingBox(offset).contains(position)) return null
+        }
         return text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
     }
     val bodyEmojis = if (emojiSize != null) rememberBodyEmojiContent(source.text, customEmojis, emojiSize) else null
     Text(
         text = text,
-        modifier = modifier.statusLinkDiagnostics(text) { layoutResult[0] }
+        modifier = modifier.then(if (semanticLayout == null) Modifier else Modifier.clipToBounds().clearAndSetSemantics {
+            val result = semanticLayout.value
+            this.text = if (result?.hasVisualOverflow == true) {
+                text.subSequence(0, result.getLineEnd(result.lineCount - 1, visibleEnd = true))
+            } else text
+            getTextLayoutResult { results -> result?.let { results.add(it) } ?: false }
+        }).statusLinkDiagnostics(text) { layoutResult[0] }
             .drawBodyEmojis(bodyEmojis) { layoutResult[0] }
             .onGloballyPositioned { textOrigin[0] = it.positionInWindow() }
             .drawBehind {
@@ -136,7 +161,7 @@ private fun StatusContentTextImpl(
                     },
                     onTap = { position ->
                         val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return@detectTapGestures
-                        val link = text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
+                        val link = linkAt(position)
                         recordStatusLinkTap(layoutResult[0], position, offset, link, onNonLinkClick != null)
                         if (link != null) onLinkClick(link.item) else onNonLinkClick?.invoke()
                     },
@@ -144,7 +169,13 @@ private fun StatusContentTextImpl(
             },
         style = style.copy(color = MaterialTheme.colorScheme.onSurface),
         inlineContent = bodyEmojis?.inline ?: rememberEmojiInlineContent(source.text, customEmojis),
-        onTextLayout = { layoutResult[0] = it },
+        maxLines = maxLines,
+        overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
+        onTextLayout = {
+            layoutResult[0] = it
+            semanticLayout?.value = it
+            onTextLayout?.invoke(it)
+        },
     )
     menuLink?.let { link ->
         LinkActionsPopup(
@@ -173,7 +204,8 @@ private fun DrawScope.drawRoundedLinkHighlight(
 ) {
     // Keep visual runs separate for wrapped/BiDi text.
     val radius = CornerRadius(3.dp.toPx())
-    (link.start until link.end).groupBy(layout::getLineForOffset).values.forEach { offsets ->
+    val end = if (layout.hasVisualOverflow) minOf(link.end, layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)) else link.end
+    (link.start until end).groupBy(layout::getLineForOffset).values.forEach { offsets ->
         val boxes = offsets.map(layout::getBoundingBox).filterNot(Rect::isEmpty).sortedBy { it.left }
         var run: Rect? = null
         fun drawRun() { run?.let { drawRoundRect(color, it.topLeft, it.size, radius) } }

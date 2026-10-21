@@ -8,7 +8,7 @@ enum class TimelineFeed {
 
 data class MastodonList(val id: String, val title: String)
 
-enum class SavedTimelineKind { List, Bookmarks, Favourites }
+enum class SavedTimelineKind { List, Bookmarks, Favourites, Reactions }
 
 data class UserProfile(
     val author: StatusAuthor,

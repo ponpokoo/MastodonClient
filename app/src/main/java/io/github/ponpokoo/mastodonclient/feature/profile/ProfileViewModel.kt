@@ -44,6 +44,7 @@ data class ProfileUiState(
     val featuredTags: List<io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag> = emptyList(),
     val featuredTagsError: String? = null,
     val selectedHashtag: String? = null,
+    val supportsReactionHistory: Boolean = false,
 )
 
 /** One implementation, with an independent instance for each navigation entry.
@@ -66,6 +67,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
         state.withModeration(moderation, account)
     }
     private var profileJob: Job? = null
+    private var reactionHistorySupportJob: Job? = null
     private val tabJobs = mutableMapOf<ProfileStatusTab, Job>()
     private var postsGeneration = 0L
     private var featuredTagsJob: Job? = null
@@ -135,6 +137,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        reactionHistorySupportJob = null
         imageEditor.dismiss()
         moderationMenu.reset()
         metadataRevision++
@@ -151,6 +154,12 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 return
             }
         }
+        snapshot.account?.let { account -> requestScope.launch {
+            timelineRepository.observeServerCapabilities(account).collect { capabilities ->
+                Result.success(capabilities).forSession(snapshot)
+                _uiState.update { it.copy(supportsReactionHistory = capabilities.supportsReactionHistory) }
+            }
+        } }
         if (requested && snapshot.account != null) loadProfile()
     }
 
@@ -168,6 +177,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                     val profile = _uiState.value.profile?.takeIf { revision != metadataRevision } ?: response
                     _uiState.update { it.copy(profile = profile, isLoadingProfile = false,
                         imageRefreshRevision = if (profile.isOwnProfile) newProfileImageRevision() else 0) }
+                    if (profile.isOwnProfile) loadReactionHistorySupport()
                     if (!profile.isOwnProfile) requestScope.launch {
                         timelineRepository.getRelationship(session, profile.author.id).forSession(snapshot).onSuccess { relation ->
                             moderationMenu.remember(profile.author.id, relation)
@@ -182,6 +192,16 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                         it.copy(isLoadingProfile = false, profileError = error.message ?: "プロフィールを取得できませんでした")
                     }
                 }
+        }
+    }
+
+    fun loadReactionHistorySupport() {
+        val snapshot = currentSnapshot() ?: return
+        if (_uiState.value.profile?.isOwnProfile != true || reactionHistorySupportJob?.isActive == true) return
+        reactionHistorySupportJob = requestScope.launch {
+            timelineRepository.getServerCapabilities(snapshot.account!!).forSession(snapshot).onSuccess { capabilities ->
+                _uiState.update { it.copy(supportsReactionHistory = capabilities.supportsReactionHistory) }
+            }
         }
     }
 

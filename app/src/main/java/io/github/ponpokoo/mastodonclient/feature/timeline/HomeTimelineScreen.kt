@@ -170,6 +170,7 @@ fun HomeTimelineScreen(
     onOpenBookmarks: () -> Unit,
     onOpenFavourites: () -> Unit,
     onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
+    onOpenReactions: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
@@ -625,6 +626,7 @@ fun HomeTimelineScreen(
                     onOpenLists = onOpenLists,
                     onOpenBookmarks = onOpenBookmarks,
                     onOpenFavourites = onOpenFavourites,
+                    onOpenReactions = onOpenReactions,
                     onEditStatus = onEditStatus,
                     profileListStates = profileListStates,
                     profileHeaderListState = profileHeaderListState,

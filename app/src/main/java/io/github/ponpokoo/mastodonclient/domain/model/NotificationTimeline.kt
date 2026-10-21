@@ -24,6 +24,12 @@ data class NotificationCapabilities(
     // A failed refresh does not change the durable confirmation time or capabilities.
     @kotlinx.serialization.Transient val retryAtEpochMillis: Long = 0,
 ) {
+    // Only the Fedibird contract currently has implemented write/account-list APIs.
+    val supportsReactionActions: Boolean get() = reactionApi == EmojiReactionApi.Fedibird
+    val supportsReactionAccounts: Boolean get() = reactionApi == EmojiReactionApi.Fedibird
+    // The sent-reaction history endpoint is part of the Fedibird/kmyblue contract.
+    val supportsReactionHistory: Boolean get() = reactionApi == EmojiReactionApi.Fedibird
+
     fun isRetryPending(now: Long): Boolean =
         retryAtEpochMillis > 0 && now in (retryAtEpochMillis - RETRY_MILLIS) until retryAtEpochMillis
 
@@ -44,6 +50,9 @@ data class NotificationCapabilities(
 
 @Serializable
 enum class EmojiReactionApi { Unknown, Unsupported, Fedibird, Pleroma }
+
+/** Shared server metadata; retain the existing serialized model and preference key. */
+typealias ServerCapabilities = NotificationCapabilities
 
 /** IDs remain opaque. A missing boundary is not evidence that an entire page is unread. */
 @Serializable

@@ -127,6 +127,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.apng)
+    implementation(libs.androidx.vectordrawable.animated)
     implementation(libs.zxing.core)
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)

@@ -259,6 +259,20 @@ fun AppNavigation(
         })
     }
     val accountsState = interactions?.accounts?.collectAsStateWithLifecycle()?.value ?: StatusAccountsUiState()
+    val capabilitiesModel = timelineEntry?.let { entry ->
+        viewModel<io.github.ponpokoo.mastodonclient.feature.common.ServerCapabilitiesViewModel>(
+            viewModelStoreOwner = entry, factory = ScreenViewModelFactory {
+                io.github.ponpokoo.mastodonclient.feature.common.ServerCapabilitiesViewModel(
+                    timelineRepository, requireNotNull(mainSessionModel).browsing)
+            })
+    }
+    val capabilitiesState = capabilitiesModel?.state?.collectAsStateWithLifecycle()?.value
+    val serverCapabilities = capabilitiesState?.takeIf { it.snapshot == mediaSnapshot }?.capabilities
+        ?: io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        capabilitiesModel?.refresh()
+    }
+    LaunchedEffect(capabilitiesModel, currentBackStackEntry?.id) { capabilitiesModel?.refresh() }
     val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
     val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
@@ -323,10 +337,12 @@ fun AppNavigation(
     MediaTransitionHost(mediaMotion, mediaSessionKey, currentBackStackEntry?.id,
         sessionReady = (mediaSnapshot?.generation ?: 0) > 0 || currentBackStackEntry?.destination?.hasRoute<Route.Login>() == true) {
     CompositionLocalProvider(
+        io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities provides serverCapabilities,
         io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings provides
             io.github.ponpokoo.mastodonclient.feature.common.ReadingSettings(
                 readingSession?.let { it.sessionId + it.instanceUrl } ?: "",
-                appPreferences.readingForAccount(readingSession)),
+                appPreferences.readingForAccount(readingSession),
+                transientSessionKey = mediaSessionKey.orEmpty()),
         LocalFavouriteListOpener provides { statusId -> interactions?.openFavourites(statusId); Unit },
         LocalReactionListOpener provides { statusId, reaction -> interactions?.openReaction(statusId, reaction); Unit },
         LocalCustomReactionEmojiLoader provides loadCustomReactionEmojis,
@@ -449,6 +465,7 @@ fun AppNavigation(
                 onOpenLists = { navController.navigate(Route.Lists) },
                 onOpenBookmarks = { navController.navigate(Route.SavedTimeline("bookmarks", title = "ブックマーク")) },
                 onOpenFavourites = { navController.navigate(Route.SavedTimeline("favourites", title = "お気に入り")) },
+                onOpenReactions = { navController.navigate(Route.SavedTimeline("reactions", title = "リアクションした投稿")) },
             )
         }
         composable<Route.StatusDetail> { backStackEntry ->
@@ -622,6 +639,7 @@ fun AppNavigation(
                 onOpenLists = { navController.navigate(Route.Lists) },
                 onOpenBookmarks = { navController.navigate(Route.SavedTimeline("bookmarks", title = "ブックマーク")) },
                 onOpenFavourites = { navController.navigate(Route.SavedTimeline("favourites", title = "お気に入り")) },
+                onOpenReactions = { navController.navigate(Route.SavedTimeline("reactions", title = "リアクションした投稿")) },
                 onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
@@ -713,6 +731,7 @@ fun AppNavigation(
             val kind = when (route.kind) {
                 "list" -> SavedTimelineKind.List
                 "bookmarks" -> SavedTimelineKind.Bookmarks
+                "reactions" -> SavedTimelineKind.Reactions
                 else -> SavedTimelineKind.Favourites
             }
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }

@@ -221,6 +221,9 @@ interface MastodonApi {
     @GET("api/v1/favourites")
     suspend fun getFavourites(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): retrofit2.Response<List<StatusDto>>
 
+    @GET("api/v1/emoji_reactions")
+    suspend fun getReactedStatuses(@Query("max_id") maxId: String? = null, @Query("limit") limit: Int = 20): retrofit2.Response<List<StatusDto>>
+
     @FormUrlEncoded
     @POST("api/v1/lists/{id}/accounts")
     suspend fun addAccountsToList(@Path("id") id: String, @Field("account_ids[]") accountIds: List<String>)

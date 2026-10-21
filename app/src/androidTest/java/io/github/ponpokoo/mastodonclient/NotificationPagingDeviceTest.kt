@@ -49,7 +49,7 @@ class NotificationPagingDeviceTest {
         val reactions = AtomicInteger()
         val repository = object : TimelineRepository {
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = error("unused")
-            override suspend fun getNotificationCapabilities(session: AccountSession) =
+            override suspend fun getServerCapabilities(session: AccountSession) =
                 Result.success(NotificationCapabilities(true, checks.incrementAndGet() != 1))
             override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean): Result<NotificationPage> {
                 if (category == NotificationCategory.Reactions) reactions.incrementAndGet()

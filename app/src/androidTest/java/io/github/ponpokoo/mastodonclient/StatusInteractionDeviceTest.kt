@@ -33,6 +33,8 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLo
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.assertIsDisplayed
@@ -53,12 +55,57 @@ import org.junit.Test
 class StatusInteractionDeviceTest {
     @get:Rule val composeRule = createComposeRule()
 
+    private fun showContent(content: @androidx.compose.runtime.Composable () -> Unit) {
+        composeRule.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(
+                io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities provides
+                    io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities(
+                        reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Fedibird),
+            ) { content() }
+        }
+    }
+
+    @Test fun sharedServerCapabilitiesControlActionsEvenWhenPostFieldsAreAbsent() {
+        val capabilities = mutableStateOf(io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities())
+        var reactions = 0
+        showContent {
+            MaterialTheme {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities provides capabilities.value,
+                ) {
+                    StatusCard(status = status().copy(reactions = listOf(EmojiReaction("👍", 1, false, null, emptySet()))),
+                        onStatusClick = null, onReact = { reactions++ }, onUnavailableAction = {})
+                }
+            }
+        }
+        composeRule.onNodeWithContentDescription("リアクション").assertDoesNotExist()
+        composeRule.onNodeWithTag("displayed_reaction").assertHasNoClickAction()
+        composeRule.runOnIdle {
+            capabilities.value = io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities(
+                supportsEmojiReactions = true, reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Pleroma)
+        }
+        composeRule.onNodeWithContentDescription("リアクション").assertDoesNotExist()
+        composeRule.runOnIdle {
+            capabilities.value = io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities(
+                reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Fedibird)
+        }
+        composeRule.onNodeWithContentDescription("リアクション").assertExists()
+        composeRule.onNodeWithTag("displayed_reaction").assertHasClickAction().performClick()
+        composeRule.runOnIdle {
+            assertEquals(1, reactions)
+            capabilities.value = io.github.ponpokoo.mastodonclient.domain.model.ServerCapabilities(
+                reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Unsupported)
+        }
+        composeRule.onNodeWithContentDescription("リアクション").assertDoesNotExist()
+        composeRule.onNodeWithTag("displayed_reaction").assertHasNoClickAction()
+    }
+
     @Test fun visibilityHeaderKeepsMenuReachableWithLargeTextAndLongAuthorNames() {
         val scale = mutableStateOf(1f)
         val theme = mutableStateOf(ThemeMode.Light)
         val visibility = mutableStateOf("public")
         var menus = 0
-        composeRule.setContent {
+        showContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale.value)) {
                 MastodonClientTheme(themeMode = theme.value) {
@@ -102,10 +149,10 @@ class StatusInteractionDeviceTest {
     @Test
     fun reactionVisibilityCanBeToggledWithoutHidingTheActionButton() {
         val display = mutableStateOf(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences())
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
-                    status = status().copy(supportsEmojiReactions = true,
+                    status = status().copy(
                         reactions = listOf(EmojiReaction("👍", 2, false, null, emptySet()))),
                     onStatusClick = null,
                     onReact = {},
@@ -126,7 +173,7 @@ class StatusInteractionDeviceTest {
     fun longPressingFavouriteOpensFavouritedAccountsWithoutTogglingFavourite() {
         val favourites = AtomicInteger()
         val listedStatusId = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalFavouriteListOpener provides listedStatusId::set) {
                     StatusCard(
@@ -151,7 +198,7 @@ class StatusInteractionDeviceTest {
     fun remoteCustomReactionTapSendsDomainAndLongPressOpensAccounts() {
         val sentReaction = AtomicReference<String?>(null)
         val listedReaction = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(reactions = listOf(EmojiReaction("custom", 2, false,
@@ -177,7 +224,7 @@ class StatusInteractionDeviceTest {
     @Test
     fun pickerShowsServerCustomEmojiAndSendsShortcode() {
         val sentReaction = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalCustomReactionEmojiLoader provides {
@@ -186,7 +233,7 @@ class StatusInteractionDeviceTest {
                     LocalReactionHistoryLoader provides { listOf("custom") },
                 ) {
                     StatusCard(
-                        status = status().copy(supportsEmojiReactions = true),
+                        status = status(),
                         onStatusClick = null,
                         onReact = sentReaction::set,
                         onUnavailableAction = {},
@@ -208,14 +255,14 @@ class StatusInteractionDeviceTest {
     @Test
     fun longPressingEmojiHistoryRequiresConfirmationBeforeDeletion() {
         val saved = AtomicReference(listOf("👍"))
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalReactionHistoryLoader provides { saved.get() },
                     LocalReactionHistorySaver provides { saved.set(it) },
                 ) {
                     StatusCard(
-                        status = status().copy(supportsEmojiReactions = true),
+                        status = status(),
                         onStatusClick = null,
                         onReact = {},
                         onUnavailableAction = {},
@@ -238,7 +285,7 @@ class StatusInteractionDeviceTest {
 
     @Test
     fun contentWarningHidesBodyAndPreviewUntilExpanded() {
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(
@@ -267,7 +314,7 @@ class StatusInteractionDeviceTest {
 
     @Test
     fun reactionsWrapOntoMultipleRows() {
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 Box(Modifier.width(320.dp)) {
                     StatusCard(
@@ -291,7 +338,7 @@ class StatusInteractionDeviceTest {
     fun tappingBoostedByOpensBoosterNotStatus() {
         val openedAccount = AtomicReference<String?>(null)
         val openedStatus = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(boostedBy = StatusAuthor("booster", "Alice", "alice@social.example", "")),
@@ -313,7 +360,7 @@ class StatusInteractionDeviceTest {
     fun longPressingBoostOffersQuoteWithoutBoosting() {
         val boosts = AtomicInteger()
         val quoteMode = AtomicReference<QuoteMode?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status(),
@@ -345,7 +392,7 @@ class StatusInteractionDeviceTest {
     @Test
     fun legacyServerOffersOnlyLinkQuote() {
         val quoteMode = AtomicReference<QuoteMode?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(status = status().copy(quoteApproval = null), onStatusClick = null,
                     onQuote = quoteMode::set, onUnavailableAction = {})
@@ -362,7 +409,7 @@ class StatusInteractionDeviceTest {
     fun nativeQuoteRespectsApprovalWhileLinkQuoteRemainsAvailable() {
         val approval = mutableStateOf("manual")
         val quoteMode = AtomicReference<QuoteMode?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(status = status().copy(quoteApproval = approval.value), onStatusClick = null,
                     onQuote = quoteMode::set, onUnavailableAction = {})
@@ -387,7 +434,7 @@ class StatusInteractionDeviceTest {
     fun followersOnlyBoostIsUnavailableInTimelineAndPostDetail() {
         val boosts = AtomicInteger()
         val isDetail = mutableStateOf(false)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(visibility = "private"),
@@ -408,7 +455,7 @@ class StatusInteractionDeviceTest {
     fun tappingMentionUsesItsAccountId() {
         val openedAccount = AtomicReference<String?>(null)
         val openedUrl = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(
@@ -433,7 +480,7 @@ class StatusInteractionDeviceTest {
     @Test
     fun selfReplyShowsReplyTargetAndOpensItsAccount() {
         val openedAccount = AtomicReference<String?>(null)
-        composeRule.setContent {
+        showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(

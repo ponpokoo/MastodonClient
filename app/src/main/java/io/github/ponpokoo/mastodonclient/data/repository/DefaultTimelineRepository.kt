@@ -359,6 +359,9 @@ class DefaultTimelineRepository(
         listId: String?,
         maxId: String?,
     ) = runCatching {
+        if (kind == SavedTimelineKind.Reactions && !capabilitiesRepository.get(session.instanceUrl).supportsReactionHistory) {
+            throw UnsupportedOperationException("このサーバーはリアクションした投稿の一覧に対応していません")
+        }
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val response: List<StatusDto>
         val nextMaxId: String?
@@ -368,10 +371,15 @@ class DefaultTimelineRepository(
             nextMaxId = response.lastOrNull()?.id
             endReached = response.size < 20
         } else {
-            val page = if (kind == SavedTimelineKind.Bookmarks) api.getBookmarks(maxId) else api.getFavourites(maxId)
+            val page = when (kind) {
+                SavedTimelineKind.Bookmarks -> api.getBookmarks(maxId)
+                SavedTimelineKind.Favourites -> api.getFavourites(maxId)
+                SavedTimelineKind.Reactions -> api.getReactedStatuses(maxId)
+                SavedTimelineKind.List -> error("List timeline is handled separately")
+            }
             if (!page.isSuccessful) throw retrofit2.HttpException(page)
             response = page.body().orEmpty()
-            // Bookmark/favourite relationship IDs differ from status IDs.
+            // Bookmark/favourite/reaction relationship IDs differ from status IDs.
             nextMaxId = nextAccountListCursor(page.headers()["Link"])
             endReached = nextMaxId == null || response.isEmpty()
         }
@@ -503,9 +511,11 @@ class DefaultTimelineRepository(
         }
     }
 
-    override suspend fun getNotificationCapabilities(session: AccountSession) = runCatching {
+    override suspend fun getServerCapabilities(session: AccountSession) = runCatching {
         capabilitiesRepository.get(session.instanceUrl)
     }
+
+    override fun observeServerCapabilities(session: AccountSession) = capabilitiesRepository.observe(session.instanceUrl)
 
     override suspend fun getNotificationPage(
         session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean,
@@ -722,6 +732,9 @@ class DefaultTimelineRepository(
 
     override suspend fun getEmojiReactionedBy(session: AccountSession, statusId: String, reactionName: String,
         maxId: String?) = runCatching {
+        if (!capabilitiesRepository.get(session.instanceUrl).supportsReactionAccounts) {
+            throw UnsupportedOperationException("このサーバーのリアクションしたアカウント一覧には対応していません")
+        }
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getEmojiReactionedBy(statusId, maxId)
         if (!response.isSuccessful) throw retrofit2.HttpException(response)
@@ -909,6 +922,10 @@ class DefaultTimelineRepository(
         statusId: String,
         emoji: String?,
     ): Result<TimelineStatus> {
+        val capabilities = getServerCapabilities(session).getOrElse { return Result.failure(it) }
+        if (!capabilities.supportsReactionActions) {
+            return Result.failure(UnsupportedOperationException("このサーバーのリアクション操作には対応していません"))
+        }
         val result = updateStatus(session) {
             if (emoji == null) removeFedibirdReaction(statusId)
             else addFedibirdReaction(statusId, emoji)
@@ -1006,9 +1023,6 @@ internal fun StatusDto.toDomain(): TimelineStatus {
                 domain = it.domain,
             )
         },
-        // Pleroma's aggregate (also exposed at the top level by Akkoma) does not
-        // advertise Fedibird's emoji_unreaction or emoji_reactioned_by contract.
-        supportsEmojiReactions = displayed.emojiReactions != null && displayed.pleroma == null,
         previewCard = displayed.card?.let { card ->
             PreviewCard(
                 url = card.url,

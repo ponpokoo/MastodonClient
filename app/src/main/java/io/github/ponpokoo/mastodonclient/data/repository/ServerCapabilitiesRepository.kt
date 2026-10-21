@@ -8,6 +8,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -17,7 +21,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import retrofit2.HttpException
 
-/** Public server metadata only. Shared by notification browsing and Push registration. */
+/** Public server metadata shared by notifications, Push, history and status actions. */
 class ServerCapabilitiesRepository(
     private val clients: ApiClientFactory,
     private val preferences: UserPreferencesStore? = null,
@@ -25,16 +29,24 @@ class ServerCapabilitiesRepository(
     private val timeoutMillis: Long = 4_000,
 ) {
     private val mutex = Mutex()
-    private val cache = java.util.concurrent.ConcurrentHashMap<String, NotificationCapabilities>()
+    private val cache = MutableStateFlow<Map<String, NotificationCapabilities>>(emptyMap())
 
-    fun cached(instanceUrl: String): NotificationCapabilities? = cache[instanceUrl.toHttpUrl().toString().trimEnd('/')]
+    fun cached(instanceUrl: String): NotificationCapabilities? = cache.value[instanceUrl.toHttpUrl().toString().trimEnd('/')]
+
+    fun observe(instanceUrl: String) = instanceUrl.toHttpUrl().toString().trimEnd('/').let { key ->
+        cache.map { it[key] ?: NotificationCapabilities() }.distinctUntilChanged()
+    }
+
+    private fun publish(key: String, capabilities: NotificationCapabilities) {
+        cache.update { it + (key to capabilities) }
+    }
 
     suspend fun rejectPushAlerts(instanceUrl: String) = mutex.withLock {
         val key = instanceUrl.toHttpUrl().toString().trimEnd('/')
-        val current = cache[key] ?: return@withLock
+        val current = cache.value[key] ?: return@withLock
         val updated = current.copy(pushAlerts = emptySet())
         runCatchingCancellable { preferences?.saveNotificationCapabilities(key, updated) }
-        cache[key] = updated
+        publish(key, updated)
     }
 
     suspend fun get(instanceUrl: String): NotificationCapabilities = mutex.withLock {
@@ -42,10 +54,10 @@ class ServerCapabilitiesRepository(
         val now = clock()
         fun NotificationCapabilities.fresh(): Boolean = if (retryAtEpochMillis > 0) isRetryPending(now)
             else reactionApi != EmojiReactionApi.Unknown && checkedAtEpochMillis > 0 && now - checkedAtEpochMillis in 0 until TTL_MILLIS
-        val memory = cache[key]
+        val memory = cache.value[key]
         memory?.takeIf { it.fresh() }?.let { return@withLock it }
         val stored = runCatchingCancellable { preferences?.preferences?.first()?.notificationCapabilities?.get(key) }.getOrNull()
-        stored?.takeIf { it.fresh() }?.let { cache[key] = it; return@withLock it }
+        stored?.takeIf { it.fresh() }?.let { publish(key, it); return@withLock it }
         val previous = memory?.takeIf { it.reactionApi != EmojiReactionApi.Unknown }
             ?: stored?.takeIf { it.reactionApi != EmojiReactionApi.Unknown }
         val result = withContext(Dispatchers.IO) { withTimeoutOrNull(timeoutMillis) { discover(key, previous?.reactionApi) } }
@@ -56,12 +68,12 @@ class ServerCapabilitiesRepository(
             // Retry scheduling is memory-only; restart still revalidates the expired record.
             val fallback = (previous ?: result.copy(checkedAtEpochMillis = clock()))
                 .copy(retryAtEpochMillis = clock() + RETRY_MILLIS)
-            cache[key] = fallback
+            publish(key, fallback)
             return@withLock fallback
         }
         val checked = result.copy(checkedAtEpochMillis = clock())
         runCatchingCancellable { preferences?.saveNotificationCapabilities(key, checked) }
-        cache[key] = checked
+        publish(key, checked)
         checked
     }
 

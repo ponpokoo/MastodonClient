@@ -45,7 +45,7 @@ class NotificationRefreshLifecycleDeviceTest {
         val repository = object : TimelineRepository {
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = error("unused")
             override val moderation = kotlinx.coroutines.flow.MutableStateFlow(AccountModerationState())
-            override suspend fun getNotificationCapabilities(session: AccountSession) = Result.success(NotificationCapabilities())
+            override suspend fun getServerCapabilities(session: AccountSession) = Result.success(NotificationCapabilities())
             override suspend fun getNotificationPage(session: AccountSession, category: NotificationCategory, maxId: String?, limit: Int, supportsTypeFiltering: Boolean) =
                 getNotifications(session, maxId, limit)
             override suspend fun cacheNotificationCategory(session: AccountSession, category: NotificationCategory, notifications: List<TimelineNotification>) = Result.success(Unit)

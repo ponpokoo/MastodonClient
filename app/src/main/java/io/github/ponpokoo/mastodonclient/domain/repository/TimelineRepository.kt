@@ -136,8 +136,10 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     ): Result<NotificationPage> =
         Result.failure(UnsupportedOperationException("通知は未対応です"))
 
-    suspend fun getNotificationCapabilities(session: AccountSession): Result<NotificationCapabilities> =
+    suspend fun getServerCapabilities(session: AccountSession): Result<NotificationCapabilities> =
         Result.success(NotificationCapabilities())
+
+    fun observeServerCapabilities(session: AccountSession): Flow<NotificationCapabilities> = emptyFlow()
 
     suspend fun getNotificationPage(
         session: AccountSession,

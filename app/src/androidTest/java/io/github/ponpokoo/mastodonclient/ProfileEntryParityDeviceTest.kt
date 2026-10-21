@@ -37,7 +37,10 @@ class ProfileEntryParityDeviceTest {
     private fun verifyEntry(standalone: Boolean) {
         val votes = mutableListOf<Set<Int>>()
         val links = mutableListOf<String>()
+        var reactionHistoryOpened = 0
         val repository = object : TimelineRepository {
+            override suspend fun getServerCapabilities(session: AccountSession) =
+                Result.success(NotificationCapabilities(reactionApi = EmojiReactionApi.Fedibird))
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(TimelinePage(emptyList(), null, true))
             override suspend fun getProfileHeader(session: AccountSession, accountId: String) = Result.success(
@@ -62,17 +65,26 @@ class ProfileEntryParityDeviceTest {
                 MastodonClientTheme {
                     if (standalone) {
                         AccountProfileScreen(model, false, AppPreferences(), {}, {}, {}, { _, _ -> },
-                            { links += it }, {}, { _, _ -> }, {}, {}, {}, {}, {}, {})
+                            { links += it }, {}, { _, _ -> }, {}, {}, {}, {}, {}, {},
+                            onOpenReactions = { reactionHistoryOpened++ })
                     } else {
                         val snackbar = remember { SnackbarHostState() }
                         Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
                             ProfileScreen(model, AppPreferences(), padding, snackbar, {}, {}, { _, _ -> },
-                                { links += it }, {}, { _, _ -> }, {}, {}, {}, {}, {}, {})
+                                { links += it }, {}, { _, _ -> }, {}, {}, {}, {}, {}, {},
+                                onOpenReactions = { reactionHistoryOpened++ })
                         }
                     }
                 }
             }
-            rule.waitUntil(10_000) { model.uiState.value.profileTabs[ProfileStatusTab.Posts]?.isLoaded == true }
+            rule.waitUntil(10_000) { model.uiState.value.profileTabs[ProfileStatusTab.Posts]?.isLoaded == true && model.uiState.value.supportsReactionHistory }
+            rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
+            val favourites = rule.onNodeWithText("お気に入り").fetchSemanticsNode().boundsInRoot
+            val reactions = rule.onNodeWithText("リアクションした投稿").fetchSemanticsNode().boundsInRoot
+            assertTrue(reactions.top >= favourites.bottom)
+            rule.onNodeWithText("リアクションした投稿").performClick()
+            rule.onNodeWithText("リアクションした投稿").assertDoesNotExist()
+            rule.runOnIdle { assertEquals(1, reactionHistoryOpened) }
             rule.onNodeWithContentDescription("プロフィールのその他メニュー").performClick()
             rule.onNodeWithText("リンクをコピー").assertDoesNotExist()
             rule.onNodeWithText("QRコードを表示").assertDoesNotExist()

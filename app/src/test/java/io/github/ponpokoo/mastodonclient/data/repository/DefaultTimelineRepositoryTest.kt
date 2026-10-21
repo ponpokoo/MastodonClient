@@ -21,6 +21,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultTimelineRepositoryTest {
+    private suspend fun reactionRepository(server: MockWebServer,
+        onReaction: suspend (AccountSession, String) -> Unit = { _, _ -> },
+    ): DefaultTimelineRepository {
+        val settings = io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore(
+            io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences())
+        settings.saveNotificationCapabilities(testSession(server).instanceUrl,
+            io.github.ponpokoo.mastodonclient.domain.model.NotificationCapabilities(
+                reactionApi = io.github.ponpokoo.mastodonclient.domain.model.EmojiReactionApi.Fedibird,
+                checkedAtEpochMillis = System.currentTimeMillis()))
+        return DefaultTimelineRepository(ApiClientFactory(), settingsStore = settings, onReactionSucceeded = onReaction)
+    }
     @Test fun imagePreviewDimensionsComeFromSmallMetadataWithoutAssumingAServerSize() = runTest {
         MockWebServer().use { server ->
             val media = """"media_attachments":[
@@ -47,7 +58,7 @@ class DefaultTimelineRepositoryTest {
                 server.enqueue(MockResponse().setBody(body).addHeader("Link",
                     "<https://different.example/api/v1/statuses/post/$kind?max_id=opaque%2Bcursor&limit=40>; rel=\"next\""))
                 server.enqueue(MockResponse().setBody(body))
-                val repository = DefaultTimelineRepository(ApiClientFactory())
+                val repository = reactionRepository(server)
                 val session = testSession(server)
                 suspend fun load(cursor: String? = null) = when (kind) {
                     "favourited_by" -> repository.getFavouritedBy(session, "post", cursor)
@@ -77,7 +88,7 @@ class DefaultTimelineRepositoryTest {
             server.enqueue(MockResponse().setBody(
                 """[{"name":"🎉","account":{"id":"other","username":"bob","acct":"bob"}}]""",
             ).addHeader("Link", "<${server.url("/api/v1/statuses/post/emoji_reactioned_by?max_id=reaction-id")}>; rel=\"next\""))
-            val page = DefaultTimelineRepository(ApiClientFactory())
+            val page = reactionRepository(server)
                 .getEmojiReactionedBy(testSession(server), "post", "👍").getOrThrow()
             assertTrue(page.accounts.isEmpty())
             assertEquals("reaction-id", page.nextMaxId)
@@ -88,7 +99,7 @@ class DefaultTimelineRepositoryTest {
     @Test fun interactionPageHttpFailuresAreNotReportedAsEmptySuccessfulLists() = runTest {
         MockWebServer().use { server ->
             repeat(3) { server.enqueue(MockResponse().setResponseCode(403).setBody("{}")) }
-            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val repository = reactionRepository(server)
             val session = testSession(server)
             assertTrue(repository.getFavouritedBy(session, "post").isFailure)
             assertTrue(repository.getRebloggedBy(session, "post").isFailure)
@@ -287,7 +298,7 @@ class DefaultTimelineRepositoryTest {
             server.enqueue(MockResponse().setBody(
                 """[{"emoji":"👍","account":{"id":"four","username":"dan","acct":"dan"}}]""",
             ))
-            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val repository = reactionRepository(server)
             val session = testSession(server)
 
             assertEquals(listOf("one"), repository.getEmojiReactionedBy(session, "status", "👍").getOrThrow().accounts.map { it.id })
@@ -675,7 +686,6 @@ class DefaultTimelineRepositoryTest {
             assertEquals("Tusky", detail.status.applicationName)
             assertEquals("👍", detail.status.reactions.single().name)
             assertEquals(true, detail.status.reactions.single().reactedByMe)
-            assertEquals(true, detail.status.supportsEmojiReactions)
         }
     }
 
@@ -854,7 +864,6 @@ class DefaultTimelineRepositoryTest {
 
             assertEquals("Example", page.statuses.single().previewCard?.title)
             assertEquals(1200f / 630, page.statuses.single().previewCard?.aspectRatio)
-            assertFalse(page.statuses.single().supportsEmojiReactions)
         }
     }
 
@@ -863,7 +872,7 @@ class DefaultTimelineRepositoryTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(basicStatusJson("1")))
             server.enqueue(MockResponse().setBody(basicStatusJson("1")))
-            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val repository = reactionRepository(server)
             val session = testSession(server)
 
             repository.setFavourite(session, "1", true).getOrThrow()
@@ -885,7 +894,7 @@ class DefaultTimelineRepositoryTest {
                 """[{"id":"1","created_at":"2026-09-08T00:00:00Z","account":{"id":"a","username":"alice","acct":"alice"},"emoji_reactions":[{"name":"ee","domain":"misskey.example","count":1,"url":"https://misskey.example/ee.png"}]}]""",
             ))
             server.enqueue(MockResponse().setBody(basicStatusJson("1")))
-            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val repository = reactionRepository(server)
             val session = testSession(server)
 
             val reaction = repository.getHomeTimeline(session).getOrThrow().statuses.single().reactions.single()
@@ -905,8 +914,7 @@ class DefaultTimelineRepositoryTest {
             server.enqueue(MockResponse().setResponseCode(500))
             server.enqueue(MockResponse().setBody(basicStatusJson("1")))
             val recorded = mutableListOf<String>()
-            val repository = DefaultTimelineRepository(ApiClientFactory(),
-                onReactionSucceeded = { _, emoji -> recorded += emoji })
+            val repository = reactionRepository(server) { _, emoji -> recorded += emoji }
             val session = testSession(server)
 
             repository.setFedibirdReaction(session, "1", "👍").getOrThrow()
@@ -919,9 +927,21 @@ class DefaultTimelineRepositoryTest {
 
     @Test
     fun savedPostsUseRelationshipCursorFromLinkRatherThanStatusId() = runTest {
-        for (kind in listOf(SavedTimelineKind.Bookmarks, SavedTimelineKind.Favourites)) {
+        for ((kind, version) in listOf(
+            SavedTimelineKind.Bookmarks to "",
+            SavedTimelineKind.Favourites to "",
+            SavedTimelineKind.Reactions to "4.5.0+fedibird",
+            SavedTimelineKind.Reactions to "4.5.0+kmyblue.1",
+        )) {
             MockWebServer().use { server ->
-                val path = if (kind == SavedTimelineKind.Bookmarks) "bookmarks" else "favourites"
+                val path = when (kind) {
+                    SavedTimelineKind.Bookmarks -> "bookmarks"
+                    SavedTimelineKind.Reactions -> "emoji_reactions"
+                    else -> "favourites"
+                }
+                if (kind == SavedTimelineKind.Reactions) {
+                    server.enqueue(MockResponse().setBody("""{"version":"$version","fedibird_capabilities":["emoji_reaction"]}"""))
+                }
                 server.enqueue(MockResponse().setBody("[${basicStatusJson("status-id")}]")
                     .setHeader("Link", "<${server.url("/api/v1/$path?max_id=relationship-next")}>; rel=\"next\""))
                 server.enqueue(MockResponse().setBody("[${basicStatusJson("older-status")}]")
@@ -929,11 +949,13 @@ class DefaultTimelineRepositoryTest {
                 val repository = DefaultTimelineRepository(ApiClientFactory())
                 val session = testSession(server)
                 val page = repository.getSavedTimeline(session, kind).getOrThrow()
+                assertEquals("status-id", page.statuses.single().statusId)
                 assertEquals("relationship-next", page.nextMaxId)
                 assertFalse(page.endReached)
                 val last = repository.getSavedTimeline(session, kind, maxId = page.nextMaxId).getOrThrow()
                 assertTrue(last.endReached)
                 assertNull(last.nextMaxId)
+                if (kind == SavedTimelineKind.Reactions) assertEquals("/api/v2/instance", server.takeRequest().path)
                 assertEquals("/api/v1/$path?limit=20", server.takeRequest().path)
                 assertEquals("/api/v1/$path?max_id=relationship-next&limit=20", server.takeRequest().path)
             }
@@ -942,11 +964,38 @@ class DefaultTimelineRepositoryTest {
 
     @Test
     fun savedPostsHttpFailureIsNotAnEmptySuccessfulPage() = runTest {
-        MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(403))
-            val result = DefaultTimelineRepository(ApiClientFactory()).getSavedTimeline(testSession(server), SavedTimelineKind.Bookmarks)
-            assertTrue(result.isFailure)
-            assertEquals(403, (result.exceptionOrNull() as retrofit2.HttpException).code())
+        for (kind in listOf(SavedTimelineKind.Bookmarks, SavedTimelineKind.Reactions)) {
+            MockWebServer().use { server ->
+                if (kind == SavedTimelineKind.Reactions) server.enqueue(MockResponse().setBody(
+                    """{"version":"4.5.0","fedibird_capabilities":["emoji_reaction"]}"""))
+                server.enqueue(MockResponse().setResponseCode(403))
+                val result = DefaultTimelineRepository(ApiClientFactory()).getSavedTimeline(testSession(server), kind)
+                assertTrue(result.isFailure)
+                assertEquals(403, (result.exceptionOrNull() as retrofit2.HttpException).code())
+            }
+        }
+    }
+
+    @Test fun reactionHistoryDoesNotRequestTheEndpointForOtherOrUnconfirmedServers() = runTest {
+        for (serverType in listOf("mastodon", "pleroma", "unknown")) {
+            MockWebServer().use { server ->
+                server.enqueue(if (serverType == "unknown") MockResponse().setResponseCode(503)
+                    else MockResponse().setBody("""{"version":"4.5.0"}"""))
+                if (serverType == "pleroma") {
+                    server.enqueue(MockResponse().setBody("""{"links":[{"rel":"http://nodeinfo.diaspora.software/ns/schema/2.0","href":"${server.url("/nodeinfo/2.0")}"}]}"""))
+                    server.enqueue(MockResponse().setBody("""{"metadata":{"features":["pleroma_emoji_reactions"]}}"""))
+                } else server.enqueue(MockResponse().setResponseCode(404))
+                val repository = DefaultTimelineRepository(ApiClientFactory())
+                val session = testSession(server)
+                val result = repository.getSavedTimeline(session, SavedTimelineKind.Reactions)
+                assertTrue(result.exceptionOrNull() is UnsupportedOperationException)
+                assertTrue(repository.setFedibirdReaction(session, "post", "👍").exceptionOrNull() is UnsupportedOperationException)
+                assertTrue(repository.getEmojiReactionedBy(session, "post", "👍").exceptionOrNull() is UnsupportedOperationException)
+                assertEquals(if (serverType == "pleroma") 3 else 2, server.requestCount)
+                repeat(server.requestCount) {
+                    assertFalse(server.takeRequest().path.orEmpty().startsWith("/api/v1/emoji_reactions"))
+                }
+            }
         }
     }
 

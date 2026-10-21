@@ -32,7 +32,8 @@ internal fun rememberEmojiImages(urls: List<String>, owner: Any): EmojiImages {
     val painterList = urls.map { url ->
         key(url) {
             val request = remember(context, url) {
-                ImageRequest.Builder(context).data(url).size(1024, 128).build()
+                ImageRequest.Builder(context).data(url).size(1024, 128)
+                    .animatedEmoji().build()
             }
             rememberAsyncImagePainter(request, imageLoader = loader, contentScale = ContentScale.Fit)
         }

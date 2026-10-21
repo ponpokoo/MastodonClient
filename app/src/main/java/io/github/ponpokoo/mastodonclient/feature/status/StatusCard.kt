@@ -82,6 +82,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -151,6 +152,7 @@ internal fun StatusCard(
     afterActions: (@Composable () -> Unit)? = null,
     authorAvatarResource: Int? = null,
     useTimelineImagePreviews: Boolean = false,
+    collapseLongContent: Boolean = true,
 ) {
     if (status.filterDisplay.hidden) return
     var filterRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { mutableStateOf(false) }
@@ -165,6 +167,10 @@ internal fun StatusCard(
     val mediaRevealed = mediaOverride ?: mediaPolicy.initiallyVisible(status.sensitive)
     var reactionPickerOpen by rememberSaveable(status.filterScope, status.statusId) { mutableStateOf(false) }
     val reactionListOpener = LocalReactionListOpener.current
+    val serverCapabilities = io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities.current
+    androidx.compose.runtime.LaunchedEffect(serverCapabilities.supportsReactionActions) {
+        if (!serverCapabilities.supportsReactionActions) reactionPickerOpen = false
+    }
     val favouriteListOpener = LocalFavouriteListOpener.current
     val context = LocalContext.current
     val avatarSize = when (displayPreferences.avatarIconSize) {
@@ -312,22 +318,37 @@ internal fun StatusCard(
                 }
             }
             if (contentExpanded && status.contentHtml.isNotBlank()) {
-                StatusContentText(
-                    contentHtml = status.contentHtml,
-                    customEmojis = status.customEmojis,
-                    modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 4.dp else 0.dp),
-                    emojiHeight = 24.dp,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = displayPreferences.fontSize.spValue(),
-                        lineHeight = displayPreferences.lineHeightSp().sp,
-                    ),
-                    onLinkClick = { link ->
-                        val accountId = status.mentionedAccountIdFor(link)
-                        if (accountId != null && onAuthorClick != null) onAuthorClick(accountId)
-                        else onOpenLink(link)
-                    },
-                    onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
-                )
+                val body: @Composable (Int, ((TextLayoutResult) -> Unit)?) -> Unit = { maxLines, onLayout ->
+                    StatusContentText(
+                        contentHtml = status.contentHtml,
+                        customEmojis = status.customEmojis,
+                        modifier = Modifier.padding(top = if (status.spoilerText.isBlank()) 4.dp else 0.dp),
+                        emojiHeight = 24.dp,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = displayPreferences.fontSize.spValue(),
+                            lineHeight = displayPreferences.lineHeightSp().sp,
+                        ),
+                        onLinkClick = { link ->
+                            val accountId = status.mentionedAccountIdFor(link)
+                            if (accountId != null && onAuthorClick != null) onAuthorClick(accountId)
+                            else onOpenLink(link)
+                        },
+                        onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
+                        maxLines = maxLines,
+                        onTextLayout = onLayout,
+                    )
+                }
+                if (collapseLongContent && status.spoilerText.isBlank()) {
+                    key(reading.transientSessionKey, status.filterScope, status.timelineId, status.statusId, status.contentHtml) {
+                        CollapsibleStatusBody(
+                            accountKey = reading.transientSessionKey,
+                            filterScope = status.filterScope,
+                            timelineId = status.timelineId,
+                            statusId = status.statusId,
+                            contentHtml = status.contentHtml,
+                        ) { maxLines, onLayout -> body(maxLines, onLayout) }
+                    }
+                } else body(Int.MAX_VALUE, null)
             }
             if (contentExpanded) {
                 status.poll?.let { poll ->
@@ -402,7 +423,7 @@ internal fun StatusCard(
                                 .coerceAtLeast(48.dp)
                             Surface(
                                 modifier = Modifier.testTag("displayed_reaction").then(
-                                    if (!status.supportsEmojiReactions || onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
+                                    if (!serverCapabilities.supportsReactionActions || onReact == null && onReactionLongPress == null && reactionListOpener == null) Modifier
                                     else Modifier.combinedClickable(
                                         onClick = {
                                             onReact?.invoke(if (reaction.reactedByMe) null else reaction.apiName)
@@ -497,7 +518,7 @@ internal fun StatusCard(
         }
     }
 
-    if (reactionPickerOpen) {
+    if (reactionPickerOpen && serverCapabilities.supportsReactionActions) {
         ReactionPickerSheet(
             canUndo = status.reactions.any { it.reactedByMe },
             onDismiss = { reactionPickerOpen = false },
@@ -900,7 +921,7 @@ private fun StatusActionRow(
                     onFavourite,
                     onLongClick = onFavouriteLongClick,
                 )
-                StatusAction.Reaction -> if (onReaction != null && status.supportsEmojiReactions) {
+                StatusAction.Reaction -> if (onReaction != null && io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities.current.supportsReactionActions) {
                     StatusActionButton(Icons.Outlined.SentimentSatisfiedAlt, "リアクション", null, preferences, onReaction)
                 }
                 StatusAction.Share -> StatusActionButton(Icons.Outlined.Share, "共有", null, preferences, onShare)

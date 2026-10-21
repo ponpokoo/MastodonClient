@@ -36,16 +36,16 @@ class NotificationPagingRepositoryTest {
             unsupported.enqueue(MockResponse().setBody("""{"version":"3.4.6"}"""))
             unsupported.enqueue(MockResponse().setResponseCode(404))
             val first = DefaultTimelineRepository(ApiClientFactory(), settingsStore = preferences, settingsScope = backgroundScope)
-            assertTrue(first.getNotificationCapabilities(session(supported)).getOrThrow().supportsEmojiReactions)
-            assertEquals(EmojiReactionApi.Unsupported, first.getNotificationCapabilities(session(unsupported)).getOrThrow().reactionApi)
+            assertTrue(first.getServerCapabilities(session(supported)).getOrThrow().supportsEmojiReactions)
+            assertEquals(EmojiReactionApi.Unsupported, first.getServerCapabilities(session(unsupported)).getOrThrow().reactionApi)
             // Extra network calls would receive an error instead of a queued capability response.
             supported.enqueue(MockResponse().setResponseCode(500))
             unsupported.enqueue(MockResponse().setResponseCode(500))
             val restoredStore = UserPreferencesStore(data)
             val restarted = DefaultTimelineRepository(ApiClientFactory(), settingsStore = restoredStore, settingsScope = backgroundScope)
-            assertTrue(restarted.getNotificationCapabilities(
+            assertTrue(restarted.getServerCapabilities(
                 session(supported).copy(sessionId = "other-account", accountId = "other", instanceUrl = session(supported).instanceUrl.trimEnd('/'))).getOrThrow().supportsEmojiReactions)
-            assertEquals(EmojiReactionApi.Unsupported, restarted.getNotificationCapabilities(session(unsupported)).getOrThrow().reactionApi)
+            assertEquals(EmojiReactionApi.Unsupported, restarted.getServerCapabilities(session(unsupported)).getOrThrow().reactionApi)
             assertEquals(1, supported.requestCount)
             assertEquals(2, unsupported.requestCount)
             restoredStore.setOpenLinksInApp(false)
@@ -63,14 +63,14 @@ class NotificationPagingRepositoryTest {
             server.enqueue(MockResponse().setResponseCode(500))
             server.enqueue(MockResponse().setResponseCode(503))
             val first = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            assertEquals(EmojiReactionApi.Unknown, first.getNotificationCapabilities(session(server)).getOrThrow().reactionApi)
+            assertEquals(EmojiReactionApi.Unknown, first.getServerCapabilities(session(server)).getOrThrow().reactionApi)
             assertTrue(UserPreferencesStore(data).preferences.first().notificationCapabilities.isEmpty())
             server.enqueue(MockResponse().setBody("""{"version":"4.0.0","fedibird_capabilities":["emoji_reaction"]}"""))
             val restarted = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            assertTrue(restarted.getNotificationCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
+            assertTrue(restarted.getServerCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
             server.enqueue(MockResponse().setResponseCode(500))
             val next = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            assertTrue(next.getNotificationCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
+            assertTrue(next.getServerCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
             assertEquals(3, server.requestCount)
         }
     }
@@ -81,8 +81,8 @@ class NotificationPagingRepositoryTest {
             server.enqueue(MockResponse().setResponseCode(500))
             val repository = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(MemoryAuthPreferences()), settingsScope = backgroundScope)
             val results = coroutineScope {
-                listOf(async { repository.getNotificationCapabilities(session(server)) },
-                    async { repository.getNotificationCapabilities(session(server).copy(sessionId = "second")) }).awaitAll()
+                listOf(async { repository.getServerCapabilities(session(server)) },
+                    async { repository.getServerCapabilities(session(server).copy(sessionId = "second")) }).awaitAll()
             }
             assertTrue(results.all { it.getOrThrow().supportsEmojiReactions })
             assertEquals(1, server.requestCount)
@@ -94,13 +94,13 @@ class NotificationPagingRepositoryTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             val repository = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            val pending = async { repository.getNotificationCapabilities(session(server)) }
+            val pending = async { repository.getServerCapabilities(session(server)) }
             assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) })
             pending.cancelAndJoin()
             assertTrue(UserPreferencesStore(data).preferences.first().notificationCapabilities.isEmpty())
             server.enqueue(MockResponse().setBody("""{"version":"4.0.0","fedibird_capabilities":["emoji_reaction"]}"""))
             val restarted = DefaultTimelineRepository(ApiClientFactory(), settingsStore = UserPreferencesStore(data), settingsScope = backgroundScope)
-            assertTrue(restarted.getNotificationCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
+            assertTrue(restarted.getServerCapabilities(session(server)).getOrThrow().supportsEmojiReactions)
             assertEquals(2, server.requestCount)
         }
     }
@@ -113,7 +113,7 @@ class NotificationPagingRepositoryTest {
             server.enqueue(MockResponse().setBody("[${notification("reaction", "emoji_reaction")}]"))
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val account = session(server)
-            repository.getNotificationCapabilities(account).getOrThrow()
+            repository.getServerCapabilities(account).getOrThrow()
             server.takeRequest()
             val first = repository.getNotificationPage(account, NotificationCategory.Mentions, supportsTypeFiltering = true).getOrThrow()
             repository.getNotificationPage(account, NotificationCategory.Mentions, first.nextMaxId, supportsTypeFiltering = true).getOrThrow()
@@ -161,7 +161,7 @@ class NotificationPagingRepositoryTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(404))
             server.enqueue(MockResponse().setBody("""{"version":"4.0.0+fork","fedibird_capabilities":["emoji_reaction"],"future_field":true}"""))
-            val capability = DefaultTimelineRepository(ApiClientFactory()).getNotificationCapabilities(session(server)).getOrThrow()
+            val capability = DefaultTimelineRepository(ApiClientFactory()).getServerCapabilities(session(server)).getOrThrow()
             assertTrue(capability.supportsEmojiReactions)
             assertTrue(capability.supportsTypeFiltering)
             assertEquals("/api/v2/instance", server.takeRequest().path)
@@ -172,7 +172,7 @@ class NotificationPagingRepositoryTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(403))
             server.enqueue(MockResponse().setResponseCode(503))
-            assertEquals(EmojiReactionApi.Unknown, DefaultTimelineRepository(ApiClientFactory()).getNotificationCapabilities(session(server)).getOrThrow().reactionApi)
+            assertEquals(EmojiReactionApi.Unknown, DefaultTimelineRepository(ApiClientFactory()).getServerCapabilities(session(server)).getOrThrow().reactionApi)
             assertEquals(2, server.requestCount)
         }
     }
@@ -184,7 +184,7 @@ class NotificationPagingRepositoryTest {
             server.enqueue(MockResponse().setBody("[${notification("favourite", "favourite")}]"))
             val repository = DefaultTimelineRepository(ApiClientFactory())
             val account = session(server)
-            val capability = repository.getNotificationCapabilities(account).getOrThrow()
+            val capability = repository.getServerCapabilities(account).getOrThrow()
             assertFalse(capability.supportsEmojiReactions)
             assertFalse(capability.supportsTypeFiltering)
             val page = repository.getNotificationPage(account, NotificationCategory.Mentions, supportsTypeFiltering = capability.supportsTypeFiltering).getOrThrow()
