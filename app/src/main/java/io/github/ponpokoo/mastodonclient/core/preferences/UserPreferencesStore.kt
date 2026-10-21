@@ -182,6 +182,28 @@ class UserPreferencesStore(
         }.orEmpty()
     }
 
+    val emojiFavorites: Flow<Map<String, List<String>>> = dataStore.data.map { stored ->
+        stored[EMOJI_FAVORITES]?.let { encoded ->
+            runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+        }.orEmpty()
+    }
+
+    /** Both pickers share account-local favorites; each change merges with the latest stored list. */
+    suspend fun setEmojiFavorite(sessionId: String, emoji: String, favorite: Boolean): List<String> {
+        val saved = dataStore.edit { stored ->
+            if (!canWriteAccount(sessionId)) return@edit
+            val current = stored[EMOJI_FAVORITES]?.let { encoded ->
+                runCatching { json.decodeFromString<Map<String, List<String>>>(encoded) }.getOrNull()
+            }.orEmpty()
+            val previous = current[sessionId].orEmpty()
+            val updated = if (favorite) (previous + emoji).filter(String::isNotBlank).distinct()
+                else previous.filterNot { it == emoji }
+            val accounts = if (updated.isEmpty()) current - sessionId else current + (sessionId to updated)
+            if (accounts.isEmpty()) stored.remove(EMOJI_FAVORITES) else stored[EMOJI_FAVORITES] = json.encodeToString(accounts)
+        }
+        return saved[EMOJI_FAVORITES]?.let { json.decodeFromString<Map<String, List<String>>>(it)[sessionId] }.orEmpty()
+    }
+
     suspend fun recordReaction(sessionId: String, emoji: String) {
         dataStore.edit { stored ->
             if (!canWriteAccount(sessionId)) return@edit
@@ -321,7 +343,7 @@ class UserPreferencesStore(
                 wordMutes = settings.wordMutes - sessionId,
                 serverSettings = settings.serverSettings - sessionId,
             ))
-            for (key in listOf(REACTION_HISTORY, COMPOSER_EMOJI_HISTORY)) {
+            for (key in listOf(REACTION_HISTORY, COMPOSER_EMOJI_HISTORY, EMOJI_FAVORITES)) {
                 val history = stored[key]?.let { json.decodeFromString<Map<String, List<String>>>(it) }.orEmpty() - sessionId
                 if (history.isEmpty()) stored.remove(key) else stored[key] = json.encodeToString(history)
             }
@@ -387,6 +409,7 @@ class UserPreferencesStore(
         val DRAFTS = stringPreferencesKey("compose_drafts")
         val REACTION_HISTORY = stringPreferencesKey("reaction_history")
         val COMPOSER_EMOJI_HISTORY = stringPreferencesKey("composer_emoji_history")
+        val EMOJI_FAVORITES = stringPreferencesKey("emoji_favorites")
         val LEGACY_OPEN_LINKS_IN_APP = booleanPreferencesKey("open_links_in_app")
     }
 }

@@ -46,6 +46,7 @@ class AccountDataRemovalTest {
                 filters = listOf(ServerFilter("filter-$id", "private-$id", setOf("home")))))
             preferences.recordReaction(id, "reaction-$id")
             preferences.recordComposerEmoji(id, "emoji-$id")
+            preferences.setEmojiFavorite(id, "favorite-$id", true)
             preferences.saveDraft(ComposeDraft(id, id, text = "draft-$id", attachmentUris = listOf("file:///$id")))
             preferences.retainComposeBuffer(ComposeDraft("buffer-$id", id, text = "input-$id", attachmentUris = listOf("file:///buffer-$id")))
         }
@@ -67,12 +68,14 @@ class AccountDataRemovalTest {
         restored.setReactionHistory("a", listOf("late"))
         restored.recordComposerEmoji("a", "late")
         restored.setComposerEmojiHistory("a", listOf("late"))
+        restored.setEmojiFavorite("a", "late", true)
         assertTrue(runCatching { restored.saveDraft(ComposeDraft("late", "a", text = "late")) }.isFailure)
         assertEquals(before.copy(accountPreferences = before.accountPreferences - "a",
             serverSettings = before.serverSettings - "a", wordMutes = before.wordMutes - "a"), restored.preferences.first())
         assertEquals(listOf("b"), restored.drafts.first().map { it.sessionId })
         assertEquals(mapOf("b" to listOf("reaction-b")), restored.reactionHistory.first())
         assertEquals(mapOf("b" to listOf("emoji-b")), restored.composerEmojiHistory.first())
+        assertEquals(mapOf("b" to listOf("favorite-b")), restored.emojiFavorites.first())
     }
 
     @Test fun attachmentJournalSurvivesRetryAndProtectsOtherAccountsLegacyFiles() = runTest {

@@ -136,4 +136,21 @@ class StatusInteractionsViewModel(
         preferences?.setReactionHistory(snapshot.account!!.sessionId, emojis)
         Result.success(Unit).forSession(snapshot)
     }
+
+    suspend fun loadEmojiFavorites(sessionId: String): List<String> {
+        val snapshot = currentSnapshot()?.takeIf { it.account?.sessionId == sessionId }
+            ?: throw kotlinx.coroutines.CancellationException("Account changed")
+        val favorites = preferences?.emojiFavorites?.first()?.get(sessionId).orEmpty()
+        Result.success(favorites).forSession(snapshot)
+        return favorites
+    }
+
+    suspend fun setEmojiFavorite(sessionId: String, emoji: String, favorite: Boolean): List<String> {
+        val snapshot = currentSnapshot()?.takeIf { it.account?.sessionId == sessionId }
+            ?: throw kotlinx.coroutines.CancellationException("Account changed")
+        val favorites = preferences?.setEmojiFavorite(sessionId, emoji, favorite)
+            ?: error("お気に入りを保存できませんでした")
+        Result.success(favorites).forSession(snapshot)
+        return favorites
+    }
 }

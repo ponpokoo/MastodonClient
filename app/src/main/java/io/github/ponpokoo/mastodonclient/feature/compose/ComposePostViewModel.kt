@@ -496,6 +496,27 @@ class ComposePostViewModel(
         val sessionId = _uiState.value.selectedSession?.sessionId ?: return
         viewModelScope.launch { preferencesStore.recordComposerEmoji(sessionId, emoji) }
     }
+
+    suspend fun loadEmojiFavorites(sessionId: String): List<String> = withEmojiFavoriteSession(sessionId) {
+        preferencesStore.emojiFavorites.first()[sessionId].orEmpty()
+    }
+
+    suspend fun setEmojiFavorite(sessionId: String, emoji: String, favorite: Boolean): List<String> =
+        withEmojiFavoriteSession(sessionId) { preferencesStore.setEmojiFavorite(sessionId, emoji, favorite) }
+
+    private suspend fun <T> withEmojiFavoriteSession(sessionId: String, action: suspend () -> T): T {
+        val generation = mediaTransfer.generation
+        fun checkSession() {
+            if (_uiState.value.selectedSession?.sessionId != sessionId || generation != mediaTransfer.generation)
+                throw CancellationException("Account changed")
+        }
+        currentCoroutineContext().ensureActive()
+        checkSession()
+        val result = action()
+        currentCoroutineContext().ensureActive()
+        checkSession()
+        return result
+    }
     fun insertMention(account: StatusAuthor) {
         val mention = "@${account.accountName}"
         val current = _uiState.value.text

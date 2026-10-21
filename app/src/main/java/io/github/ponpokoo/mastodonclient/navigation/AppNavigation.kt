@@ -59,6 +59,9 @@ import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
 import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesLoader
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoriteUpdater
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesSessionKey
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelFactory
 import io.github.ponpokoo.mastodonclient.feature.common.StatusInteractionsViewModel
@@ -334,6 +337,14 @@ fun AppNavigation(
     }
     val loadReactionHistory: suspend () -> List<String> = { interactions?.loadReactionHistory().orEmpty() }
     val saveReactionHistory: suspend (List<String>) -> Unit = { interactions?.saveReactionHistory(it); Unit }
+    val favoritesSessionId = readingSession?.sessionId.orEmpty()
+    val loadEmojiFavorites: suspend () -> List<String> = remember(interactions, mediaSessionKey, favoritesSessionId) {
+        { interactions?.loadEmojiFavorites(favoritesSessionId).orEmpty() }
+    }
+    val updateEmojiFavorite: suspend (String, Boolean) -> List<String> = remember(interactions, mediaSessionKey, favoritesSessionId) {
+        { emoji, favorite -> interactions?.setEmojiFavorite(favoritesSessionId, emoji, favorite)
+            ?: error("お気に入りを保存できませんでした") }
+    }
     MediaTransitionHost(mediaMotion, mediaSessionKey, currentBackStackEntry?.id,
         sessionReady = (mediaSnapshot?.generation ?: 0) > 0 || currentBackStackEntry?.destination?.hasRoute<Route.Login>() == true) {
     CompositionLocalProvider(
@@ -348,6 +359,9 @@ fun AppNavigation(
         LocalCustomReactionEmojiLoader provides loadCustomReactionEmojis,
         LocalReactionHistoryLoader provides loadReactionHistory,
         LocalReactionHistorySaver provides saveReactionHistory,
+        LocalEmojiFavoritesLoader provides loadEmojiFavorites,
+        LocalEmojiFavoriteUpdater provides updateEmojiFavorite,
+        LocalEmojiFavoritesSessionKey provides mediaSessionKey.orEmpty(),
     ) {
     val initialRoute = startupRoute
     if (initialRoute == null) {

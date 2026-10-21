@@ -540,7 +540,7 @@ private fun StatusAction.label() = when (this) {
 private fun ComposerAction.label() = when (this) {
     ComposerAction.Media -> "画像・動画"
     ComposerAction.Poll -> "アンケート"
-    ComposerAction.Emoji -> "絵文字"
+    ComposerAction.Emoji -> "リアクション"
     ComposerAction.ContentWarning -> "内容警告(CW)"
     ComposerAction.Mention -> "メンション（@）"
     ComposerAction.Language -> "投稿の言語"
