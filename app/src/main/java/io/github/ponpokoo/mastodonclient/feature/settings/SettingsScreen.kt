@@ -99,6 +99,7 @@ internal fun SettingsPageContent(
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
+    var fabResetMessage by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val updateDisplay = { value: io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences ->
         scope.launch { store.setTimelineDisplay(value) }
@@ -216,6 +217,23 @@ internal fun SettingsPageContent(
                         onClick = { updateDisplay(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences()) },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     ) { Text("表示設定を初期値に戻す") }
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    store.resetFabPosition()
+                                    fabResetMessage = "投稿ボタンの位置をリセットしました"
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    android.util.Log.w("ComposeFab", "Could not reset FAB position")
+                                    fabResetMessage = "投稿ボタンの位置をリセットできませんでした"
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    ) { Text("投稿ボタンの位置をリセット") }
+                    fabResetMessage?.let { Text(it, modifier = Modifier.padding(horizontal = 20.dp)) }
                 }
 
             }

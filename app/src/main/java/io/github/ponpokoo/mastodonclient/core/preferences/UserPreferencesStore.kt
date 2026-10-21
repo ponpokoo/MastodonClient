@@ -82,6 +82,7 @@ data class AccountPreferences(
 
 @Serializable
 data class AppPreferences(
+    val fabPosition: FabPosition? = null,
     val themeMode: ThemeMode = ThemeMode.System,
     val openLinksInApp: Boolean = true,
     val timelineDisplay: TimelineDisplayPreferences = TimelineDisplayPreferences(),
@@ -137,7 +138,7 @@ class UserPreferencesStore(
     private val dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>,
     private val json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false },
     private val isAccountPresent: suspend (String) -> Boolean = { true },
-) {
+) : FabPositionStore {
     constructor(context: Context, json: Json = Json { ignoreUnknownKeys = true; explicitNulls = false }) :
         this(context.applicationContext.userPreferencesDataStore, json, { id ->
             io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore(context).getSessions().any { it.sessionId == id }
@@ -157,6 +158,15 @@ class UserPreferencesStore(
     }
 
     val openLinksInApp: Flow<Boolean> = preferences.map { it.openLinksInApp }
+
+    override val fabPosition: Flow<FabPosition?> = preferences.map { it.fabPosition?.normalized() }
+
+    override suspend fun setFabPosition(position: FabPosition) {
+        val safe = requireNotNull(position.normalized()) { "FAB position must be finite" }
+        update { it.copy(fabPosition = safe) }
+    }
+
+    override suspend fun resetFabPosition() = update { it.copy(fabPosition = null) }
 
     suspend fun editWordMutes(sessionId: String, transform: (List<String>) -> List<String>) = update(sessionId) {
         it.copy(wordMutes = it.wordMutes + (sessionId to transform(it.wordMutes[sessionId].orEmpty())))

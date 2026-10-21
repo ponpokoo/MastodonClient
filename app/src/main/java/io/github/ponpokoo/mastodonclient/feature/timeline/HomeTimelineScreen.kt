@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
-import io.github.ponpokoo.mastodonclient.feature.media.mediaComposeButton
+import io.github.ponpokoo.mastodonclient.feature.timeline.components.DraggableComposeFab
+import io.github.ponpokoo.mastodonclient.core.preferences.FabPositionStore
 import io.github.ponpokoo.mastodonclient.feature.media.LocalMediaSourceIsHome
 import io.github.ponpokoo.mastodonclient.feature.media.mediaContentInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -65,7 +66,6 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -151,6 +151,7 @@ fun HomeTimelineScreen(
     notificationsViewModel: NotificationsViewModel,
     profileViewModel: ProfileViewModel,
     actionsViewModel: StatusActionsViewModel,
+    fabPositionStore: FabPositionStore,
     notificationOpenRequest: NotificationOpenRequest? = null,
     onNotificationOpenHandled: (NotificationOpenRequest) -> Unit = {},
     onLoggedOut: () -> Unit,
@@ -478,18 +479,6 @@ fun HomeTimelineScreen(
                 }
             }
         },
-        floatingActionButton = {
-            if (destination == MainDestination.Home) {
-                FloatingActionButton(
-                    modifier = Modifier.mediaComposeButton(),
-                    onClick = { onCompose(null) },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(20.dp),
-                ) {
-                    Icon(Icons.Outlined.Edit, contentDescription = "新規投稿")
-                }
-            }
-        },
         snackbarHost = {},
     ) { padding ->
         val measuredPadding = PaddingValues(
@@ -497,6 +486,7 @@ fun HomeTimelineScreen(
             end = padding.calculateEndPadding(layoutDirection), bottom = padding.calculateBottomPadding(),
         )
         SideEffect { savedPagePadding[destination] = measuredPadding }
+        Box(Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -633,6 +623,13 @@ fun HomeTimelineScreen(
                 )
             }
             }
+        }
+        DraggableComposeFab(
+            store = fabPositionStore,
+            onCompose = { onCompose(null) },
+            visible = destination == MainDestination.Home,
+            modifier = Modifier.fillMaxSize().padding(padding),
+        )
         }
     }
         val newPostMessage = when {

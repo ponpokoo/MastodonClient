@@ -14,6 +14,7 @@ import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Density
@@ -104,6 +106,37 @@ class StatusCollapseDeviceTest {
         assertEquals("Expanded choice must survive width/font changes", Int.MAX_VALUE, changed.layoutInput.maxLines)
         assertTrue("lines=${changed.lineCount}, fontScale=${changed.layoutInput.density.fontScale}, font=${changed.layoutInput.style.fontSize}, width=${changed.layoutInput.constraints.maxWidth}", changed.lineCount > 12)
         rule.onNodeWithText("閉じる").assertExists()
+    }
+
+    @Test fun toggleHighlightsOnlyLabelWhilePaddingStillOpensAndCloses() {
+        rule.setContent { MaterialTheme { Column(Modifier.width(280.dp)) { Body(lines(13)) } } }
+        for (label in listOf("続きを読む", "閉じる")) {
+            val button = rule.onNodeWithTag("status_body_toggle")
+            val bounds = button.fetchSemanticsNode().boundsInRoot
+            val textBounds = rule.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            assertTrue(textBounds.height < bounds.height)
+            val before = button.captureToImage().toPixelMap()
+            rule.mainClock.autoAdvance = false
+            try {
+                button.performTouchInput { down(center) }
+                rule.mainClock.advanceTimeByFrame()
+                val pressed = button.captureToImage().toPixelMap()
+                var changedPixels = 0
+                for (y in 0 until before.height) for (x in 0 until before.width) {
+                    if (before[x, y] != pressed[x, y]) {
+                        changedPixels++
+                        val point = Offset(bounds.left + x + .5f, bounds.top + y + .5f)
+                        assertTrue("Highlight escaped label: $point / $textBounds", textBounds.inflate(1f).contains(point))
+                    }
+                }
+                assertTrue("Press feedback missing for $label", changedPixels > 0)
+                button.performTouchInput { cancel() }
+                rule.mainClock.advanceTimeByFrame()
+            } finally { rule.mainClock.autoAdvance = true }
+            // This is outside the text highlight but inside the original generous touch area.
+            button.performTouchInput { click(Offset(1f, 1f)) }
+            rule.onNodeWithText(if (label == "続きを読む") "閉じる" else "続きを読む").assertExists()
+        }
     }
 
     @Test fun visibleLinksStillOpenButEllipsisCannotOpenHiddenLink() {

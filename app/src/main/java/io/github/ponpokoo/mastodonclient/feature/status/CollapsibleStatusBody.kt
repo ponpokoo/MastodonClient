@@ -1,14 +1,19 @@
 package io.github.ponpokoo.mastodonclient.feature.status
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -19,10 +24,13 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -73,22 +81,33 @@ internal fun CollapsibleStatusBody(
         // Only a change across the boundary invalidates measurement, never body composition.
         // This also handles font/emoji remeasurement with unchanged outer constraints.
         val toggle = if (!overflowing.value) null else subcompose("toggle") {
-            TextButton(
-                onClick = {
-                    if (!expanded) expanded = true else scope.launch {
-                        // Bring the start back before shrinking a row that fills the viewport.
-                        // The standard parent scroll cancels when the user takes over.
-                        requester.bringIntoView(Rect(0f, 0f, 1f, 1f))
-                        expanded = false
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            val focused by interaction.collectIsFocusedAsState()
+            Box(
+                modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).widthIn(min = 48.dp)
+                    .clickable(interactionSource = interaction, indication = null, role = Role.Button) {
+                        if (!expanded) expanded = true else scope.launch {
+                            // Bring the start back before shrinking a row that fills the viewport.
+                            // The standard parent scroll cancels when the user takes over.
+                            requester.bringIntoView(Rect(0f, 0f, 1f, 1f))
+                            expanded = false
+                        }
                     }
-                },
-                modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp)
                     .testTag("status_body_toggle").semantics {
                         stateDescription = if (expanded) "本文を展開中" else "本文を省略中"
-                    },
-                contentPadding = PaddingValues(horizontal = 12.dp),
+                    }.padding(horizontal = 12.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Text(if (expanded) "閉じる" else "続きを読む", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    if (expanded) "閉じる" else "続きを読む",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.background(
+                        if (pressed || focused) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else Color.Transparent,
+                        RoundedCornerShape(3.dp),
+                    ),
+                )
             }
         }.single().measure(loose)
         layout(constraints.constrainWidth(maxOf(body.width, toggle?.width ?: 0)),

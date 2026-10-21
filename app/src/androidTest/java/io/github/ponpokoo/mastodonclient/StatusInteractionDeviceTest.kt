@@ -41,6 +41,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
@@ -167,6 +168,76 @@ class StatusInteractionDeviceTest {
         composeRule.onNodeWithContentDescription("リアクション").assertExists()
         composeRule.runOnIdle { display.value = display.value.copy(showReactions = true) }
         composeRule.onNodeWithTag("displayed_reaction").assertExists()
+    }
+
+    @Test
+    fun pressingActionCountHighlightsOnlyTheIconAndCancelClearsIt() {
+        val theme = mutableStateOf(ThemeMode.Light)
+        val favourites = AtomicInteger()
+        showContent {
+            MastodonClientTheme(themeMode = theme.value) {
+                Surface {
+                    StatusCard(
+                        status = status().copy(favouritesCount = 12),
+                        onStatusClick = null,
+                        onFavourite = { favourites.incrementAndGet() },
+                        onUnavailableAction = {},
+                    )
+                }
+            }
+        }
+
+        for ((index, mode) in listOf(ThemeMode.Light, ThemeMode.Dark).withIndex()) {
+            composeRule.runOnIdle { theme.value = mode }
+            val action = composeRule.onNodeWithContentDescription("お気に入り")
+            val count = composeRule.onNodeWithText("12", useUnmergedTree = true)
+            val before = action.captureToImage().toPixelMap()
+            val countBefore = count.captureToImage().toPixelMap()
+            composeRule.mainClock.autoAdvance = false
+            try {
+                // The count remains part of the button, but must not receive its highlight.
+                count.performTouchInput { down(center) }
+                composeRule.mainClock.advanceTimeByFrame()
+                val image = action.captureToImage()
+                val pressed = image.toPixelMap()
+                val changed = (0 until before.width).flatMap { x ->
+                    (0 until before.height).filter { y -> before[x, y] != pressed[x, y] }.map { y -> x to y }
+                }
+                assertTrue("Pressing the count must highlight the icon in $mode", changed.isNotEmpty())
+                val left = changed.minOf { it.first }
+                val right = changed.maxOf { it.first }
+                val top = changed.minOf { it.second }
+                val bottom = changed.maxOf { it.second }
+                assertTrue("Highlight must stay circular in $mode",
+                    kotlin.math.abs((right - left) - (bottom - top)) <= 2)
+                for (x in listOf(left, right)) {
+                    for (y in listOf(top, bottom)) {
+                        assertEquals("Circle corners must stay clear in $mode", before[x, y], pressed[x, y])
+                    }
+                }
+                val countPressed = count.captureToImage().toPixelMap()
+                assertTrue("Count must stay outside the highlight in $mode",
+                    (0 until countBefore.width).all { x ->
+                        (0 until countBefore.height).all { y -> countBefore[x, y] == countPressed[x, y] }
+                    })
+                File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),
+                    "status-action-pressed-${mode.name.lowercase()}.png").outputStream().use {
+                    image.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                count.performTouchInput { cancel() }
+                composeRule.mainClock.advanceTimeByFrame()
+                val canceled = action.captureToImage().toPixelMap()
+                assertTrue("Cancel must clear the highlight in $mode",
+                    (0 until before.width).all { x ->
+                        (0 until before.height).all { y -> before[x, y] == canceled[x, y] }
+                    })
+                composeRule.runOnIdle { assertEquals(index, favourites.get()) }
+            } finally {
+                composeRule.mainClock.autoAdvance = true
+            }
+            count.performTouchInput { click() }
+            composeRule.runOnIdle { assertEquals(index + 1, favourites.get()) }
+        }
     }
 
     @Test

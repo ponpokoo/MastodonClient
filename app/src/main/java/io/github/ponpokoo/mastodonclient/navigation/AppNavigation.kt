@@ -437,6 +437,7 @@ fun AppNavigation(
                 StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
             })
             HomeTimelineScreen(
+                fabPositionStore = preferences,
                 viewModel = timelineViewModel,
                 mainViewModel = mainViewModel,
                 searchViewModel = searchViewModel,

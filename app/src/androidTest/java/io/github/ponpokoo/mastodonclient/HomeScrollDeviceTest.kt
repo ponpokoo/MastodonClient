@@ -389,6 +389,11 @@ class HomeScrollDeviceTest {
                 MaterialTheme {
                     val home: @Composable () -> Unit = {
                     HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
+                        fabPositionStore = object : io.github.ponpokoo.mastodonclient.core.preferences.FabPositionStore {
+                            override val fabPosition = kotlinx.coroutines.flow.flowOf<io.github.ponpokoo.mastodonclient.core.preferences.FabPosition?>(null)
+                            override suspend fun setFabPosition(position: io.github.ponpokoo.mastodonclient.core.preferences.FabPosition) = Unit
+                            override suspend fun resetFabPosition() = Unit
+                        },
                         onLoggedOut = {}, onStatusClick = {}, onCompose = {}, onQuote = { _, _ -> },
                         onOpenLink = {}, openLinksInApp = true, onOpenLinksInAppChange = {},
                         onAccountClick = {}, onMediaClick = { media, index -> motion?.open(media, index, "test", "timeline") }, onSettings = {}, onFollowers = {},

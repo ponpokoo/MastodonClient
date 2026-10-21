@@ -14,6 +14,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
@@ -991,15 +993,19 @@ private fun StatusActionButton(
         ActionIconSize.Large -> 24.dp
     }
     val displayedCount = count?.takeIf { preferences.showCounts && it > 0 }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
     @OptIn(ExperimentalFoundationApi::class)
     Row(
         modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 48.dp)
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
                 enabled = enabled,
                 role = Role.Button,
                 onClick = onClick,
                 onLongClick = onLongClick,
-            ).padding(horizontal = 4.dp),
+            ),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1020,7 +1026,16 @@ private fun StatusActionButton(
                 }
             }
         }
-        ButtonIcon()
+        Box(
+            modifier = Modifier.size(40.dp).background(
+                color = if (enabled && pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                    else Color.Transparent,
+                shape = CircleShape,
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            ButtonIcon()
+        }
         if (displayedCount != null) {
             Spacer(Modifier.width(4.dp))
             Text(
