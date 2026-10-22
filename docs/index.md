@@ -32,7 +32,7 @@
 | [ライセンスと第三者通知](third-party-licenses.md) | アプリ内のライセンス表示、Apache 2.0適用範囲、Release依存の収録内容と再生成・公開前確認を参照する |
 | [更新・リリース計画](release-plan.md) | 2.5.7／27のAAB配布候補の対象範囲、配布前の確認、今後の候補、Play配布と内部ノートの記録手順を確認する |
 | [内部リリースノートの保管](release-plan.md#内部リリースノートの保管) | Git管理外のノートへ成果物・確認結果・公開状況をまとめ、バックアップする方法を確認する |
-| [Google Play公開までのワークフロー](google-play-publication-workflow.md) | 公開準備、必要な文書・申告、Play配布版の確認、限定テストと一般公開の判断を確認する |
+| [Google Play提出・公開・更新のワークフロー](google-play-publication-workflow.md) | クローズドテスト中の更新、変更に応じた確認、正式公開への移行と公開後の運用を確認する |
 | [公開ポリシーと問い合わせ窓口](https://ponpokoo.github.io/nagisa-policy/) | プライバシー、利用規約、安全基準、削除案内と連絡先を確認する |
 | [GitHub Issues](https://github.com/ponpokoo/MastodonClient/issues) | 移行済みの継続確認・改善候補と対応の進捗を確認する |
 
