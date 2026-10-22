@@ -15,3 +15,12 @@ internal val ColorScheme.reactionSelectedOutline: Color
 
 internal val ColorScheme.onReactionSelectedContainer: Color
     get() = if (surface.luminance() < 0.5f) onPrimaryContainer else Color(0xFF4C4290)
+
+internal val ColorScheme.composeSubmitContainer: Color
+    get() = if (surface.luminance() < 0.5f) Color(0xFF516D8D) else Color(0xFFC3C5FA)
+
+internal val ColorScheme.onComposeSubmitContainer: Color
+    get() = if (surface.luminance() < 0.5f) Color(0xFFEEF4FF) else Color(0xFF2E2D66)
+
+internal val ColorScheme.composeSubmitPressedContainer: Color
+    get() = if (surface.luminance() < 0.5f) Color(0xFF2A405B) else Color(0xFFAAAFE8)

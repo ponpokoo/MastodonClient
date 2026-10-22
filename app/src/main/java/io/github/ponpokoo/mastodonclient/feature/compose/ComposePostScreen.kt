@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -57,7 +58,8 @@ import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.AlternateEmail
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -65,6 +67,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -86,6 +89,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -130,6 +134,9 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
+import io.github.ponpokoo.mastodonclient.ui.theme.composeSubmitContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.composeSubmitPressedContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.onComposeSubmitContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.core.text.HtmlCompat
 import androidx.core.net.toUri
@@ -357,17 +364,42 @@ fun ComposePostScreen(
                             }
                         }
                     }
-                    Button(
-                        onClick = viewModel::post,
-                        enabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) &&
-                            !state.isPosting && !state.isSavingDraft && !state.isImportingMedia && !state.isLoading,
-                        modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
-                    ) {
-                        if (state.isPosting || state.isImportingMedia) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else {
-                            Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (isEditing) "更新" else if (isReply) "返信" else if (state.quoteStatusId != null) "引用" else "投稿")
+                    val submitEnabled = (state.text.isNotBlank() || state.attachments.isNotEmpty()) &&
+                        !state.isPosting && !state.isSavingDraft && !state.isImportingMedia && !state.isLoading
+                    val submitInteractionSource = remember { MutableInteractionSource() }
+                    val submitPressed by submitInteractionSource.collectIsPressedAsState()
+                    val submitContainer by animateColorAsState(
+                        targetValue = if (submitEnabled && submitPressed) {
+                            MaterialTheme.colorScheme.composeSubmitPressedContainer
+                        } else {
+                            MaterialTheme.colorScheme.composeSubmitContainer
+                        },
+                        animationSpec = tween(100),
+                        label = "composeSubmitContainer",
+                    )
+                    CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                        ElevatedButton(
+                            onClick = viewModel::post,
+                            enabled = submitEnabled,
+                            modifier = Modifier.height(44.dp).padding(start = 4.dp).testTag("compose_submit"),
+                            colors = ButtonDefaults.elevatedButtonColors(
+                                containerColor = submitContainer,
+                                contentColor = MaterialTheme.colorScheme.onComposeSubmitContainer,
+                            ),
+                            elevation = ButtonDefaults.elevatedButtonElevation(
+                                defaultElevation = 6.dp,
+                                pressedElevation = 0.dp,
+                                focusedElevation = 6.dp,
+                                hoveredElevation = 6.dp,
+                            ),
+                            interactionSource = submitInteractionSource,
+                        ) {
+                            if (state.isPosting || state.isImportingMedia) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else {
+                                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null, Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isEditing) "更新" else if (isReply) "返信" else if (state.quoteStatusId != null) "引用" else "投稿")
+                            }
                         }
                     }
                 }
