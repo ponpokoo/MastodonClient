@@ -100,6 +100,8 @@ class NotificationsViewModel(
         state.withModeration(moderation, account)
     }
     private val pageJobs = mutableMapOf<NotificationCategory, Job>()
+    private data class PendingRefresh(val pull: Boolean, val keepHighlights: Boolean)
+    private val pendingRefreshes = mutableMapOf<NotificationCategory, PendingRefresh>()
     private val cacheJobs = mutableMapOf<NotificationCategory, Job>()
     private val restoredCategories = mutableSetOf<NotificationCategory>()
     private val requestedCategories = mutableSetOf<NotificationCategory>()
@@ -111,6 +113,8 @@ class NotificationsViewModel(
     private var readWriteJob: Job? = null
     private var markerWriteJob: Job? = null
     private var readState = NotificationReadState()
+    private var initialReadState = NotificationReadState()
+    private var allowInitialHighlights = true
     private var markerId: String? = null
     private var initialAllPage = emptyList<TimelineNotification>()
     private var waitingAllMarkerId: String? = null
@@ -119,17 +123,19 @@ class NotificationsViewModel(
     private var reactionPullRefreshRequested = false
     private var nextRefreshResultId = 0L
     private var nextShownNoticeId = 0L
+    private var hasObservedStart = false
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         val selected = _uiState.value.selectedCategory
         _uiState.value = NotificationsUiState(selectedCategory = selected)
-        pageJobs.clear(); cacheJobs.clear(); restoredCategories.clear()
+        pageJobs.clear(); pendingRefreshes.clear(); cacheJobs.clear(); restoredCategories.clear()
         cacheReady = CompletableDeferred()
         readJob = null; capabilityJob = null; readWriteJob = null; markerWriteJob = null
         capabilityCheckRequested = false
         capabilityCheckedAt = 0L
         readState = NotificationReadState(); markerId = null; initialAllPage = emptyList()
+        initialReadState = NotificationReadState(); allowInitialHighlights = true
         waitingAllMarkerId = null; lastSentMarkerId = null
         reactionRefreshRequested = false; reactionPullRefreshRequested = false
         snapshot.account?.let { account ->
@@ -147,6 +153,9 @@ class NotificationsViewModel(
                 }
             }
             checkCapabilities()
+            // Warm the default list and read state while the home tab is visible.
+            // Only displayed rows acknowledge notifications.
+            requestedCategories += NotificationCategory.All
         }
         if (requestedCategories.isNotEmpty() && snapshot.account != null) {
             requestedCategories.toList().forEach { loadCategory(it) }
@@ -176,6 +185,8 @@ class NotificationsViewModel(
             }
             val cached = timelineRepository.getCachedNotifications(session).forSession(snapshot).getOrNull()
             markerId = cached?.lastReadId
+            // Keep the pre-display boundary even if rows are acknowledged before the remote marker arrives.
+            initialReadState = cached?.readState ?: NotificationReadState()
             readState = NotificationReadState((readState.viewedIds + cached?.readState?.viewedIds.orEmpty()).distinct().take(1000),
                 readState.latestViewedAllId ?: cached?.readState?.latestViewedAllId)
             _uiState.update { it.copy(pendingNewNotificationIds = it.pendingNewNotificationIds - readState.viewedIds.toSet(),
@@ -231,7 +242,8 @@ class NotificationsViewModel(
         }
     }
 
-    private fun loadCategory(category: NotificationCategory, force: Boolean = false, showPullRefreshIndicator: Boolean = false) {
+    private fun loadCategory(category: NotificationCategory, force: Boolean = false, showPullRefreshIndicator: Boolean = false,
+        keepHighlights: Boolean = false) {
         requestedCategories += category
         val snapshot = currentSnapshot() ?: return
         ensureReadState(snapshot)
@@ -244,7 +256,18 @@ class NotificationsViewModel(
             return
         }
         val before = _uiState.value.list(category)
-        if (before.isLoading || !force && before.isLoaded) return
+        if (before.isLoading) {
+            if (force) {
+                // A notification tap or foreground return may arrive after this request's
+                // server snapshot. Coalesce these triggers, then fetch once more.
+                val pending = pendingRefreshes[category]
+                pendingRefreshes[category] = PendingRefresh(pending?.pull == true || showPullRefreshIndicator,
+                    (pending?.keepHighlights ?: true) && keepHighlights)
+                if (showPullRefreshIndicator) updateList(category) { it.copy(isRefreshing = true) }
+            }
+            return
+        }
+        if (!force && before.isLoaded) return
         val initial = !before.isLoaded
         if (initial || force) requestScope.launch {
             io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable { pushSync?.recover(snapshot.account!!.sessionId, false) }
@@ -281,7 +304,8 @@ class NotificationsViewModel(
                     if (initial || !_uiState.value.isReadStateReady) { initialAllPage = page.notifications; applyInitialUnread() }
                     else addUnread(beforeBoundary(page.notifications, boundary))
                     val streamed = _uiState.value.pendingNewNotificationIds - pendingAtStart
-                    _uiState.update { it.copy(highlightedNotificationIds = it.pendingNewNotificationIds + streamed,
+                    _uiState.update { it.copy(highlightedNotificationIds = it.pendingNewNotificationIds + streamed +
+                        (if (keepHighlights) it.highlightedNotificationIds else emptySet()),
                         refreshResult = NotificationsRefreshResult(++nextRefreshResultId, it.pendingNewNotificationIds.isNotEmpty())) }
                 }
                 persistNotifications(snapshot, category)
@@ -290,6 +314,9 @@ class NotificationsViewModel(
                     "もう一度ログインして、必要な権限を許可してください。"
                 else error.message ?: "通知を取得できませんでした"
                 updateList(category) { it.copy(isLoading = false, isRefreshing = false, error = message) }
+            }
+            pendingRefreshes.remove(category)?.let { refresh ->
+                loadCategory(category, force = true, showPullRefreshIndicator = refresh.pull, keepHighlights = refresh.keepHighlights)
             }
         }
     }
@@ -302,11 +329,15 @@ class NotificationsViewModel(
 
     private fun applyInitialUnread() {
         if (!_uiState.value.isReadStateReady) return
-        val local = readState.latestViewedAllId
+        val local = initialReadState.latestViewedAllId
         val localIndex = initialAllPage.indexOfFirst { it.id == local }
         val remoteIndex = initialAllPage.indexOfFirst { it.id == markerId }
         val boundary = if (local == null) markerId else if (localIndex >= 0 && remoteIndex in 0 until localIndex) markerId else local
-        addUnread(beforeBoundary(initialAllPage, boundary))
+        val initiallyNew = beforeBoundary(initialAllPage, boundary) - initialReadState.viewedIds.toSet()
+        addUnread(initiallyNew)
+        if (allowInitialHighlights) _uiState.update {
+            it.copy(highlightedNotificationIds = it.highlightedNotificationIds + initiallyNew)
+        }
     }
 
     private fun addUnread(ids: Set<String>) {
@@ -315,17 +346,26 @@ class NotificationsViewModel(
             highlightedNotificationIds = it.highlightedNotificationIds + confirmed) }
     }
 
-    fun onNotificationsVisible() = loadNotifications()
+    fun onNotificationsVisible() = loadCategory(_uiState.value.selectedCategory, force = true, keepHighlights = true)
+    fun onLifecycleStarted() {
+        // Keep this across observer reattachment: navigation or Activity recreation must
+        // still refresh an existing list. Only the first start uses session prefetch alone.
+        if (hasObservedStart) onAppForeground()
+        hasObservedStart = true
+    }
     fun onAppForeground() {
         if (requestedCategories.isNotEmpty()) {
             requestedCategories.toList().forEach { loadCategory(it, force = true) }
         }
     }
-    fun onSystemNotificationOpened() { selectCategory(NotificationCategory.All); loadCategory(NotificationCategory.All, force = true) }
+    fun onSystemNotificationOpened() { selectCategory(NotificationCategory.All); loadCategory(NotificationCategory.All, force = true, keepHighlights = true) }
     fun refreshNotifications() {
         loadNotifications(force = true, showPullRefreshIndicator = true)
     }
-    fun onNotificationsHidden() { _uiState.update { it.copy(highlightedNotificationIds = emptySet(), shownNewNotice = null) } }
+    fun onNotificationsHidden() {
+        allowInitialHighlights = false
+        _uiState.update { it.copy(highlightedNotificationIds = emptySet(), shownNewNotice = null) }
+    }
 
     fun onLatestNotificationsShown(shownIds: Set<String>, allNotificationsShown: Boolean) {
         val snapshot = currentSnapshot() ?: return

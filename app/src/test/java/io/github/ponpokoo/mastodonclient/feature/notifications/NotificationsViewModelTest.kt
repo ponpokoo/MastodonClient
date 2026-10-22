@@ -4,12 +4,15 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
@@ -161,14 +164,14 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
             }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
+        val startedAt = currentTime
         val viewModel = own(NotificationsViewModel(repository, browsing))
         advanceUntilIdle()
 
-        val startedAt = currentTime
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
 
-        assertEquals(1_000L, currentTime - startedAt)
+        assertEquals(2_000L, currentTime - startedAt)
         assertEquals(listOf("new", "old"), viewModel.uiState.value.notifications.map(TimelineNotification::id))
         assertEquals(setOf("new"), viewModel.uiState.value.pendingNewNotificationIds)
         assertFalse(viewModel.uiState.value.isLoadingNotifications)
@@ -212,14 +215,14 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
     }
     @Test fun readDismissalUsesLoadedFilterIdsAndAccountEvenWithoutUnreadMarker() = runTest(dispatcher) {
         val dismissed = mutableListOf<Pair<String, Set<String>>>()
+        val response = CompletableDeferred<Result<NotificationPage>>()
         val system = object : io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository {
             override suspend fun show(session: AccountSession, notification: TimelineNotification, isCurrent: () -> Boolean) = Unit
             override suspend fun dismissForAccount(sessionId: String) = error("Must not dismiss an entire account")
             override suspend fun dismissRead(sessionId: String, notificationIds: Set<String>) { dismissed += sessionId to notificationIds }
         }
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
-                Result.success(NotificationPage(listOf(testNotification("read"), testNotification("unread")), null, true))
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = response.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
         val viewModel = own(NotificationsViewModel(repository, browsing, system))
@@ -230,6 +233,8 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
         assertTrue(dismissed.isEmpty())
+        response.complete(Result.success(NotificationPage(listOf(testNotification("read"), testNotification("unread")), null, true)))
+        advanceUntilIdle()
         viewModel.onLatestNotificationsShown(setOf("read", "unknown"), false)
         advanceUntilIdle()
         assertEquals(listOf(testAccount.sessionId to setOf("read")), dismissed)
@@ -258,8 +263,10 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
 
     @Test fun manualRefreshShowsPullRefreshIndicatorUntilRequestCompletes() = runTest(dispatcher) {
         val delayed = CompletableDeferred<Result<NotificationPage>>()
+        var requests = 0
         val repository = object : ScreenRepositoryFake() {
-            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) = delayed.await()
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                if (++requests == 1) Result.success(NotificationPage(listOf(testNotification()), null, true)) else delayed.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
         val viewModel = own(NotificationsViewModel(repository, browsing))
@@ -274,7 +281,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
     }
 
-    @Test fun returningToTheTabKeepsLoadedListAndStreamedNotificationsWithoutFetching() = runTest(dispatcher) {
+    @Test fun returningToTheTabRefreshesAndKeepsLoadedListAndStreamedNotifications() = runTest(dispatcher) {
         var requests = 0
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
@@ -296,15 +303,15 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
 
-        assertEquals(1, requests)
+        assertEquals(3, requests)
         assertEquals(
-            listOf("live", "notification-1"),
+            listOf("live", "notification-3", "notification-2", "notification-1"),
             viewModel.uiState.value.notifications.map(TimelineNotification::id),
         )
         assertEquals(setOf("live"), viewModel.uiState.value.pendingNewNotificationIds)
     }
 
-    @Test fun foregroundReturnAndSystemNotificationOpenRefreshOnlyAfterTheListIsRequested() = runTest(dispatcher) {
+    @Test fun foregroundReturnAndSystemNotificationOpenRefreshThePrefetchedList() = runTest(dispatcher) {
         var requests = 0
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
@@ -314,30 +321,31 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         }
         val viewModel = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
         advanceUntilIdle()
-        viewModel.onAppForeground()
+        viewModel.onLifecycleStarted()
         advanceUntilIdle()
-        assertEquals(0, requests)
+        assertEquals(1, requests)
 
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        assertEquals(1, requests)
-        viewModel.onNotificationsHidden()
-        viewModel.onAppForeground()
-        advanceUntilIdle()
         assertEquals(2, requests)
+        viewModel.onNotificationsHidden()
+        viewModel.onLifecycleStarted()
+        advanceUntilIdle()
+        assertEquals(3, requests)
         assertFalse(viewModel.uiState.value.isPullRefreshingNotifications)
 
         viewModel.onSystemNotificationOpened()
         advanceUntilIdle()
-        assertEquals(3, requests)
+        assertEquals(4, requests)
         viewModel.onNotificationsVisible()
         advanceUntilIdle()
-        assertEquals(3, requests)
-        assertEquals(listOf("notification-3", "notification-2", "notification-1"),
+        assertEquals(5, requests)
+        assertEquals(listOf("notification-5", "notification-4", "notification-3", "notification-2", "notification-1"),
             viewModel.uiState.value.notifications.map { it.id })
     }
 
     @Test fun failedInitialFetchCanRetryWhenTheTabIsOpenedAgain() = runTest(dispatcher) {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         var requests = 0
         val repository = object : ScreenRepositoryFake() {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> =
@@ -346,9 +354,8 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         }
         val viewModel = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
         advanceUntilIdle()
-        viewModel.onNotificationsVisible()
-        advanceUntilIdle()
         assertEquals("offline", viewModel.uiState.value.notificationsError)
+        assertEquals(1, requests)
 
         viewModel.onNotificationsHidden()
         viewModel.onNotificationsVisible()
@@ -494,7 +501,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         val browsing = BrowsingSession().apply { activate(testAccount) }
         val viewModel = own(NotificationsViewModel(repository, browsing))
         advanceUntilIdle()
-        val event = BrowsingSession.Change.Stream(TimelineStreamEvent.NotificationReceived(testNotification()))
+        val event = BrowsingSession.Change.Stream(TimelineStreamEvent.NotificationReceived(testNotification("live")))
         repeat(2) { browsing.publish(browsing.snapshot.value, event) }
         advanceUntilIdle()
         assertEquals(1, viewModel.uiState.value.unreadNotifications)
@@ -502,7 +509,7 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         assertEquals(1, viewModel.uiState.value.unreadNotifications)
         assertTrue(repository.markers.isEmpty())
-        viewModel.onLatestNotificationsShown(setOf("notification"), allNotificationsShown = true)
+        viewModel.onLatestNotificationsShown(setOf("live"), allNotificationsShown = true)
         advanceUntilIdle()
         assertEquals(0, viewModel.uiState.value.unreadNotifications)
         assertEquals(1, repository.markers.size)
@@ -533,6 +540,10 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         assertEquals(0, viewModel.uiState.value.unreadNotifications)
         assertEquals(1, viewModel.uiState.value.shownNewNotice?.count)
         assertEquals(listOf("one" to "new"), repository.markers)
+        assertEquals(setOf("new"), viewModel.uiState.value.highlightedNotificationIds)
+        viewModel.refreshNotifications()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.highlightedNotificationIds.isEmpty())
     }
 
     @Test fun failedRefreshPreservesUnreadAndHighlightUntilTheTabIsLeft() = runTest(dispatcher) {

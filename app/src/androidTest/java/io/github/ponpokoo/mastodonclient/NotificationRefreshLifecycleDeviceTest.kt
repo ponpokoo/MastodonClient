@@ -55,7 +55,7 @@ class NotificationRefreshLifecycleDeviceTest {
             override suspend fun cacheNotifications(session: AccountSession, notifications: List<TimelineNotification>) = Result.success(Unit)
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
                 val number = requests.incrementAndGet()
-                return if (number == 2) manual.await() else Result.success(page("notification-$number"))
+                return if (number == 4) manual.await() else Result.success(page("notification-$number"))
             }
         }
         lateinit var viewModel: NotificationsViewModel
@@ -86,22 +86,26 @@ class NotificationRefreshLifecycleDeviceTest {
                     ) else Text("ホームを表示中")
                 }
             } } }
-            rule.runOnIdle { assertEquals(0, requests.get()) }
-            rule.onNodeWithText("通知タブ").performClick()
             rule.waitUntil(5_000) { viewModel.uiState.value.isInitialPageLoaded }
-            rule.runOnIdle { assertEquals(1, requests.get()) }
+            rule.onNodeWithText("ホームを表示中").assertIsDisplayed()
+            rule.runOnIdle {
+                assertEquals(1, requests.get())
+                assertEquals("notification-1", viewModel.uiState.value.notifications.first().id)
+            }
+            rule.onNodeWithText("通知タブ").performClick()
+            rule.onNodeWithTag("notifications_screen").assertIsDisplayed()
             rule.onNodeWithText("ホームタブ").performClick()
             rule.onNodeWithText("通知タブ").performClick()
-            rule.runOnIdle { assertEquals(1, requests.get()) }
+            rule.runOnIdle { assertEquals(3, requests.get()) }
 
             rule.onNodeWithTag("notifications_screen").performTouchInput {
                 swipe(start = Offset(centerX, height * 0.35f), end = Offset(centerX, height * 0.85f), durationMillis = 600)
             }
-            rule.waitUntil(5_000) { requests.get() == 2 }
+            rule.waitUntil(5_000) { requests.get() == 4 }
             rule.runOnIdle {
                 assertTrue(viewModel.uiState.value.isLoadingNotifications)
                 assertTrue(viewModel.uiState.value.isPullRefreshingNotifications)
-                manual.complete(Result.success(page("notification-2")))
+                manual.complete(Result.success(page("notification-4")))
             }
             rule.waitUntil(5_000) { !viewModel.uiState.value.isLoadingNotifications }
             rule.runOnIdle { assertFalse(viewModel.uiState.value.isPullRefreshingNotifications) }
@@ -109,10 +113,10 @@ class NotificationRefreshLifecycleDeviceTest {
             rule.onNodeWithText("ホームタブ").performClick()
             rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
             rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-            rule.waitUntil(5_000) { requests.get() == 3 && !viewModel.uiState.value.isLoadingNotifications }
-            rule.runOnIdle { assertEquals("notification-3", viewModel.uiState.value.notifications.first().id) }
+            rule.waitUntil(5_000) { requests.get() == 5 && !viewModel.uiState.value.isLoadingNotifications }
+            rule.runOnIdle { assertEquals("notification-5", viewModel.uiState.value.notifications.first().id) }
             rule.onNodeWithText("通知タブ").performClick()
-            rule.runOnIdle { assertEquals(3, requests.get()) }
+            rule.runOnIdle { assertEquals(6, requests.get()) }
         } finally { rule.runOnIdle { store.clear() } }
     }
 }

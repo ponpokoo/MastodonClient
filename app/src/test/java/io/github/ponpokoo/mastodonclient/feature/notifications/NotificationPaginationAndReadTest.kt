@@ -235,6 +235,7 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
         vm.selectCategory(NotificationCategory.Reactions); advanceUntilIdle()
         vm.selectCategory(NotificationCategory.All); vm.loadNextNotifications(); advanceUntilIdle()
         assertEquals(listOf(
+            Triple(NotificationCategory.All, null, 40),
             Triple(NotificationCategory.All, null, 40), Triple(NotificationCategory.Mentions, null, 40),
             Triple(NotificationCategory.Mentions, "Mentions-first", 40), Triple(NotificationCategory.Reactions, null, 40),
             Triple(NotificationCategory.All, "All-first", 40)), requests)
@@ -267,10 +268,10 @@ class NotificationPaginationAndReadTest : ScreenViewModelTestBase() {
                 vm.selectCategory(NotificationCategory.Reactions); advanceUntilIdle()
             }
             assertEquals(1, checks)
-            assertEquals(listOf(NotificationCategory.All), requests)
+            assertEquals(listOf(NotificationCategory.All, NotificationCategory.All), requests)
             supported = true; vm.refreshNotifications(); advanceUntilIdle()
             assertEquals(1, checks)
-            assertEquals(listOf(NotificationCategory.All), requests)
+            assertEquals(listOf(NotificationCategory.All, NotificationCategory.All), requests)
             assertFalse(vm.uiState.value.canExplore(NotificationCategory.Reactions))
             assertFalse(vm.uiState.value.isCheckingCapabilities)
         }

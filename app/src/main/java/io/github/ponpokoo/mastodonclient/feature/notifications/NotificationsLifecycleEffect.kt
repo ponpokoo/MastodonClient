@@ -22,7 +22,7 @@ internal fun NotificationsLifecycleEffect(viewModel: NotificationsViewModel, isV
     // replays ON_START and would otherwise refresh every time the tab is selected.
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) viewModel.onAppForeground()
+            if (event == Lifecycle.Event.ON_START) viewModel.onLifecycleStarted()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
