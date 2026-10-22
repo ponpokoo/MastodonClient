@@ -5,6 +5,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.requestFailure
 import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineModerationCache
+import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeResult
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -47,6 +48,8 @@ data class TimelineUiState(
     val refreshNewStatusCount: Int? = null,
     val selectedFeed: TimelineFeed = TimelineFeed.Home,
     val unseenStreamIds: Set<String> = emptySet(),
+    val unseenRefreshIds: Set<String> = emptySet(),
+    internal val newItemsNoticeResult: NewItemsNoticeResult? = null,
     val streamAutoScrollId: Long = 0,
     val streamAtTopCount: Int? = null,
     val resumeAnchorId: String? = null,
@@ -58,7 +61,9 @@ data class TimelineUiState(
     val loadingGapId: String? = null,
     val automaticGapCheck: HomeTimelineGap? = null,
     val gapErrors: Map<String, String> = emptyMap(),
-)
+) {
+    val pendingNewStatusIds: Set<String> get() = unseenStreamIds + unseenRefreshIds
+}
 
 class TimelineViewModel(
     private val timelineRepository: TimelineRepository,
@@ -74,6 +79,7 @@ class TimelineViewModel(
     private var streamGapProbeJob: Job? = null
     private var followingTop = false
     private var streamSequence = 0L
+    private var noticeSequence = 0L
     private var resumeCursor: String? = null
     private var homeChangesDuringRequest: MutableList<BrowsingSession.Change>? = null
     private var blockedAutomaticCursor: String? = null
@@ -192,13 +198,20 @@ class TimelineViewModel(
                 .forSession(snapshot).onSuccess { page ->
                     val existingIds = _uiState.value.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
                     val pageIds = page.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)
-                    val newCount = page.statuses.count {
+                    val newIds = page.statuses.filter {
                         it.timelineId !in existingIds && !it.isActivityBy(session.accountId)
-                    }
+                    }.mapTo(mutableSetOf(), TimelineStatus::timelineId)
+                    val newCount = newIds.size
+                    val noticeResult = if (newCount > 0) NewItemsNoticeResult(++noticeSequence, newCount) else null
+                    // Replacing a page at the visible top must not briefly create a pending prompt
+                    // while LazyColumn is still laying out the new keys. Window mode keeps its anchor.
+                    val pendingIds = if (followingTop && !keepsPosition) emptySet() else newIds
                     if (keepsPosition) {
                         _uiState.update { it.copy(statuses = page.statuses, homeIndex = page.homeIndex,
                             isRefreshing = false, endReached = page.endReached, nextMaxId = page.nextMaxId,
-                            isResumedWindow = false, refreshNewStatusCount = newCount) }
+                            isResumedWindow = false, refreshNewStatusCount = newCount,
+                            unseenRefreshIds = it.unseenRefreshIds + pendingIds,
+                            newItemsNoticeResult = noticeResult ?: it.newItemsNoticeResult) }
                         return@onSuccess
                     }
                     _uiState.update {
@@ -206,7 +219,7 @@ class TimelineViewModel(
                             // Overlapping rows take their position from the response, even when unread.
                             statuses = (it.statuses.filter { status ->
                                 status.timelineId !in pageIds &&
-                                    (status.timelineId !in idsAtStart || status.timelineId in it.unseenStreamIds)
+                                    (status.timelineId !in idsAtStart || status.timelineId in it.pendingNewStatusIds)
                             } + page.statuses)
                                 .distinctBy(TimelineStatus::timelineId),
                             homeIndex = null,
@@ -214,6 +227,8 @@ class TimelineViewModel(
                             endReached = page.endReached,
                             nextMaxId = page.nextMaxId,
                             refreshNewStatusCount = newCount,
+                            unseenRefreshIds = it.unseenRefreshIds + pendingIds,
+                            newItemsNoticeResult = noticeResult ?: it.newItemsNoticeResult,
                         )
                     }
                 }
@@ -278,6 +293,8 @@ class TimelineViewModel(
             it.copy(
                 selectedFeed = feed,
                 unseenStreamIds = emptySet(),
+                unseenRefreshIds = emptySet(),
+                newItemsNoticeResult = null,
                 streamAutoScrollId = 0,
                 streamAtTopCount = null,
                 statuses = emptyList(),
@@ -389,6 +406,8 @@ class TimelineViewModel(
                         resumeAnchorId = page.statuses.firstOrNull()?.timelineId,
                         resumeOffset = 0,
                         unseenStreamIds = emptySet(),
+                        unseenRefreshIds = emptySet(),
+                        newItemsNoticeResult = null,
                         refreshNewStatusCount = null,
                     ) }
                 }.onFailure { error -> showError(error, refreshing = true) }
@@ -397,7 +416,7 @@ class TimelineViewModel(
 
     fun updateViewport(atTopAndVisible: Boolean) {
         followingTop = atTopAndVisible && !_uiState.value.isResumedWindow
-        if (followingTop) _uiState.update { it.copy(unseenStreamIds = emptySet()) }
+        if (followingTop) _uiState.update { it.copy(unseenStreamIds = emptySet(), unseenRefreshIds = emptySet()) }
     }
 
     fun consumeStreamNotice(id: Long) {
@@ -662,7 +681,7 @@ class TimelineViewModel(
         val accountId = currentSnapshot()?.account?.accountId
         val previousGaps = _uiState.value.homeIndex?.gaps.orEmpty()
         _uiState.update { current ->
-            val next = when (change) {
+            val changed = when (change) {
                 is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated -> current
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.applyHomeChange(change))
                 is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
@@ -692,6 +711,9 @@ class TimelineViewModel(
                                     isOwnActivity -> current.streamAtTopCount
                                     else -> (current.streamAtTopCount ?: 0) + 1
                                 },
+                                newItemsNoticeResult = if (followingTop && !isOwnActivity)
+                                    NewItemsNoticeResult(++noticeSequence, (current.streamAtTopCount ?: 0) + 1)
+                                else current.newItemsNoticeResult,
                             )
                         }
                     } else current
@@ -700,6 +722,8 @@ class TimelineViewModel(
                     is TimelineStreamEvent.NotificationReceived -> current
                 }
             }
+            val next = changed.copy(unseenRefreshIds = changed.unseenRefreshIds.intersect(
+                changed.statuses.mapTo(mutableSetOf(), TimelineStatus::timelineId)))
             if (keepsHomePosition) {
                 val window = TimelinePage(current.statuses, current.nextMaxId, current.endReached, current.homeIndex).applyHomeWindowChange(change)
                 val newGap = if (change is BrowsingSession.Change.Stream &&

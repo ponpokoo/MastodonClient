@@ -1,6 +1,17 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,19 +78,36 @@ internal fun MessageContent(message: String) {
 }
 
 @Composable
-internal fun TimelineNotice(message: String, onClick: (() -> Unit)? = null) {
+internal fun TimelineNotice(message: String, onClick: (() -> Unit)? = null,
+    neutral: Boolean = false, buttonAppearance: Boolean = onClick != null) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val offset by animateDpAsState(if (pressed && onClick != null) 1.dp else 0.dp, tween(80))
+    val background by animateColorAsState(when {
+        neutral -> Color(0xFF4A4A50)
+        pressed && onClick != null -> Color(0xFF42536A)
+        else -> Color(0xFF34465C)
+    }, tween(80))
+    val shape = RoundedCornerShape(18.dp)
+    val offsetPx = with(LocalDensity.current) { offset.toPx() }
     Box(
-        Modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .heightIn(min = if (onClick != null) 48.dp else 36.dp),
+        Modifier.then(if (onClick != null) Modifier.clickable(interactionSource = interaction,
+            indication = null, role = Role.Button, onClick = onClick) else Modifier)
+            .heightIn(min = if (buttonAppearance) 48.dp else 36.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFF34465C)) {
+        Surface(
+            modifier = Modifier.graphicsLayer { translationY = offsetPx },
+            shape = shape, color = background,
+            border = if (buttonAppearance) BorderStroke(1.dp, Color(0xFFF5F7FC).copy(alpha = 0.2f)) else null,
+            shadowElevation = if (buttonAppearance && !pressed) 1.dp else 0.dp,
+        ) {
             Box(
                 Modifier.heightIn(min = 36.dp).padding(horizontal = 12.dp, vertical = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(message, style = MaterialTheme.typography.labelLarge,
-                    color = Color(0xFFF5F7FC))
+                    color = if (neutral) Color(0xFFF5F5F7) else Color(0xFFF5F7FC))
             }
         }
     }

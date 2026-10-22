@@ -1030,7 +1030,7 @@ private fun StatusActionButton(
             }
         }
         Box(
-            modifier = Modifier.size(40.dp).background(
+            modifier = Modifier.size(iconSize + 4.dp).background(
                 color = if (enabled && pressed) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                     else Color.Transparent,
                 shape = CircleShape,
@@ -1040,7 +1040,7 @@ private fun StatusActionButton(
             ButtonIcon()
         }
         if (displayedCount != null) {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(2.dp))
             Text(
                 compactCount(displayedCount),
                 style = MaterialTheme.typography.labelSmall,

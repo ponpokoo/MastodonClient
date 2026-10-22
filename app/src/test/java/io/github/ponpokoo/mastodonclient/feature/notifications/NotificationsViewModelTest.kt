@@ -538,7 +538,6 @@ class NotificationsViewModelTest : ScreenViewModelTestBase() {
         viewModel.onLatestNotificationsShown(setOf("new"), allNotificationsShown = true)
         advanceUntilIdle()
         assertEquals(0, viewModel.uiState.value.unreadNotifications)
-        assertEquals(1, viewModel.uiState.value.shownNewNotice?.count)
         assertEquals(listOf("one" to "new"), repository.markers)
         assertEquals(setOf("new"), viewModel.uiState.value.highlightedNotificationIds)
         viewModel.refreshNotifications()

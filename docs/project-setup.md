@@ -9,7 +9,7 @@ UI・設定・投稿・プロフィールの現行仕様は [UI・機能仕様](
 | 項目 | 設定 |
 | --- | --- |
 | プロジェクト／アプリ名 | MastodonClient／Nagisa |
-| リリース準備の対象版 | `2.5.6`（versionCode 26、R8有効）。対象範囲と記録方法は[更新・リリース計画](release-plan.md)、提出・配布・公開状況はPlay Consoleで確認する |
+| リリース準備の対象版 | `2.5.7`（versionCode 27、R8有効）。対象範囲と記録方法は[更新・リリース計画](release-plan.md)、提出・配布・公開状況はPlay Consoleで確認する |
 | 成果物と確認結果の保管 | `app/release/`の版ごとの内部リリースノートへ保管し、配布候補と事前検証用成果物を区別する。AABとノートをまとめたZIPもGit管理外とする。保管方法は[リリース手順](release-plan.md#内部リリースノートの保管)を参照する |
 | 新規OAuth登録名（投稿元） | `Nagisa for Mastodon` |
 | 新規OAuth登録時のWebサイトURL | [Google Play](https://play.google.com/store/apps/details?id=io.github.ponpokoo.mastodonclient)。保存済みOAuthアプリ登録のURLは変更しない |

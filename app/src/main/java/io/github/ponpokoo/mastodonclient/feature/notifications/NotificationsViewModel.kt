@@ -44,7 +44,6 @@ data class NotificationsUiState(
     val isInitialPageLoaded: Boolean = false,
     val pendingNewNotificationIds: Set<String> = emptySet(),
     val highlightedNotificationIds: Set<String> = emptySet(),
-    val shownNewNotice: ShownNewNotice? = null,
     val refreshResult: NotificationsRefreshResult? = null,
     val lists: Map<NotificationCategory, NotificationListState> = emptyMap(),
     val selectedCategory: NotificationCategory = NotificationCategory.All,
@@ -85,7 +84,6 @@ data class NotificationsUiState(
         else copy(lists = lists + (category to tab))
 }
 
-data class ShownNewNotice(val id: Long, val count: Int)
 data class NotificationsRefreshResult(val id: Long, val hasNewNotifications: Boolean)
 
 class NotificationsViewModel(
@@ -122,7 +120,6 @@ class NotificationsViewModel(
     private var reactionRefreshRequested = false
     private var reactionPullRefreshRequested = false
     private var nextRefreshResultId = 0L
-    private var nextShownNoticeId = 0L
     private var hasObservedStart = false
     init { observeSession() }
 
@@ -364,7 +361,7 @@ class NotificationsViewModel(
     }
     fun onNotificationsHidden() {
         allowInitialHighlights = false
-        _uiState.update { it.copy(highlightedNotificationIds = emptySet(), shownNewNotice = null) }
+        _uiState.update { it.copy(highlightedNotificationIds = emptySet()) }
     }
 
     fun onLatestNotificationsShown(shownIds: Set<String>, allNotificationsShown: Boolean) {
@@ -387,8 +384,7 @@ class NotificationsViewModel(
         }
         val acknowledged = _uiState.value.pendingNewNotificationIds.intersect(ids)
         if (acknowledged.isNotEmpty()) _uiState.update { it.copy(
-            pendingNewNotificationIds = it.pendingNewNotificationIds - acknowledged,
-            shownNewNotice = ShownNewNotice(++nextShownNoticeId, acknowledged.size)) }
+            pendingNewNotificationIds = it.pendingNewNotificationIds - acknowledged) }
         if (latestId != null) {
             waitingAllMarkerId = latestId
             if (_uiState.value.isReadStateReady) sendMarker(snapshot, latestId)
@@ -405,7 +401,6 @@ class NotificationsViewModel(
         }
     }
 
-    fun consumeShownNewNotice(id: Long) { _uiState.update { if (it.shownNewNotice?.id == id) it.copy(shownNewNotice = null) else it } }
     fun consumeRefreshResult(id: Long) { _uiState.update { if (it.refreshResult?.id == id) it.copy(refreshResult = null) else it } }
     fun loadNextNotifications() = loadNext(automatic = false)
     fun loadNextNotificationsAutomatically() = loadNext(automatic = true)

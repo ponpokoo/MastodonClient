@@ -9,11 +9,13 @@ import java.time.Instant
 class TimelineModerationCacheTest {
     @Test fun loadingAndNoticeUpdatesReuseRowsWhileUpdatingUnreadCounts() {
         val cache = TimelineModerationCache()
-        val source = TimelineUiState(statuses = listOf(testStatus()), unseenStreamIds = setOf("post", "missing"))
+        val source = TimelineUiState(statuses = listOf(testStatus()), unseenStreamIds = setOf("post", "missing"),
+            unseenRefreshIds = setOf("post", "hidden"))
         val first = cache.apply(source, AccountModerationState(), testAccount)
         val next = cache.apply(source.copy(isLoadingMore = true, unseenStreamIds = emptySet()), AccountModerationState(), testAccount)
         assertSame(first.statuses, next.statuses)
         assertEquals(setOf("post"), first.unseenStreamIds)
+        assertEquals(setOf("post"), first.pendingNewStatusIds)
         assertTrue(next.unseenStreamIds.isEmpty())
         assertTrue(next.isLoadingMore)
     }

@@ -31,7 +31,8 @@ private fun Map<ProfileStatusTab, ProfileTabUiState>.visible(m: AccountModeratio
 internal fun TimelineUiState.withModeration(m: AccountModerationState, s: AccountSession): TimelineUiState {
     val visible = statuses.visible(m, s, if (selectedFeed == TimelineFeed.Home) "home" else "public")
     val ids = visible.mapTo(mutableSetOf()) { it.timelineId }
-    return copy(statuses = visible, unseenStreamIds = unseenStreamIds.intersect(ids))
+    return copy(statuses = visible, unseenStreamIds = unseenStreamIds.intersect(ids),
+        unseenRefreshIds = unseenRefreshIds.intersect(ids))
 }
 
 internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession): NotificationsUiState {
@@ -49,8 +50,7 @@ internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: A
     val pending = pendingNewNotificationIds.intersect(ids)
     return copy(notifications = visible, lists = filteredLists, pendingNewNotificationIds = pending,
         highlightedNotificationIds = highlightedNotificationIds.intersect(ids),
-        refreshResult = refreshResult?.copy(hasNewNotifications = pending.isNotEmpty()),
-        shownNewNotice = if (pending.isEmpty()) null else shownNewNotice?.copy(count = pending.size))
+        refreshResult = refreshResult?.copy(hasNewNotifications = pending.isNotEmpty()))
 }
 
 internal fun ProfileUiState.withModeration(m: AccountModerationState, s: AccountSession): ProfileUiState {

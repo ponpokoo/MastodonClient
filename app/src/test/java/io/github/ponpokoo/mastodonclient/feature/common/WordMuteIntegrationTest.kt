@@ -7,7 +7,6 @@ import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsView
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsUiState
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationListState
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsRefreshResult
-import io.github.ponpokoo.mastodonclient.feature.notifications.ShownNewNotice
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -83,7 +82,7 @@ class WordMuteIntegrationTest : ScreenViewModelTestBase() {
         val state = NotificationsUiState(
             notifications = listOf(body, cw, reaction, kept, follow), notificationsNextMaxId = "all-cursor",
             pendingNewNotificationIds = ids, highlightedNotificationIds = ids,
-            refreshResult = NotificationsRefreshResult(1, true), shownNewNotice = ShownNewNotice(2, ids.size),
+            refreshResult = NotificationsRefreshResult(1, true),
             lists = mapOf(
                 NotificationCategory.Mentions to NotificationListState(listOf(body, cw, kept), nextMaxId = "mention-cursor"),
                 NotificationCategory.Reactions to NotificationListState(listOf(reaction), nextMaxId = "reaction-cursor"),
@@ -99,7 +98,6 @@ class WordMuteIntegrationTest : ScreenViewModelTestBase() {
         assertEquals("reaction-cursor", filtered.list(NotificationCategory.Reactions).nextMaxId)
         assertEquals(setOf("kept", "follow"), filtered.pendingNewNotificationIds)
         assertEquals(setOf("kept", "follow"), filtered.highlightedNotificationIds)
-        assertEquals(2, filtered.shownNewNotice?.count)
         assertEquals(state, state.withModeration(moderation, secondAccount))
 
         val onlyHidden = state.copy(notifications = listOf(body), lists = emptyMap(),
@@ -107,7 +105,6 @@ class WordMuteIntegrationTest : ScreenViewModelTestBase() {
             .withModeration(moderation, testAccount)
         assertEquals(0, onlyHidden.unreadNotifications)
         assertTrue(onlyHidden.highlightedNotificationIds.isEmpty())
-        assertNull(onlyHidden.shownNewNotice)
         assertFalse(onlyHidden.refreshResult!!.hasNewNotifications)
     }
 

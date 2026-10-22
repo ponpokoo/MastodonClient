@@ -72,7 +72,60 @@ class TimelineViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, viewModel.uiState.value.refreshNewStatusCount)
+        assertEquals(setOf("new"), viewModel.uiState.value.pendingNewStatusIds)
+        viewModel.updateViewport(true)
+        assertTrue(viewModel.uiState.value.pendingNewStatusIds.isEmpty())
         assertEquals(listOf("new"), viewModel.uiState.value.statuses.map { it.timelineId })
+    }
+
+    @Test fun refreshPendingIdsSurviveAnotherRefreshAndFailureAcrossAllFeeds() = runTest(dispatcher) {
+        for (feed in TimelineFeed.entries) {
+            var rows = listOf(status("old"))
+            var fail = false
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                    if (fail) Result.failure(java.io.IOException("offline")) else Result.success(TimelinePage(rows, null, true))
+                override suspend fun getTimeline(session: AccountSession, feed: TimelineFeed, maxId: String?, limit: Int) =
+                    getHomeTimeline(session, maxId, limit)
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            advanceUntilIdle()
+            if (feed != TimelineFeed.Home) { model.selectFeed(feed); advanceUntilIdle() }
+            rows = listOf(status("new-a"), status("old"))
+            model.refresh(); advanceUntilIdle(); model.consumeRefreshResult()
+            rows = listOf(status("new-b"), status("old"))
+            model.refresh(); advanceUntilIdle()
+            assertEquals(setOf("new-a", "new-b"), model.uiState.value.pendingNewStatusIds)
+            fail = true
+            model.refresh(); advanceUntilIdle()
+            assertEquals(setOf("new-a", "new-b"), model.uiState.value.pendingNewStatusIds)
+            mainViewModel.browsing.publish(mainViewModel.browsing.snapshot.value,
+                BrowsingSession.Change.StatusDeleted("new-a"))
+            advanceUntilIdle()
+            assertEquals(setOf("new-b"), model.uiState.value.pendingNewStatusIds)
+            model.updateViewport(true)
+            assertTrue(model.uiState.value.pendingNewStatusIds.isEmpty())
+        }
+    }
+
+    @Test fun refreshAtVisibleTopReportsPassiveResultUnlessWindowModeKeepsTheOldAnchor() = runTest(dispatcher) {
+        for (keepPosition in listOf(false, true)) {
+            var calls = 0
+            val repository = object : TimelineRepository {
+                override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                    Result.success(TimelinePage(if (++calls == 1) listOf(status("first"))
+                        else listOf(status("new"), status("first")), null, true))
+            }
+            val model = createTimeline(repository, FakeAuthRepository(SESSION))
+            model.setKeepPositionOnRefresh(keepPosition)
+            advanceUntilIdle()
+            model.updateViewport(true)
+            model.refresh(); advanceUntilIdle()
+            assertEquals(1, model.uiState.value.newItemsNoticeResult?.count)
+            assertEquals(if (keepPosition) setOf("new") else emptySet<String>(), model.uiState.value.pendingNewStatusIds)
+            model.consumeRefreshResult()
+            assertEquals(1, model.uiState.value.newItemsNoticeResult?.count)
+        }
     }
 
     @Test
@@ -296,6 +349,7 @@ class TimelineViewModelTest {
         assertEquals(listOf("live", "http", "first"), model.uiState.value.statuses.map { it.timelineId })
         assertEquals(setOf("live"), model.uiState.value.unseenStreamIds)
         assertEquals(1, model.uiState.value.refreshNewStatusCount)
+        assertEquals(setOf("live", "http"), model.uiState.value.pendingNewStatusIds)
         model.selectFeed(TimelineFeed.Local)
         advanceUntilIdle()
         assertTrue(model.uiState.value.unseenStreamIds.isEmpty())
@@ -345,6 +399,8 @@ class TimelineViewModelTest {
         assertEquals(listOf("newer", "older", "initial"), model.uiState.value.statuses.map { it.timelineId })
         assertEquals("initial", model.uiState.value.nextMaxId)
         assertEquals(1, model.uiState.value.refreshNewStatusCount)
+        assertEquals(if (followingTop) emptySet<String>() else setOf("older", "newer"),
+            model.uiState.value.pendingNewStatusIds)
     }
 
     @Test
@@ -642,6 +698,11 @@ class TimelineViewModelTest {
             latest = true
             model.refresh(); advanceUntilIdle()
             assertEquals(newIds + listOf("old", "older"), model.uiState.value.statuses.map { it.timelineId })
+            assertEquals(newIds.toSet(), model.uiState.value.pendingNewStatusIds)
+            model.consumeRefreshResult()
+            assertEquals(newIds.toSet(), model.uiState.value.pendingNewStatusIds)
+            model.updateViewport(true)
+            assertTrue(model.uiState.value.pendingNewStatusIds.isEmpty())
             assertEquals("older", model.uiState.value.nextMaxId)
             assertEquals("old", model.uiState.value.homeIndex!!.gaps.single().beforeId)
             model.loadGap("old"); advanceUntilIdle()

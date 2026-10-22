@@ -113,6 +113,7 @@ internal fun NotificationsContent(
     newNoticeMessage: String?,
     onNewNoticeClick: (() -> Unit)?,
     onAutoLoadMore: () -> Unit = onLoadMore,
+    noticeContent: (@Composable () -> Unit)? = null,
 ) {
     check(listStates.size == NotificationFilter.entries.size)
     // Keep new rows close to the quoted post's surface instead of using a full accent fill.
@@ -254,9 +255,10 @@ internal fun NotificationsContent(
                     }
                     }
                 }
-                if (newNoticeMessage != null) {
+                if (noticeContent != null || newNoticeMessage != null) {
                     Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
-                        TimelineNotice(newNoticeMessage, onNewNoticeClick)
+                        if (noticeContent != null) noticeContent()
+                        else newNoticeMessage?.let { TimelineNotice(it, onNewNoticeClick) }
                     }
                 }
                 }

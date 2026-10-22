@@ -33,7 +33,7 @@ class ServerFilterIntegrationTest : ScreenViewModelTestBase() {
         val ids = setOf("hidden", "reaction", "kept", "follow")
         val state = NotificationsUiState(notifications = listOf(hidden, reaction, kept, follow), notificationsNextMaxId = "all-cursor",
             pendingNewNotificationIds = ids, highlightedNotificationIds = ids,
-            refreshResult = NotificationsRefreshResult(1, true), shownNewNotice = ShownNewNotice(2, ids.size),
+            refreshResult = NotificationsRefreshResult(1, true),
             lists = mapOf(NotificationCategory.Mentions to NotificationListState(listOf(hidden, kept), nextMaxId = "mention-cursor"),
                 NotificationCategory.Reactions to NotificationListState(listOf(reaction), nextMaxId = "reaction-cursor")))
         val visible = state.withModeration(AccountModerationState(), testAccount)
@@ -45,11 +45,9 @@ class ServerFilterIntegrationTest : ScreenViewModelTestBase() {
         assertEquals("reaction-cursor", visible.list(NotificationCategory.Reactions).nextMaxId)
         assertEquals(setOf("kept", "follow"), visible.pendingNewNotificationIds)
         assertEquals(setOf("kept", "follow"), visible.highlightedNotificationIds)
-        assertEquals(2, visible.shownNewNotice?.count)
         val onlyHidden = state.copy(notifications = listOf(hidden), lists = emptyMap(), pendingNewNotificationIds = setOf("hidden"))
             .withModeration(AccountModerationState(), testAccount)
         assertFalse(onlyHidden.refreshResult!!.hasNewNotifications)
-        assertNull(onlyHidden.shownNewNotice)
     }
 
     @Test fun hideDoesNotDeleteSourceAndRemovalRestoresCachedNotificationsAndCounts() = runTest(dispatcher) {

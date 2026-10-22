@@ -55,7 +55,8 @@ internal class TimelineModerationCache(
         } ?: filter(state.statuses, moderation, session, context, now).also {
             if (moderation.applyServerFilters) display = it else cleanup = it
         }
-        return state.copy(statuses = rows.visible, unseenStreamIds = state.unseenStreamIds.intersect(rows.ids))
+        return state.copy(statuses = rows.visible, unseenStreamIds = state.unseenStreamIds.intersect(rows.ids),
+            unseenRefreshIds = state.unseenRefreshIds.intersect(rows.ids))
     }
 
     private fun filter(source: List<TimelineStatus>, moderation: AccountModerationState,

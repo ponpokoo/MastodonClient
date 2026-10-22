@@ -173,6 +173,7 @@ class StatusInteractionDeviceTest {
     @Test
     fun pressingActionCountHighlightsOnlyTheIconAndCancelClearsIt() {
         val theme = mutableStateOf(ThemeMode.Light)
+        val iconSize = mutableStateOf(io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize.Small)
         val favourites = AtomicInteger()
         showContent {
             MastodonClientTheme(themeMode = theme.value) {
@@ -182,13 +183,20 @@ class StatusInteractionDeviceTest {
                         onStatusClick = null,
                         onFavourite = { favourites.incrementAndGet() },
                         onUnavailableAction = {},
+                        displayPreferences = io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences(
+                            actionIconSize = iconSize.value,
+                        ),
                     )
                 }
             }
         }
 
-        for ((index, mode) in listOf(ThemeMode.Light, ThemeMode.Dark).withIndex()) {
-            composeRule.runOnIdle { theme.value = mode }
+        val appearances = listOf(ThemeMode.Light, ThemeMode.Dark).flatMap { mode ->
+            io.github.ponpokoo.mastodonclient.core.preferences.ActionIconSize.entries.map { mode to it }
+        }
+        for ((index, appearance) in appearances.withIndex()) {
+            val (mode, size) = appearance
+            composeRule.runOnIdle { theme.value = mode; iconSize.value = size }
             val action = composeRule.onNodeWithContentDescription("お気に入り")
             val count = composeRule.onNodeWithText("12", useUnmergedTree = true)
             val before = action.captureToImage().toPixelMap()
@@ -221,7 +229,7 @@ class StatusInteractionDeviceTest {
                         (0 until countBefore.height).all { y -> countBefore[x, y] == countPressed[x, y] }
                     })
                 File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null),
-                    "status-action-pressed-${mode.name.lowercase()}.png").outputStream().use {
+                    "status-action-pressed-${mode.name.lowercase()}-${size.name.lowercase()}.png").outputStream().use {
                     image.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
                 }
                 count.performTouchInput { cancel() }

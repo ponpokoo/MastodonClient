@@ -301,6 +301,34 @@ class HomeScrollDeviceTest {
         assertEquals(0f, scrollPosition(), 0f)
     }
 
+    @Test fun pendingNewItemsNoticeKeepsItsLabelAndTapShowsAllArrivals() = withHomeTimeline { main, timeline, statuses ->
+        rule.onNodeWithTag("timeline_list").performScrollToIndex(60)
+        rule.waitForIdle()
+        fun receive(id: String) {
+            rule.runOnUiThread {
+                main.viewModelScope.launch {
+                    main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(
+                        TimelineStreamEvent.StatusAdded(statuses.first().copy(timelineId = id, statusId = id)),
+                    ))
+                }
+            }
+            rule.waitUntil(5_000) { timeline.uiState.value.statuses.any { it.timelineId == id } }
+        }
+        receive("arrival-a")
+        rule.runOnIdle { assertEquals(setOf("arrival-a"), timeline.uiState.value.pendingNewStatusIds) }
+        rule.onNodeWithText("↑ 新着1件").assertExists()
+        receive("arrival-b")
+        rule.runOnIdle { assertEquals(setOf("arrival-a", "arrival-b"), timeline.uiState.value.pendingNewStatusIds) }
+        assertTrue(scrollPosition() > 0f)
+        rule.onNodeWithText("↑ 新着1件").performClick()
+        rule.waitForIdle()
+        assertEquals(0f, scrollPosition(), 0f)
+        rule.runOnIdle {
+            assertEquals(listOf("arrival-b", "arrival-a"), timeline.uiState.value.statuses.take(2).map { it.timelineId })
+            assertTrue(timeline.uiState.value.pendingNewStatusIds.isEmpty())
+        }
+    }
+
     @Test fun swipingDuringHomeAnimationKeepsTheUsersNewPosition() = withHomeTimeline { _, _, _ ->
         rule.onNodeWithTag("timeline_list").performScrollToIndex(140)
         rule.mainClock.autoAdvance = false

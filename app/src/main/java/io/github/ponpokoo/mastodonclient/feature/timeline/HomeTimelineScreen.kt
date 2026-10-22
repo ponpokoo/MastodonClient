@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 
-import io.github.ponpokoo.mastodonclient.feature.common.TimelineNotice
+import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeState
+import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeEffect
+import io.github.ponpokoo.mastodonclient.feature.common.TimelineNoticeStack
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
@@ -74,7 +76,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,6 +83,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -182,7 +184,7 @@ fun HomeTimelineScreen(
     val profileState by profileViewModel.uiState.collectAsStateWithLifecycle()
     val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
     val moderationMenu by actionsViewModel.moderationMenuState.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarHostState = remember(mainState.session?.sessionId) { SnackbarHostState() }
     LaunchedEffect(exploreState.actionMessage) {
         exploreState.actionMessage?.let { snackbarHostState.showSnackbar(it); searchViewModel.consumeExploreMessage() }
     }
@@ -227,6 +229,36 @@ fun HomeTimelineScreen(
         notificationFilter, profileState.profileSelectedTab,
     ) { rememberCoroutineScope() }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.CREATED)
+    val homeNotice = key(mainState.session?.sessionId, state.selectedFeed) {
+        rememberSaveable(saver = NewItemsNoticeState.Saver) { NewItemsNoticeState() }
+    }
+    val notificationNotice = key(mainState.session?.sessionId) {
+        rememberSaveable(saver = NewItemsNoticeState.Saver) { NewItemsNoticeState() }
+    }
+    val isHomeVisible = destination == MainDestination.Home
+    val homeNewestId = state.statuses.firstOrNull()?.timelineId
+    val homeAtTop by remember(isHomeVisible, homeNewestId, lifecycleState) {
+        derivedStateOf {
+            isHomeVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED) &&
+                timelineListState.firstVisibleItemIndex == 0 && timelineListState.firstVisibleItemScrollOffset == 0 &&
+                !timelineListState.isScrollInProgress && homeNewestId != null &&
+                timelineListState.layoutInfo.visibleItemsInfo.any { it.key == homeNewestId }
+        }
+    }
+    val notificationsVisible = destination == MainDestination.Notifications
+    LaunchedEffect(homeNotice, state.pendingNewStatusIds, homeAtTop, state.newItemsNoticeResult, state.isResumedWindow) {
+        homeNotice.update(state.pendingNewStatusIds.size, homeAtTop,
+            resultKey = state.newItemsNoticeResult?.id, resultCount = state.newItemsNoticeResult?.count,
+            isRestored = state.isResumedWindow)
+    }
+    LaunchedEffect(notificationNotice, notificationsState.pendingNewNotificationIds, notificationsState.canShowNewNotice) {
+        if (notificationsState.canShowNewNotice) {
+            notificationNotice.updateNotificationCount(notificationsState.pendingNewNotificationIds)
+        }
+    }
+    NewItemsNoticeEffect(homeNotice, isHomeVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
+    NewItemsNoticeEffect(notificationNotice, notificationsVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
 
     LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
         mainState.session?.sessionId, state.isResumedWindow, state.isHomeSyncing) {
@@ -292,12 +324,11 @@ fun HomeTimelineScreen(
         onNotificationOpenHandled(request)
     }
 
-    DisposableEffect(lifecycleOwner, destination) {
+    DisposableEffect(lifecycleOwner, destination, homeAtTop) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> {
-                    viewModel.updateViewport(destination == MainDestination.Home && timelineListState.firstVisibleItemIndex == 0 &&
-                        timelineListState.firstVisibleItemScrollOffset == 0 && !timelineListState.isScrollInProgress)
+                    viewModel.updateViewport(homeAtTop)
                 }
                 Lifecycle.Event.ON_STOP -> {
                     viewModel.updateViewport(false)
@@ -321,14 +352,8 @@ fun HomeTimelineScreen(
             state.errorMessage?.let { snackbarHostState.showSnackbar(it) }
         }
     }
-    var refreshNotice by remember(mainState.session?.sessionId, state.selectedFeed) { mutableStateOf<String?>(null) }
-    val isHomeVisible = destination == MainDestination.Home
-    LaunchedEffect(isHomeVisible, lifecycleOwner, state.selectedFeed, mainState.session?.sessionId) {
-        snapshotFlow {
-            isHomeVisible && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
-                timelineListState.firstVisibleItemIndex == 0 && timelineListState.firstVisibleItemScrollOffset == 0 &&
-                !timelineListState.isScrollInProgress
-        }.collect { viewModel.updateViewport(it) }
+    LaunchedEffect(homeAtTop, state.pendingNewStatusIds, state.selectedFeed, mainState.session?.sessionId) {
+        viewModel.updateViewport(homeAtTop)
     }
     DisposableEffect(viewModel, destination) {
         onDispose {
@@ -337,22 +362,12 @@ fun HomeTimelineScreen(
         }
     }
     LaunchedEffect(state.refreshNewStatusCount, mainState.session?.sessionId, state.selectedFeed) {
-        state.refreshNewStatusCount?.let { count ->
-            if (count > 0) {
-                refreshNotice = "新着 ${count}件"
-                delay(1_800)
-                refreshNotice = null
-            } else {
-                refreshNotice = null
-            }
-            viewModel.consumeRefreshResult()
-        }
+        if (state.refreshNewStatusCount != null) viewModel.consumeRefreshResult()
     }
     LaunchedEffect(state.streamAutoScrollId, isHomeVisible, mainState.session?.sessionId, state.selectedFeed) {
         if (isHomeVisible && state.streamAutoScrollId > 0) {
             val requestId = state.streamAutoScrollId
             timelineListState.scrollToItem(0)
-            viewModel.updateViewport(true)
             delay(1_800)
             viewModel.consumeStreamNotice(requestId)
         }
@@ -377,19 +392,13 @@ fun HomeTimelineScreen(
             notificationsViewModel.consumeRefreshResult(result.id)
         }
     }
-    LaunchedEffect(notificationsState.shownNewNotice?.id) {
-        notificationsState.shownNewNotice?.let { notice ->
-            delay(1_800)
-            notificationsViewModel.consumeShownNewNotice(notice.id)
-        }
-    }
     NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
     LaunchedEffect(notificationFilter) { notificationsViewModel.selectCategory(notificationFilter) }
     LaunchedEffect(destination) {
         if (destination == MainDestination.Profile) profileViewModel.loadProfile()
     }
     LaunchedEffect(
-        destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleOwner,
+        destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleState,
     ) {
         val notificationTabState = notificationsState.forCategory(notificationFilter)
         if (destination == MainDestination.Notifications &&
@@ -403,7 +412,7 @@ fun HomeTimelineScreen(
                 val listState = notificationListStates[notificationFilter.ordinal]
                 val loadedIds = shown.mapTo(mutableSetOf(), io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification::id)
                 snapshotFlow {
-                    lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                    lifecycleState.isAtLeast(Lifecycle.State.STARTED) &&
                         listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 &&
                         !listState.isScrollInProgress &&
                         listState.layoutInfo.visibleItemsInfo.any { it.key == newestId }
@@ -583,22 +592,11 @@ fun HomeTimelineScreen(
                     listStates = notificationListStates,
                     selectedFilter = notificationFilter,
                     onSelectFilter = { notificationFilter = it },
-                    newNoticeMessage = if (snackbarHostState.currentSnackbarData == null && notificationsState.canShowNewNotice) {
-                        when {
-                            notificationsState.pendingNewNotificationIds.isNotEmpty() ->
-                                "新着 ${notificationsState.pendingNewNotificationIds.size}件"
-                            notificationsState.shownNewNotice != null ->
-                                "新着 ${notificationsState.shownNewNotice?.count}件"
-                            else -> null
-                        }
-                    } else null,
-                    onNewNoticeClick = if (notificationsState.pendingNewNotificationIds.isNotEmpty()) {
-                        {
-                            notificationFilter = NotificationFilter.All
-                            scope.launch { allNotificationsListState.animateToTimelineTop() }
-                            Unit
-                        }
-                    } else null,
+                    newNoticeMessage = null,
+                    onNewNoticeClick = null,
+                    noticeContent = {
+                        TimelineNoticeStack(notificationNotice.notice, snackbarHostState, onClick = {})
+                    },
                 )
                 MainDestination.Profile -> ProfileScreen(
                     viewModel = profileViewModel,
@@ -632,29 +630,19 @@ fun HomeTimelineScreen(
         )
         }
     }
-        val newPostMessage = when {
-            state.isResumedWindow -> "前回の位置を表示中・最新へ"
-            state.unseenStreamIds.isNotEmpty() -> "新着 ${state.unseenStreamIds.size}件"
-            state.streamAtTopCount != null -> "新着 ${state.streamAtTopCount}件"
-            else -> refreshNotice
-        }
-        if (destination == MainDestination.Home && newPostMessage != null && snackbarHostState.currentSnackbarData == null) {
-            Box(Modifier.align(Alignment.TopCenter).windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Top)).padding(top = 64.dp)) {
-                TimelineNotice(newPostMessage, onClick = if (state.isResumedWindow) {
-                    { viewModel.goToLatest() }
-                } else if (state.unseenStreamIds.isNotEmpty()) {
-                    { scope.launch { timelineListState.animateToTimelineTop(); viewModel.updateViewport(true) }; Unit }
-                } else null)
-            }
-        }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
+        if (destination != MainDestination.Notifications) {
+            TimelineNoticeStack(
+                notice = homeNotice.notice.takeIf { destination == MainDestination.Home },
+                snackbarHostState = snackbarHostState,
+                onClick = {
+                    if (state.isResumedWindow) viewModel.goToLatest()
+                    else topScrollScope.launch { timelineListState.animateToTimelineTop() }
+                },
+                modifier = Modifier
                 .align(Alignment.TopCenter)
                 .windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Top))
                 .padding(top = 64.dp),
-        ) { data ->
-            TimelineNotice(data.visuals.message)
+            )
         }
     }
 
