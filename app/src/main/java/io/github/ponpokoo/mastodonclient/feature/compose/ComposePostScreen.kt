@@ -310,7 +310,7 @@ fun ComposePostScreen(
                                 }
                                 ComposerAction.Emoji -> ComposerToolbarButton(
                                     Icons.Outlined.SentimentSatisfiedAlt,
-                                    "リアクション",
+                                    "絵文字",
                                 ) { emojiSheetOpen = true }
                                 ComposerAction.ContentWarning -> ComposerToolbarButton(
                                     Icons.Outlined.WarningAmber,
@@ -737,6 +737,8 @@ fun ComposePostScreen(
         ) {
             ReactionPickerSheet(
                 canUndo = false,
+                title = "絵文字",
+                selectionLabel = "この絵文字を挿入",
                 customEmojisOverride = state.customEmojis,
                 onDismiss = { emojiSheetOpen = false },
                 onSelected = { selected ->

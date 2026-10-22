@@ -25,7 +25,7 @@ import org.junit.Test
 class ComposerToolbarDeviceTest {
     @get:Rule val rule = createComposeRule()
 
-    @Test fun languageSelectionAndHashInsertionWorkInComposer() {
+    @Test fun languageSelectionAndToolbarInsertionsWorkInComposer() {
         val session = AccountSession("test", "https://example.test", "me", "me", "Me", "", "test-token")
         val preferences = object : DataStore<Preferences> {
             override val data = MutableStateFlow(emptyPreferences())
@@ -69,6 +69,13 @@ class ComposerToolbarDeviceTest {
                 assertEquals("前#後", model.uiState.value.text)
                 assertEquals("followers", model.uiState.value.quotePolicy)
             }
+            rule.onNodeWithContentDescription("絵文字").performScrollTo().performClick()
+            rule.onNodeWithContentDescription("カテゴリ：表情").performClick()
+            rule.onNodeWithText("😊").performTouchInput { longClick() }
+            rule.onNodeWithText("この絵文字を挿入").performClick()
+            rule.onNodeWithTag("reaction_picker_sheet").assertDoesNotExist()
+            rule.onNodeWithTag("compose_text").assertIsFocused()
+            rule.runOnIdle { assertEquals("前#😊後", model.uiState.value.text) }
         } finally {
             rule.runOnIdle { model.viewModelScope.cancel() }
         }

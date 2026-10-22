@@ -157,9 +157,10 @@ internal fun ReactionPickerSheet(
     onSelected: (String?) -> Unit,
     title: String = "リアクション",
     customEmojisOverride: List<CustomEmoji>? = null,
+    selectionLabel: String = "この絵文字でリアクション",
 ) {
     key(LocalEmojiFavoritesSessionKey.current) {
-        ReactionPickerContent(canUndo, onDismiss, onSelected, title, customEmojisOverride)
+        ReactionPickerContent(canUndo, onDismiss, onSelected, title, customEmojisOverride, selectionLabel)
     }
 }
 
@@ -171,6 +172,7 @@ private fun ReactionPickerContent(
     onSelected: (String?) -> Unit,
     title: String,
     customEmojisOverride: List<CustomEmoji>?,
+    selectionLabel: String,
 ) {
     val loadCustomEmojis = LocalCustomReactionEmojiLoader.current
     val loadHistory = LocalReactionHistoryLoader.current
@@ -180,7 +182,7 @@ private fun ReactionPickerContent(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val headerDismissOffset = remember { Animatable(0f) }
-    val dismissThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+    val dismissThresholdPx = with(LocalDensity.current) { 76.dp.toPx() }
     val headerDragState = rememberDraggableState { delta ->
         scope.launch { headerDismissOffset.snapTo((headerDismissOffset.value + delta).coerceAtLeast(0f)) }
     }
@@ -354,10 +356,11 @@ private fun ReactionPickerContent(
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         // The parent has already removed the IME area. Keep background visible above the sheet.
         val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
-        val maxSheetHeight = minOf(
+        val heightReduction = 48.dp
+        val maxSheetHeight = (minOf(
             LocalConfiguration.current.screenHeightDp.dp * 0.82f,
             (maxHeight - statusBarHeight - 48.dp).coerceAtLeast(0.dp),
-        )
+        ) - heightReduction).coerceAtLeast(0.dp)
         Column(Modifier.fillMaxWidth()
             .heightIn(max = maxSheetHeight)
             .testTag("reaction_picker_sheet")
@@ -425,7 +428,7 @@ private fun ReactionPickerContent(
             LazyColumn(
                 modifier = Modifier.fillMaxWidth()
                     .weight(1f, fill = false)
-                    .height(LocalConfiguration.current.screenHeightDp.dp * 0.58f)
+                    .height((LocalConfiguration.current.screenHeightDp.dp * 0.58f - heightReduction).coerceAtLeast(0.dp))
                     .testTag("reaction_emoji_list")
                     .drawWithContent {
                         drawContent()
@@ -583,7 +586,7 @@ private fun ReactionPickerContent(
                         }
                     }
                     TextButton(onClick = { previewEmoji = null; onSelected(emoji.name) },
-                        modifier = Modifier.align(Alignment.End)) { Text("この絵文字でリアクション") }
+                        modifier = Modifier.align(Alignment.End)) { Text(selectionLabel) }
                 }
             },
         )

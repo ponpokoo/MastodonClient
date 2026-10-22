@@ -131,8 +131,6 @@ class SearchInputDeviceTest {
             ReactionPickerSheet(canUndo = true, onDismiss = {}, onSelected = {}, customEmojisOverride = emptyList())
         } }
         val sheet = rule.onNodeWithTag("reaction_picker_sheet")
-        val original = sheet.fetchSemanticsNode().boundsInWindow
-        rule.onNodeWithTag("reaction_search").performTextInput("笑顔")
         fun waitForPickerKeyboard(visible: Boolean) {
             rule.waitUntil(5_000) {
                 var matches = false
@@ -146,6 +144,15 @@ class SearchInputDeviceTest {
             InstrumentationRegistry.getInstrumentation().uiAutomation.waitForIdle(200, 5_000)
             rule.waitForIdle()
         }
+        sheet.assertExists()
+        rule.runOnUiThread {
+            val root = WindowInspector.getGlobalWindowViews().first { it.hasWindowFocus() }
+            val input = root.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            input.hideSoftInputFromWindow(root.windowToken, 0)
+        }
+        waitForPickerKeyboard(false)
+        val original = sheet.fetchSemanticsNode().boundsInWindow
+        rule.onNodeWithTag("reaction_search").performTextInput("笑顔")
         waitForPickerKeyboard(true)
         rule.waitForIdle()
         var keyboardTop = 0f
@@ -170,7 +177,13 @@ class SearchInputDeviceTest {
             withKeyboard.top > contentTop)
         assertTrue("Sheet $withKeyboard should stay above keyboard top $keyboardTop (content top $contentTop)",
             withKeyboard.bottom <= keyboardTop + 1f)
-        assertTrue("Emoji list should shrink for the keyboard", withKeyboard.height < original.height)
+        // Floating or hardware-keyboard IMEs can be visible without covering the sheet.
+        if (keyboardTop < original.bottom - 1f) {
+            assertTrue("Sheet should shrink for the keyboard: original=$original, withKeyboard=$withKeyboard",
+                withKeyboard.height < original.height)
+        } else {
+            assertEquals(original.height, withKeyboard.height, 1f)
+        }
         assertTrue(rule.onNodeWithTag("reaction_emoji_list").fetchSemanticsNode().boundsInWindow.height > 0f)
         rule.onNodeWithContentDescription("カテゴリ：履歴").performClick()
         val emptyCategory = sheet.fetchSemanticsNode().boundsInWindow
