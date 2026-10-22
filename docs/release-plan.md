@@ -32,8 +32,7 @@
 
 ## 今後の確認事項
 
-下書き送信の追加調査・修正と機能詳細の整理は、2.5.7に含めない検討候補で、採用版・着手時期は未定。
-Pushの専用試験は終了済みで、残るRelay・端末の確認は実運用へ引き継ぐ。配布状況は別途記録する。
+下書き送信の追加調査・修正は、2.5.7に含めない検討候補で、採用版・着手時期は未定。
 
 ### 下書き保存後の送信
 
@@ -42,19 +41,11 @@ Pushの専用試験は終了済みで、残るRelay・端末の確認は実運�
 [別下書き復元時の送信キー再利用（Issue #6）](https://github.com/ponpokoo/MastodonClient/issues/6)で管理する。
 確認済みの事実と調査の限界は[原因調査](investigations/draft-post-latency-report.md)に残す。
 
-### ミュート・ブロック・報告の機能詳細の整理
+### Push・Relayの実運用
 
-基本メニューと設定からの管理は実装済み。期間・通知抑制の選択UI、報告の詳細入力、サーバー差・操作時の表示の整理は検討候補。
-現在の対象・効果・解除方法、報告の入力項目と送信先は[UI・機能仕様](ui/settings-moderation.md#ミュートブロック報告)と[管理画面の仕様](ui/settings-moderation.md#ミュートブロックの設定からの管理)を参照する。
+本番のハイブリッド配送を使い、クローズドテスト中の通常利用で通知到達・使用量・エラーを確認する。専用試験は終了済みで、Play提出や正式公開のたびに負荷試験を追加しない。問題の報告、利用規模の増加、関連する仕様変更があった場合に必要な検証を選ぶ。
 
-### Relayの配布・運用確認
-
-2.5.2の限定テスター配布と既存購読の継続利用、複数サーバー・物理端末での通知を確認する。
-無料枠監視・障害時再送・隔離復元の継続確認は[Issue #8](https://github.com/ponpokoo/MastodonClient/issues/8)で管理する。
-現在の本番はハイブリッド方式で、採用理由と切替結果は[ADR 0013](adr/0013-adopt-hybrid-push-delivery.md)と[本番切替記録](investigations/relay-production-hybrid-cutover-20261008.md)を参照する。
-未確認の大通知の通常経路・欠落回復・端末負担・Relay負荷は実運用で確認する。規模増加や問題発生時は[再測定計画](relay-100-user-remeasurement-plan.md)を使う。
-追加の専用試験は予定せず、問題発生時や仕様変更時に必要な再現確認・回帰試験を行う。
-実運用での確認項目の正本は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、テスト・調査記録は[検証ガイド](../relay/workers/testing.md)。
+実運用で確認する範囲は[採用仕様](../relay/workers/hybrid.md#採用後の対応と確認)、公開後も含む運用手順は[Play公開ワークフロー](google-play-publication-workflow.md#pushrelayの運用)を参照する。継続課題は[Issue #8](https://github.com/ponpokoo/MastodonClient/issues/8)、配布状況と確認結果は対象バージョンの内部リリースノートで管理し、この計画書へ重ねて記録しない。
 
 ## 次回以降の候補
 
