@@ -149,6 +149,8 @@ private val standardReactions = listOf(
     StandardReaction("🎂", "ケーキ", "しぐさ・記号"), StandardReaction("✅", "チェック", "しぐさ・記号"),
 )
 
+internal enum class ReactionPickerSheetMotion { HeaderOnly, Standard }
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun ReactionPickerSheet(
@@ -158,9 +160,10 @@ internal fun ReactionPickerSheet(
     title: String = "リアクション",
     customEmojisOverride: List<CustomEmoji>? = null,
     selectionLabel: String = "この絵文字でリアクション",
+    motion: ReactionPickerSheetMotion = ReactionPickerSheetMotion.HeaderOnly,
 ) {
     key(LocalEmojiFavoritesSessionKey.current) {
-        ReactionPickerContent(canUndo, onDismiss, onSelected, title, customEmojisOverride, selectionLabel)
+        ReactionPickerContent(canUndo, onDismiss, onSelected, title, customEmojisOverride, selectionLabel, motion)
     }
 }
 
@@ -173,6 +176,7 @@ private fun ReactionPickerContent(
     title: String,
     customEmojisOverride: List<CustomEmoji>?,
     selectionLabel: String,
+    motion: ReactionPickerSheetMotion,
 ) {
     val loadCustomEmojis = LocalCustomReactionEmojiLoader.current
     val loadHistory = LocalReactionHistoryLoader.current
@@ -180,7 +184,8 @@ private fun ReactionPickerContent(
     val loadFavorites = LocalEmojiFavoritesLoader.current
     val updateFavorite = LocalEmojiFavoriteUpdater.current
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val standardMotion = motion == ReactionPickerSheetMotion.Standard
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = !standardMotion)
     val headerDismissOffset = remember { Animatable(0f) }
     val dismissThresholdPx = with(LocalDensity.current) { 76.dp.toPx() }
     val headerDragState = rememberDraggableState { delta ->
@@ -348,9 +353,9 @@ private fun ReactionPickerContent(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        modifier = Modifier.graphicsLayer { translationY = headerDismissOffset.value },
+        modifier = Modifier.graphicsLayer { translationY = if (standardMotion) 0f else headerDismissOffset.value },
         sheetState = sheetState,
-        sheetGesturesEnabled = false,
+        sheetGesturesEnabled = standardMotion,
         dragHandle = null,
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -378,6 +383,7 @@ private fun ReactionPickerContent(
                 .draggable(
                     state = headerDragState,
                     orientation = Orientation.Vertical,
+                    enabled = !standardMotion,
                     onDragStarted = { headerDismissOffset.stop() },
                     onDragStopped = {
                         if (headerDismissOffset.value >= dismissThresholdPx) {

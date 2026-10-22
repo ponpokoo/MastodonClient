@@ -120,6 +120,7 @@ import java.util.Locale
 
 import io.github.ponpokoo.mastodonclient.feature.timeline.relativeTime
 import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheetMotion
 import io.github.ponpokoo.mastodonclient.feature.timeline.croppedThumbnailRowSizes
 import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailRowSizes
 import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailSize
@@ -155,6 +156,7 @@ internal fun StatusCard(
     authorAvatarResource: Int? = null,
     useTimelineImagePreviews: Boolean = false,
     collapseLongContent: Boolean = true,
+    reactionPickerMotion: ReactionPickerSheetMotion = ReactionPickerSheetMotion.HeaderOnly,
 ) {
     if (status.filterDisplay.hidden) return
     var filterRevealed by rememberSaveable(status.filterScope, status.statusId, status.filterDisplay.warnings) { mutableStateOf(false) }
@@ -523,6 +525,7 @@ internal fun StatusCard(
     if (reactionPickerOpen && serverCapabilities.supportsReactionActions) {
         ReactionPickerSheet(
             canUndo = status.reactions.any { it.reactedByMe },
+            motion = reactionPickerMotion,
             onDismiss = { reactionPickerOpen = false },
             onSelected = { emoji ->
                 reactionPickerOpen = false

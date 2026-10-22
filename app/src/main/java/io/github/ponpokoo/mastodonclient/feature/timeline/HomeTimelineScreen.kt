@@ -982,6 +982,7 @@ internal fun TimelineContent(
                         gifAutoplay = preferences.gifAutoplay,
                         videoAutoplay = preferences.videoAutoplay,
                         useTimelineImagePreviews = true,
+                        reactionPickerMotion = ReactionPickerSheetMotion.Standard,
                     )
                     HorizontalDivider()
                 }

@@ -13,12 +13,14 @@
 
 ## シートの高さと閉じる動作
 
-シートは半開きを経由せず展開した位置で開く。絵文字一覧の上下スワイプではシートを動かさず、一覧だけをスクロールする。
+ホームタブの投稿から開くリアクションピッカーは、シート標準の開閉動作を使う。半開きの位置がある場合はそこで開き、上へ引くと展開し、下へ引くと半開きへ戻るか閉じる。一覧の先頭から下へ引いた場合もシートが動く。
+投稿画面と、それ以外の画面の投稿から開くピッカーは、半開きを経由せず展開した位置で開く。絵文字一覧の上下スワイプではシートを動かさず、一覧だけをスクロールする。
+カテゴリ・お気に入り・検索と、展開時の高さの計算は共通とする。
 高さと閉じる操作は[ReactionPickerSheet.kt](../../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/timeline/ReactionPickerSheet.kt)で実装している。以下の値は実装を変更する際の調整値とする。
 
 ### 高さの調整値
 
-「すべて」を含む全カテゴリで、画面高を基準に同じ一覧領域を確保する。カテゴリ切替・検索・お気に入りの追加や削除でシートの高さを変えず、件数が少ない場合や0件でも同じ高さを保つ。
+「すべて」を含む全カテゴリで、画面高を基準に同じ一覧領域を確保する。カテゴリ切替・検索・お気に入りの追加や削除でシートの内容の高さを変えず、件数が少ない場合や0件でも同じ高さを保つ。ホームの半開き表示では、その一部が見える。
 
 | 調整項目 | 現在値 | 実装の対応箇所 |
 | --- | --- | --- |
@@ -43,6 +45,9 @@
 
 ### 閉じる操作の調整値
 
+`ReactionPickerSheet`の`motion`で開閉動作を選ぶ。ホームの`TimelineContent`だけが`StatusCard.reactionPickerMotion`に`Standard`を渡し、標準のドラッグを有効にして半開きを許可する。閉じる判定とアニメーションはMaterial 3に任せ、以下の76 dp・140 msの調整値は使わない。
+それ以外は既定値の`HeaderOnly`を使い、次の動作と調整値を適用する。
+
 シート上部に操作可能であることを示すバーを表示する。バーとタイトルを含むヘッダーから下へ引くとシートが指に追従する。
 指を離した時点でシートの下方向への移動量がしきい値以上なら閉じ、しきい値未満なら元の位置へ戻す。閉じる判定は距離で決め、速さによる追加判定は行わない。シートを元の位置より上へは動かさない。
 
@@ -54,7 +59,7 @@
 | バーを配置する領域の高さ | 24 dp | バーを囲む`Box`の`height(24.dp)` |
 
 ドラッグはバーとタイトルを含むヘッダー全体で受け付ける。ドラッグ中の移動量は`headerDismissOffset`で管理し、`graphicsLayer`の`translationY`へ反映する。閉じる際のアニメーションは`sheetState.hide()`に任せる。
-シート標準のドラッグは`sheetGesturesEnabled = false`で無効にし、半開きは`skipPartiallyExpanded = true`で省略する。これらを変更する場合は、絵文字一覧とのスクロール干渉も確認する。
+`HeaderOnly`ではシート標準のドラッグを`sheetGesturesEnabled = false`で無効にし、半開きを`skipPartiallyExpanded = true`で省略する。`Standard`では両方を反転し、ヘッダー独自のドラッグと移動量の適用を無効にする。これらを変更する場合は、絵文字一覧とのスクロール干渉も確認する。
 右上に閉じるボタンは置かず、外側タップ、戻る操作、ヘッダーの読み上げ用の閉じる操作でも閉じる。
 
 ### 調整後の確認
@@ -62,7 +67,8 @@
 | 確認する操作 | 確認内容 | 関連する端末テスト |
 | --- | --- | --- |
 | カテゴリ切替・検索 | 「すべて」、件数の多いカテゴリ、空の履歴・お気に入りで高さと検索欄の位置が変わらない | [ReactionPickerCategoryDeviceTest.kt](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/ReactionPickerCategoryDeviceTest.kt) |
-| 一覧とヘッダーのスワイプ | 一覧の先頭で下へ引いてもシートは動かない。ヘッダーの短い引き下げは元に戻り、十分に引くと閉じる | 同上 |
+| ホームの開閉とリアクション選択 | 半開きから展開でき、一覧の先頭から下へ引くとシートが動く。閉じた後に開き直し、カテゴリからリアクションを選べる。他画面の投稿では一覧からシートが動かない | [HomeReactionPickerDeviceTest.kt](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/HomeReactionPickerDeviceTest.kt) |
+| ホーム以外の一覧とヘッダーのスワイプ | 一覧の先頭で下へ引いてもシートは動かない。ヘッダーの短い引き下げは元に戻り、十分に引くと閉じる | [ReactionPickerCategoryDeviceTest.kt](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/ReactionPickerCategoryDeviceTest.kt) |
 | キーボード表示・非表示 | 表示領域が狭まる場合は上側に余白を残して縮め、閉じると高さが戻る。浮動表示などで領域が狭まらない場合は高さを維持する | [SearchInputDeviceTest.kt](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/SearchInputDeviceTest.kt) |
 | 投稿画面からの選択 | 選んだ絵文字を本文に挿入し、本文の入力を続けられる | [ComposerToolbarDeviceTest.kt](../../app/src/androidTest/java/io/github/ponpokoo/mastodonclient/ComposerToolbarDeviceTest.kt) |
 
