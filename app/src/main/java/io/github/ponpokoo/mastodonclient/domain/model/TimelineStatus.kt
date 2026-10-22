@@ -22,6 +22,7 @@ data class TimelineStatus(
     val bookmarked: Boolean = false,
     val pinned: Boolean = false,
     val applicationName: String? = null,
+    val applicationWebsite: String? = null,
     val reactions: List<EmojiReaction> = emptyList(),
     val previewCard: PreviewCard? = null,
     val poll: StatusPoll? = null,

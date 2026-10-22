@@ -70,6 +70,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -89,6 +95,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import androidx.core.net.toUri
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,6 +219,7 @@ fun StatusDetailScreen(
                         afterActions = {
                             StatusDetailMetadata(
                                 status = status,
+                                onOpenLink = onOpenLink,
                                 onBoosters = { onShowBoosters(status.statusId) },
                                 onFavourites = { onShowFavourites(status.statusId) },
                             )
@@ -332,15 +340,32 @@ internal fun rememberConversationListState(statusId: String?, ancestorCount: Int
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StatusDetailMetadata(
+internal fun StatusDetailMetadata(
     status: io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus,
+    onOpenLink: (String) -> Unit,
     onBoosters: () -> Unit,
     onFavourites: () -> Unit,
 ) {
     Text(
-        buildString {
+        buildAnnotatedString {
             append(exactDate(status.createdAt))
-            status.applicationName?.let { append("  ·  ").append(it) }
+            status.applicationName?.let { name ->
+                append("  ·  ")
+                val website = status.applicationWebsite?.trim()?.toHttpUrlOrNull()?.toString()
+                if (website == null) {
+                    append(name)
+                } else {
+                    withLink(LinkAnnotation.Url(
+                        url = website,
+                        // A null style makes Material 3 apply its primary color and underline.
+                        styles = TextLinkStyles(style = SpanStyle(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textDecoration = TextDecoration.None,
+                        )),
+                        linkInteractionListener = { onOpenLink(website) },
+                    )) { append(name) }
+                }
+            }
         },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodyMedium,

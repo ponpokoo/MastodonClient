@@ -684,8 +684,29 @@ class DefaultTimelineRepositoryTest {
                 setOf(server.takeRequest().path, server.takeRequest().path),
             )
             assertEquals("Tusky", detail.status.applicationName)
+            assertEquals("https://example.com", detail.status.applicationWebsite)
             assertEquals("👍", detail.status.reactions.single().name)
             assertEquals(true, detail.status.reactions.single().reactedByMe)
+        }
+    }
+
+    @Test
+    fun applicationWebsiteIsOptionalAndBelongsToTheBoostedPost() = runTest {
+        MockWebServer().use { server ->
+            val original = basicStatusJson("original").dropLast(1) +
+                """, "application":{"name":"Original app","website":"https://original.example/"}}"""
+            server.enqueue(MockResponse().setBody("""[
+                ${basicStatusJson("missing-application")},
+                ${basicStatusJson("missing-website").dropLast(1)}, "application":{"name":"App"}},
+                ${basicStatusJson("null-website").dropLast(1)}, "application":{"name":"App","website":null}},
+                ${basicStatusJson("boost").dropLast(1)},
+                    "application":{"name":"Boost app","website":"https://boost.example/"}, "reblog":$original}
+            ]"""))
+            val statuses = DefaultTimelineRepository(ApiClientFactory())
+                .getHomeTimeline(testSession(server)).getOrThrow().statuses
+            statuses.take(3).forEach { assertNull(it.applicationWebsite) }
+            assertEquals("Original app", statuses.last().applicationName)
+            assertEquals("https://original.example/", statuses.last().applicationWebsite)
         }
     }
 

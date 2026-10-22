@@ -1012,6 +1012,7 @@ internal fun StatusDto.toDomain(): TimelineStatus {
         bookmarked = displayed.bookmarked,
         pinned = displayed.pinned == true,
         applicationName = displayed.application?.name,
+        applicationWebsite = displayed.application?.website,
         reactions = (displayed.emojiReactions ?: displayed.pleroma?.emojiReactions).orEmpty().map {
             EmojiReaction(
                 name = it.name,
