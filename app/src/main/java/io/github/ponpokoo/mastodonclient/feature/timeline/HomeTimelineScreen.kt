@@ -19,6 +19,12 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
+import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationDisplaySettings
+import io.github.ponpokoo.mastodonclient.feature.notifications.rememberNotificationDisplayRows
+import io.github.ponpokoo.mastodonclient.feature.notifications.notificationRowsForCategory
+import io.github.ponpokoo.mastodonclient.feature.notifications.visibleNotificationIds
+import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
+import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
@@ -190,6 +196,12 @@ fun HomeTimelineScreen(
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val preferencesStore = remember(context) { UserPreferencesStore(context) }
+    val allNotificationRows = rememberNotificationDisplayRows(
+        notificationsState.notifications,
+        mainState.preferences.groupNotifications,
+        LocalReadingSettings.current.transientSessionKey,
+    )
     val destinations = MainDestination.entries
     // Keep an off-screen page's viewport when another tab has a different top bar.
     val savedPagePadding = remember { mutableStateMapOf<MainDestination, PaddingValues>() }
@@ -398,7 +410,7 @@ fun HomeTimelineScreen(
         if (destination == MainDestination.Profile) profileViewModel.loadProfile()
     }
     LaunchedEffect(
-        destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleState,
+        destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleState, allNotificationRows,
     ) {
         val notificationTabState = notificationsState.forCategory(notificationFilter)
         if (destination == MainDestination.Notifications &&
@@ -406,19 +418,18 @@ fun HomeTimelineScreen(
             (notificationTabState.notificationsError == null || notificationTabState.notificationsErrorIsPagination) &&
             notificationsState.canExplore(notificationFilter)
         ) {
-            val shown = notificationTabState.notifications.filter(notificationFilter::includes)
-            val newestId = shown.firstOrNull()?.id
-            if (newestId != null) {
+            val shown = notificationRowsForCategory(notificationTabState.notifications, notificationFilter, allNotificationRows)
+            val newestKey = shown.firstOrNull()?.key
+            if (newestKey != null) {
                 val listState = notificationListStates[notificationFilter.ordinal]
-                val loadedIds = shown.mapTo(mutableSetOf(), io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification::id)
                 snapshotFlow {
                     lifecycleState.isAtLeast(Lifecycle.State.STARTED) &&
                         listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 &&
                         !listState.isScrollInProgress &&
-                        listState.layoutInfo.visibleItemsInfo.any { it.key == newestId }
+                        listState.layoutInfo.visibleItemsInfo.any { it.key == newestKey }
                 }.distinctUntilChanged().collect { newestIsShown ->
                     if (newestIsShown) notificationsViewModel.onLatestNotificationsShown(
-                        listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.filterTo(mutableSetOf()) { it in loadedIds },
+                        visibleNotificationIds(shown, listState.layoutInfo.visibleItemsInfo.mapTo(mutableSetOf()) { it.key }),
                         notificationFilter == NotificationFilter.All,
                     )
                 }
@@ -442,7 +453,16 @@ fun HomeTimelineScreen(
                     onSettings = onSettings,
                 )
             } else if (destination != MainDestination.Explore) {
-                TopAppBar(title = { Text(destination.label) }, windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                TopAppBar(
+                    title = { Text(destination.label) },
+                    actions = {
+                        if (destination == MainDestination.Notifications) NotificationDisplaySettings(
+                            grouped = mainState.preferences.groupNotifications,
+                            onGroupedChange = { enabled -> scope.launch { preferencesStore.setGroupNotifications(enabled) } },
+                        )
+                    },
+                    windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+                )
             }
         },
         bottomBar = {
@@ -572,6 +592,7 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
+                    allDisplayRows = allNotificationRows,
                     padding = pagePadding,
                     onRefresh = notificationsViewModel::refreshNotifications,
                     onLoadMore = notificationsViewModel::loadNextNotifications,

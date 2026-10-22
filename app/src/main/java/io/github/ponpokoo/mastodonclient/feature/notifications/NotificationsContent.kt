@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -64,6 +66,9 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +88,9 @@ import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
 import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import kotlinx.coroutines.flow.distinctUntilChanged
+import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
+import io.github.ponpokoo.mastodonclient.feature.common.rememberEmojiInlineContent
+import io.github.ponpokoo.mastodonclient.feature.common.replaceCustomEmojiShortcodes
 
 
 
@@ -114,8 +122,12 @@ internal fun NotificationsContent(
     onNewNoticeClick: (() -> Unit)?,
     onAutoLoadMore: () -> Unit = onLoadMore,
     noticeContent: (@Composable () -> Unit)? = null,
+    allDisplayRows: List<NotificationDisplayRow>? = null,
 ) {
     check(listStates.size == NotificationFilter.entries.size)
+    val allRows = allDisplayRows ?: rememberNotificationDisplayRows(
+        state.notifications, preferences.groupNotifications, LocalReadingSettings.current.transientSessionKey,
+    )
     // Keep new rows close to the quoted post's surface instead of using a full accent fill.
     val highlightedBackground = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
         .compositeOver(MaterialTheme.colorScheme.surface)
@@ -128,14 +140,30 @@ internal fun NotificationsContent(
     val canPullRefresh = activeState.isInitialPageLoaded || activeState.notifications.isNotEmpty()
     val isPullRefreshing = canPullRefresh && activeState.isPullRefreshingNotifications
     val activeList = state.list(selectedFilter)
-    LaunchedEffect(selectedListState, activeList, selectedFilter, state.capabilities, state.isCheckingCapabilities) {
+    val groupedAll = preferences.groupNotifications && selectedFilter == NotificationFilter.All
+    var lastGroupedAutoLoadViewport by remember(selectedListState, groupedAll, LocalReadingSettings.current.transientSessionKey) {
+        mutableStateOf<Triple<List<Any>, Int, Int>?>(null)
+    }
+    LaunchedEffect(selectedListState, activeList, selectedFilter, groupedAll, state.capabilities, state.isCheckingCapabilities) {
         if (state.canExplore(selectedFilter) && activeList.canAutoLoad) {
             snapshotFlow {
                 if (filterTabs.isMoving || filterPagerState.settledPage != selectedFilter.ordinal) null
-                else selectedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                else selectedListState.layoutInfo.let { layout ->
+                    layout.visibleItemsInfo.lastOrNull()?.index?.let { last ->
+                        last to if (groupedAll) Triple(layout.visibleItemsInfo.map { it.key },
+                            selectedListState.firstVisibleItemIndex, selectedListState.firstVisibleItemScrollOffset)
+                        else Triple(emptyList<Any>(), 0, 0)
+                    }
+                }
             }
-                .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= selectedListState.layoutInfo.totalItemsCount - 4) onAutoLoadMore()
+                .distinctUntilChanged().collect { viewport ->
+                    if (viewport != null && viewport.first >= selectedListState.layoutInfo.totalItemsCount - 4) {
+                        // More raw events may only enlarge existing groups. Do not drain history without another viewport change.
+                        if (!groupedAll || viewport.second != lastGroupedAutoLoadViewport) {
+                            if (groupedAll) lastGroupedAutoLoadViewport = viewport.second
+                            onAutoLoadMore()
+                        }
+                    }
                 }
         }
     }
@@ -165,6 +193,9 @@ internal fun NotificationsContent(
                     val filter = NotificationFilter.entries[page]
                     val pageState = state.forCategory(filter)
                     val filteredNotifications = pageState.notifications.filter(filter::includes)
+                    val displayRows = remember(filteredNotifications, filter, allRows) {
+                        notificationRowsForCategory(filteredNotifications, filter, allRows)
+                    }
                     val supported = state.canExplore(filter)
                     val checkingCapabilities = !supported && state.isCheckingCapabilities
                     val initialLoading = supported && !pageState.isInitialPageLoaded &&
@@ -180,12 +211,13 @@ internal fun NotificationsContent(
                             else -> "読み込んだ範囲に該当する通知はありません"
                         })
                     }
-                    items(if (supported) filteredNotifications else emptyList(), key = TimelineNotification::id) { notification ->
-                        Column(Modifier.fillMaxWidth().background(
-                            if (notification.id in state.highlightedNotificationIds) highlightedBackground
-                            else MaterialTheme.colorScheme.surface,
-                        )) {
+                    items(if (supported) displayRows else emptyList(), key = NotificationDisplayRow::key) { row ->
+                        val notification = row.latest
                         val status = notification.status
+                        Column(Modifier.fillMaxWidth().background(
+                            if (row.notificationIds.any(state.highlightedNotificationIds::contains)) highlightedBackground
+                            else MaterialTheme.colorScheme.surface,
+                        ).then(if (row.grouped) Modifier.testTag("notification_grouped_row") else Modifier)) {
                         val isReply = notification.type.equals("mention", ignoreCase = true) ||
                             notification.type.equals("reply", ignoreCase = true)
                         if (isReply && status != null) {
@@ -218,7 +250,8 @@ internal fun NotificationsContent(
                                 videoAutoplay = preferences.videoAutoplay,
                             )
                         } else {
-                            NotificationHeader(notification, onAccountClick, preferences.timelineDisplay.avatarIconShape)
+                            if (row.grouped) GroupedNotificationHeader(row, onAccountClick, preferences.timelineDisplay.avatarIconShape)
+                            else NotificationHeader(notification, onAccountClick, preferences.timelineDisplay.avatarIconShape)
                             status?.let {
                                 NotificationStatusQuote(
                                     status = it,
@@ -264,6 +297,65 @@ internal fun NotificationsContent(
                 }
             }
         }
+}
+
+@Composable
+private fun GroupedNotificationHeader(
+    row: NotificationDisplayRow,
+    onAccountClick: (String) -> Unit,
+    avatarIconShape: AvatarIconShape,
+) {
+    val notification = row.latest
+    val representative = row.accounts.first()
+    val (icon, action) = when {
+        notification.isEmojiReaction -> Icons.Filled.AutoAwesome to "リアクションしました"
+        notification.type == "reblog" -> Icons.Filled.Repeat to "ブーストしました"
+        else -> Icons.Filled.Star to "お気に入りにしました"
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 2.dp)) {
+        Box(Modifier.width(34.dp).padding(top = 10.dp)) {
+            if (notification.isEmojiReaction) NotificationReactionIcon(notification)
+            else NotificationTypeIcon(icon, action, notification.type)
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    row.accounts.take(5).forEach { account ->
+                        IconButton(onClick = { onAccountClick(account.id) }, modifier = Modifier.size(40.dp)) {
+                            AsyncImage(
+                                model = account.avatarUrl,
+                                contentDescription = "${account.displayName}のプロフィール",
+                                modifier = Modifier.size(30.dp).clip(avatarIconShape.toShape())
+                                    .testTag("notification_actor_avatar"),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+                Text(
+                    notificationRelativeTime(notification.createdAt),
+                    modifier = Modifier.padding(top = 10.dp).testTag("notification_group_time"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            val summary = buildAnnotatedString {
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(representative.displayName) }
+                if (row.accounts.size > 1) append(" と他${row.accounts.size - 1}人")
+                append(" が$action")
+            }
+            Text(
+                text = replaceCustomEmojiShortcodes(summary, representative.customEmojis),
+                inlineContent = rememberEmojiInlineContent(summary.text, representative.customEmojis),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.testTag("notification_group_summary"),
+            )
+        }
+    }
 }
 
 @Composable

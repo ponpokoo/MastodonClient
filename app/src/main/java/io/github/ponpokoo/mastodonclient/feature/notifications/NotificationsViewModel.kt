@@ -290,11 +290,19 @@ class NotificationsViewModel(
             }
             pageRequest.await().forSession(snapshot).onSuccess { page ->
                 updateList(category) { tab ->
+                    // Only join restored history after the fresh page's tail. Keeping the
+                    // whole snapshot could hide a gap or resurrect rows omitted by REST.
+                    val overlap = if (!page.endReached) {
+                        tab.notifications.indexOfFirst { it.id == page.notifications.lastOrNull()?.id }
+                    } else -1
+                    val restoredTail = if (initial && overlap >= 0) tab.notifications.drop(overlap + 1) else emptyList()
                     val retained = if (initial) tab.notifications.filter { it.id in _uiState.value.pendingNewNotificationIds }
                         else tab.notifications
-                    tab.copy(notifications = (page.notifications + retained).distinctBy(TimelineNotification::id)
+                    val nextMaxId = if (initial) restoredTail.lastOrNull()?.id ?: page.nextMaxId
+                        else if (overlap >= 0) tab.nextMaxId ?: page.nextMaxId else page.nextMaxId
+                    tab.copy(notifications = (page.notifications + retained + restoredTail).distinctBy(TimelineNotification::id)
                         .sortedByDescending(TimelineNotification::createdAt), isLoading = false, isRefreshing = false,
-                        isLoaded = true, nextMaxId = page.nextMaxId, endReached = page.endReached,
+                        isLoaded = true, nextMaxId = nextMaxId, endReached = page.endReached,
                         emptyAutoPages = if (page.notifications.isEmpty()) 1 else 0, serverFiltered = page.serverFiltered)
                 }
                 if (category == NotificationCategory.All) {

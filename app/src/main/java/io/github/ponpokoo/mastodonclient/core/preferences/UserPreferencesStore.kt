@@ -91,6 +91,7 @@ data class AppPreferences(
     val pauseStreamingInBackground: Boolean = true,
     val keepPositionOnPullRefresh: Boolean = true,
     val foregroundNotificationsEnabled: Boolean = true,
+    val groupNotifications: Boolean = false,
     val simpleNotificationsEnabled: Boolean = true,
     val simpleNotificationSetupFailed: Boolean = false,
     val altTextReminder: Boolean = false,
@@ -267,6 +268,7 @@ class UserPreferencesStore(
         update { it.copy(keepPositionOnPullRefresh = enabled) }
     suspend fun setForegroundNotificationsEnabled(enabled: Boolean) =
         update { it.copy(foregroundNotificationsEnabled = enabled) }
+    suspend fun setGroupNotifications(enabled: Boolean) = update { it.copy(groupNotifications = enabled) }
     suspend fun setSimpleNotificationsEnabled(enabled: Boolean) =
         update { it.copy(simpleNotificationsEnabled = enabled, simpleNotificationSetupFailed = false) }
     suspend fun setSimpleNotificationSetupFailed(failed: Boolean) =
