@@ -21,9 +21,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeEffect
+import io.github.ponpokoo.mastodonclient.feature.common.NotificationNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeState
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNoticeStack
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -33,6 +35,50 @@ import java.io.File
 
 class NewItemsNoticeDeviceTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun notificationTimerExpiresWhileItsTabIsHiddenAndDoesNotReappear() {
+        val state = NewItemsNoticeState { compose.mainClock.currentTime }
+        val visible = mutableStateOf(true)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            MaterialTheme {
+                NotificationNoticeEffect(state, visible.value)
+                if (visible.value) TimelineNoticeStack(state.notice, SnackbarHostState(), {})
+            }
+        }
+        compose.runOnIdle { state.updateNotificationCount(setOf("new")) }
+        compose.mainClock.advanceTimeBy(300)
+        compose.onNodeWithText("新着1件").assertExists()
+        compose.runOnIdle {
+            state.updateNotificationCount(emptySet())
+            visible.value = false
+        }
+        compose.mainClock.advanceTimeBy(1_800)
+        compose.runOnIdle { assertNull(state.notice); visible.value = true }
+        compose.mainClock.advanceTimeBy(240)
+        compose.onNodeWithText("新着1件").assertDoesNotExist()
+    }
+
+    @Test fun recreatedNotificationReceiptKeepsItsOriginalExpiryAfterAcknowledgement() {
+        val restoration = StateRestorationTester(compose)
+        val pending = mutableStateOf(setOf("new"))
+        val clock = { compose.mainClock.currentTime }
+        compose.mainClock.autoAdvance = false
+        restoration.setContent {
+            val state = rememberSaveable(saver = NewItemsNoticeState.saver(clock)) { NewItemsNoticeState(clock) }
+            LaunchedEffect(pending.value) { state.updateNotificationCount(pending.value) }
+            MaterialTheme {
+                NotificationNoticeEffect(state, true)
+                TimelineNoticeStack(state.notice, SnackbarHostState(), {})
+            }
+        }
+        compose.mainClock.advanceTimeBy(850)
+        compose.onNodeWithText("新着1件").assertExists()
+        compose.runOnIdle { pending.value = emptySet() }
+        restoration.emulateSavedInstanceStateRestore()
+        compose.mainClock.advanceTimeBy(1_200)
+        compose.onNodeWithText("新着1件").assertDoesNotExist()
+    }
 
     @Test fun pendingCountStaysFixedAndDisappearsOnlyAfterArrival() {
         val state = NewItemsNoticeState()

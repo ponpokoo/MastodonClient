@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeState
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeEffect
+import io.github.ponpokoo.mastodonclient.feature.common.NotificationNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNoticeStack
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
@@ -270,7 +271,7 @@ fun HomeTimelineScreen(
         }
     }
     NewItemsNoticeEffect(homeNotice, isHomeVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
-    NewItemsNoticeEffect(notificationNotice, notificationsVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
+    NotificationNoticeEffect(notificationNotice, notificationsVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
 
     LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
         mainState.session?.sessionId, state.isResumedWindow, state.isHomeSyncing) {

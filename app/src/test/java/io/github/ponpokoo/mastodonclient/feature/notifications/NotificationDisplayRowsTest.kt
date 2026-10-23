@@ -29,22 +29,33 @@ class NotificationDisplayRowsTest {
         assertEquals(input.toSet(), rows.flatMap { it.notifications }.toSet())
     }
 
-    @Test fun newActorsAndOlderPagesDoNotReplaceTheFirstDisplayedActorOrStableKey() {
+    @Test fun newActorsLeadTheGroupAndKeepTheirOrderAfterRefreshAndRecreation() {
         val grouper = NotificationRowGrouper()
         val first = event("initial", actor = "first")
         val initial = grouper.rows(listOf(first), true).single()
-        val next = grouper.rows(listOf(event("live", actor = "second"), first, event("paged", actor = "older")), true).single()
+        val liveEvents = listOf(event("live", actor = "second"), first)
+        val next = grouper.rows(liveEvents, true).single()
         assertEquals(initial.key, next.key)
-        assertEquals(listOf("first", "second", "older"), next.accounts.map { it.id })
+        assertEquals(listOf("second", "first"), next.accounts.map { it.id })
         assertEquals("live", next.latest.id)
-        val refreshed = grouper.rows(listOf(event("updated-first", actor = "first"), first), true).single()
-        assertEquals(listOf("first"), refreshed.accounts.map { it.id })
+        val pagedEvents = liveEvents + event("paged", actor = "older")
+        val paged = grouper.rows(pagedEvents, true).single()
+        assertEquals(listOf("second", "first", "older"), paged.accounts.map { it.id })
+        assertEquals(initial.key, paged.key)
+        val refreshedEvents = pagedEvents.map { it.copy(account = it.account.copy(displayName = "updated:${it.account.id}")) }
+        val refreshed = grouper.rows(refreshedEvents, true).single()
+        assertEquals(paged.accounts.map { it.id }, refreshed.accounts.map { it.id })
+        assertEquals("updated:second", refreshed.accounts.first().displayName)
+        assertEquals(refreshed, NotificationRowGrouper().rows(refreshedEvents, true).single())
     }
 
     @Test fun repeatedActorIsCountedOnceButAllNotificationIdsRemainAvailableForReadState() {
-        val rows = NotificationRowGrouper().rows(listOf(event("new", actor = "same"), event("old", actor = "same")), true)
-        assertEquals(1, rows.single().accounts.size)
-        assertEquals(setOf("new", "old"), visibleNotificationIds(rows, setOf(rows.single().key, "footer")))
+        val grouper = NotificationRowGrouper()
+        val previous = listOf(event("other", actor = "other"), event("old", actor = "same"))
+        grouper.rows(previous, true)
+        val rows = grouper.rows(listOf(event("new", actor = "same")) + previous, true)
+        assertEquals(listOf("same", "other"), rows.single().accounts.map { it.id })
+        assertEquals(setOf("new", "other", "old"), visibleNotificationIds(rows, setOf(rows.single().key, "footer")))
         assertTrue(visibleNotificationIds(rows, setOf("footer")).isEmpty())
     }
 
@@ -88,12 +99,15 @@ class NotificationDisplayRowsTest {
         assertFalse(events.first().status!!.favourited)
     }
 
-    @Test fun independentGroupersDoNotShareRepresentativesAcrossAccountSessions() {
+    @Test fun latestActorsDoNotDependOnPreviouslyDisplayedGroupsOrAccountSessions() {
         val firstSession = NotificationRowGrouper()
         firstSession.rows(listOf(event("same-id", actor = "one")), true)
         val next = listOf(event("live", actor = "two"), event("same-id", actor = "one"))
-        assertEquals("one", firstSession.rows(next, true).single().accounts.first().id)
-        assertEquals("two", NotificationRowGrouper().rows(next, true).single().accounts.first().id)
+        val updated = firstSession.rows(next, true).single()
+        assertEquals("two", updated.accounts.first().id)
+        assertEquals(updated, NotificationRowGrouper().rows(next, true).single())
+        val otherSession = listOf(event("same-id", actor = "another-account"))
+        assertEquals(listOf("another-account"), firstSession.rows(otherSession, true).single().accounts.map { it.id })
     }
 
     @Test fun relativeTimeHandlesOldNotificationsClockSkewAndInvalidServerDates() {

@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -33,20 +34,36 @@ internal data class NewItemsNotice(
 data class NewItemsNoticeResult(val id: Long, val count: Int)
 
 /** Presentation only: acknowledging rows and moving the viewport remain with their owners. */
-internal class NewItemsNoticeState {
+internal class NewItemsNoticeState(private val clock: () -> Long = System::currentTimeMillis) {
     var notice by mutableStateOf<NewItemsNotice?>(null)
         private set
     private var sequence = 0L
     private var lastResultKey: Long? = null
     private var restoring = false
     private var observedNotificationIds: Set<String> = emptySet()
+    var notificationExpiresAtMillis by mutableStateOf<Long?>(null)
+        private set
 
     /** Notification receipts are timed results, independent of viewport and read acknowledgements. */
     fun updateNotificationCount(pendingIds: Set<String>) {
         val hasArrivals = (pendingIds - observedNotificationIds).isNotEmpty()
         observedNotificationIds = pendingIds
-        if (hasArrivals) notice = NewItemsNotice(++sequence, "新着${pendingIds.size}件", false, 1_800)
+        if (hasArrivals) {
+            notice = NewItemsNotice(++sequence, "新着${pendingIds.size}件", false, 1_800)
+            // Once shown, additional arrivals renew the running timer even while the tab is hidden.
+            if (notificationExpiresAtMillis != null) notificationExpiresAtMillis = clock() + 1_800
+        }
         else if (notice?.actionable == true) notice = null
+    }
+
+    fun startNotificationTimer(id: Long) {
+        val duration = notice?.takeIf { it.id == id }?.dismissAfterMillis ?: return
+        if (notificationExpiresAtMillis == null) notificationExpiresAtMillis = clock() + duration
+    }
+
+    fun remainingNotificationMillis(id: Long): Long? {
+        if (notice?.id != id) return null
+        return notificationExpiresAtMillis?.let { (it - clock()).coerceAtLeast(0) }
     }
 
     fun update(pendingCount: Int, atTop: Boolean, resultKey: Long? = null,
@@ -80,24 +97,50 @@ internal class NewItemsNoticeState {
     }
 
     fun dismiss(id: Long) {
-        if (notice?.id == id) notice = null
+        if (notice?.id == id) {
+            notice = null
+            notificationExpiresAtMillis = null
+        }
     }
 
     companion object {
         // Preserve the frozen label when a detail screen recreates the main composition.
-        val Saver = listSaver<NewItemsNoticeState, Any?>(
+        val Saver = saver(System::currentTimeMillis)
+
+        fun saver(clock: () -> Long): Saver<NewItemsNoticeState, Any> = listSaver<NewItemsNoticeState, Any?>(
             save = { listOf(it.sequence, it.lastResultKey, it.restoring, it.notice?.id,
                 it.notice?.message, it.notice?.actionable, it.notice?.dismissAfterMillis,
-                it.observedNotificationIds.toList()) },
-            restore = { values -> NewItemsNoticeState().apply {
+                it.observedNotificationIds.toList(), it.notificationExpiresAtMillis) },
+            restore = { values -> NewItemsNoticeState(clock).apply {
                 sequence = values[0] as Long
                 lastResultKey = values[1] as Long?
                 restoring = values[2] as Boolean
                 observedNotificationIds = (values.getOrNull(7) as? List<*>)?.filterIsInstance<String>()?.toSet().orEmpty()
                 notice = (values[3] as Long?)?.let { id -> NewItemsNotice(id,
                     values[4] as String, values[5] as Boolean, values[6] as Long?) }
+                notificationExpiresAtMillis = values.getOrNull(8) as? Long
+                if (notificationExpiresAtMillis?.let { it <= clock() } == true) {
+                    notice?.let { dismiss(it.id) }
+                }
             } },
         )
+    }
+}
+
+/** Start on first display, then keep the deadline across tab changes and saved-state restoration. */
+@Composable
+internal fun NotificationNoticeEffect(state: NewItemsNoticeState, visible: Boolean) {
+    val notice = state.notice
+    LaunchedEffect(state, notice?.id, visible) {
+        if (visible && notice != null) state.startNotificationTimer(notice.id)
+    }
+    val expiresAt = state.notificationExpiresAtMillis
+    LaunchedEffect(state, notice?.id, expiresAt) {
+        if (notice != null) {
+            val remaining = state.remainingNotificationMillis(notice.id) ?: return@LaunchedEffect
+            delay(remaining)
+            state.dismiss(notice.id)
+        }
     }
 }
 

@@ -36,10 +36,8 @@ private fun TimelineNotification.groupKey(): NotificationGroupKey? {
     }
 }
 
-/** Retains the first displayed actor when streaming appends actors or pagination adds older events. */
+/** Derives actor order from the latest notifications so refresh and recreation show the same order. */
 internal class NotificationRowGrouper {
-    private var actorOrder: Map<String, List<String>> = emptyMap()
-
     fun rows(notifications: List<TimelineNotification>, grouped: Boolean): List<NotificationDisplayRow> {
         val groups = linkedMapOf<String, MutableList<TimelineNotification>>()
         val groupedKeys = mutableSetOf<String>()
@@ -49,17 +47,11 @@ internal class NotificationRowGrouper {
             if (group != null) groupedKeys += key
             groups.getOrPut(key) { mutableListOf() } += notification
         }
-        val nextActorOrder = mutableMapOf<String, List<String>>()
-        val rows = groups.map { (key, events) ->
-            // Input is already in server notification order; never compare opaque notification IDs.
+        return groups.map { (key, events) ->
+            // Input is already in notification time order; preserve ties without comparing opaque IDs.
             val actors = events.map(TimelineNotification::account).distinctBy(StatusAuthor::id)
-            val byId = actors.associateBy(StatusAuthor::id)
-            val ids = (actorOrder[key].orEmpty().filter(byId::containsKey) + actors.map(StatusAuthor::id)).distinct()
-            if (key in groupedKeys) nextActorOrder[key] = ids
-            NotificationDisplayRow(key, events, ids.map(byId::getValue), key in groupedKeys)
+            NotificationDisplayRow(key, events, actors, key in groupedKeys)
         }
-        actorOrder = nextActorOrder
-        return rows
     }
 }
 

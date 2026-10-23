@@ -10,6 +10,8 @@ import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -190,7 +192,7 @@ class NotificationsViewModel(
                 highlightedNotificationIds = it.highlightedNotificationIds - readState.viewedIds.toSet()) }
             if (cached != null && !_uiState.value.isInitialPageLoaded) {
                 updateList(NotificationCategory.All) { it.copy(notifications =
-                    (it.notifications + cached.notifications).distinctBy(TimelineNotification::id)) }
+                    mergeNotifications(it.notifications, cached.notifications)) }
             }
             restoredCategories += NotificationCategory.All
             cacheReady.complete(Unit)
@@ -286,7 +288,7 @@ class NotificationsViewModel(
                 val cached = timelineRepository.getCachedNotificationCategory(snapshot.account!!, category).forSession(snapshot).getOrNull()
                 restoredCategories += category
                 if (cached != null) updateList(category) { it.copy(notifications =
-                    (it.notifications + cached.notifications).distinctBy(TimelineNotification::id)) }
+                    mergeNotifications(it.notifications, cached.notifications)) }
             }
             pageRequest.await().forSession(snapshot).onSuccess { page ->
                 updateList(category) { tab ->
@@ -300,8 +302,8 @@ class NotificationsViewModel(
                         else tab.notifications
                     val nextMaxId = if (initial) restoredTail.lastOrNull()?.id ?: page.nextMaxId
                         else if (overlap >= 0) tab.nextMaxId ?: page.nextMaxId else page.nextMaxId
-                    tab.copy(notifications = (page.notifications + retained + restoredTail).distinctBy(TimelineNotification::id)
-                        .sortedByDescending(TimelineNotification::createdAt), isLoading = false, isRefreshing = false,
+                    tab.copy(notifications = mergeNotifications(page.notifications, retained, restoredTail),
+                        isLoading = false, isRefreshing = false,
                         isLoaded = true, nextMaxId = nextMaxId, endReached = page.endReached,
                         emptyAutoPages = if (page.notifications.isEmpty()) 1 else 0, serverFiltered = page.serverFiltered)
                 }
@@ -427,7 +429,7 @@ class NotificationsViewModel(
                 .forSession(snapshot).onSuccess { page ->
                     updateList(category) { current ->
                         val added = page.notifications.filterNot { n -> current.notifications.any { it.id == n.id } }
-                        current.copy(notifications = (current.notifications + page.notifications).distinctBy(TimelineNotification::id),
+                        current.copy(notifications = mergeNotifications(current.notifications, page.notifications),
                             isLoadingMore = false, nextMaxId = page.nextMaxId,
                             endReached = page.endReached || page.nextMaxId == cursor,
                             emptyAutoPages = if (added.isEmpty()) (if (automatic) current.emptyAutoPages else 0) + 1 else 0,
@@ -465,7 +467,7 @@ class NotificationsViewModel(
         if (notification != null) {
             val known = NotificationCategory.entries.any { category -> _uiState.value.list(category).notifications.any { it.id == notification.id } }
             NotificationCategory.entries.filter { it.includes(notification) }.forEach { category ->
-                updateList(category) { it.copy(notifications = (listOf(notification) + it.notifications).distinctBy(TimelineNotification::id)) }
+                updateList(category) { it.copy(notifications = mergeNotifications(listOf(notification), it.notifications)) }
             }
             if (!known && notification.id !in readState.viewedIds) addUnread(setOf(notification.id))
         } else {
@@ -505,3 +507,15 @@ class NotificationsViewModel(
         readWriteJob = requestScope.launch { timelineRepository.saveNotificationReadState(snapshot.account!!, value).forSession(snapshot) }
     }
 }
+
+/** First source wins duplicate IDs and ties; refreshes put the server page first. */
+private fun mergeNotifications(vararg sources: List<TimelineNotification>): List<TimelineNotification> =
+    sources.flatMap { it }.distinctBy(TimelineNotification::id)
+        .map { notification ->
+            val time = try { Instant.parse(notification.createdAt) }
+                catch (_: DateTimeParseException) { null }
+            notification to time
+        }
+        // Stable sort preserves source order for equal instants and puts unparseable dates last.
+        .sortedByDescending { it.second }
+        .map { it.first }

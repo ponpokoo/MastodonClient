@@ -1,9 +1,63 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.compose.runtime.saveable.SaverScope
 import org.junit.Assert.*
 import org.junit.Test
 
 class NewItemsNoticeStateTest {
+    private fun restore(state: NewItemsNoticeState, clock: () -> Long): NewItemsNoticeState {
+        val saver = NewItemsNoticeState.saver(clock)
+        val scope = object : SaverScope { override fun canBeSaved(value: Any) = true }
+        return saver.restore(with(saver) { scope.save(state) }!!)!!
+    }
+
+    @Test fun notificationDeadlineSurvivesReadingAndRestorationWithoutRestarting() {
+        var now = 0L
+        val state = NewItemsNoticeState { now }
+        state.updateNotificationCount(setOf("new"))
+        val id = state.notice!!.id
+        state.startNotificationTimer(id)
+        now = 700
+        state.updateNotificationCount(emptySet())
+        val restored = restore(state) { now }
+        restored.startNotificationTimer(id)
+        assertEquals(1_100L, restored.remainingNotificationMillis(id))
+        now = 1_800
+        assertNull(restore(restored) { now }.notice)
+    }
+
+    @Test fun notificationReceivedBeforeFirstDisplayStillGetsItsFirstDisplayTime() {
+        var now = 0L
+        val state = NewItemsNoticeState { now }
+        state.updateNotificationCount(setOf("new"))
+        now = 10_000
+        val restored = restore(state) { now }
+        assertNotNull(restored.notice)
+        assertNull(restored.remainingNotificationMillis(restored.notice!!.id))
+        restored.startNotificationTimer(restored.notice!!.id)
+        assertEquals(1_800L, restored.remainingNotificationMillis(restored.notice!!.id))
+    }
+
+    @Test fun additionalNotificationsExtendTheRunningDeadlineAndOldTimerCannotDismissThem() {
+        var now = 0L
+        val state = NewItemsNoticeState { now }
+        state.updateNotificationCount(setOf("first"))
+        val firstId = state.notice!!.id
+        state.startNotificationTimer(firstId)
+        now = 1_500
+        state.updateNotificationCount(setOf("first", "second"))
+        val secondId = state.notice!!.id
+        now = 1_800
+        state.dismiss(firstId)
+        assertEquals(secondId, state.notice!!.id)
+        assertEquals(1_500L, state.remainingNotificationMillis(secondId))
+        now = 3_300
+        val restored = restore(state) { now }
+        assertNull(restored.notice)
+        restored.updateNotificationCount(setOf("first", "second"))
+        assertNull(restored.notice)
+    }
+
     @Test fun pendingNoticeFreezesItsCountAndIgnoresOtherResultsUntilArrival() {
         val state = NewItemsNoticeState()
         state.update(6, atTop = false)
