@@ -24,9 +24,9 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost
+import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
 import io.github.ponpokoo.mastodonclient.domain.model.SearchResults
 import io.github.ponpokoo.mastodonclient.domain.model.SearchTarget
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -42,7 +42,12 @@ import org.junit.Test
 class SearchNavigationDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun detailReturnPreservesResultsAndPositionWithoutKeyboardAndAllowsReediting() {
+    @Test fun detailReturnPreservesResultsAndPositionWithoutKeyboardAndAllowsReediting() = checkDetailReturn(false)
+
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 34)
+    @Test fun predictiveBackCancelAndCommitPreserveSearchResultsAndPosition() = checkDetailReturn(true)
+
+    private fun checkDetailReturn(predictive: Boolean) {
         val state = mutableStateOf(SearchUiState(sessionKey = "search-navigation"))
         val results = SearchResults(emptyList(), List(30) { index ->
             TimelineStatus(
@@ -58,8 +63,8 @@ class SearchNavigationDeviceTest {
         rule.setContent {
             MaterialTheme {
                 val navigation = rememberNavController()
-                NavHost(navigation, startDestination = "search") {
-                    composable("search") {
+                ScreenNavHost(navigation, startDestination = "search") {
+                    animatedScreen("search") {
                         SearchContent(
                             state = state.value, padding = PaddingValues(),
                             onQueryChanged = { state.value = state.value.copy(searchQuery = it) },
@@ -79,7 +84,7 @@ class SearchNavigationDeviceTest {
                             onMoreClick = {},
                         )
                     }
-                    composable("detail") {
+                    animatedScreen("detail") {
                         TextButton(onClick = { navigation.popBackStack() }, modifier = Modifier.testTag("detail_back")) {
                             Text("検索結果へ戻る")
                         }
@@ -99,7 +104,31 @@ class SearchNavigationDeviceTest {
         rule.onNode(hasTestTag("timeline_status") and hasText("検索結果 12")).performClick()
         rule.onNodeWithTag("search_input").assertDoesNotExist()
         rule.runOnIdle { assertEquals("post-12", openedStatus) }
-        rule.onNodeWithTag("detail_back").performClick()
+        if (predictive) {
+            repeat(2) { attempt ->
+                rule.mainClock.autoAdvance = false
+                rule.runOnUiThread {
+                    rule.activity.onBackPressedDispatcher.dispatchOnBackStarted(
+                        androidx.activity.BackEventCompat(0f, 400f, 0f, androidx.activity.BackEventCompat.EDGE_LEFT))
+                }
+                rule.mainClock.advanceTimeBy(64)
+                rule.runOnUiThread {
+                    rule.activity.onBackPressedDispatcher.dispatchOnBackProgressed(
+                        androidx.activity.BackEventCompat(200f, 400f, 0.6f, androidx.activity.BackEventCompat.EDGE_LEFT))
+                }
+                rule.mainClock.advanceTimeBy(64)
+                rule.runOnUiThread {
+                    if (attempt == 0) rule.activity.onBackPressedDispatcher.dispatchOnBackCancelled()
+                    else rule.activity.onBackPressedDispatcher.onBackPressed()
+                }
+                rule.mainClock.autoAdvance = true
+                rule.waitForIdle()
+                if (attempt == 0) {
+                    rule.onNodeWithTag("detail_back").assertIsDisplayed()
+                    rule.runOnIdle { assertTrue("Preview closed search behind the detail", state.value.isSearchActive) }
+                }
+            }
+        } else rule.onNodeWithTag("detail_back").performClick()
 
         rule.onNodeWithTag("search_input").assertTextEquals("検索語").assertIsNotFocused()
         rule.onNodeWithTag("search_target_posts").assertIsSelected()

@@ -77,6 +77,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
@@ -129,7 +132,12 @@ fun StatusDetailScreen(
     var reportStatus by remember { mutableStateOf<TimelineStatus?>(null) }
     var listStatus by remember { mutableStateOf<TimelineStatus?>(null) }
 
-    LaunchedEffect(state.isDeleted) { if (state.isDeleted) onBack() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateAsState()
+    LaunchedEffect(state.isDeleted, lifecycle, lifecycleState) {
+        // A deleted destination may be recomposed as an uncommitted back preview.
+        if (state.isDeleted && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) onBack()
+    }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
             snackbarHostState.showSnackbar(it)

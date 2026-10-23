@@ -1,9 +1,5 @@
 package io.github.ponpokoo.mastodonclient.feature.settings
 
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -20,6 +16,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.*
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
+import io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost
 
 internal enum class SettingsPage(val title: String, val description: String) {
     Root("設定", ""),
@@ -54,17 +52,13 @@ fun SettingsScreen(
     posting: PostingSettingsViewModel? = null,
 ) {
     val nav = rememberNavController()
-    NavHost(
+    ScreenNavHost(
         navController = nav,
         startDestination = SettingsPage.Root.name,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
-        enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220)) },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220)) },
     ) {
         SettingsPage.entries.forEach { page ->
-            composable(page.name) {
+            animatedScreen(page.name) {
                 if (page == SettingsPage.Licenses && licenses != null) {
                     LicenseTextScreen(licenses, onBack = { nav.popBackStack() })
                 } else if (page == SettingsPage.Moderation && moderation != null) {

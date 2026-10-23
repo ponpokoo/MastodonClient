@@ -243,6 +243,9 @@ fun HomeTimelineScreen(
     ) { rememberCoroutineScope() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.CREATED)
+    // STARTED also includes an uncommitted predictive-back preview.
+    val isScreenResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val hasBeenResumed = remember(lifecycleOwner) { mutableStateOf(false) }
     val homeNotice = key(mainState.session?.sessionId, state.selectedFeed) {
         rememberSaveable(saver = NewItemsNoticeState.Saver) { NewItemsNoticeState() }
     }
@@ -253,7 +256,7 @@ fun HomeTimelineScreen(
     val homeNewestId = state.statuses.firstOrNull()?.timelineId
     val homeAtTop by remember(isHomeVisible, homeNewestId, lifecycleState) {
         derivedStateOf {
-            isHomeVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED) &&
+            isHomeVisible && isScreenResumed &&
                 timelineListState.firstVisibleItemIndex == 0 && timelineListState.firstVisibleItemScrollOffset == 0 &&
                 !timelineListState.isScrollInProgress && homeNewestId != null &&
                 timelineListState.layoutInfo.visibleItemsInfo.any { it.key == homeNewestId }
@@ -270,11 +273,12 @@ fun HomeTimelineScreen(
             notificationNotice.updateNotificationCount(notificationsState.pendingNewNotificationIds)
         }
     }
-    NewItemsNoticeEffect(homeNotice, isHomeVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
-    NotificationNoticeEffect(notificationNotice, notificationsVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED))
+    NewItemsNoticeEffect(homeNotice, isHomeVisible && isScreenResumed)
+    NotificationNoticeEffect(notificationNotice, notificationsVisible && isScreenResumed)
 
     LaunchedEffect(mainState.preferencesLoaded, mainState.preferences.keepPositionOnPullRefresh,
-        mainState.session?.sessionId, state.isResumedWindow, state.isHomeSyncing) {
+        mainState.session?.sessionId, state.isResumedWindow, state.isHomeSyncing, isScreenResumed) {
+        if (!isScreenResumed) return@LaunchedEffect
         if (mainState.preferencesLoaded) viewModel.setKeepPositionOnRefresh(mainState.preferences.keepPositionOnPullRefresh)
         if (mainState.preferencesLoaded && !mainState.preferences.keepPositionOnPullRefresh) {
             viewModel.clearSavedViewport()
@@ -291,17 +295,17 @@ fun HomeTimelineScreen(
         observedTimelineFeed = feed
         hasObservedTimelineContext = true
     }
-    LaunchedEffect(state.resumeAnchorId, state.statuses) {
+    LaunchedEffect(state.resumeAnchorId, state.statuses, isScreenResumed) {
         val anchorId = state.resumeAnchorId ?: return@LaunchedEffect
         val index = state.displayRows().indexOfFirst { it is TimelineRow.Post && it.status.timelineId == anchorId }
         if (index >= 0) timelineListState.scrollToItem(index, state.resumeOffset)
         else timelineListState.scrollToItem(0)
-        viewModel.consumeResumeAnchor()
+        if (isScreenResumed) viewModel.consumeResumeAnchor()
     }
     LaunchedEffect(mainState.session?.sessionId, mainState.preferencesLoaded,
         mainState.preferences.keepPositionOnPullRefresh, state.selectedFeed,
-        state.statuses, state.isInitialLoading, state.isRefreshing, state.resumeAnchorId) {
-        if (!mainState.preferencesLoaded || !mainState.preferences.keepPositionOnPullRefresh ||
+        state.statuses, state.isInitialLoading, state.isRefreshing, state.resumeAnchorId, isScreenResumed) {
+        if (!isScreenResumed || !mainState.preferencesLoaded || !mainState.preferences.keepPositionOnPullRefresh ||
             mainState.session == null || state.isInitialLoading || state.isRefreshing ||
             state.resumeAnchorId != null || state.statuses.isEmpty()) return@LaunchedEffect
         snapshotFlow {
@@ -340,12 +344,14 @@ fun HomeTimelineScreen(
     DisposableEffect(lifecycleOwner, destination, homeAtTop) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> {
+                Lifecycle.Event.ON_RESUME -> {
+                    hasBeenResumed.value = true
                     viewModel.updateViewport(homeAtTop)
                 }
+                Lifecycle.Event.ON_PAUSE -> viewModel.updateViewport(false)
                 Lifecycle.Event.ON_STOP -> {
                     viewModel.updateViewport(false)
-                    viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
+                    if (hasBeenResumed.value) viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
                 }
                 else -> Unit
             }
@@ -371,14 +377,14 @@ fun HomeTimelineScreen(
     DisposableEffect(viewModel, destination) {
         onDispose {
             viewModel.updateViewport(false)
-            viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
+            if (hasBeenResumed.value) viewModel.consumeStreamNotice(viewModel.uiState.value.streamAutoScrollId)
         }
     }
-    LaunchedEffect(state.refreshNewStatusCount, mainState.session?.sessionId, state.selectedFeed) {
-        if (state.refreshNewStatusCount != null) viewModel.consumeRefreshResult()
+    LaunchedEffect(state.refreshNewStatusCount, mainState.session?.sessionId, state.selectedFeed, isScreenResumed) {
+        if (isScreenResumed && state.refreshNewStatusCount != null) viewModel.consumeRefreshResult()
     }
-    LaunchedEffect(state.streamAutoScrollId, isHomeVisible, mainState.session?.sessionId, state.selectedFeed) {
-        if (isHomeVisible && state.streamAutoScrollId > 0) {
+    LaunchedEffect(state.streamAutoScrollId, isHomeVisible, mainState.session?.sessionId, state.selectedFeed, isScreenResumed) {
+        if (isHomeVisible && isScreenResumed && state.streamAutoScrollId > 0) {
             val requestId = state.streamAutoScrollId
             timelineListState.scrollToItem(0)
             delay(1_800)
@@ -400,15 +406,15 @@ fun HomeTimelineScreen(
             scrollHomeAfterRefresh = false
         }
     }
-    LaunchedEffect(notificationsState.refreshResult) {
-        notificationsState.refreshResult?.let { result ->
+    LaunchedEffect(notificationsState.refreshResult, isScreenResumed) {
+        notificationsState.refreshResult?.takeIf { isScreenResumed }?.let { result ->
             notificationsViewModel.consumeRefreshResult(result.id)
         }
     }
     NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
     LaunchedEffect(notificationFilter) { notificationsViewModel.selectCategory(notificationFilter) }
-    LaunchedEffect(destination) {
-        if (destination == MainDestination.Profile) profileViewModel.loadProfile()
+    LaunchedEffect(destination, isScreenResumed) {
+        if (isScreenResumed && destination == MainDestination.Profile) profileViewModel.loadProfile()
     }
     LaunchedEffect(
         destination, notificationFilter, notificationsState.list(notificationFilter), lifecycleState, allNotificationRows,
@@ -424,7 +430,7 @@ fun HomeTimelineScreen(
             if (newestKey != null) {
                 val listState = notificationListStates[notificationFilter.ordinal]
                 snapshotFlow {
-                    lifecycleState.isAtLeast(Lifecycle.State.STARTED) &&
+                    lifecycleState.isAtLeast(Lifecycle.State.RESUMED) &&
                         listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 &&
                         !listState.isScrollInProgress &&
                         listState.layoutInfo.visibleItemsInfo.any { it.key == newestKey }

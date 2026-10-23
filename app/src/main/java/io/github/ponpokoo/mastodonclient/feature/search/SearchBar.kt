@@ -33,6 +33,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import io.github.ponpokoo.mastodonclient.feature.common.SearchInput
 
 /** The same input survives search/explore mode changes; composition remains local to the editor. */
@@ -70,7 +73,8 @@ internal fun SearchBar(
         keyboard?.hide()
         onBack()
     }
-    BackHandler(enabled = active && isVisible, onBack = back)
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    BackHandler(enabled = active && isVisible && lifecycleState.isAtLeast(Lifecycle.State.RESUMED), onBack = back)
     Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Row(Modifier.heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(

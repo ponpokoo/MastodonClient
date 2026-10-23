@@ -7,10 +7,6 @@ import android.widget.Toast
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.view.WindowManager
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -37,8 +33,6 @@ import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -293,7 +287,11 @@ fun AppNavigation(
         if (startupRoute == null || authRepository.restoreSession() == null) return@LaunchedEffect
         val navigate = { navController.openSharedComposer(shared) }
         val currentComposer = navController.currentBackStackEntry?.id?.let(composerModels::get)
-        if (currentComposer == null) navigate() else currentComposer.retainInputThen(navigate)
+        if (currentComposer == null) {
+            navigate()
+        } else if (!currentComposer.retainInputThen(navigate)) {
+            return@LaunchedEffect
+        }
         IncomingShareBus.consume(shared.requestId)
     }
     val openLink: (String) -> Unit = { url ->
@@ -374,24 +372,12 @@ fun AppNavigation(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
-    } else NavHost(
+    } else ScreenNavHost(
         navController = navController,
         startDestination = initialRoute,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-        enterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(220))
-        },
-        exitTransition = {
-            ExitTransition.None
-        },
-        popEnterTransition = {
-            EnterTransition.None
-        },
-        popExitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(220))
-        },
     ) {
-        composable<Route.Login> {
+        animatedScreen<Route.Login> {
             val loginViewModel: LoginViewModel = viewModel(
                 factory = LoginViewModel.Factory(
                     DefaultInstanceRepository(apiClientFactory),
@@ -405,7 +391,7 @@ fun AppNavigation(
                 }
             }
         }
-        composable<Route.AddAccount> {
+        animatedScreen<Route.AddAccount> {
             val loginViewModel: LoginViewModel = viewModel(
                 factory = LoginViewModel.Factory(
                     DefaultInstanceRepository(apiClientFactory),
@@ -420,7 +406,7 @@ fun AppNavigation(
                 }
             }
         }
-        composable<Route.Timeline> { backStackEntry ->
+        animatedScreen<Route.Timeline> { backStackEntry ->
             val mainViewModel: MainSessionViewModel = viewModel(factory = mainSessionFactory)
             SideEffect { mainViewModel.bindForegroundLifecycle(appLifecycle) }
             val browsing = mainViewModel.browsing
@@ -491,7 +477,7 @@ fun AppNavigation(
                 onOpenReactions = { navController.navigate(Route.SavedTimeline("reactions", title = "リアクションした投稿")) },
             )
         }
-        composable<Route.StatusDetail> { backStackEntry ->
+        animatedScreen<Route.StatusDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.StatusDetail>()
             val detailViewModel: StatusDetailViewModel = viewModel(
                 key = "status-detail-${route.statusId}",
@@ -583,7 +569,7 @@ fun AppNavigation(
                 onPosted = { navController.popBackStack() },
             )
         }
-        composable<Route.Settings> { backStackEntry ->
+        animatedScreen<Route.Settings> { backStackEntry ->
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry<Route.Timeline>() }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
             val accountState by mainModel.uiState.collectAsStateWithLifecycle()
@@ -629,7 +615,7 @@ fun AppNavigation(
             )
         }
         // Older versions may restore a WebView entry. Replace it with a browser tab once.
-        composable<Route.WebPage> { backStackEntry ->
+        animatedScreen<Route.WebPage> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.WebPage>()
             LaunchedEffect(backStackEntry.id) {
                 navController.popBackStack()
@@ -638,7 +624,7 @@ fun AppNavigation(
                 }
             }
         }
-        composable<Route.AccountProfile> { backStackEntry ->
+        animatedScreen<Route.AccountProfile> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.AccountProfile>()
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry<Route.Timeline>() }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry, factory = mainSessionFactory)
@@ -666,7 +652,7 @@ fun AppNavigation(
                 onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
-        composable<Route.AccountList> { backStackEntry ->
+        animatedScreen<Route.AccountList> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.AccountList>()
             val accountListViewModel: AccountListViewModel = viewModel(
                 factory = AccountListViewModel.Factory(
@@ -683,7 +669,7 @@ fun AppNavigation(
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
             )
         }
-        composable<Route.HashtagTimeline> { backStackEntry ->
+        animatedScreen<Route.HashtagTimeline> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.HashtagTimeline>()
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
@@ -719,7 +705,7 @@ fun AppNavigation(
                 onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
-        composable<Route.Lists> { backStackEntry ->
+        animatedScreen<Route.Lists> { backStackEntry ->
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
             val mainState by mainModel.uiState.collectAsStateWithLifecycle()
@@ -749,7 +735,7 @@ fun AppNavigation(
                 onEditStatus = { navController.navigate(Route.ComposePost(editStatusId = it)) },
             )
         }
-        composable<Route.SavedTimeline> { backStackEntry ->
+        animatedScreen<Route.SavedTimeline> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.SavedTimeline>()
             val kind = when (route.kind) {
                 "list" -> SavedTimelineKind.List

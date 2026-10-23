@@ -45,6 +45,74 @@ import org.junit.Test
 class HomeScrollDeviceTest {
     @get:Rule val rule = createComposeRule()
 
+    @Test fun backPreviewDoesNotAcknowledgeHomeArrivalsUntilResumed() {
+        lateinit var registry: androidx.lifecycle.LifecycleRegistry
+        val owner = object : androidx.lifecycle.LifecycleOwner {
+            override val lifecycle get() = registry
+        }
+        rule.runOnIdle {
+            registry = androidx.lifecycle.LifecycleRegistry(owner)
+            registry.currentState = androidx.lifecycle.Lifecycle.State.STARTED
+        }
+        withHomeTimeline(statusCount = 30, lifecycleOwner = owner) { main, timeline, statuses ->
+            rule.runOnUiThread {
+                main.viewModelScope.launch {
+                    main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(
+                        TimelineStreamEvent.StatusAdded(statuses.first().copy(timelineId = "preview-arrival", statusId = "preview-arrival")),
+                    ))
+                }
+            }
+            rule.waitUntil(5_000) { "preview-arrival" in timeline.uiState.value.pendingNewStatusIds }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                assertEquals(setOf("preview-arrival"), timeline.uiState.value.pendingNewStatusIds)
+                // Cancelling an incoming preview must not acknowledge the visible rows.
+                registry.currentState = androidx.lifecycle.Lifecycle.State.CREATED
+            }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                assertEquals(setOf("preview-arrival"), timeline.uiState.value.pendingNewStatusIds)
+                registry.currentState = androidx.lifecycle.Lifecycle.State.STARTED
+            }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                assertEquals(setOf("preview-arrival"), timeline.uiState.value.pendingNewStatusIds)
+                registry.currentState = androidx.lifecycle.Lifecycle.State.RESUMED
+            }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals(setOf("preview-arrival"), timeline.uiState.value.pendingNewStatusIds) }
+            // Preserve the original first row across the preview; acknowledgement waits
+            // until the user actually reaches the newly inserted row at the top.
+            assertTrue(scrollPosition() > 0f)
+            rule.onNodeWithTag("main_tab_home").performClick()
+            rule.waitUntil(5_000) { timeline.uiState.value.pendingNewStatusIds.isEmpty() }
+        }
+    }
+
+    @Test fun backPreviewDoesNotMarkNotificationsReadUntilResumed() {
+        lateinit var registry: androidx.lifecycle.LifecycleRegistry
+        val owner = object : androidx.lifecycle.LifecycleOwner {
+            override val lifecycle get() = registry
+        }
+        val reads = java.util.concurrent.ConcurrentLinkedQueue<NotificationReadState>()
+        rule.runOnIdle {
+            registry = androidx.lifecycle.LifecycleRegistry(owner)
+            registry.currentState = androidx.lifecycle.Lifecycle.State.STARTED
+        }
+        withHomeTimeline(statusCount = 30, lifecycleOwner = owner, onNotificationRead = { reads.add(it) }) { _, _, _ ->
+            rule.onNodeWithTag("main_tab_notifications").performClick()
+            rule.waitForIdle()
+            assertTrue("Preview marked notifications read", reads.none { it.viewedIds.isNotEmpty() })
+            rule.runOnIdle { registry.currentState = androidx.lifecycle.Lifecycle.State.CREATED }
+            rule.waitForIdle()
+            rule.runOnIdle { registry.currentState = androidx.lifecycle.Lifecycle.State.STARTED }
+            rule.waitForIdle()
+            assertTrue("Cancelled preview marked notifications read", reads.none { it.viewedIds.isNotEmpty() })
+            rule.runOnIdle { registry.currentState = androidx.lifecycle.Lifecycle.State.RESUMED }
+            rule.waitUntil(5_000) { reads.any { it.viewedIds.isNotEmpty() } }
+        }
+    }
+
     @Test fun changingTheTopBarOnAnotherTabKeepsTheShortTimelineViewport() = withHomeTimeline(statusCount = 8) { _, _, _ ->
         rule.onNodeWithTag("timeline_list").performScrollToIndex(7)
         val before = scrollPosition()
@@ -354,6 +422,8 @@ class HomeScrollDeviceTest {
 
     private fun withHomeTimeline(content: PostContent = PostContent.Plain, statusCount: Int = 180,
         motion: MediaTransitionState? = null,
+        lifecycleOwner: androidx.lifecycle.LifecycleOwner? = null,
+        onNotificationRead: (NotificationReadState) -> Unit = {},
         imageUrl: String = "android.resource://io.github.ponpokoo.mastodonclient/drawable/nagisa_launcher_art",
         block: (MainSessionViewModel, TimelineViewModel, List<TimelineStatus>) -> Unit) {
         val session = AccountSession("test", "https://example.test", "me", "me", "Me", "", "test-token")
@@ -383,6 +453,10 @@ class HomeScrollDeviceTest {
             )
         }
         val repository = object : TimelineRepository {
+            override suspend fun saveNotificationReadState(session: AccountSession, state: NotificationReadState): Result<Unit> {
+                onNotificationRead(state)
+                return Result.success(Unit)
+            }
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(TimelinePage(statuses, null, true))
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
@@ -427,7 +501,12 @@ class HomeScrollDeviceTest {
                         onAccountClick = {}, onMediaClick = { media, index -> motion?.open(media, index, "test", "timeline") }, onSettings = {}, onFollowers = {},
                         onFollowing = {}, onEditStatus = {}, onOpenLists = {}, onOpenBookmarks = {}, onOpenFavourites = {})
                     }
-                    if (motion == null) home() else MediaTransitionHost(motion, "test", "timeline", content = home)
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.lifecycle.compose.LocalLifecycleOwner provides
+                            (lifecycleOwner ?: androidx.lifecycle.compose.LocalLifecycleOwner.current),
+                    ) {
+                        if (motion == null) home() else MediaTransitionHost(motion, "test", "timeline", content = home)
+                    }
                 }
             }
             rule.waitUntil(5_000) { !timeline.uiState.value.isInitialLoading }

@@ -76,7 +76,9 @@ data class ComposePostUiState(
     val errorMessage: String? = null,
     val altReminderVisible: Boolean = false,
     val actionMessage: String? = null,
-)
+) {
+    val canClose: Boolean get() = !isPosting && !isSavingDraft && !posted
+}
 
 class ComposePostViewModel(
     private val initialReplyToId: String?,
@@ -644,7 +646,7 @@ class ComposePostViewModel(
 
     fun post(skipAltReminder: Boolean = false) {
         val state = _uiState.value
-        if (state.isSavingDraft || state.isPosting || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
+        if (state.isSavingDraft || state.isPosting || state.posted || state.isImportingMedia || state.isLoading || state.selectedSession == null) return
         if (activeReplyToId != null && state.replyToStatus == null) {
             _uiState.update { it.copy(errorMessage = "返信先の読み込みが完了してから投稿してください") }
             return
@@ -669,8 +671,8 @@ class ComposePostViewModel(
             _uiState.update { it.copy(altReminderVisible = true) }
             return
         }
+        _uiState.update { it.copy(isPosting = true, errorMessage = null) }
         postingJob = viewModelScope.launch {
-            _uiState.update { it.copy(isPosting = true, errorMessage = null) }
             val session = state.selectedSession
             scheduleAttachments()
             mediaTransfer.await(state.attachments.map { it.uri })
@@ -782,11 +784,12 @@ class ComposePostViewModel(
         }
     }
 
-    fun retainInputThen(onRetained: () -> Unit) {
-        if (_uiState.value.isSavingDraft) return
+    fun retainInputThen(onRetained: () -> Unit): Boolean {
+        if (!_uiState.value.canClose) return false
         stopMedia()
         retainInput()
         onRetained()
+        return true
     }
     fun discardDraft() {
         if (_uiState.value.isSavingDraft) return

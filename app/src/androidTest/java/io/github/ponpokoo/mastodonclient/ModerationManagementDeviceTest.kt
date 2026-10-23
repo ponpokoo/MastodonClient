@@ -11,6 +11,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import io.github.ponpokoo.mastodonclient.feature.settings.*
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
+import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
 import org.junit.Rule
@@ -48,6 +49,46 @@ class ModerationManagementDeviceTest {
             relation = relation.copy(muting = muted); return Result.success(relation)
         }
         override suspend fun deleteServerFilter(session: AccountSession, id: String) = onDeleteFilter(id)
+    }
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 34)
+    @Test fun internalBackStaysInManagementAndOverviewUsesPredictiveNavigation() {
+        val store = ViewModelStore()
+        lateinit var model: ModerationManagementViewModel
+        lateinit var navigation: androidx.navigation.NavHostController
+        rule.runOnIdle { model = ModerationManagementViewModel(Repository(), auth); store.put("back", model) }
+        try {
+            rule.setContent {
+                MastodonClientTheme {
+                    navigation = androidx.navigation.compose.rememberNavController()
+                    io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost(navigation, "settings") {
+                        animatedScreen("settings") { androidx.compose.material3.Text("設定トップ") }
+                        animatedScreen("management") {
+                            ModerationManagementScreen(model) { navigation.popBackStack() }
+                        }
+                    }
+                }
+            }
+            rule.runOnIdle { navigation.navigate("management"); model.open(ModerationPage.Words) }
+            rule.waitForIdle()
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals(ModerationPage.Overview, model.state.value.page); assertEquals("management", navigation.currentDestination?.route) }
+            val original = rule.onNodeWithTag("moderation_management_content").fetchSemanticsNode().boundsInRoot
+            rule.mainClock.autoAdvance = false
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.dispatchOnBackStarted(androidx.activity.BackEventCompat(0f, 400f, 0f, androidx.activity.BackEventCompat.EDGE_LEFT)) }
+            rule.mainClock.advanceTimeBy(64)
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.dispatchOnBackProgressed(androidx.activity.BackEventCompat(200f, 400f, 0.6f, androidx.activity.BackEventCompat.EDGE_LEFT)) }
+            rule.mainClock.advanceTimeBy(64)
+            rule.waitForIdle()
+            assertTrue("Overview intercepted predictive navigation", rule.onNodeWithTag("moderation_management_content").fetchSemanticsNode().boundsInRoot.left > original.left)
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.dispatchOnBackCancelled() }
+            rule.mainClock.autoAdvance = true
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals("management", navigation.currentDestination?.route) }
+            rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+            rule.waitForIdle()
+            rule.onNodeWithText("設定トップ").assertIsDisplayed()
+        } finally { rule.mainClock.autoAdvance = true; rule.runOnIdle { store.clear() } }
     }
     @Test fun refreshAndServerSyncKeepOneContentSpinnerThroughAllPhases() {
         val repository = Repository()

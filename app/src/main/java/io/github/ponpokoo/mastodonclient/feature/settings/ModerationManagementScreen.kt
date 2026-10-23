@@ -52,7 +52,8 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
         ServerFilterEditor(it, state.busy, state.error, viewModel::changeFilter, viewModel::saveFilter, viewModel::closeFilterEditor)
         return
     }
-    BackHandler(onBack = back)
+    // Only internal pages consume back; the overview belongs to the settings NavHost.
+    BackHandler(enabled = state.page != ModerationPage.Overview, onBack = back)
     val enabled = state.selected != null && !state.busy && (state.page == ModerationPage.Words || state.lists.values.none { it.loading })
     val filtersEditable = enabled && state.filterListStatus != FilterListStatus.Unsupported && state.filterListStatus != FilterListStatus.Loading
     val isProcessing = state.busy || when (state.page) {

@@ -34,6 +34,66 @@ import org.junit.Test
 class NotificationRefreshLifecycleDeviceTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun uncommittedPreviewDoesNotRefreshOrClearNotificationHighlights() {
+        val requests = AtomicInteger()
+        val session = AccountSession("preview", "https://example.test", "me", "me", "Me", "", "")
+        val notification = TimelineNotification("live", "follow", "2026-10-23T00:00:00Z",
+            StatusAuthor("author", "Author", "author@example.test", ""), null)
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) = error("unused")
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                requests.incrementAndGet()
+                return Result.success(NotificationPage(emptyList(), null, true))
+            }
+        }
+        lateinit var registry: androidx.lifecycle.LifecycleRegistry
+        val owner = object : androidx.lifecycle.LifecycleOwner { override val lifecycle get() = registry }
+        val shown = mutableStateOf(true)
+        val store = ViewModelStore()
+        lateinit var browsing: BrowsingSession
+        lateinit var model: NotificationsViewModel
+        rule.runOnIdle {
+            registry = androidx.lifecycle.LifecycleRegistry(owner)
+            registry.currentState = Lifecycle.State.STARTED
+            browsing = BrowsingSession().apply { activate(session) }
+            model = NotificationsViewModel(repository, browsing)
+            store.put("preview", model)
+        }
+        try {
+            rule.waitUntil(5_000) { model.uiState.value.isInitialPageLoaded }
+            rule.runOnIdle {
+                kotlinx.coroutines.runBlocking {
+                    browsing.publish(browsing.snapshot.value, BrowsingSession.Change.Stream(
+                        TimelineStreamEvent.NotificationReceived(notification)))
+                }
+            }
+            rule.waitUntil(5_000) { "live" in model.uiState.value.highlightedNotificationIds }
+            val beforePreview = requests.get()
+            rule.setContent {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.lifecycle.compose.LocalLifecycleOwner provides owner) {
+                    if (shown.value) NotificationsLifecycleEffect(model, true)
+                    Text("Preview")
+                }
+            }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals(beforePreview, requests.get()); shown.value = false }
+            rule.waitForIdle()
+            rule.runOnIdle {
+                assertTrue("Cancelled preview cleared highlights", "live" in model.uiState.value.highlightedNotificationIds)
+                shown.value = true
+            }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals(beforePreview, requests.get()); registry.currentState = Lifecycle.State.RESUMED }
+            rule.waitUntil(5_000) { requests.get() > beforePreview && !model.uiState.value.isLoadingNotifications }
+            val afterCommit = requests.get()
+            rule.runOnIdle { registry.currentState = Lifecycle.State.STARTED }
+            rule.waitForIdle()
+            rule.runOnIdle { registry.currentState = Lifecycle.State.RESUMED }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals("Cancelled outgoing preview triggered a refresh", afterCommit, requests.get()) }
+        } finally { rule.runOnIdle { store.clear() } }
+    }
+
     @Test fun tabReturnAllowsManualPullAndForegroundReturnRefreshesWhileAnotherTabIsSelected() {
         val requests = AtomicInteger()
         val manual = CompletableDeferred<Result<NotificationPage>>()

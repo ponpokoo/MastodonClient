@@ -48,6 +48,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
@@ -112,12 +115,16 @@ fun AccountListScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateAsState()
+    val isResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     var pendingUnfollow by remember { mutableStateOf<io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor?>(null) }
-    LaunchedEffect(listState, state.accounts.size, state.endReached, state.errorMessage) {
-        if (state.accounts.isNotEmpty() && !state.endReached && state.errorMessage == null) {
+    LaunchedEffect(listState, state.accounts.size, state.endReached, state.errorMessage, isResumed) {
+        if (isResumed && state.accounts.isNotEmpty() && !state.endReached && state.errorMessage == null) {
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
                 .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                        lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
                 }
         }
     }

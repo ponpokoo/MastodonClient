@@ -27,6 +27,7 @@
 - [タブの切替](#タブの切替)
 - [先頭への移動と引っ張って更新](#先頭への移動と引っ張って更新)
 - [画面遷移](#画面遷移)
+- [Predictive Backの設定と調整](#predictive-backの設定と調整)
 - [共通の並び替え操作](#共通の並び替え操作)
 - [リンクを開く](#リンクを開く)
 - [通知・ホームの端末保存](#通知ホームの端末保存)
@@ -117,10 +118,51 @@ Androidのステータスバーはシステム操作領域のため、画面上�
 
 ## 画面遷移
 
-通常の画面遷移は220msの横スライドを使用する。進むときは遷移先だけを左方向へ、
-戻るときは手前の画面だけを右方向へ動かし、背後の画面は固定する。
-文字の重なりを避けるためフェード・拡大縮小は併用せず、各画面の不透明な背景で覆う。
 投稿画面はダイアログ表示とする。メディアビューアは閲覧中の画面に重ね、画像を押した位置から全画面へ遷移する。
+
+### 通常の進む・戻る
+
+進むときはCompose標準の`fadeIn`／`fadeOut`で220msのクロスフェードを行う。両画面の位置は固定し、元の画面が消えながら遷移先が現れる。
+上部の戻るボタン・3ボタンナビゲーションでは、手前の画面が右へ画面幅の約35%移動する。進行55%までは不透明に保ち、90%までの短い区間でフェードアウトする。背後の画面は移動もフェードもさせず固定する。
+戻るときの時間は240msとし、横移動とフェードは`LinearEasing`で等速とする。進むときは標準の`tween`のイージングを使う。`ScreenTransitions.kt`の`ScreenEnterDurationMillis`／`ScreenPopDurationMillis`で時間を分け、`ScreenSlideFraction`と`ScreenFadeStartFraction`／`ScreenFadeEndFraction`で戻るときの移動量・フェード区間を管理する。
+下部タブの切り替え、投稿ダイアログ、メディアオーバーレイの独自遷移には適用しない。
+
+### Predictive Backの設定と調整
+
+Predictive Back（予測型Back）は、戻るジェスチャーの途中で戻り先を確認できる機能。
+利用者向けの設定項目は設けず、戻る操作の制御はAndroidとNavigationに任せる。
+
+#### 現在の設定
+
+- [AndroidManifest.xml](../app/src/main/AndroidManifest.xml)で`android:enableOnBackInvokedCallback="true"`を指定する。端末のホームへ戻る演出はAndroidが管理する。
+- [AppNavigation.kt](../app/src/main/java/io/github/ponpokoo/mastodonclient/navigation/AppNavigation.kt)と[SettingsNavigation.kt](../app/src/main/java/io/github/ponpokoo/mastodonclient/feature/settings/SettingsNavigation.kt)は共通の[ScreenNavHost](../app/src/main/java/io/github/ponpokoo/mastodonclient/navigation/ScreenTransitions.kt)を使う。Navigation Compose 2.10の`predictivePopEnterTransition`／`predictivePopExitTransition`で予測Backの見た目だけを指定する。
+- 予測Backも通常の戻る操作と同じ短距離スライド＋フェードを使う。左右どちらの端からの操作でも、手前の画面は右へ画面幅の約35%まで動く。横移動はジェスチャー進行率に比例し、進行55%までは不透明、その後90%に達するまで等速でフェードアウトする。90%以降もスライドの進行とバックスタックはNavigationが管理し、確定前に画面を削除しない。戻り先は固定し、縮小・角丸・背景調光は加えない。
+- 横移動と透明度はNavigationの同じTransitionで指の進行に連動する。240msは通常の戻る遷移の時間であり、指を動かす時間を制限するものではない。確定・取り消しはNavigationに任せ、独自のジェスチャーハンドラーや時間ベースの復帰処理を追加しない。
+- ミュート・ブロック管理のトップではNavHostに戻る処理を任せる。内部ページやフィルター編集では、その表示を閉じる独自の処理を維持する。
+- ホームの閲覧判定・保存位置の消費・新着案内のタイマー開始・自動スクロール、通知の表示時更新・既読処理は、戻り先が`RESUMED`になってから行う。`STARTED`のプレビューだけで新着や通知を消費しない。表示中画面のプレビューを取り消しただけでは、通知の再取得やハイライト解除を行わない。
+- 検索の`BackHandler`は表示中かつ`RESUMED`の場合に有効にし、背後の検索結果がプレビュー中の戻る操作を横取りしないようにする。
+- 投稿詳細の削除完了による自動戻りは、対象画面が`RESUMED`になってから実行する。別画面の表示中や未確定のプレビューでバックスタックを変更しない。
+- フォロー・フォロワー、保存済み投稿、ハッシュタグ一覧の自動追加読み込みは`RESUMED`のときに開始する。既に開始した取得の結果は受け取るが、プレビュー中に次の追加取得を連鎖させない。
+- 投稿作成、画像ビューアー、展開した音声プレーヤーなどは既存の個別処理を維持する。これらへの指に追従する演出は未実装で、通常画面の予測Backとは分けて扱う。
+
+#### 独自演出を検討するとき
+
+通常画面は標準動作を比較基準とする。独自演出が必要な場合も、まずNavigationの予測Back専用の遷移指定を使う。
+角丸などを追加する場合は画面遷移と同じ`Transition`へ連動させ、通常の進む・戻る操作への影響も確認する。
+メディアのサムネイルへの復帰は既存のメディア遷移との連携が必要。投稿は入力の一時保持とIME・ダイアログの戻る順序を保つ。
+独自表示に`PredictiveBackHandler`を追加する場合は、確定で1回だけ閉じ、取り消しで表示・入力・操作状態を復元する。
+
+#### 変更後の確認
+
+- 確定で1段階だけ戻り、取り消しでは元の表示・入力・操作状態へ戻ること。取り消し直後の再操作でもクリップやフェードが残らないこと。
+- 進むときは両画面が動かずクロスフェードし、戻るときは短距離スライド＋フェードが見えること。予測Backは左右の端のどちらでも右へ動き、進行に合わせて透明になること。戻り先の位置・明るさが変わらず、縮小しないこと。取り消し後に移動や透明度が残らないこと。
+- 通常画面と設定内の画面でプレビューが表示され、確定後の一覧位置・選択タブ・検索語が保たれること。
+- ホームや通知へ戻る途中で取り消しても、新着の消費・通知の既読保存・通知ハイライト解除が行われないこと。確定後は通常の閲覧判定が働くこと。
+- 検索、管理内部ページ、シート・ダイアログでは、手前の表示を閉じる操作と背後の画面を戻る操作が重複しないこと。
+- 左右の端、キーボード表示中、ライト・ダーク、上部の戻るボタンと3ボタンナビゲーション、端末のホームへの復帰を確認する。
+- 投稿・メディアを変更する場合は、個別の指追従と戻る動作の正否を分けて確認する。投稿入力の一時保持、メディアのズーム・ページ・戻り先のサムネイル位置も確認する。
+
+参考：[公式のSociaLiteによる標準・カスタム遷移例](https://developer.android.com/develop/ui/compose/system/predictive-back-setup)、[Navigation 2.10の変更点](https://developer.android.com/jetpack/androidx/releases/navigation#2.10.0)、[Shared Elementとの連携](https://developer.android.com/develop/ui/compose/animation/shared-elements/navigation)、[JetLaggedを使った独自の進行処理](https://developer.android.com/develop/ui/compose/system/predictive-back-progress)。
 
 ## 共通の並び替え操作
 

@@ -18,6 +18,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.common.*
@@ -50,6 +53,9 @@ fun SavedTimelinesScreen(
     val actionsState by actionsViewModel.uiState.collectAsStateWithLifecycle()
     val moderationMenu by actionsViewModel.moderationMenuState.collectAsStateWithLifecycle()
     val listState = key(state.sessionKey) { rememberLazyListState() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycleState by lifecycle.currentStateAsState()
+    val isResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
     val scope = key(state.sessionKey) { rememberCoroutineScope() }
     val context = LocalContext.current
     val snackbarHostState = remember(state.sessionKey) { SnackbarHostState() }
@@ -64,11 +70,12 @@ fun SavedTimelinesScreen(
             actionsViewModel.consumeActionMessage()
         }
     }
-    LaunchedEffect(state.sessionKey, listState, state.statuses.size, state.nextMaxId, state.error, state.loading, showLists) {
-        if (!showLists && !state.loading && state.error == null && state.nextMaxId != null && !state.endReached) {
+    LaunchedEffect(state.sessionKey, listState, state.statuses.size, state.nextMaxId, state.error, state.loading, showLists, isResumed) {
+        if (isResumed && !showLists && !state.loading && state.error == null && state.nextMaxId != null && !state.endReached) {
             snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
                 .distinctUntilChanged().collect { lastVisible ->
-                    if (lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
+                    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                        lastVisible != null && lastVisible >= listState.layoutInfo.totalItemsCount - 4) viewModel.loadMore()
                 }
         }
     }

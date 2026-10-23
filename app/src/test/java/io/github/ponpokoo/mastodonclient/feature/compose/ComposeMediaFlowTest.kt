@@ -86,6 +86,88 @@ class ComposeMediaFlowTest : ScreenViewModelTestBase() {
         }, initialSharedMediaUris = sharedUris, logMediaFailure = {}),
     )
 
+    @Test fun postingBlocksCloseImmediatelyAndSuccessCannotBeClosedOrSentTwice() = runTest(dispatcher) {
+        val response = CompletableDeferred<Result<TimelineStatus>>()
+        var requests = 0
+        val repository = object : Repository() {
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                requests++
+                return response.await()
+            }
+        }
+        val vm = model(repository)
+        runCurrent()
+        vm.onTextChanged("send once")
+        vm.post()
+        var closes = 0
+        assertFalse(vm.retainInputThen { closes++ })
+        vm.post()
+        runCurrent()
+        assertTrue(vm.uiState.value.isPosting)
+        assertEquals(1, requests)
+        assertFalse(vm.retainInputThen { closes++ })
+        response.complete(Result.success(testStatus()))
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.posted)
+        assertFalse(vm.uiState.value.isPosting)
+        assertFalse(vm.retainInputThen { closes++ })
+        vm.post()
+        advanceUntilIdle()
+        assertEquals(0, closes)
+        assertEquals(1, requests)
+    }
+
+    @Test fun postFailureAllowsRetryWithSameKeyThenCloseWithRetainedInput() = runTest(dispatcher) {
+        val response = CompletableDeferred<Result<TimelineStatus>>()
+        val keys = mutableListOf<String>()
+        val repository = object : Repository() {
+            override suspend fun createStatus(session: AccountSession, request: CreateStatusRequest, idempotencyKey: String): Result<TimelineStatus> {
+                keys += idempotencyKey
+                return response.await()
+            }
+        }
+        val preferences = UserPreferencesStore(MemoryPreferences())
+        val vm = model(repository, preferences)
+        runCurrent()
+        vm.onTextChanged("keep input")
+        vm.post()
+        runCurrent()
+        response.complete(Result.failure(IllegalStateException("simulated failure")))
+        advanceUntilIdle()
+        assertEquals("keep input", vm.uiState.value.text)
+        assertEquals("simulated failure", vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.posted)
+        vm.post()
+        advanceUntilIdle()
+        assertEquals(2, keys.size)
+        assertEquals(keys[0], keys[1])
+        assertFalse(vm.uiState.value.posted)
+        var closes = 0
+        assertTrue(vm.retainInputThen { closes++ })
+        assertEquals(1, closes)
+        val reopened = model(repository, preferences)
+        advanceUntilIdle()
+        assertEquals("keep input", reopened.uiState.value.text)
+    }
+
+    @Test fun closeDuringPostAttachmentWaitDoesNotCancelUploadOrSubmission() = runTest(dispatcher) {
+        val repository = Repository().apply { uploadGate = CompletableDeferred() }
+        val vm = model(repository)
+        runCurrent()
+        vm.importMedia(listOf("file:///one.jpg"))
+        runCurrent()
+        vm.post()
+        var closed = false
+        assertFalse(vm.retainInputThen { closed = true })
+        runCurrent()
+        repository.uploadGate!!.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(closed)
+        assertEquals(1, repository.uploads.size)
+        assertEquals(listOf("id-one.jpg"), repository.posts.single().mediaIds)
+        assertTrue(vm.uiState.value.posted)
+    }
+
     @Test fun blankAltPostsByDefaultAndReminderCanStillBeEnabled() = runTest(dispatcher) {
         for (enabled in listOf(null, true, false)) {
             val repository = Repository()

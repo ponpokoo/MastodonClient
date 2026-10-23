@@ -184,29 +184,39 @@ fun ComposePostScreen(
         state.attachments.isNotEmpty() || state.pollOptions.any(String::isNotBlank)
 
     fun requestClose() {
+        if (!viewModel.uiState.value.canClose) return
         keyboardController?.hide()
         viewModel.retainInputThen(onClose)
     }
     fun settleDismissGesture() {
         scope.launch {
-            if (dismissOffset.value >= dismissThresholdPx) {
+            if (viewModel.uiState.value.canClose && dismissOffset.value >= dismissThresholdPx) {
                 keyboardController?.hide()
                 dismissOffset.animateTo(
                     screenHeightPx.toFloat().coerceAtLeast(dismissOffset.value),
                     animationSpec = tween(180),
                 )
-                viewModel.retainInputThen(onClose)
+                if (!viewModel.retainInputThen(onClose)) {
+                    dismissOffset.animateTo(0f, animationSpec = tween(140))
+                }
             } else {
                 dismissOffset.animateTo(0f, animationSpec = tween(140))
             }
         }
     }
     val dismissDragState = rememberDraggableState { delta ->
-        if (delta > 0f || dismissOffset.value > 0f) {
-            scope.launch { dismissOffset.snapTo((dismissOffset.value + delta).coerceAtLeast(0f)) }
+        if (viewModel.uiState.value.canClose && (delta > 0f || dismissOffset.value > 0f)) {
+            scope.launch {
+                if (viewModel.uiState.value.canClose) {
+                    dismissOffset.snapTo((dismissOffset.value + delta).coerceAtLeast(0f))
+                }
+            }
         }
     }
     BackHandler(onBack = ::requestClose)
+    LaunchedEffect(state.canClose) {
+        if (!state.canClose) dismissOffset.snapTo(0f)
+    }
     LaunchedEffect(state.posted) { if (state.posted) onPosted() }
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -253,14 +263,15 @@ fun ComposePostScreen(
             .graphicsLayer { translationY = dismissOffset.value },
         topBar = {
             TopAppBar(
-                modifier = Modifier.draggable(
+                modifier = Modifier.testTag("compose_dismiss_handle").draggable(
                     state = dismissDragState,
                     orientation = Orientation.Vertical,
+                    enabled = state.canClose,
                     onDragStopped = { settleDismissGesture() },
                 ),
                 title = { Text(if (isEditing) "投稿を編集" else if (isReply) "返信" else "新規投稿") },
                 navigationIcon = {
-                    IconButton(onClick = ::requestClose) {
+                    IconButton(onClick = ::requestClose, enabled = state.canClose) {
                         Icon(Icons.Outlined.Close, contentDescription = "閉じる")
                     }
                 },
@@ -282,6 +293,7 @@ fun ComposePostScreen(
                 modifier = Modifier.imePadding().draggable(
                     state = dismissDragState,
                     orientation = Orientation.Vertical,
+                    enabled = state.canClose,
                     onDragStopped = { settleDismissGesture() },
                 ),
                 tonalElevation = 3.dp,

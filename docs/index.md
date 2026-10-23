@@ -12,6 +12,7 @@
 | [変更範囲に応じたCI](project-setup.md#変更範囲に応じたci) | push／PRの自動確認、手動再実行、結果の見方と次回以降の見直し事項を確認する |
 | [R8適用済みReleaseの自動確認](project-setup.md#r8適用済みreleaseの自動確認) | 公開前の独立したUIテスト、確認先サーバーと専用端末の指定、Debugテストとの役割分担を確認する |
 | [UI・機能仕様](ui-guidelines.md) | 共通ルール、テーマ、共通操作と機能別仕様への入口を確認する |
+| [Predictive Backの設定と調整](ui-guidelines.md#predictive-backの設定と調整) | 短距離スライド＋フェード、戻る処理の優先順位、プレビュー中の状態保持と変更後の確認項目を参照する |
 | [閲覧・タイムライン](ui/timelines.md) | 探索・検索、タグ、保存済み投稿、ホームの取得・位置復元を確認する |
 | [投稿表示・メディア](ui/status-media.md) | 投稿カード・詳細、画像・音声・動画、投稿操作を確認する |
 | [長文本文の自動省略](ui/status-media.md#長文本文の自動省略) | 12行・末尾「…」・本文内展開、CW・状態保持・閲覧位置を確認する。比較した3案と実装方針は[設計](investigations/long-status-collapse-design.md)を参照する |
