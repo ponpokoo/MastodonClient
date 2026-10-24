@@ -1,9 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenu
 import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenuItem
 import io.github.ponpokoo.mastodonclient.feature.common.AppMenuDivider
@@ -25,7 +22,6 @@ internal fun ProfileDropdownMenu(
     AppDropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = Modifier.widthIn(min = 240.dp, max = 320.dp),
     ) {
         actions.forEachIndexed { index, action ->
             if (index > 0) {
