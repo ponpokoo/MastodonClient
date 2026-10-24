@@ -1,11 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenu
 import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenuItem
@@ -13,7 +10,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.AppMenuDivider
 
 internal data class ProfileMenuAction(
     val label: String,
-    val icon: ImageVector,
     val enabled: Boolean = true,
     val destructive: Boolean = false,
     val startsGroup: Boolean = false,
@@ -37,7 +33,6 @@ internal fun ProfileDropdownMenu(
             }
             AppDropdownMenuItem(
                 label = action.label,
-                leadingIcon = { Icon(action.icon, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 onClick = action.onClick,
                 enabled = action.enabled,
                 destructive = action.destructive,

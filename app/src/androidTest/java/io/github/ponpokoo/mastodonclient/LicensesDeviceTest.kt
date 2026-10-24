@@ -48,7 +48,8 @@ class LicensesDeviceTest {
                     SettingsScreen(preferences, null, emptyList(), maintenance, {}, {}, {}, licenses = licenses)
                 }
             }
-            rule.onNodeWithTag("settings_category_About").performScrollTo().performClick()
+            rule.onNodeWithTag("settings_screen").performScrollToNode(hasTestTag("settings_category_About"))
+            rule.onNodeWithTag("settings_category_About").performClick()
             rule.onNodeWithTag("settings_licenses").performClick()
             rule.waitUntil(5_000) { licenses.uiState.value.notices.isNotEmpty() }
             rule.onNodeWithTag("license_text_nagisa_0").assertIsDisplayed()

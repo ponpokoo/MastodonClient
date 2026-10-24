@@ -50,7 +50,8 @@ class PrivacyPolicySettingsDeviceTest {
                 }
             }
         }
-        rule.onNodeWithTag("settings_category_About").performScrollTo().performClick()
+        rule.onNodeWithTag("settings_screen").performScrollToNode(hasTestTag("settings_category_About"))
+        rule.onNodeWithTag("settings_category_About").performClick()
         rule.onNodeWithTag("settings_privacy_policy").performScrollTo().performClick()
         rule.runOnIdle {
             assertEquals("https://ponpokoo.github.io/nagisa-policy/", intents.single().dataString)

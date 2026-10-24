@@ -50,8 +50,18 @@ fun SettingsScreen(
     accountOrderError: String? = null,
     licenses: LicensesViewModel? = null,
     posting: PostingSettingsViewModel? = null,
+    initialPage: String = SettingsPage.Root.name,
 ) {
     val nav = rememberNavController()
+    var initialPageOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(initialPage) {
+        if (!initialPageOpened) {
+            initialPageOpened = true
+            SettingsPage.entries.firstOrNull { it.name == initialPage && it != SettingsPage.Root }?.let {
+                nav.navigate(it.name) { launchSingleTop = true }
+            }
+        }
+    }
     ScreenNavHost(
         navController = nav,
         startDestination = SettingsPage.Root.name,

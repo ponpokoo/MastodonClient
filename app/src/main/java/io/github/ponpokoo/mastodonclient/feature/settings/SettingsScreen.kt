@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -429,7 +430,7 @@ internal fun SettingsPageContent(
                 }
             }
             if (page == SettingsPage.Root) {
-                items(SettingsPage.entries.filter { it != SettingsPage.Root && it != SettingsPage.Licenses }) { destination ->
+                items(SettingsPage.entries.filter { it !in setOf(SettingsPage.Root, SettingsPage.Licenses, SettingsPage.About) }) { destination ->
                     androidx.compose.material3.ListItem(
                         headlineContent = { Text(destination.title) },
                         supportingContent = { Text(destination.description) },
@@ -437,6 +438,24 @@ internal fun SettingsPageContent(
                         modifier = Modifier.clickable { onPage(destination) }.testTag("settings_category_" + destination.name),
                     )
                     HorizontalDivider(Modifier.padding(horizontal = 20.dp))
+                }
+                item { SectionTitle("ヘルプ") }
+                item {
+                    val openUsageGuide = rememberUsageGuideOpener(preferences.openLinksInApp)
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text("使い方Q&A") },
+                        supportingContent = { Text("詳しい設定をサイトで確認") },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, "サイトを開く") },
+                        modifier = Modifier.clickable(onClick = openUsageGuide).testTag("settings_usage_guide"),
+                    )
+                }
+                item {
+                    androidx.compose.material3.ListItem(
+                        headlineContent = { Text(SettingsPage.About.title) },
+                        supportingContent = { Text(SettingsPage.About.description) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
+                        modifier = Modifier.clickable { onPage(SettingsPage.About) }.testTag("settings_category_About"),
+                    )
                 }
             }
             if (page == SettingsPage.Storage) {

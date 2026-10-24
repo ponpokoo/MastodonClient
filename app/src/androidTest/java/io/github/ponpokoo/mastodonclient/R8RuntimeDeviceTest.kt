@@ -63,7 +63,7 @@ class R8RuntimeDeviceTest {
     }
 
     @Test fun notificationFromAnotherScreenReturnsToASingleTimelineEntry() = withNavigation { controller ->
-        controller.navigate(Route.Settings)
+        controller.navigate(Route.Settings())
         val entryId = controller.currentBackStackEntry!!.id
         controller.prepareNotificationTimeline()
         assertNotEquals(entryId, controller.currentBackStackEntry!!.id)

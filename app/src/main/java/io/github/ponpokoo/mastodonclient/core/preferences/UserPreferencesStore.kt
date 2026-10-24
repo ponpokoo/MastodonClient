@@ -82,6 +82,7 @@ data class AccountPreferences(
 
 @Serializable
 data class AppPreferences(
+    val welcomeGuideCompleted: Boolean = false,
     val fabPosition: FabPosition? = null,
     val themeMode: ThemeMode = ThemeMode.System,
     val openLinksInApp: Boolean = true,
@@ -258,6 +259,7 @@ class UserPreferencesStore(
     }
 
     suspend fun setThemeMode(value: ThemeMode) = update { it.copy(themeMode = value) }
+    suspend fun completeWelcomeGuide() = update { it.copy(welcomeGuideCompleted = true) }
     suspend fun setOpenLinksInApp(enabled: Boolean) = update { it.copy(openLinksInApp = enabled) }
     suspend fun setTimelineDisplay(value: TimelineDisplayPreferences) = update { it.copy(timelineDisplay = value) }
     suspend fun setGifAutoplay(value: AutoplayPolicy) = update { it.copy(gifAutoplay = value) }

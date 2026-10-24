@@ -29,7 +29,7 @@ sealed interface Route {
     ) : Route
 
     @Serializable
-    data object Settings : Route
+    data class Settings(val initialPage: String = "Root") : Route
 
     @Serializable
     data class WebPage(val url: String) : Route

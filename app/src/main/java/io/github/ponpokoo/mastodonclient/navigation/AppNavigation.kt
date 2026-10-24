@@ -467,7 +467,7 @@ fun AppNavigation(
                     navController.navigate(Route.AccountProfile(accountId)) { launchSingleTop = true }
                 },
                 onMediaClick = openMedia,
-                onSettings = { navController.navigate(Route.Settings) },
+                onSettings = { navController.navigate(Route.Settings()) },
                 onFollowers = { accountId -> navController.navigate(Route.AccountList(accountId, followers = true)) },
                 onFollowing = { accountId -> navController.navigate(Route.AccountList(accountId, followers = false)) },
                 onEditStatus = { statusId -> navController.navigate(Route.ComposePost(editStatusId = statusId)) },
@@ -475,6 +475,13 @@ fun AppNavigation(
                 onOpenBookmarks = { navController.navigate(Route.SavedTimeline("bookmarks", title = "ブックマーク")) },
                 onOpenFavourites = { navController.navigate(Route.SavedTimeline("favourites", title = "お気に入り")) },
                 onOpenReactions = { navController.navigate(Route.SavedTimeline("reactions", title = "リアクションした投稿")) },
+            )
+            val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
+            io.github.ponpokoo.mastodonclient.feature.settings.FirstRunGuide(
+                store = preferences,
+                eligible = mainState.session != null && !mainState.requiresLogin &&
+                    currentBackStackEntry?.id == backStackEntry.id,
+                onSettings = { page -> navController.navigate(Route.Settings(page)) },
             )
         }
         animatedScreen<Route.StatusDetail> { backStackEntry ->
@@ -570,10 +577,12 @@ fun AppNavigation(
             )
         }
         animatedScreen<Route.Settings> { backStackEntry ->
+            val settingsRoute = backStackEntry.toRoute<Route.Settings>()
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry<Route.Timeline>() }
             val mainModel: MainSessionViewModel = viewModel(viewModelStoreOwner = mainEntry)
             val accountState by mainModel.uiState.collectAsStateWithLifecycle()
             SettingsScreen(
+                initialPage = settingsRoute.initialPage,
                 licenses = viewModel<io.github.ponpokoo.mastodonclient.feature.settings.LicensesViewModel>(
                     factory = ScreenViewModelFactory {
                         io.github.ponpokoo.mastodonclient.feature.settings.LicensesViewModel(
