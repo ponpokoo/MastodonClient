@@ -1,7 +1,10 @@
 package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -10,6 +13,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.UserProfile
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileUiState
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileContent
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -18,6 +23,7 @@ import org.junit.Test
 class ProfileWebMenuDeviceTest {
     @get:Rule val rule = createComposeRule()
     private val openedLinks = mutableListOf<String>()
+    private var favouritesOpened = 0
 
     @Test fun ownProfileMenuOpensProfileSettingsAndServerAboutAndClosesAfterSelection() {
         showProfile(own = true, profileUrl = "https://fedibird.com/@alice")
@@ -50,7 +56,24 @@ class ProfileWebMenuDeviceTest {
         }
     }
 
-    private fun showProfile(own: Boolean, profileUrl: String, supportsReactionHistory: Boolean = false) {
+    @Test fun largeTextMenuCanScrollToActionsAndClosesAfterSelection() {
+        showProfile(own = true, profileUrl = "https://remote.example/@alice",
+            supportsReactionHistory = true, fontScale = 2f, themeMode = ThemeMode.Dark)
+        openMenu()
+        select("お気に入り")
+        rule.runOnIdle { assertEquals(1, favouritesOpened) }
+        openMenu()
+        select("このサーバーについて")
+        rule.runOnIdle { assertEquals(listOf("https://remote.example/about"), openedLinks) }
+    }
+
+    private fun showProfile(
+        own: Boolean,
+        profileUrl: String,
+        supportsReactionHistory: Boolean = false,
+        fontScale: Float = 1f,
+        themeMode: ThemeMode = ThemeMode.Light,
+    ) {
         val profile = UserProfile(
             author = StatusAuthor("alice", "Alice", "alice", ""),
             headerUrl = "", noteHtml = "", followersCount = 0, followingCount = 0,
@@ -58,15 +81,19 @@ class ProfileWebMenuDeviceTest {
             endReached = true,
         )
         rule.setContent {
-            MaterialTheme {
-                ProfileContent(
-                    state = ProfileUiState(profile = profile, supportsReactionHistory = supportsReactionHistory),
-                    instanceUrl = "https://fedibird.com/",
-                    padding = PaddingValues(), onRetry = {}, onRefresh = {}, onStatusClick = {},
-                    onOpenLink = { openedLinks += it }, onReply = {}, onBoost = {},
-                    onQuote = { _, _ -> }, onFavourite = {}, onReact = { _, _ -> },
-                    onAccountClick = {}, onMediaClick = { _, _ -> },
-                )
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                MastodonClientTheme(themeMode = themeMode) {
+                    ProfileContent(
+                        state = ProfileUiState(profile = profile, supportsReactionHistory = supportsReactionHistory),
+                        instanceUrl = "https://fedibird.com/",
+                        padding = PaddingValues(), onRetry = {}, onRefresh = {}, onStatusClick = {},
+                        onOpenLink = { openedLinks += it }, onReply = {}, onBoost = {},
+                        onQuote = { _, _ -> }, onFavourite = {}, onReact = { _, _ -> },
+                        onAccountClick = {}, onMediaClick = { _, _ -> },
+                        onOpenFavourites = { favouritesOpened++ },
+                    )
+                }
             }
         }
     }
@@ -76,7 +103,7 @@ class ProfileWebMenuDeviceTest {
     }
 
     private fun select(label: String) {
-        rule.onNodeWithText(label).performClick()
+        rule.onNodeWithText(label).performScrollTo().performClick()
         rule.onNodeWithText(label).assertDoesNotExist()
     }
 }

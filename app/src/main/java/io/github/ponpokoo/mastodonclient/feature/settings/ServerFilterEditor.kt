@@ -28,6 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.ponpokoo.mastodonclient.domain.model.*
+import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenuItem
+import io.github.ponpokoo.mastodonclient.feature.common.AppMenuDefaults
+import io.github.ponpokoo.mastodonclient.feature.common.AppMenuDivider
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -204,12 +207,19 @@ private fun FilterExpiryField(editor: FilterEditorState, enabled: Boolean, onCha
             label = { Text("有効期限") }, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
             readOnly = true, enabled = enabled,
         )
-        ExposedDropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
-            choices.forEach { (seconds, label) ->
-                DropdownMenuItem(text = { Text(label) }, onClick = {
+        ExposedDropdownMenu(
+            expanded = expanded && enabled,
+            onDismissRequest = { expanded = false },
+            shape = AppMenuDefaults.shape,
+            containerColor = AppMenuDefaults.containerColor,
+            shadowElevation = AppMenuDefaults.shadowElevation,
+        ) {
+            choices.forEachIndexed { index, (seconds, label) ->
+                if (index > 0) AppMenuDivider()
+                AppDropdownMenuItem(label = label, isSelected = selected == seconds, onClick = {
                     onChange(edit.copy(changeExpiry = seconds != null, expiresIn = seconds?.takeIf { it > 0 }))
                     expanded = false
-                }, leadingIcon = { RadioButton(selected == seconds, onClick = null) })
+                }, leadingIcon = { RadioButton(selected == seconds, onClick = null, modifier = Modifier.size(22.dp)) })
             }
         }
     }

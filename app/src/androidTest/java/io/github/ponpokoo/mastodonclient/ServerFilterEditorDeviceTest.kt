@@ -184,8 +184,10 @@ class ServerFilterEditorDeviceTest {
             rule.onNodeWithTag("filter_title").performImeAction()
             capture("filter-editor-dark")
             rule.onNodeWithTag("filter_expiry").performScrollTo().performClick()
-            rule.onNodeWithText("7日").performClick()
+            rule.onNode(hasText("変更しない") and hasAnyAncestor(isPopup())).assertIsSelected()
+            rule.onNodeWithText("7日").assertIsNotSelected().performClick()
             rule.onNodeWithTag("filter_expiry").performClick()
+            rule.onNode(hasText("7日") and hasAnyAncestor(isPopup())).assertIsSelected()
             rule.onNodeWithText("変更しない").performClick()
             rule.onNodeWithTag("filter_save").assertIsDisplayed().performClick()
             rule.waitUntil(5_000) { model.state.value.editor == null }

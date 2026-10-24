@@ -5,10 +5,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
@@ -35,24 +39,32 @@ class ReadingSettingsDeviceTest {
         val account = AccountSession("a", "https://a.example/", "account-a", "alice", "Alice", "", "token-a")
         val other = account.copy(sessionId = "b", accountId = "account-b")
         val active = mutableStateOf(account)
+        val theme = mutableStateOf(ThemeMode.Light)
         val maintenance = SettingsMaintenanceViewModel(object : AppMaintenanceRepository {
             override val versionName = "test"
             override val versionCode = 1L
             override suspend fun clearImageCache() = Unit
         })
         rule.setContent {
-            MaterialTheme {
+            MastodonClientTheme(themeMode = theme.value) {
                 SettingsPageContent(SettingsPage.Media, {}, maintenance, store, active.value,
                     listOf(account, other), {}, {}, {})
             }
         }
         val labels = listOf("閲覧注意としてマークされたメディアは隠す", "メディアを常に表示する", "メディアを常に隠す")
+        var previous = MediaDisplay.Default
         for ((media, label) in MediaDisplay.entries.zip(labels)) {
             rule.onNodeWithText("メディアの表示設定").performClick()
+            rule.onNode(hasText(labels[MediaDisplay.entries.indexOf(previous)]) and hasAnyAncestor(isPopup())).assertIsSelected()
+            if (media != previous) rule.onNode(hasText(label) and hasAnyAncestor(isPopup())).assertIsNotSelected()
+            captureMenu("settings-media-menu-${theme.value.name.lowercase()}")
             rule.onNode(hasText(label) and hasAnyAncestor(isPopup())).performClick()
+            rule.onNode(isPopup()).assertDoesNotExist()
             rule.runOnIdle {
                 assertEquals(media, runBlocking { UserPreferencesStore(data).preferences.first().forAccount("a").mediaDisplay })
+                theme.value = ThemeMode.Dark
             }
+            previous = media
         }
         rule.onNodeWithText("内容警告(CW)を常に展開する").performClick()
         rule.runOnIdle {
@@ -75,6 +87,14 @@ class ReadingSettingsDeviceTest {
         rule.onNodeWithText("内容警告(CW)を常に展開する").performClick()
         rule.runOnIdle {
             assertEquals(false, runBlocking { UserPreferencesStore(data).preferences.first().forAccount("a").expandSpoilers })
+        }
+    }
+
+    private fun captureMenu(name: String) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        java.io.File(context.getExternalFilesDir(null), "$name.png").outputStream().use {
+            rule.onNode(isPopup()).captureToImage().asAndroidBitmap()
+                .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
     }
 

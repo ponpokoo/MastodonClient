@@ -39,14 +39,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SentimentSatisfiedAlt
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -352,39 +363,35 @@ internal fun ProfileContent(
                                     contentDescription = "プロフィールのその他メニュー",
                                 )
                             }
-                        DropdownMenu(
+                        ProfileDropdownMenu(
                             expanded = profileMenuExpanded,
                             onDismissRequest = { profileMenuExpanded = false },
-                        ) {
-                            if (profile.isOwnProfile) {
-                                onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
-                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
-                                DropdownMenuItem(text = { Text("リスト") }, onClick = { profileMenuExpanded = false; onOpenLists() })
-                                DropdownMenuItem(text = { Text("ブックマーク") }, onClick = { profileMenuExpanded = false; onOpenBookmarks() })
-                                DropdownMenuItem(text = { Text("お気に入り") }, onClick = { profileMenuExpanded = false; onOpenFavourites() })
-                                if (state.supportsReactionHistory) {
-                                    DropdownMenuItem(text = { Text("リアクションした投稿") }, onClick = { profileMenuExpanded = false; onOpenReactions() })
-                                }
-                                webLinks?.settings?.let { url -> DropdownMenuItem(text = { Text("マストドンの設定") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
-                            } else {
-                                onShareProfile?.let { action -> DropdownMenuItem(text = { Text("共有") }, onClick = { profileMenuExpanded = false; action() }) }
-                                webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> DropdownMenuItem(text = { Text("ブラウザーで開く") }, onClick = { profileMenuExpanded = false; onOpenLink(url) }) }
-                                onAddProfileToList?.let { action -> DropdownMenuItem(text = { Text("リストに追加") }, onClick = { profileMenuExpanded = false; action() }) }
-                                if (onMuteProfile != null || onBlockProfile != null || onReportProfile != null) HorizontalDivider()
-                                onMuteProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileMuted) "ミュートを解除" else "ミュート", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
-                                onBlockProfile?.let { action -> DropdownMenuItem(enabled = moderationReady, text = { Text(if (isProfileBlocked) "ブロックを解除" else "ブロック", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
-                                onReportProfile?.let { action -> DropdownMenuItem(text = { Text("報告", color = MaterialTheme.colorScheme.error) }, onClick = { profileMenuExpanded = false; action() }) }
-                                moderationError?.let { error -> DropdownMenuItem(text = { Text("$error・再試行", color = MaterialTheme.colorScheme.error) }, onClick = onRetryModeration) }
+                            actions = buildList {
+                                if (profile.isOwnProfile) {
+                                    onShareProfile?.let { action -> add(ProfileMenuAction("共有", Icons.Outlined.Share) { profileMenuExpanded = false; action() }) }
+                                    webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> add(ProfileMenuAction("ブラウザーで開く", Icons.AutoMirrored.Outlined.OpenInNew) { profileMenuExpanded = false; onOpenLink(url) }) }
+                                    add(ProfileMenuAction("リスト", Icons.AutoMirrored.Outlined.List, startsGroup = true) { profileMenuExpanded = false; onOpenLists() })
+                                    add(ProfileMenuAction("ブックマーク", Icons.Outlined.BookmarkBorder) { profileMenuExpanded = false; onOpenBookmarks() })
+                                    add(ProfileMenuAction("お気に入り", Icons.Outlined.StarBorder) { profileMenuExpanded = false; onOpenFavourites() })
+                                    if (state.supportsReactionHistory) {
+                                        add(ProfileMenuAction("リアクションした投稿", Icons.Outlined.SentimentSatisfiedAlt) { profileMenuExpanded = false; onOpenReactions() })
+                                    }
+                                    webLinks?.settings?.let { url -> add(ProfileMenuAction("マストドンの設定", Icons.Outlined.Settings, startsGroup = true) { profileMenuExpanded = false; onOpenLink(url) }) }
+                                } else {
+                                    onShareProfile?.let { action -> add(ProfileMenuAction("共有", Icons.Outlined.Share) { profileMenuExpanded = false; action() }) }
+                                    webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> add(ProfileMenuAction("ブラウザーで開く", Icons.AutoMirrored.Outlined.OpenInNew) { profileMenuExpanded = false; onOpenLink(url) }) }
+                                    onAddProfileToList?.let { action -> add(ProfileMenuAction("リストに追加", Icons.AutoMirrored.Outlined.PlaylistAdd) { profileMenuExpanded = false; action() }) }
+                                    onMuteProfile?.let { action -> add(ProfileMenuAction(if (isProfileMuted) "ミュートを解除" else "ミュート", Icons.AutoMirrored.Outlined.VolumeOff, enabled = moderationReady, destructive = true, startsGroup = true) { profileMenuExpanded = false; action() }) }
+                                    onBlockProfile?.let { action -> add(ProfileMenuAction(if (isProfileBlocked) "ブロックを解除" else "ブロック", Icons.Outlined.Block, enabled = moderationReady, destructive = true, startsGroup = onMuteProfile == null) { profileMenuExpanded = false; action() }) }
+                                    onReportProfile?.let { action -> add(ProfileMenuAction("報告", Icons.Outlined.Flag, destructive = true, startsGroup = onMuteProfile == null && onBlockProfile == null) { profileMenuExpanded = false; action() }) }
+                                    moderationError?.let { error -> add(ProfileMenuAction("$error・再試行", Icons.Outlined.Refresh, destructive = true, onClick = onRetryModeration)) }
 
-                            }
-                            webLinks?.about?.let { url ->
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    text = { Text("このサーバーについて") },
-                                    onClick = { profileMenuExpanded = false; onOpenLink(url) },
-                                )
-                            }
-                        }
+                                }
+                                webLinks?.about?.let { url ->
+                                    add(ProfileMenuAction("このサーバーについて", Icons.Outlined.Info, startsGroup = true) { profileMenuExpanded = false; onOpenLink(url) })
+                                }
+                            },
+                        )
                     }
                 }
                 }

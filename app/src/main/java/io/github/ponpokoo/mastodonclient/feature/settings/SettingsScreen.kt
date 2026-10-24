@@ -7,6 +7,7 @@ import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
@@ -25,8 +27,9 @@ import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenu
+import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenuItem
+import io.github.ponpokoo.mastodonclient.feature.common.AppMenuDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -531,11 +534,18 @@ private fun <T> ChoiceRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            choices.forEach { choice ->
-                DropdownMenuItem(
-                    text = { Text(choice.displayLabel()) },
+        AppDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            choices.forEachIndexed { index, choice ->
+                if (index > 0) AppMenuDivider()
+                AppDropdownMenuItem(
+                    label = choice.displayLabel(),
                     onClick = { expanded = false; onSelected(choice) },
+                    isSelected = choice == selected,
+                    trailingIcon = {
+                        Box(Modifier.size(22.dp)) {
+                            if (choice == selected) Icon(Icons.Outlined.Check, contentDescription = null)
+                        }
+                    },
                 )
             }
         }
