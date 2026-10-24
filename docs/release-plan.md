@@ -5,9 +5,9 @@
 
 ## 現行のリリース対象版
 
-リリース準備対象はversionName `2.5.8.1`、versionCode `29`とする。`app/build.gradle.kts`も同じ版番号に揃え、Google Play提出用の署名付きAABと、同じソースの確認用APKを準備する。成果物・検証結果・提出と配布の状況は版ごとの内部リリースノートに記録する。
+リリース準備対象はversionName `2.5.8.1`、versionCode `30`とする。`app/build.gradle.kts`も同じ版番号に揃え、Google Play提出用の署名付きAABを準備する。確認用APKは必要な場合に同じソースから生成する。成果物・検証結果・提出と配布の状況は版ごとの内部リリースノートに記録する。
 
-比較元は2.5.8の成果物に対応する確定ソース `20d8b06fd6df59aa3249422b388356f04dfeff49`。前回の記録は`app/release/Nagisa-2.5.8-vc28-release-notes.md`、今回の利用者向けノート案・成果物・検証範囲は`app/release/Nagisa-2.5.8.1-vc29-release-notes.md`の一つにまとめる。過去版のノートは保持し、配布するソースの確定SHAは今回の内部ノートへ記録する。
+比較元は2.5.8の成果物に対応する確定ソース `20d8b06fd6df59aa3249422b388356f04dfeff49`。前回の記録は`app/release/Nagisa-2.5.8-vc28-release-notes.md`、今回の利用者向けノート案・成果物・検証範囲は`app/release/Nagisa-2.5.8.1-vc30-release-notes.md`の一つにまとめる。過去版のノートは保持し、配布するソースの確定SHAは今回の内部ノートへ記録する。
 
 ### 2.5.8.1で追加する変更
 
