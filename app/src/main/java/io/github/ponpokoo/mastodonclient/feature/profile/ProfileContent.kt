@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedIconButton
@@ -60,6 +61,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.ponpokoo.mastodonclient.ui.theme.onReactionSelectedContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.onProfileFollowedByContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.profileFollowedByContainer
 import io.github.ponpokoo.mastodonclient.ui.theme.reactionSelectedOutline
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -235,7 +238,8 @@ internal fun ProfileContent(
     }
     var profileMenuExpanded by remember { mutableStateOf(false) }
     when {
-        state.isLoadingProfile && profile == null -> ListLoadingContent(Modifier.padding(padding))
+        profile == null && state.profileError == null ->
+            ListLoadingContent(Modifier.padding(padding), label = "プロフィールを読み込み中…")
         profile == null -> Column(
             Modifier.fillMaxSize().padding(padding).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -263,23 +267,27 @@ internal fun ProfileContent(
             item(key = "profile_header") {
                 Column(Modifier.fillMaxWidth().testTag("profile_header")) {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val actionLabel = if (profile.isOwnProfile) "プロフィールを編集"
-                    else followActionLabel(relationship, profile.locked)
+                // Reserve the same space before and after the relationship arrives.
+                val actionLabels = if (profile.isOwnProfile) listOf("プロフィールを編集")
+                    else listOf("確認中", "フォロー", "フォロー中", "リクエスト", "リクエスト中")
                 val actionMeasurer = rememberTextMeasurer()
                 val actionDensity = LocalDensity.current
                 val actionStyle = MaterialTheme.typography.labelLarge
                 val naturalTextWidth = with(actionDensity) {
-                    actionMeasurer.measure(actionLabel, actionStyle).size.width.toDp()
+                    actionLabels.maxOf { actionMeasurer.measure(it, actionStyle).size.width }.toDp()
                 }
                 val actionContentPadding = if (profile.isOwnProfile) 48.dp else 80.dp
                 // The text-only editor stays beside the avatar and wraps when needed.
                 val actionsBelowAvatar = !profile.isOwnProfile &&
                     naturalTextWidth + actionContentPadding + 56.dp > maxWidth - 132.dp
                 val actionsWidth = maxWidth - 32.dp - if (actionsBelowAvatar) 0.dp else 100.dp
+                val followButtonWidth = (naturalTextWidth + actionContentPadding)
+                    .coerceAtMost((actionsWidth - 56.dp).coerceAtLeast(1.dp))
                 val actionTextHeight = with(actionDensity) {
-                    actionMeasurer.measure(actionLabel, actionStyle, constraints = Constraints(
+                    // Keep a pixel for rounding through the button's dp padding.
+                    (actionLabels.maxOf { label -> actionMeasurer.measure(label, actionStyle, constraints = Constraints(
                         maxWidth = (actionsWidth - 56.dp - actionContentPadding).coerceAtLeast(1.dp).roundToPx(),
-                    )).size.height.toDp()
+                    )).size.height } + 1).toDp()
                 }
                 val actionButtonHeight = (
                     actionTextHeight.coerceAtLeast(if (profile.isOwnProfile) 0.dp else ButtonDefaults.IconSize) +
@@ -326,6 +334,7 @@ internal fun ProfileContent(
                             } else {
                                 FollowActionButton(relationship, profile.locked, onToggleFollow,
                                     modifier = Modifier.weight(1f, fill = false)
+                                        .width(followButtonWidth)
                                         .minimumInteractiveComponentSize().height(actionButtonHeight))
                             }
                             Spacer(Modifier.width(8.dp))
@@ -388,7 +397,16 @@ internal fun ProfileContent(
                         val density = androidx.compose.ui.platform.LocalDensity.current
                         val badgeStyle = MaterialTheme.typography.labelSmall
                         val handleStyle = MaterialTheme.typography.bodyLarge
-                        val badgeWidth = measurer.measure("フォローされています", badgeStyle).size.width
+                        val badgeHorizontalPadding = 6.dp
+                        val badgeModifier = Modifier
+                            .padding(start = 8.dp)
+                            .background(
+                                MaterialTheme.colorScheme.profileFollowedByContainer,
+                                RoundedCornerShape(4.dp),
+                            )
+                            .padding(horizontal = badgeHorizontalPadding, vertical = 2.dp)
+                        val badgeWidth = measurer.measure("フォローされています", badgeStyle).size.width +
+                            with(density) { badgeHorizontalPadding.roundToPx() * 2 }
                         val handleWidth = measurer.measure(handle, handleStyle).size.width
                         val extraWidth = with(density) { (if (profile.locked) 28.dp else 8.dp).roundToPx() }
                         val badgeById = handleWidth + badgeWidth + extraWidth <= constraints.maxWidth
@@ -401,8 +419,8 @@ internal fun ProfileContent(
                                 style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
                             )
                             if (followed && !badgeById) {
-                                Text("フォローされています", Modifier.padding(start = 8.dp),
-                                    style = badgeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Text("フォローされています", badgeModifier,
+                                    style = badgeStyle, color = MaterialTheme.colorScheme.onProfileFollowedByContainer,
                                     maxLines = 1)
                             }
                         }
@@ -410,8 +428,8 @@ internal fun ProfileContent(
                             Text(handle, Modifier.weight(1f, fill = false), style = handleStyle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (profile.locked) Icon(Icons.Outlined.Lock, "非公開アカウント", Modifier.padding(start = 4.dp).size(16.dp))
-                            if (followed && badgeById) Text("フォローされています", Modifier.padding(start = 8.dp),
-                                style = badgeStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            if (followed && badgeById) Text("フォローされています", badgeModifier,
+                                style = badgeStyle, color = MaterialTheme.colorScheme.onProfileFollowedByContainer, maxLines = 1)
                         }
                         }
                     }
@@ -526,13 +544,18 @@ internal fun ProfileContent(
             val loadingMore = pageLoaded && (pageState?.isLoadingMore ?: (isSelectedPage && isLoadingMore))
             val slowLoadingLabel = if (state.selectedHashtag != null && pageState?.isSlowLoading == true)
                 "取得に時間がかかっています" else null
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().testTag("profile_posts_${pageTab.name.lowercase()}")) {
             LazyColumn(
                 Modifier.fillMaxSize(), state = postListState,
                 // A moving pager must not estimate its own vertical fling velocity.
                 // Keep one input owner while retaining each tab's list state.
                 userScrollEnabled = false,
             ) {
+            if (initialLoading) {
+                item(key = "profile_posts_loading") {
+                    ProfilePostsLoadingIndicator(slowLoadingLabel ?: "投稿を読み込み中…")
+                }
+            }
             items(statuses, key = { it.timelineId }) { status ->
                 SocialStatus(
                     status, onStatusClick, onOpenLink, onReply,
@@ -561,20 +584,27 @@ internal fun ProfileContent(
                     item { TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) { Text("さらに読み込む") } }
                 }
             }
-            if (initialLoading) {
-                val visibleHeaderHeight = resolvedHeaderListState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { it.key == "profile_header" }?.let { (it.offset + it.size).coerceAtLeast(0) } ?: 0
-                // Pager pages keep the full viewport height; exclude the part hidden
-                // below the screen while the shared profile header is still visible.
-                val hiddenHeight = with(density) { visibleHeaderHeight.toDp() }.coerceAtMost(pagerHeight)
-                ListLoadingContent(Modifier.padding(bottom = hiddenHeight), label = slowLoadingLabel ?: "読み込み中…")
-            }
             }
             }
             }
             }
             }
         }
+    }
+}
+
+@Composable
+private fun ProfilePostsLoadingIndicator(label: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp)
+            .testTag("profile_posts_loading").semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(label, modifier = Modifier.weight(1f, fill = false),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

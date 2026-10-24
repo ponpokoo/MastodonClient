@@ -79,6 +79,7 @@ class ProfileActionButtonsDeviceTest {
             }
         }
             for (fontScale in listOf(1f, 1.3f, 2f)) {
+                var relationshipBounds: Rect? = null
                 for (index in 0..5) {
                     // Keep the editor beside the avatar; its accepted font range is
                     // 1x to 1.3x. Follow actions still cover 2x on narrow screens.
@@ -90,6 +91,13 @@ class ProfileActionButtonsDeviceTest {
                     val button = rule.onNodeWithTag(tag).assertIsDisplayed()
                     assertReadable(tag, label, "$mode/$fontScale/$label")
                     val bounds = button.fetchSemanticsNode().boundsInRoot
+                    if (!own) {
+                        relationshipBounds?.let { previous ->
+                            assertEquals("Relationship changes must not move or resize the action: $mode/$fontScale",
+                                previous, bounds)
+                        }
+                        relationshipBounds = bounds
+                    }
                     val avatar = rule.onNodeWithTag("profile_avatar").fetchSemanticsNode().boundsInRoot
                     assertFalse("Action overlaps avatar: $mode/$fontScale/$label", bounds.overlaps(avatar))
                     if (own && fontScale == 1f) {

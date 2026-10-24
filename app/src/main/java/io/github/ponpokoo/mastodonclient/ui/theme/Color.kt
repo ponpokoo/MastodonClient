@@ -9,6 +9,12 @@ val MastodonPurpleDark = Color(0xFFB9C3FF)
 val MastodonSecondary = Color(0xFF5B5D72)
 val MastodonSecondaryDark = Color(0xFFC4C5DD)
 
+internal val ColorScheme.profileFollowedByContainer: Color
+    get() = if (surface.luminance() < 0.5f) Color.White.copy(alpha = 0.12f) else Color(0xFFEEEEEE)
+
+internal val ColorScheme.onProfileFollowedByContainer: Color
+    get() = if (surface.luminance() < 0.5f) Color(0xFFE0E0E0) else Color(0xFF555555)
+
 // Follow the app's selected theme, including when it differs from the system theme.
 internal val ColorScheme.reactionSelectedOutline: Color
     get() = if (surface.luminance() < 0.5f) Color(0xFF9FB9D8) else Color(0xFF7065BF)

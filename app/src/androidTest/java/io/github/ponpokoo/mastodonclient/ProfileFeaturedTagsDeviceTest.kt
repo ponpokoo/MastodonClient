@@ -52,12 +52,12 @@ class ProfileFeaturedTagsDeviceTest {
                     onFavourite = {}, onReact = { _, _ -> }, onAccountClick = {}, onMediaClick = { _, _ -> })
             }
         }
-        rule.onNodeWithText("読み込み中…").assertExists()
+        rule.onNodeWithText("投稿を読み込み中…").assertExists()
         rule.onNodeWithText("取得に時間がかかっています").assertDoesNotExist()
         rule.runOnIdle { state.value = state.value.copy(profileTabs = mapOf(ProfileStatusTab.Posts to
             ProfileTabUiState(isLoading = true, isSlowLoading = true))) }
         rule.onNodeWithText("取得に時間がかかっています").assertExists()
-        rule.onNodeWithText("読み込み中…").assertDoesNotExist()
+        rule.onNodeWithText("投稿を読み込み中…").assertDoesNotExist()
         rule.runOnIdle { state.value = state.value.copy(profileTabs = mapOf(ProfileStatusTab.Posts to
             ProfileTabUiState(error = "投稿を取得できませんでした"))) }
         rule.onNodeWithText("取得に時間がかかっています").assertDoesNotExist()
