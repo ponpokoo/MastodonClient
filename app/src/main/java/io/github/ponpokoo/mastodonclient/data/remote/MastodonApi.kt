@@ -239,6 +239,9 @@ interface MastodonApi {
     @GET("api/v1/announcements")
     suspend fun getAnnouncements(): List<AnnouncementDto>
 
+    @POST("api/v1/announcements/{id}/dismiss")
+    suspend fun dismissAnnouncement(@Path("id") id: String)
+
     @GET("api/v1/notifications")
     suspend fun getNotifications(
         @Query("max_id") maxId: String? = null,

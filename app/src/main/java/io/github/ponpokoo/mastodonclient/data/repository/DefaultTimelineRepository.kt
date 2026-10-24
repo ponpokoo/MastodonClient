@@ -224,6 +224,10 @@ class DefaultTimelineRepository(
             }
     }
 
+    override suspend fun dismissAnnouncement(session: AccountSession, announcementId: String): Result<Unit> = runCatching {
+        apiClientFactory.create(session.instanceUrl, session.accessToken).dismissAnnouncement(announcementId)
+    }
+
     override suspend fun getProfile(session: AccountSession, accountId: String): Result<UserProfile> = runCatching { coroutineScope {
         val displayRequest = if (accountId == session.accountId) accountDisplay?.begin(session) else null
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)

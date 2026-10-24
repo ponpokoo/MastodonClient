@@ -90,6 +90,9 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     suspend fun getAnnouncements(session: AccountSession): Result<List<ServerAnnouncement>> =
         Result.failure(UnsupportedOperationException("サーバーからのお知らせは未対応です"))
 
+    suspend fun dismissAnnouncement(session: AccountSession, announcementId: String): Result<Unit> =
+        Result.failure(UnsupportedOperationException("お知らせの既読処理は未対応です"))
+
     suspend fun getProfile(session: AccountSession, accountId: String = session.accountId): Result<UserProfile> =
         Result.failure(UnsupportedOperationException("プロフィールは未対応です"))
 

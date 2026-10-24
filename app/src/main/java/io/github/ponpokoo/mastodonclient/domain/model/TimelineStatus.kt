@@ -159,5 +159,5 @@ data class ServerAnnouncement(
     val contentHtml: String,
     val publishedAt: String?,
     val updatedAt: String?,
-    val read: Boolean,
+    val read: Boolean?,
 )

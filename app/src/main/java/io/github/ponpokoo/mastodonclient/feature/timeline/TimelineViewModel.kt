@@ -63,12 +63,14 @@ data class TimelineUiState(
     val gapErrors: Map<String, String> = emptyMap(),
 ) {
     val pendingNewStatusIds: Set<String> get() = unseenStreamIds + unseenRefreshIds
+    val hasUnreadAnnouncements: Boolean get() = announcements.any { it.read == false }
 }
 
 class TimelineViewModel(
     private val timelineRepository: TimelineRepository,
     browsing: BrowsingSession,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val announcementTimeMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : SessionScopedViewModel(browsing) {
     private val moderationCache = TimelineModerationCache()
     private val _uiState = MutableStateFlow(TimelineUiState())
@@ -77,6 +79,9 @@ class TimelineViewModel(
     }
     private var timelineJob: Job? = null
     private var streamGapProbeJob: Job? = null
+    private var lastAnnouncementsCheck: Long? = null
+    private val readingAnnouncementIds = mutableSetOf<String>()
+    private val readAnnouncementVersions = mutableMapOf<String, String?>()
     private var followingTop = false
     private var streamSequence = 0L
     private var noticeSequence = 0L
@@ -149,6 +154,9 @@ class TimelineViewModel(
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
+        lastAnnouncementsCheck = null
+        readingAnnouncementIds.clear()
+        readAnnouncementVersions.clear()
         moderationCache.clear()
         streamGapProbeJob?.cancel()
         blockedAutomaticCursor = null
@@ -160,7 +168,10 @@ class TimelineViewModel(
             isInitialLoading = snapshot.generation == 0L || snapshot.account != null,
             selectedFeed = viewport?.feed ?: TimelineFeed.Home,
         )
-        if (snapshot.account != null) loadInitial(viewport)
+        if (snapshot.account != null) {
+            loadInitial(viewport)
+            refreshAnnouncementsIfNeeded()
+        }
     }
 
     fun refresh() {
@@ -319,31 +330,72 @@ class TimelineViewModel(
     }
 
     fun showAnnouncements() {
+        _uiState.update { it.copy(announcementsVisible = true) }
+        loadAnnouncements(manual = true)
+    }
+
+    fun refreshAnnouncementsIfNeeded() {
+        val lastCheck = lastAnnouncementsCheck
+        if (lastCheck != null && announcementTimeMillis() - lastCheck < 30 * 60 * 1_000L) return
+        if (!timelineRepository.isNetworkAvailable()) return
+        loadAnnouncements(manual = false)
+    }
+
+    private fun loadAnnouncements(manual: Boolean) {
         val snapshot = currentSnapshot() ?: return
         val session = snapshot.account!!
         if (_uiState.value.isLoadingAnnouncements) return
+        lastAnnouncementsCheck = announcementTimeMillis()
+        readAnnouncementVersions.clear()
+        _uiState.update { it.copy(isLoadingAnnouncements = true, announcementsError = null) }
         requestScope.launch {
-            _uiState.update {
-                it.copy(
-                    announcementsVisible = true,
-                    isLoadingAnnouncements = true,
-                    announcementsError = null,
-                )
-            }
             timelineRepository.getAnnouncements(session)
                 .forSession(snapshot).onSuccess { announcements ->
+                    // A read request can finish while a new list is being fetched.
+                    val merged = announcements.map { announcement ->
+                        if (readAnnouncementVersions.containsKey(announcement.id) &&
+                            readAnnouncementVersions[announcement.id] == announcement.updatedAt
+                        ) announcement.copy(read = true) else announcement
+                    }
+                    readAnnouncementVersions.keys.retainAll(announcements.map { it.id }.toSet())
                     _uiState.update {
-                        it.copy(announcements = announcements, isLoadingAnnouncements = false)
+                        it.copy(announcements = merged, isLoadingAnnouncements = false)
                     }
                 }
                 .onFailure { error ->
                     _uiState.update {
                         it.copy(
                             isLoadingAnnouncements = false,
-                            announcementsError = error.message ?: "お知らせを取得できませんでした",
+                            announcementsError = if (manual || it.announcementsVisible)
+                                error.message ?: "お知らせを取得できませんでした" else null,
                         )
                     }
                 }
+        }
+    }
+
+    fun onAnnouncementsShown(ids: Set<String>) {
+        val snapshot = currentSnapshot() ?: return
+        val state = _uiState.value
+        if (!state.announcementsVisible || state.isLoadingAnnouncements || state.announcementsError != null) return
+        state.announcements.filter { it.id in ids && it.read == false }.forEach { announcement ->
+            if (!readingAnnouncementIds.add(announcement.id)) return@forEach
+            requestScope.launch {
+                try {
+                    timelineRepository.dismissAnnouncement(snapshot.account!!, announcement.id)
+                        .forSession(snapshot).onSuccess {
+                            readAnnouncementVersions[announcement.id] = announcement.updatedAt
+                            _uiState.update { current ->
+                                current.copy(announcements = current.announcements.map {
+                                    if (it.id == announcement.id && it.updatedAt == announcement.updatedAt)
+                                        it.copy(read = true) else it
+                                })
+                            }
+                        }
+                } finally {
+                    if (currentSnapshot() == snapshot) readingAnnouncementIds.remove(announcement.id)
+                }
+            }
         }
     }
 

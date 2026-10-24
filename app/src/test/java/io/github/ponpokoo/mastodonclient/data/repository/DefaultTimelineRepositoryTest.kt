@@ -533,6 +533,33 @@ class DefaultTimelineRepositoryTest {
             assertEquals("/api/v1/announcements", request.path)
             assertEquals("notice-1", announcements.single().id)
             assertEquals("<p>Maintenance</p>", announcements.single().contentHtml)
+            assertEquals(false, announcements.single().read)
+        }
+    }
+
+    @Test
+    fun missingAnnouncementReadStateIsUnknown() = runTest {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("""[{"id":"notice","content":"<p>Notice</p>"}]"""))
+            val announcements = DefaultTimelineRepository(ApiClientFactory())
+                .getAnnouncements(testSession(server)).getOrThrow()
+            assertNull(announcements.single().read)
+        }
+    }
+
+    @Test
+    fun dismissesAnnouncementOnSelectedServerAndPropagatesFailure() = runTest {
+        MockWebServer().use { server ->
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            server.enqueue(MockResponse().setBody("{}"))
+            repository.dismissAnnouncement(session, "notice-one").getOrThrow()
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/v1/announcements/notice-one/dismiss", request.path)
+            assertEquals("Bearer ${session.accessToken}", request.getHeader("Authorization"))
+            server.enqueue(MockResponse().setResponseCode(403).setBody("{}"))
+            assertTrue(repository.dismissAnnouncement(session, "notice-two").isFailure)
         }
     }
 

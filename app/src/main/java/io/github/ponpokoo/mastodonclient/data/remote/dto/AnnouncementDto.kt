@@ -9,5 +9,5 @@ data class AnnouncementDto(
     val content: String,
     @SerialName("published_at") val publishedAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-    val read: Boolean = false,
+    val read: Boolean? = null,
 )

@@ -341,6 +341,14 @@ fun HomeTimelineScreen(
         onNotificationOpenHandled(request)
     }
 
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshAnnouncementsIfNeeded()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     DisposableEffect(lifecycleOwner, destination, homeAtTop) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -453,6 +461,7 @@ fun HomeTimelineScreen(
                     selectedFeed = state.selectedFeed,
                     onFeedSelected = viewModel::selectFeed,
                     onAnnouncements = viewModel::showAnnouncements,
+                    hasUnreadAnnouncements = state.hasUnreadAnnouncements,
                     onLogout = mainViewModel::logout,
                     activeSession = mainState.session,
                     sessions = mainState.sessions,
@@ -738,6 +747,7 @@ fun HomeTimelineScreen(
             onRetry = viewModel::showAnnouncements,
             onDismiss = viewModel::dismissAnnouncements,
             onOpenLink = onOpenLink,
+            onShown = viewModel::onAnnouncementsShown,
         )
     }
 }
@@ -753,6 +763,7 @@ internal fun TimelineTopBar(
     sessions: List<AccountSession>,
     onAccountSelected: (String) -> Unit,
     onSettings: () -> Unit,
+    hasUnreadAnnouncements: Boolean = false,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var accountDialogOpen by remember { mutableStateOf(false) }
@@ -809,11 +820,16 @@ internal fun TimelineTopBar(
                 )
             }
             IconButton(onClick = onAnnouncements) {
-                Icon(
-                    Icons.Outlined.Campaign,
-                    contentDescription = "サーバーからのお知らせ",
-                    modifier = Modifier.testTag("server_announcements"),
-                )
+                BadgedBox(badge = {
+                    if (hasUnreadAnnouncements) Badge(Modifier.testTag("server_announcements_unread"))
+                }) {
+                    Icon(
+                        Icons.Outlined.Campaign,
+                        contentDescription = if (hasUnreadAnnouncements)
+                            "サーバーからのお知らせ（未読あり）" else "サーバーからのお知らせ",
+                        modifier = Modifier.testTag("server_announcements"),
+                    )
+                }
             }
             IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, contentDescription = "設定") }
         },
@@ -842,7 +858,19 @@ private fun AnnouncementsSheet(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
     onOpenLink: (String) -> Unit,
+    onShown: (Set<String>) -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle(
+        minActiveState = Lifecycle.State.CREATED,
+    )
+    LaunchedEffect(listState, isLoading, errorMessage, announcements, lifecycleState) {
+        if (isLoading || errorMessage != null || !lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String }.toSet()
+        }.distinctUntilChanged().collect { onShown(it) }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
             "サーバーからのお知らせ",
@@ -866,7 +894,7 @@ private fun AnnouncementsSheet(
                 modifier = Modifier.padding(20.dp, 20.dp, 20.dp, 48.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            else -> LazyColumn(Modifier.fillMaxWidth()) {
+            else -> LazyColumn(Modifier.fillMaxWidth(), state = listState) {
                 items(announcements, key = ServerAnnouncement::id) { announcement ->
                     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
                         StatusContentText(
