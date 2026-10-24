@@ -64,28 +64,28 @@ class StatusCollapseDeviceTest {
     }
 
     @Test fun exactLineBoundaryExpandsWithoutLosingTextAndCollapses() {
-        val count = mutableStateOf(11)
+        val count = mutableStateOf(14)
         rule.setContent { MaterialTheme { Column(Modifier.width(280.dp)) { Body(lines(count.value)) } } }
         rule.onNodeWithTag("status_body_toggle").assertDoesNotExist()
-        rule.runOnIdle { count.value = 12 }
-        assertEquals(12, layout().lineCount)
+        rule.runOnIdle { count.value = 15 }
+        assertEquals(15, layout().lineCount)
         rule.onNodeWithTag("status_body_toggle").assertDoesNotExist()
-        rule.runOnIdle { count.value = 13 }
-        assertEquals(12, layout().lineCount)
-        assertTrue(layout().isLineEllipsized(11))
+        rule.runOnIdle { count.value = 16 }
+        assertEquals(15, layout().lineCount)
+        assertTrue(layout().isLineEllipsized(14))
         val visible = rule.onNodeWithTag("body").fetchSemanticsNode().config[SemanticsProperties.Text].single().text
-        assertFalse(visible.contains("行13"))
+        assertFalse(visible.contains("行16"))
         rule.onNodeWithText("続きを読む").performClick()
-        assertEquals(13, layout().lineCount)
-        assertTrue(layout().layoutInput.text.text.endsWith("行13"))
+        assertEquals(16, layout().lineCount)
+        assertTrue(layout().layoutInput.text.text.endsWith("行16"))
         rule.onNodeWithText("閉じる").performClick()
-        assertEquals(12, layout().lineCount)
+        assertEquals(15, layout().lineCount)
     }
 
     @Test fun widthAndFontScaleRecalculateOverflowWhileKeepingExpandedChoice() {
         val width = mutableStateOf(280)
         val scale = mutableStateOf(1f)
-        // Fits at the original width, wraps to more than 12 lines after either change.
+        // Fits at the original width, wraps to more than 15 lines after either change.
         val html = "<p>${(1..10).joinToString("<br>") { "日本語の本文と折り返し確認です" }}</p>"
         rule.setContent {
             MaterialTheme {
@@ -98,18 +98,18 @@ class StatusCollapseDeviceTest {
         rule.onNodeWithTag("status_body_toggle").assertDoesNotExist()
         rule.runOnIdle { width.value = 130 }
         rule.onNodeWithText("続きを読む").performClick()
-        assertTrue(layout().lineCount > 12)
+        assertTrue(layout().lineCount > 15)
         rule.runOnIdle { width.value = 280 }
         rule.onNodeWithTag("status_body_toggle").assertDoesNotExist()
         rule.runOnIdle { scale.value = 2f }
         val changed = layout()
         assertEquals("Expanded choice must survive width/font changes", Int.MAX_VALUE, changed.layoutInput.maxLines)
-        assertTrue("lines=${changed.lineCount}, fontScale=${changed.layoutInput.density.fontScale}, font=${changed.layoutInput.style.fontSize}, width=${changed.layoutInput.constraints.maxWidth}", changed.lineCount > 12)
+        assertTrue("lines=${changed.lineCount}, fontScale=${changed.layoutInput.density.fontScale}, font=${changed.layoutInput.style.fontSize}, width=${changed.layoutInput.constraints.maxWidth}", changed.lineCount > 15)
         rule.onNodeWithText("閉じる").assertExists()
     }
 
     @Test fun toggleHighlightsOnlyLabelWhilePaddingStillOpensAndCloses() {
-        rule.setContent { MaterialTheme { Column(Modifier.width(280.dp)) { Body(lines(13)) } } }
+        rule.setContent { MaterialTheme { Column(Modifier.width(280.dp)) { Body(lines(16)) } } }
         for (label in listOf("続きを読む", "閉じる")) {
             val button = rule.onNodeWithTag("status_body_toggle")
             val bounds = button.fetchSemanticsNode().boundsInRoot
@@ -142,7 +142,7 @@ class StatusCollapseDeviceTest {
     @Test fun visibleLinksStillOpenButEllipsisCannotOpenHiddenLink() {
         val events = mutableListOf<String>()
         val html = "<p><a href=\"https://example.test/visible\">visible</a><br>" +
-            (1..10).joinToString("<br>") { "行$it" } +
+            (1..13).joinToString("<br>") { "行$it" } +
             "<br><a href=\"https://example.test/long\">${"link".repeat(30)}</a><br>HIDDEN</p>"
         rule.setContent { MaterialTheme { Column(Modifier.width(220.dp)) {
             Body(html, onLink = events::add, onOther = { events.add("detail") })
@@ -151,7 +151,7 @@ class StatusCollapseDeviceTest {
         rule.onNodeWithTag("body").performTouchInput { click(result.getBoundingBox(1).center) }
         result = layout()
         rule.onNodeWithTag("body").performTouchInput {
-            click(Offset(result.size.width - 1f, (result.getLineTop(11) + result.getLineBottom(11)) / 2))
+            click(Offset(result.size.width - 1f, (result.getLineTop(14) + result.getLineBottom(14)) / 2))
         }
         rule.runOnIdle { assertEquals(listOf("https://example.test/visible", "detail"), events) }
         rule.onNodeWithText("続きを読む").performClick()
@@ -162,10 +162,10 @@ class StatusCollapseDeviceTest {
     }
 
     @Test fun hiddenEmojiPlaceholderReappearsOnExpansion() {
-        val html = "<p>" + (1..12).joinToString("<br>") { "行$it :e:" } + "<br>末尾 :e:</p>"
+        val html = "<p>" + (1..15).joinToString("<br>") { "行$it :e:" } + "<br>末尾 :e:</p>"
         val emojis = mapOf("e" to "android.resource://io.github.ponpokoo.mastodonclient/${R.drawable.nagisa_launcher_art}")
         rule.setContent { MaterialTheme { Column(Modifier.width(280.dp)) { Body(html, emojis = emojis) } } }
-        assertEquals(13, layout().placeholderRects.size)
+        assertEquals(16, layout().placeholderRects.size)
         assertNull(layout().placeholderRects.last())
         rule.onNodeWithText("続きを読む").performClick()
         assertTrue(layout().placeholderRects.all { it != null })
@@ -174,7 +174,7 @@ class StatusCollapseDeviceTest {
     @Test fun savedExpansionRestoresOnlyForSameAccountRowAndBody() {
         val account = mutableStateOf("a|1")
         val row = mutableStateOf("row")
-        val html = mutableStateOf(lines(13))
+        val html = mutableStateOf(lines(16))
         val registry = mutableStateOf(SaveableStateRegistry(null) { true })
         val shown = mutableStateOf(true)
         rule.setContent {
@@ -203,7 +203,7 @@ class StatusCollapseDeviceTest {
         recreate { row.value = "boost-row" }
         rule.onNodeWithText("続きを読む").assertExists()
         rule.onNodeWithText("続きを読む").performClick()
-        recreate { html.value = lines(14) }
+        recreate { html.value = lines(17) }
         rule.onNodeWithText("続きを読む").assertExists()
     }
 
@@ -235,7 +235,7 @@ class StatusCollapseDeviceTest {
         val collapse = mutableStateOf(true)
         rule.setContent { MaterialTheme {
             Column(Modifier.width(300.dp)) {
-                StatusCard(post(lines(13)).copy(spoilerText = warning.value), onStatusClick = null,
+                StatusCard(post(lines(16)).copy(spoilerText = warning.value), onStatusClick = null,
                     onUnavailableAction = {}, collapseLongContent = collapse.value)
             }
         } }
@@ -245,7 +245,7 @@ class StatusCollapseDeviceTest {
         rule.onNodeWithText("内容を隠す").performClick()
         rule.runOnIdle { warning.value = ""; collapse.value = false }
         rule.onNodeWithTag("status_body_toggle").assertDoesNotExist()
-        rule.onNodeWithText("行13", substring = true, useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("行16", substring = true, useUnmergedTree = true).assertExists()
     }
 
     private fun post(html: String) = TimelineStatus(

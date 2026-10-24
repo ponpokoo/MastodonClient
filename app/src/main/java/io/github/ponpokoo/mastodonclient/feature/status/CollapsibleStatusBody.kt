@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.constrainHeight
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 
-internal const val CollapsedStatusMaxLines = 12
+internal const val CollapsedStatusMaxLines = 15
 
 /** Only post bodies opt in; profile/about text and conversation detail keep their existing path. */
 @Composable
