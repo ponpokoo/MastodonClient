@@ -18,8 +18,10 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.feature.settings.*
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
@@ -76,7 +78,9 @@ class WelcomeGuideDeviceTest {
             if (page == null) {
                 FirstRunGuide(store, eligible = true, onSettings = { destination = it })
             } else {
-                SettingsScreen(store, null, emptyList(), maintenance, { destination = null }, {}, {}, initialPage = page)
+                SettingsScreen(store, null, emptyList(), maintenance, { destination = null }, {}, {}, initialPage = page,
+                    preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             }
         } }
         for ((tag, text) in listOf(
@@ -97,7 +101,9 @@ class WelcomeGuideDeviceTest {
 
     @Test fun firstRunSettingDestinationKeepsRootAsBackDestination() {
         rule.setContent { MastodonClientTheme {
-            SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {}, initialPage = "Appearance")
+            SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {}, initialPage = "Appearance",
+                preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+            )
         } }
         rule.onNodeWithText("端末の設定に合わせる").assertExists()
         rule.onNodeWithContentDescription("戻る").performClick()
@@ -115,7 +121,9 @@ class WelcomeGuideDeviceTest {
         rule.setContent {
             CompositionLocalProvider(LocalContext provides context) {
                 MastodonClientTheme {
-                    SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {})
+                    SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
+                        preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                    )
                     FirstRunGuide(store, eligible = eligible, onSettings = {})
                 }
             }
@@ -140,7 +148,9 @@ class WelcomeGuideDeviceTest {
         var mode by mutableStateOf(ThemeMode.Dark)
         rule.setContent {
             MastodonClientTheme(mode) {
-                SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {})
+                SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
+                    preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
                 FirstRunGuide(store, eligible = true, onSettings = {})
             }
         }
@@ -156,7 +166,9 @@ class WelcomeGuideDeviceTest {
     /** Also run with Android's font_scale=1.5; Dialog owns a separate platform window. */
     @Test fun completionRemainsReachableWhenBodyNeedsScrolling() {
         rule.setContent { MastodonClientTheme(ThemeMode.Light) {
-            SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {})
+            SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
+                preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+            )
             FirstRunGuide(store, eligible = true, onSettings = {})
         } }
         rule.onNodeWithTag("welcome_start").assertIsDisplayed()

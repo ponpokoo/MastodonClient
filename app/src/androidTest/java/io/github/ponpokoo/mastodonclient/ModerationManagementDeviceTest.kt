@@ -5,8 +5,10 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import io.github.ponpokoo.mastodonclient.feature.settings.*
@@ -174,7 +176,9 @@ class ModerationManagementDeviceTest {
         val theme = androidx.compose.runtime.mutableStateOf(ThemeMode.Dark)
         try {
             rule.setContent { MastodonClientTheme(themeMode = theme.value) {
-                SettingsScreen(preferences, session, listOf(session, second), maintenance, {}, {}, {}, moderation = model)
+                SettingsScreen(preferences, session, listOf(session, second), maintenance, {}, {}, {}, moderation = model,
+                    preferences = preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             } }
             rule.onNodeWithTag("settings_category_Moderation").performScrollTo().performClick()
             rule.onNodeWithTag("management_account_switcher").assertIsDisplayed()

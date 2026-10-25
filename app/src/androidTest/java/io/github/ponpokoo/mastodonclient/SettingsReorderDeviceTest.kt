@@ -23,6 +23,7 @@ import io.github.ponpokoo.mastodonclient.feature.settings.SettingsPage
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsPageContent
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -56,7 +57,9 @@ class SettingsReorderDeviceTest {
         })
         compose.setContent { MaterialTheme {
             Box(if (compact) Modifier.height(300.dp) else Modifier.fillMaxSize()) {
-            SettingsPageContent(page, {}, maintenance, store, null, emptyList(), {}, {}, {})
+            SettingsPageContent(page, {}, maintenance, store, null, emptyList(), {}, {}, {},
+                preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+            )
             }
         } }
         return store

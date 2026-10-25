@@ -95,13 +95,13 @@ internal fun SettingsPageContent(
     onBack: () -> Unit,
     onLogout: (AccountSession) -> Unit,
     onAddAccount: () -> Unit,
+    preferences: AppPreferences,
     pushSettings: PushSettingsViewModel? = null,
     onMoveAccount: (String, String?) -> Unit = { _, _ -> },
     changingAccountOrder: Boolean = false,
     accountOrderError: String? = null,
     posting: PostingSettingsViewModel? = null,
 ) {
-    val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
     var fabResetMessage by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()

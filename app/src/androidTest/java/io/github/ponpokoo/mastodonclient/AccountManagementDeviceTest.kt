@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.security.SecureAuthStore
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultAuthRepository
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
@@ -105,7 +106,9 @@ class AccountManagementDeviceTest {
             val accounts by repository.observeSessions().collectAsStateWithLifecycle(initialValue = emptyList())
             MaterialTheme {
                 SettingsPageContent(SettingsPage.Accounts, {}, maintenance, preferences, bob, accounts, {}, {}, {},
-                    onMoveAccount = { id, before -> runBlocking { repository.moveAccount(id, before).getOrThrow() } })
+                    onMoveAccount = { id, before -> runBlocking { repository.moveAccount(id, before).getOrThrow() } },
+                    preferences = preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
                 if (showPicker.value) AccountSwitchDialog("アカウント切替", accounts, bob.sessionId,
                     { selected = it; showPicker.value = false }, { showPicker.value = false })
             }

@@ -600,6 +600,7 @@ fun AppNavigation(
                     },
                 ),
                 store = preferences,
+                preferences = appPreferences,
                 activeSession = accountState.session,
                 sessions = accountState.sessions,
                 pushSettings = pushSettings,

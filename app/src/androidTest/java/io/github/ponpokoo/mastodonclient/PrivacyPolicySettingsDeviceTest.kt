@@ -12,7 +12,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
@@ -46,7 +48,9 @@ class PrivacyPolicySettingsDeviceTest {
         rule.setContent {
             CompositionLocalProvider(LocalContext provides context) {
                 MastodonClientTheme {
-                    SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {})
+                    SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
+                        preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                    )
                 }
             }
         }

@@ -10,8 +10,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
@@ -48,7 +50,9 @@ class ReadingSettingsDeviceTest {
         rule.setContent {
             MastodonClientTheme(themeMode = theme.value) {
                 SettingsPageContent(SettingsPage.Media, {}, maintenance, store, active.value,
-                    listOf(account, other), {}, {}, {})
+                    listOf(account, other), {}, {}, {},
+                    preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             }
         }
         val labels = listOf("閲覧注意としてマークされたメディアは隠す", "メディアを常に表示する", "メディアを常に隠す")

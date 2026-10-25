@@ -9,8 +9,10 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.data.local.AppLicensesLocalDataSource
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultAppLicensesRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
@@ -45,7 +47,9 @@ class LicensesDeviceTest {
         try {
             rule.setContent {
                 MastodonClientTheme(themeMode = theme.value) {
-                    SettingsScreen(preferences, null, emptyList(), maintenance, {}, {}, {}, licenses = licenses)
+                    SettingsScreen(preferences, null, emptyList(), maintenance, {}, {}, {}, licenses = licenses,
+                        preferences = preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                    )
                 }
             }
             rule.onNodeWithTag("settings_screen").performScrollToNode(hasTestTag("settings_category_About"))

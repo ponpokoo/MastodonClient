@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.*
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
@@ -43,6 +44,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLogout: (AccountSession) -> Unit,
     onAddAccount: () -> Unit,
+    preferences: AppPreferences,
     pushSettings: PushSettingsViewModel? = null,
     moderation: ModerationManagementViewModel? = null,
     onMoveAccount: (String, String?) -> Unit = { _, _ -> },
@@ -79,6 +81,7 @@ fun SettingsScreen(
                         onPage = { nav.navigate(it.name) { launchSingleTop = true } },
                         maintenance = maintenance,
                         store = store,
+                        preferences = preferences,
                         activeSession = activeSession,
                         sessions = sessions,
                         onBack = { if (page == SettingsPage.Root) onBack() else nav.popBackStack() },

@@ -9,8 +9,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.AvatarIconShape
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsPage
@@ -40,7 +42,9 @@ class AvatarShapeSettingsDeviceTest {
         })
         rule.setContent {
             MaterialTheme(colorScheme = lightColorScheme(surface = Color.Red, background = Color.White)) {
-                SettingsPageContent(SettingsPage.Timeline, {}, maintenance, store, null, emptyList(), {}, {}, {})
+                SettingsPageContent(SettingsPage.Timeline, {}, maintenance, store, null, emptyList(), {}, {}, {},
+                    preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             }
         }
         assertAvatarCorner(isSquare = true)

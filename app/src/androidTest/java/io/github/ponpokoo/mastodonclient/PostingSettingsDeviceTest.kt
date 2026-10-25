@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.*
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -45,7 +47,9 @@ class PostingSettingsDeviceTest {
         }
         try {
             rule.setContent { MastodonClientTheme {
-                SettingsPageContent(SettingsPage.Composer, {}, maintenance, store, active.value, listOf(account, other), {}, {}, {})
+                SettingsPageContent(SettingsPage.Composer, {}, maintenance, store, active.value, listOf(account, other), {}, {}, {},
+                    preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             } }
             rule.onNodeWithText("常に閲覧注意として投稿").performScrollTo().performClick()
             rule.runOnIdle {
@@ -99,7 +103,9 @@ class PostingSettingsDeviceTest {
         }
         try {
             rule.setContent { MastodonClientTheme {
-                SettingsScreen(preferences, account, listOf(account), maintenance, {}, {}, {}, posting = posting)
+                SettingsScreen(preferences, account, listOf(account), maintenance, {}, {}, {}, posting = posting,
+                    preferences = preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                )
             } }
             rule.onNodeWithTag("settings_category_Composer").performScrollTo().performClick()
             rule.onNodeWithText("ひかえめな公開").assertIsDisplayed()

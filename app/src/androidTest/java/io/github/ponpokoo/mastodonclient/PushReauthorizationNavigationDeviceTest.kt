@@ -22,6 +22,7 @@ import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.repository.*
@@ -110,7 +111,9 @@ class PushReauthorizationNavigationDeviceTest {
                             mainSessionViewModel(mainEntry, factory)
                             SettingsScreen(store, sessions.firstOrNull(), sessions, maintenance,
                                 onBack = { nav.popBackStack() }, onLogout = model::logout, onAddAccount = {},
-                                pushSettings = model, initialPage = "Notifications")
+                                pushSettings = model, initialPage = "Notifications",
+                                preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
+                            )
                         }
                     }
                 }
