@@ -26,7 +26,7 @@ class AccountDisplaySynchronizerTest {
         val superseded = sync.commit(background, old)
         assertEquals("Fresh", store.getSession()?.displayName)
         assertEquals("Fresh", superseded?.displayName)
-        assertEquals(1L, store.getSession()?.avatarRevision)
+        assertEquals("same-url", store.getSession()?.avatarUrl)
     }
 
     @Test fun failedNewerRequestDoesNotLetAnOlderResultOverwriteStoredData() = runTest {

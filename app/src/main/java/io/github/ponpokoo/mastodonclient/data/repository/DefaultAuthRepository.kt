@@ -130,7 +130,6 @@ class DefaultAuthRepository(
             avatarUrl = account.avatar,
             accessToken = token.accessToken,
             scopes = token.scope ?: pending.scopes,
-            avatarRevision = (previous?.avatarRevision ?: 0) + 1,
         )
         accountDisplay.changeRegistration {
             if (reauthorizing != null) {

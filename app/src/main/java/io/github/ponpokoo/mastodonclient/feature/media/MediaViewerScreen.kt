@@ -300,7 +300,7 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                     onTap = { setControlsVisible(!controlsVisible) },
                     fallbackPainter = motion.fallbackPainter(item), previewUrl = item.previewUrl)
                 else -> ZoomableImage(item.url ?: item.previewUrl.orEmpty(), item.previewUrl, item.description,
-                    item.cacheRevision, zoomStates[page], enabled = interactive, fallbackPainter = motion.fallbackPainter(item),
+                    item.cacheRevision, item.isAccountAvatar, zoomStates[page], enabled = interactive, fallbackPainter = motion.fallbackPainter(item),
                     onDisplayed = { painter -> motion.reportImageReady(item.id, painter) },
                     onTap = { setControlsVisible(!controlsVisible) })
             }
@@ -360,6 +360,7 @@ private fun ZoomableImage(
     previewUrl: String?,
     description: String?,
     cacheRevision: Long,
+    isAccountAvatar: Boolean,
     zoom: ViewerZoomState,
     enabled: Boolean,
     fallbackPainter: Painter?,
@@ -400,14 +401,16 @@ private fun ZoomableImage(
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (!originalLoaded && fallback == null && previewUrl != null && previewUrl != url) {
             AsyncImage(
-                model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(previewUrl, cacheRevision),
+                model = if (isAccountAvatar) io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(previewUrl)
+                    else io.github.ponpokoo.mastodonclient.feature.common.profileHeaderModel(previewUrl, cacheRevision),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
             )
         }
         AsyncImage(
-            model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(url, cacheRevision),
+            model = if (isAccountAvatar) io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(url)
+                else io.github.ponpokoo.mastodonclient.feature.common.profileHeaderModel(url, cacheRevision),
             contentDescription = description ?: "添付画像",
             placeholder = fallback,
             error = fallback,

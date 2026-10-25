@@ -119,8 +119,8 @@ internal fun ProfileScreen(
             onAutoLoadMore = viewModel::loadMoreProfileAutomatically,
             onFollowers = { profile?.author?.id?.let(onFollowers) },
             onFollowing = { profile?.author?.id?.let(onFollowing) },
-            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-header", "image", it, it, "ヘッダー画像", cacheRevision = state.imageRefreshRevision)), 0) } },
-            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-avatar", "image", it, it, "プロフィール画像", cacheRevision = if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision)), 0) } },
+            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-header", "image", it, it, "ヘッダー画像", cacheRevision = state.headerRefreshRevision)), 0) } },
+            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-avatar", "image", it, it, "プロフィール画像", isAccountAvatar = true)), 0) } },
             onEditProfile = { viewModel.beginProfileEdit() }, onToggleFollow = {
                 if (state.relationship?.following == true) confirmAction = ProfileAccountAction.Unfollow
                 else viewModel.toggleFollow()

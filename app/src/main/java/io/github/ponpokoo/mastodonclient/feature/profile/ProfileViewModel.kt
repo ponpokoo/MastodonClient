@@ -9,6 +9,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
+import io.github.ponpokoo.mastodonclient.domain.repository.AccountAvatarRepository
+import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
@@ -21,8 +23,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.util.UUID
 
-/** Opaque cache generation, independent of whether account metadata could be persisted. */
-internal fun newProfileImageRevision(): Long = UUID.randomUUID().mostSignificantBits
+/** Headers retain their existing cache generation, independently of avatar revalidation. */
+internal fun newProfileHeaderRevision(): Long = UUID.randomUUID().mostSignificantBits
 
 data class ProfileUiState(
     val currentAccountId: String? = null,
@@ -40,7 +42,7 @@ data class ProfileUiState(
     val isLoadingMoreProfile: Boolean = false,
     val profileTabs: Map<ProfileStatusTab, ProfileTabUiState> = emptyMap(),
     val imageSessionKey: String? = null,
-    val imageRefreshRevision: Long = 0,
+    val headerRefreshRevision: Long = 0,
     val featuredTags: List<io.github.ponpokoo.mastodonclient.domain.model.FeaturedTag> = emptyList(),
     val featuredTagsError: String? = null,
     val selectedHashtag: String? = null,
@@ -55,6 +57,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     profileImageRepository: io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageRepository? = null,
     private val accountId: String? = null,
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+    private val avatarRepository: AccountAvatarRepository? = null,
 ) : SessionScopedViewModel(browsing) {
     private val imageEditor = ProfileImageEditor(profileImageRepository, viewModelScope)
     val profileImageEditState = imageEditor.state
@@ -96,9 +99,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 _uiState.update { state ->
                     val profile = state.profile?.takeIf { it.isOwnProfile } ?: return@update state
                     val author = profile.author.withAccountDisplay(updated)
-                    state.copy(profile = profile.copy(author = author), imageRefreshRevision =
-                        if (author.avatarRevision != profile.author.avatarRevision) newProfileImageRevision()
-                        else state.imageRefreshRevision)
+                    state.copy(profile = profile.copy(author = author))
                 }
             }
         }
@@ -176,7 +177,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 .forSession(snapshot).onSuccess { response ->
                     val profile = _uiState.value.profile?.takeIf { revision != metadataRevision } ?: response
                     _uiState.update { it.copy(profile = profile, isLoadingProfile = false,
-                        imageRefreshRevision = if (profile.isOwnProfile) newProfileImageRevision() else 0) }
+                        headerRefreshRevision = if (profile.isOwnProfile) newProfileHeaderRevision() else 0) }
                     if (profile.isOwnProfile) loadReactionHistorySupport()
                     if (!profile.isOwnProfile) requestScope.launch {
                         timelineRepository.getRelationship(session, profile.author.id).forSession(snapshot).onSuccess { relation ->
@@ -206,10 +207,23 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     }
 
     fun refreshProfile() {
-        if (_uiState.value.profile == null) return loadProfile()
+        val state = _uiState.value
+        val profile = state.profile ?: return loadProfile()
+        if (state.profileTabs[state.profileSelectedTab]?.isRefreshing == true) return
+        if (profile.isOwnProfile) currentSnapshot()?.let { revalidateAvatar(it, profile.author.avatarUrl) }
         if (_uiState.value.selectedHashtag != null) resetHashtag(null)
         retryFeaturedTags()
         loadTab(_uiState.value.profileSelectedTab, refresh = true)
+    }
+
+    private fun revalidateAvatar(snapshot: BrowsingSession.Snapshot, url: String) {
+        val repository = avatarRepository ?: return
+        if (url.isBlank()) return
+        requestScope.launch {
+            Result.success(Unit).forSession(snapshot)
+            // Image failure must not turn successful metadata synchronization into an error.
+            runCatchingCancellable { repository.revalidate(url) }.forSession(snapshot)
+        }
     }
 
     fun retryFeaturedTags() {
@@ -257,6 +271,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 timelineRepository.updateProfile(session, save.request).forSession(snapshot).fold(
                     onSuccess = { updated ->
                         success = true
+                        if (save.request.avatarFilePath != null) revalidateAvatar(snapshot, updated.author.avatarUrl)
                         browsing.publish(snapshot, BrowsingSession.Change.ProfileUpdated(updated))
                         _uiState.update { it.copy(message = "プロフィールを更新しました") }
                     },
@@ -349,8 +364,12 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                         return@launch
                     }
                 if (generation != postsGeneration) return@launch
+                if (revision == metadataRevision && header.isOwnProfile && userInitiated &&
+                    header.author.avatarUrl != profile.author.avatarUrl) {
+                    revalidateAvatar(snapshot, header.author.avatarUrl)
+                }
                 if (revision == metadataRevision) _uiState.update { state -> state.copy(profile = header.copy(pinnedStatuses = state.profile?.pinnedStatuses.orEmpty()),
-                    imageRefreshRevision = if (header.isOwnProfile) newProfileImageRevision() else state.imageRefreshRevision)
+                    headerRefreshRevision = if (header.isOwnProfile) newProfileHeaderRevision() else state.headerRefreshRevision)
                     .withTabs(state.profileTabs) }
             }
             val (result, pinnedResult) = fetchProfileTab(timelineRepository, session, profile.author.id, tab, hashtag) {
@@ -377,7 +396,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 val current = state.profile
                 state.copy(profile = updated.copy(statuses = current?.statuses.orEmpty(),
                     pinnedStatuses = current?.pinnedStatuses.orEmpty(), nextMaxId = current?.nextMaxId,
-                    endReached = current?.endReached ?: false), imageRefreshRevision = newProfileImageRevision())
+                    endReached = current?.endReached ?: false), headerRefreshRevision = newProfileHeaderRevision())
             }
             return
         }

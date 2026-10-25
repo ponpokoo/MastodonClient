@@ -30,8 +30,11 @@ import coil3.fetch.ImageFetchResult
 import coil3.fetch.SourceFetchResult
 import coil3.request.ErrorResult
 import coil3.request.ImageRequest
+import coil3.intercept.Interceptor
+import io.github.ponpokoo.mastodonclient.core.image.AvatarImage
 import io.github.ponpokoo.mastodonclient.feature.common.ProfileImage
 import io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel
+import io.github.ponpokoo.mastodonclient.feature.common.profileHeaderModel
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineTopBar
@@ -69,7 +72,9 @@ class ProfileImageRefreshDeviceTest {
         path: String = "original", nonCancellable: Boolean = false, corrupt: Boolean = false): List<Reply> = roles.map { role ->
         Reply(color, nonCancellable, corrupt).also {
             if (ready) it.release.complete(Unit)
-            replies["account-avatar:https://images.example/$path/$role:$number"] = it
+            val key = if (role == "header") "account-avatar:https://images.example/$path/$role:$number"
+                else "https://images.example/$path/$role?request=$number"
+            replies[key] = it
         }
     }
 
@@ -78,6 +83,12 @@ class ProfileImageRefreshDeviceTest {
         val loader = ImageLoader.Builder(context).eventListener(object : EventListener() {
             override fun onError(request: ImageRequest, result: ErrorResult) { errors.incrementAndGet() }
         }).components {
+            // Isolate painter retention and ownership; TTL/force tests use real Coil disk entries.
+            add(Interceptor { chain ->
+                val avatar = chain.request.data as? AvatarImage
+                if (avatar == null) chain.proceed() else chain.withRequest(chain.request.newBuilder()
+                    .data(avatar.url).memoryCacheKey(avatar.url).diskCacheKey(avatar.url).build()).proceed()
+            })
             add(Fetcher.Factory<Uri> { _, options, _ ->
                 val reply = replies[options.diskCacheKey] ?: error("Unexpected image generation")
                 Fetcher {
@@ -105,19 +116,19 @@ class ProfileImageRefreshDeviceTest {
                 Column {
                     roles.filterNot { it == "switcher" }.forEach { role ->
                         ProfileImage(
-                            model = accountAvatarModel("https://images.example/${address.value}/$role", revision.value),
+                            model = if (role == "header") profileHeaderModel("https://images.example/${address.value}/$role", revision.value)
+                                else accountAvatarModel("https://images.example/${address.value}/$role?request=${revision.value}"),
                             identity = listOf(owner.value, role), retainPreviousImage = true,
                             contentDescription = role, imageLoader = loader,
                             modifier = Modifier.size(48.dp).background(Color.Gray).testTag(role),
                         )
                     }
                     val session = AccountSession(owner.value, "https://${owner.value}.example", "me", "me",
-                        "Me", "https://images.example/${address.value}/switcher", "test-token",
-                        avatarRevision = revision.value)
+                        "Me", "https://images.example/${address.value}/switcher?request=${revision.value}", "test-token")
                     TimelineTopBar(
                         selectedFeed = TimelineFeed.Home, onFeedSelected = {}, onAnnouncements = {}, onLogout = {},
                         activeSession = session, sessions = listOf(session, session.copy(sessionId = "account-b",
-                            instanceUrl = "https://account-b.example", displayName = "Other", avatarRevision = 3)),
+                            instanceUrl = "https://account-b.example", displayName = "Other")),
                         onAccountSelected = { owner.value = it; revision.value = 3 }, onSettings = {},
                     )
                 }
@@ -142,7 +153,7 @@ class ProfileImageRefreshDeviceTest {
     private fun waitColor(color: Color) = rule.waitUntil(10_000) { roles.all { pixel(it) == color } }
     private fun assertColor(color: Color) = roles.forEach { assertEquals(color, pixel(it)) }
 
-    @Test fun sameAddressRefreshKeepsBothImagesUntilSuccessEvenAfterMemoryCacheEviction() {
+    @Test fun headerSameAddressAndChangedIconRequestsKeepImagesAfterMemoryCacheEviction() {
         prepare(1, Color.Red, ready = true)
         val next = prepare(2, Color.Blue)
         val unchanged = prepare(3, Color.Blue)

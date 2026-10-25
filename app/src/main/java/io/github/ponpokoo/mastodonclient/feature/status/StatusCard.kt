@@ -217,7 +217,7 @@ internal fun StatusCard(
         }
         Row(verticalAlignment = Alignment.Top) {
             AsyncImage(
-                model = authorAvatarResource ?: status.author.avatarUrl,
+                model = authorAvatarResource ?: io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(status.author.avatarUrl),
                 contentDescription = "${status.author.displayName}のプロフィール画像",
                 modifier = Modifier.size(avatarSize).clip(displayPreferences.avatarIconShape.toShape())
                     .testTag("status_author_avatar")

@@ -11,58 +11,73 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.asImage
 import coil3.compose.AsyncImage
+import coil3.intercept.Interceptor
+import coil3.request.SuccessResult
+import io.github.ponpokoo.mastodonclient.core.image.AvatarImage
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
-import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(coil3.annotation.DelicateCoilApi::class)
 class AccountDisplayAvatarDeviceTest {
     @get:Rule val rule = createComposeRule()
 
-    @Test fun revisionReloadsChangedImageAtTheSameAddress() {
+    @Test fun ownMetadataChangesKeepTheUrlRequestAndViewerUsesTheSharedAvatarModel() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val file = File(context.cacheDir, "account-display-avatar-${System.nanoTime()}.png")
-        fun write(color: Int) {
-            val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
-            bitmap.eraseColor(color)
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
-        }
+        val previous = SingletonImageLoader.get(context)
+        val requests = AtomicInteger()
+        val loader = ImageLoader.Builder(context).components {
+            add(Interceptor { chain ->
+                val data = chain.request.data
+                assertTrue("Self icons and viewer must use the common avatar pipeline", data is AvatarImage)
+                assertEquals("https://images.example/self.png", (data as AvatarImage).url)
+                requests.incrementAndGet()
+                val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply {
+                    eraseColor(android.graphics.Color.RED)
+                }
+                SuccessResult(bitmap.asImage(), chain.request)
+            })
+        }.build()
         val account = mutableStateOf(AccountSession("one", "https://one.example", "me", "me", "Me",
-            file.toURI().toString(), "test-token"))
-        val viewerOpen = mutableStateOf(false)
+            "https://images.example/self.png", "test-token"))
+        val viewer = mutableStateOf(false)
         try {
-            write(android.graphics.Color.RED)
+            SingletonImageLoader.setUnsafe(loader)
             rule.setContent {
-                if (viewerOpen.value) MediaViewerScreen(
+                if (viewer.value) MediaViewerScreen(
                     media = listOf(MediaAttachment("avatar", "image", account.value.avatarUrl,
-                        account.value.avatarUrl, "プロフィール画像", cacheRevision = account.value.avatarRevision)),
+                        account.value.avatarUrl, "プロフィール画像", isAccountAvatar = true)),
                     initialIndex = 0, onBack = {},
-                ) else AsyncImage(model = accountAvatarModel(account.value), contentDescription = null,
+                ) else AsyncImage(accountAvatarModel(account.value), null,
                     modifier = Modifier.size(48.dp).testTag("registered_avatar"))
             }
-            waitFor(Color.Red)
-            write(android.graphics.Color.BLUE)
-            // The data URI stays the same; the persisted revision changes the memory/disk cache keys.
-            rule.runOnIdle { account.value = account.value.copy(avatarRevision = 1) }
-            waitFor(Color.Blue)
-            write(android.graphics.Color.GREEN)
-            rule.runOnIdle {
-                account.value = account.value.copy(avatarRevision = 2)
-                viewerOpen.value = true
-            }
-            waitFor(Color.Green, "media_viewer")
-        } finally { file.delete() }
+            waitFor("registered_avatar")
+            val initialRequests = requests.get()
+            rule.runOnIdle { account.value = account.value.copy(displayName = "Renamed", username = "renamed") }
+            rule.waitForIdle()
+            assertEquals(initialRequests, requests.get())
+            rule.runOnIdle { viewer.value = true }
+            waitFor("media_viewer")
+            assertTrue(requests.get() > initialRequests)
+        } finally {
+            SingletonImageLoader.setUnsafe(previous)
+            loader.shutdown()
+        }
     }
 
-    private fun waitFor(color: Color, tag: String = "registered_avatar") {
+    private fun waitFor(tag: String) {
         rule.waitUntil(10_000) {
             val pixels = rule.onNodeWithTag(tag).captureToImage().toPixelMap()
-            pixels[pixels.width / 2, pixels.height / 2] == color
+            pixels[pixels.width / 2, pixels.height / 2] == Color.Red
         }
     }
 }

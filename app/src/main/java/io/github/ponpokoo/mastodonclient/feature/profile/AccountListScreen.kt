@@ -81,7 +81,7 @@ internal fun AccountListItem(
         ListItem(
             modifier = Modifier.fillMaxWidth().clickable(onClick = onAccountClick),
             leadingContent = {
-                AsyncImage(account.avatarUrl, contentDescription = null,
+                AsyncImage(io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(account.avatarUrl), contentDescription = null,
                     modifier = Modifier.size(48.dp).clip(CircleShape)
                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
                     contentScale = ContentScale.Crop)

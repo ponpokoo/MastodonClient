@@ -5,21 +5,23 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.text.Html
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.scale
-import androidx.core.net.toUri
+import coil3.SingletonImageLoader
+import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.toBitmap
+import io.github.ponpokoo.mastodonclient.core.image.AvatarImages
 import io.github.ponpokoo.mastodonclient.R
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import kotlinx.coroutines.Dispatchers
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 import io.github.ponpokoo.mastodonclient.domain.model.PushNotification
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
@@ -42,9 +44,6 @@ class SystemNotificationDataSource(private val context: android.content.Context,
                 Unit
             },
         )
-    }
-    private val avatarClient by lazy {
-        OkHttpClient.Builder().callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build()
     }
     private fun canPostNotifications(): Boolean =
         NotificationManagerCompat.from(context).areNotificationsEnabled() &&
@@ -163,30 +162,23 @@ class SystemNotificationDataSource(private val context: android.content.Context,
         }
     }
 
-    private fun loadAvatarIcon(url: String): Bitmap? {
-        val uri = runCatching { url.toUri() }.getOrNull() ?: return null
-        if (uri.scheme != "https" || uri.host.isNullOrBlank()) return null
-        return runCatching {
-            avatarClient.newCall(Request.Builder().url(url).get().build()).execute().use responseUse@ { response ->
-                if (!response.isSuccessful) return@responseUse null
-                val responseBody = response.body ?: return@responseUse null
-                if (responseBody.contentLength() > MAX_AVATAR_BYTES) return@responseUse null
-                val bytes = responseBody.byteStream().use inputUse@ { input ->
-                    val output = ByteArrayOutputStream()
-                    val buffer = ByteArray(8 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        if (output.size() + read > MAX_AVATAR_BYTES) return@inputUse null
-                        output.write(buffer, 0, read)
-                    }
-                    output.toByteArray()
-                } ?: return@responseUse null
-                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@responseUse null
-                if (decoded.width <= AVATAR_ICON_SIZE && decoded.height <= AVATAR_ICON_SIZE) decoded
-                else decoded.scale(AVATAR_ICON_SIZE, AVATAR_ICON_SIZE, filter = true)
+    private suspend fun loadAvatarIcon(url: String): Bitmap? {
+        if (url.toHttpUrlOrNull()?.isHttps != true) return null
+        return try {
+            withTimeoutOrNull(5_000) {
+                val request = AvatarImages.get(context).request(url).newBuilder()
+                    .size(AVATAR_ICON_SIZE).allowHardware(false).build()
+                val result = SingletonImageLoader.get(context).execute(request) as? SuccessResult
+                    ?: return@withTimeoutOrNull null
+                val image = result.image
+                if (image.width <= AVATAR_ICON_SIZE && image.height <= AVATAR_ICON_SIZE) image.toBitmap()
+                else image.toBitmap(AVATAR_ICON_SIZE, AVATAR_ICON_SIZE)
             }
-        }.getOrNull()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun String.toPlainText(): String = Html.fromHtml(
@@ -197,7 +189,6 @@ class SystemNotificationDataSource(private val context: android.content.Context,
     private companion object {
         fun notificationGroup(sessionId: String) = "mastodon_$sessionId"
         const val MAX_BODY_LENGTH = 240
-        const val MAX_AVATAR_BYTES = 2 * 1024 * 1024
         const val AVATAR_ICON_SIZE = 128
     }
 }

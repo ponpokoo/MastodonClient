@@ -42,7 +42,7 @@ internal fun ListAccountsDialog(
                             }.heightIn(min = 48.dp).padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                AsyncImage(model = accountAvatarModel(account.avatarUrl, account.avatarRevision),
+                                AsyncImage(model = accountAvatarModel(account.avatarUrl),
                                     contentDescription = null,
                                     modifier = Modifier.size(36.dp).clip(preferences.timelineDisplay.avatarIconShape.toShape()))
                                 Column(Modifier.weight(1f)) {

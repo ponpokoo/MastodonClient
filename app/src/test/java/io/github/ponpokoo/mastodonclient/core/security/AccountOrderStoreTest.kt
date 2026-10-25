@@ -59,7 +59,7 @@ class AccountOrderStoreTest {
         store.moveSession(testAccount.sessionId, null)
         val secondUpdate = store.updateAccountDisplay(testAccount, author.copy(displayName = "Newest"))!!
         assertEquals(listOf(secondAccount, secondUpdate), store.getSessions())
-        assertEquals(firstUpdate.avatarRevision + 1, secondUpdate.avatarRevision)
+        assertEquals(firstUpdate.copy(displayName = "Newest"), secondUpdate)
         assertEquals(secondAccount, store.getSession())
     }
 

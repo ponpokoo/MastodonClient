@@ -23,7 +23,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-private val Context.userPreferencesDataStore by preferencesDataStore(name = "user_preferences")
+internal val Context.userPreferencesDataStore by preferencesDataStore(name = "user_preferences")
 
 @Serializable enum class FontSizePreset { Small, Standard, Large, ExtraLarge }
 @Serializable enum class LineSpacingPreset { Compact, Standard, Relaxed }

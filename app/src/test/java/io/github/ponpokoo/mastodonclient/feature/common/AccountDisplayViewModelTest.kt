@@ -141,7 +141,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
         val timeline = own(TimelineViewModel(repository, main.browsing))
         runCurrent()
         val snapshot = main.browsing.snapshot.value
-        val updated = testAccount.copy(displayName = "Fresh", username = "fresh", avatarUrl = "new.png", avatarRevision = 1)
+        val updated = testAccount.copy(displayName = "Fresh", username = "fresh", avatarUrl = "new.png")
         auth.update(updated)
         runCurrent()
         assertEquals(updated, main.uiState.value.session)
@@ -175,7 +175,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
         advanceTimeBy(1_001)
         runCurrent()
         val before = composer.uiState.value
-        val updated = secondAccount.copy(displayName = "Fresh", avatarRevision = 1)
+        val updated = secondAccount.copy(displayName = "Fresh")
         auth.update(updated)
         runCurrent()
         val after = composer.uiState.value
@@ -202,7 +202,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
         runCurrent()
         val beforeOwn = ownProfile.uiState.value
         val beforeAccount = accountProfile.uiState.value
-        auth.update(testAccount.copy(displayName = "Fresh", username = "fresh", avatarRevision = 2))
+        auth.update(testAccount.copy(displayName = "Fresh", username = "fresh"))
         runCurrent()
         assertEquals("Fresh", ownProfile.uiState.value.profile?.author?.displayName)
         assertEquals("Fresh", accountProfile.uiState.value.profile?.author?.displayName)
@@ -222,7 +222,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
             profile.loadModerationMenu("other-user")
             runCurrent()
             auth.update(if (credentialsChanged) testAccount.copy(accessToken = "replacement-token")
-                else testAccount.copy(displayName = "Fresh", avatarRevision = 1))
+                else testAccount.copy(displayName = "Fresh"))
             runCurrent()
             relation.complete(AccountRelationship(following = true))
             runCurrent()

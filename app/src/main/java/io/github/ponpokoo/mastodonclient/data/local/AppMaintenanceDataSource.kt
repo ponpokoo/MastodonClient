@@ -2,7 +2,7 @@ package io.github.ponpokoo.mastodonclient.data.local
 
 import android.content.Context
 import androidx.core.content.pm.PackageInfoCompat
-import coil3.SingletonImageLoader
+import io.github.ponpokoo.mastodonclient.core.image.AvatarImages
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -15,9 +15,7 @@ class AppMaintenanceDataSource(context: Context) {
 
     suspend fun clearImageCache() = withContext(Dispatchers.IO) {
         // Only Coil-owned caches: preserve drafts, credentials and editor temporary files.
-        val loader = SingletonImageLoader.get(appContext)
-        loader.memoryCache?.clear()
-        loader.diskCache?.clear()
+        AvatarImages.get(appContext).clear()
         Unit
     }
 }

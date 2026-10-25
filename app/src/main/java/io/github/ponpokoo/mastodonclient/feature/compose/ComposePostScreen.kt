@@ -745,7 +745,7 @@ fun ComposePostScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AsyncImage(
-                                account.avatarUrl,
+                                io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(account.avatarUrl),
                                 null,
                                 Modifier.size(40.dp).clip(CircleShape),
                                 contentScale = ContentScale.Crop,
@@ -979,7 +979,7 @@ private fun ComposeReferencePreview(
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             status?.let {
                 AsyncImage(
-                    model = it.author.avatarUrl,
+                    model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(it.author.avatarUrl),
                     contentDescription = "${it.author.displayName}のアイコン",
                     modifier = Modifier.size(38.dp).clip(CircleShape),
                     contentScale = ContentScale.Crop,

@@ -106,7 +106,6 @@ data class StatusAuthor(
     val avatarUrl: String,
     val customEmojis: Map<String, String> = emptyMap(),
     val locked: Boolean = false,
-    val avatarRevision: Long = 0,
 )
 
 @Serializable
@@ -120,11 +119,13 @@ data class MediaAttachment(
     val aspectRatio: Float? = null,
     // Post context for audio artwork, also retained when opening the standalone viewer.
     val authorAvatarUrl: String? = null,
-    // Registered account avatars retain their version when opened in the image viewer.
+    // Header images retain their independent refresh generation in the viewer.
     val cacheRevision: Long = 0,
     // Optional server-reported pixel dimensions; old cached attachments omit these fields.
     val previewWidth: Int? = null,
     val previewHeight: Int? = null,
+    // Account icons use the shared URL cache even in the full-screen viewer.
+    val isAccountAvatar: Boolean = false,
 )
 
 data class TimelinePage(

@@ -160,9 +160,9 @@ internal fun ProfileContent(
     val profile = state.profile
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
     val headerMedia = MediaAttachment("profile-header", "image", profile?.headerUrl, profile?.headerUrl,
-        "ヘッダー画像", cacheRevision = state.imageRefreshRevision)
+        "ヘッダー画像", cacheRevision = state.headerRefreshRevision)
     val avatarMedia = MediaAttachment("profile-avatar", "image", profile?.author?.avatarUrl, profile?.author?.avatarUrl,
-        "プロフィール画像", cacheRevision = if (profile?.isOwnProfile == true) state.imageRefreshRevision else profile?.author?.avatarRevision ?: 0)
+        "プロフィール画像", isAccountAvatar = true)
     val webLinks = profile?.let { profileWebLinks(it.url, instanceUrl) }
     val avatarShape = preferences.timelineDisplay.avatarIconShape.toShape()
     val resolvedListStates = listStates ?: List(ProfileStatusTab.entries.size) { rememberLazyListState() }
@@ -297,8 +297,8 @@ internal fun ProfileContent(
                     else (132.dp + actionsHeight).coerceAtLeast(184.dp)
                 Box(Modifier.fillMaxWidth().height(headerHeight)) {
                     io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
-                        model = if (profile.isOwnProfile) io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(
-                            profile.headerUrl, state.imageRefreshRevision) else profile.headerUrl,
+                        model = if (profile.isOwnProfile) io.github.ponpokoo.mastodonclient.feature.common.profileHeaderModel(
+                            profile.headerUrl, state.headerRefreshRevision) else profile.headerUrl,
                         identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "header"),
                         retainPreviousImage = profile.isOwnProfile, contentDescription = "ヘッダー画像",
                         modifier = Modifier.fillMaxWidth().height(132.dp)
@@ -309,8 +309,7 @@ internal fun ProfileContent(
                         onDisplayedPainter = { mediaSourceGroup.displayed(headerMedia, it) },
                     )
                     io.github.ponpokoo.mastodonclient.feature.common.ProfileImage(
-                        model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(profile.author.avatarUrl,
-                            if (profile.isOwnProfile) state.imageRefreshRevision else profile.author.avatarRevision),
+                        model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(profile.author.avatarUrl),
                         identity = listOf(state.imageSessionKey, instanceUrl, profile.author.id, "avatar"),
                         retainPreviousImage = profile.isOwnProfile, contentDescription = "プロフィール画像",
                         modifier = Modifier.padding(start = 16.dp, top = 100.dp).align(Alignment.TopStart).size(84.dp)

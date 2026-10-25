@@ -39,7 +39,7 @@ class AccountDisplayStoreTest {
         assertEquals(listOf(testAccount.sessionId, secondAccount.sessionId), store.getSessions().map { it.sessionId })
         assertEquals(secondAccount, store.getSession())
         assertEquals(testAccount.copy(username = author.accountName, displayName = author.displayName,
-            avatarUrl = author.avatarUrl, avatarRevision = 1), updated)
+            avatarUrl = author.avatarUrl), updated)
         val restored = memoryAuthStore(data)
         assertEquals(updated, restored.getSessions().first())
         assertEquals(store.getSessions(), restored.observeSessions().first())
@@ -59,20 +59,20 @@ class AccountDisplayStoreTest {
         assertEquals(reauthorized, store.getSession())
     }
 
-    @Test fun unchangedAvatarUrlStillAdvancesOnlyTheTargetRevision() = runTest {
+    @Test fun unchangedAvatarUrlDoesNotChangeStoredAccountOrOtherAccounts() = runTest {
         val store = memoryAuthStore()
         val original = testAccount.copy(avatarUrl = author.avatarUrl)
         store.saveSession(original)
         store.saveSession(secondAccount)
         store.updateAccountDisplay(original, author)
         store.updateAccountDisplay(original, author)
-        assertEquals(2L, store.getSessions().first().avatarRevision)
+        assertEquals(original.copy(displayName = author.displayName, username = author.accountName), store.getSessions().first())
         assertEquals(secondAccount, store.getSessions().last())
     }
 
-    @Test fun legacySessionWithoutRevisionCanBeUpdatedAndRemoved() = runTest {
+    @Test fun legacySessionWithImageRevisionCanBeUpdatedAndRemovedWithoutIt() = runTest {
         val initial = emptyPreferences().toMutablePreferences().apply {
-            this[stringPreferencesKey("account_session")] = """{"sessionId":"one","instanceUrl":"https://one.example","accountId":"me","username":"me","displayName":"Me","avatarUrl":"","accessToken":"test-token"}"""
+            this[stringPreferencesKey("account_session")] = """{"sessionId":"one","instanceUrl":"https://one.example","accountId":"me","username":"me","displayName":"Me","avatarUrl":"","accessToken":"test-token","avatarRevision":42}"""
         }
         val store = memoryAuthStore(MemoryAuthPreferences(initial))
         assertEquals(testAccount, store.getSession())

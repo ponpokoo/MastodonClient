@@ -10,7 +10,6 @@ data class AccountSession(
     val avatarUrl: String,
     val accessToken: String,
     val scopes: String = "",
-    val avatarRevision: Long = 0,
 )
 
 /** Display metadata does not change the authentication context. */
@@ -21,5 +20,5 @@ fun AccountSession.hasSameCredentials(other: AccountSession?): Boolean =
 fun StatusAuthor.withAccountDisplay(session: AccountSession?): StatusAuthor =
     if (session == null || id != session.accountId) this else copy(
         displayName = session.displayName.ifBlank { session.username }, accountName = session.username,
-        avatarUrl = session.avatarUrl, avatarRevision = session.avatarRevision,
+        avatarUrl = session.avatarUrl,
     )

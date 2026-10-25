@@ -68,8 +68,11 @@ internal fun AudioPlayerContent(attachment: MediaAttachment, playback: MediaPlay
         val image = artwork ?: return@LaunchedEffect
         background = withContext(Dispatchers.Default) { audioArtworkBackground(image) }
     }
-    val avatarRequest = remember(context, authorAvatarUrl) {
-        ImageRequest.Builder(context).data(authorAvatarUrl).size(256).allowHardware(false).build()
+    val avatarModel = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(authorAvatarUrl)
+    val avatarRequest = remember(context, avatarModel) {
+        (avatarModel as? ImageRequest)?.newBuilder()
+            ?.size(256)?.allowHardware(false)?.build()
+            ?: ImageRequest.Builder(context).data(avatarModel).size(256).allowHardware(false).build()
     }
     Surface(modifier.fillMaxWidth().testTag("audio_attachment").then(playback.visibilityModifier)
         .semantics { stateDescription = mediaPlaybackStatus(playback, "音声") },

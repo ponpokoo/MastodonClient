@@ -49,7 +49,6 @@ private data class StoredSession(
     val avatarUrl: String,
     val accessToken: String,
     val scopes: String = "",
-    val avatarRevision: Long = 0,
 )
 
 interface AuthStore {
@@ -93,7 +92,7 @@ class SecureAuthStore internal constructor(
             val current = sessions.firstOrNull { it.sessionId == expected.sessionId }
             if (current?.hasSameCredentials(expected) == true && author.id == current.accountId) {
                 val replacement = current.copy(username = author.accountName, displayName = author.displayName,
-                    avatarUrl = author.avatarUrl, avatarRevision = current.avatarRevision + 1)
+                    avatarUrl = author.avatarUrl)
                 putSessions(preferences, sessions.map { if (it.sessionId == current.sessionId) replacement else it })
                 caller.ensureActive()
                 updated = replacement
@@ -259,7 +258,6 @@ private fun AccountSession.toStored() = StoredSession(
     avatarUrl = avatarUrl,
     accessToken = accessToken,
     scopes = scopes,
-    avatarRevision = avatarRevision,
 )
 
 private fun StoredSession.toDomain() = AccountSession(
@@ -271,5 +269,4 @@ private fun StoredSession.toDomain() = AccountSession(
     avatarUrl = avatarUrl,
     accessToken = accessToken,
     scopes = scopes,
-    avatarRevision = avatarRevision,
 )

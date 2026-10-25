@@ -38,7 +38,7 @@ class ConfirmedAccountRemovalTest {
         val store = memoryAuthStore()
         store.saveSession(testAccount); store.saveSession(secondAccount)
         store.moveSession(secondAccount.sessionId, testAccount.sessionId)
-        val renamed = testAccount.copy(displayName = "Fresh", avatarRevision = 1)
+        val renamed = testAccount.copy(displayName = "Fresh")
         store.saveSession(renamed)
         val lifecycle = Lifecycle()
         val repository = DefaultAuthRepository(ApiClientFactory(), store, lifecycle)

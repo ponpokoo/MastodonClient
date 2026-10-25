@@ -88,7 +88,7 @@ class SettingsReorderDeviceTest {
         compose.mainClock.advanceTimeBy(32)
         compose.waitForIdle()
         handle.performTouchInput { moveBy(Offset(0f, 140f)) }
-        val updated = first.copy(displayName = "Alice updated", avatarRevision = 1)
+        val updated = first.copy(displayName = "Alice updated")
         compose.runOnIdle { items.value = listOf(updated, second); assertTrue(moves.isEmpty()) }
         compose.mainClock.advanceTimeBy(160)
         handle.performTouchInput { up() }

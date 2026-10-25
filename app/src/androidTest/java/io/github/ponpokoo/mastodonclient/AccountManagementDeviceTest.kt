@@ -80,7 +80,7 @@ class AccountManagementDeviceTest {
         var removals = 0
         compose.setContent { MaterialTheme { AccountRemovalButton(account.value, { removals++ }, enabled = !busy.value) } }
         compose.onNodeWithTag("remove_account").performClick()
-        val updated = alice.copy(displayName = "Alice updated", avatarRevision = 1)
+        val updated = alice.copy(displayName = "Alice updated")
         compose.runOnIdle { account.value = updated; busy.value = true }
         compose.onNodeWithText(updated.displayName, substring = true).assertIsDisplayed()
         compose.onNodeWithTag("confirm_account_removal").assertIsNotEnabled()

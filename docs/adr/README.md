@@ -14,7 +14,7 @@
 | 番号 | 判断 | 状態 |
 | --- | --- | --- |
 | 0001 | [キャンセルと世代番号の照合によるセッション隔離](0001-session-isolation.md) | accepted |
-| 0011 | [登録済み自アカウントの表示情報と認証セッションを分離](0011-account-display-synchronization.md) | accepted |
+| 0011 | [登録済み自アカウントの表示情報と認証セッションを分離](0011-account-display-synchronization.md) | accepted（アイコンキャッシュは0019で置換） |
 | 0016 | [アカウント登録削除にローカルデータの回収を含める](0016-account-local-data-removal.md) | accepted |
 
 ### 表示・キャッシュ・通知一覧
@@ -24,6 +24,7 @@
 | 0002 | [通知・ホームに限定した永続キャッシュ](0002-persistent-browsing-cache.md) | accepted |
 | 0006 | [スワイプの選択表示とデータ取得の分離](0006-shared-swipe-tabs.md) | accepted |
 | 0007 | [種類別通知ページと独立した閲覧記録](0007-notification-category-pages-and-read-state.md) | accepted |
+| 0019 | [自アカウントのアイコン取得を共通キャッシュへ統合](0019-unify-own-avatar-cache.md) | accepted |
 
 ### モデレーション
 

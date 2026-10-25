@@ -34,7 +34,7 @@ internal fun AccountResult(account: StatusAuthor, onClick: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = account.avatarUrl,
+            model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(account.avatarUrl),
             contentDescription = null,
             modifier = Modifier.size(44.dp).clip(CircleShape),
             contentScale = ContentScale.Crop,

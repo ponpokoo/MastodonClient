@@ -328,7 +328,7 @@ private fun GroupedNotificationHeader(
                     row.accounts.take(5).forEach { account ->
                         IconButton(onClick = { onAccountClick(account.id) }, modifier = Modifier.size(40.dp)) {
                             AsyncImage(
-                                model = account.avatarUrl,
+                                model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(account.avatarUrl),
                                 contentDescription = "${account.displayName}のプロフィール",
                                 modifier = Modifier.size(30.dp).clip(avatarIconShape.toShape())
                                     .testTag("notification_actor_avatar"),
@@ -390,7 +390,7 @@ private fun NotificationHeader(
         }
         Spacer(Modifier.width(8.dp))
         AsyncImage(
-            model = notification.account.avatarUrl,
+            model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(notification.account.avatarUrl),
             contentDescription = null,
             modifier = Modifier.size(34.dp).clip(avatarIconShape.toShape())
                 .testTag("notification_actor_avatar"),
@@ -439,7 +439,7 @@ private fun NotificationStatusQuote(
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = status.author.avatarUrl,
+                    model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(status.author.avatarUrl),
                     contentDescription = "${status.author.displayName}のプロフィール画像",
                     modifier = Modifier.size(28.dp).clip(preferences.avatarIconShape.toShape())
                         .testTag("notification_status_author_avatar"),

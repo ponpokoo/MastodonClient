@@ -24,10 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.graphics.drawable.toDrawable
-import coil3.ImageLoader
-import coil3.SingletonImageLoader
-import coil3.gif.AnimatedImageDecoder
-import coil3.gif.GifDecoder
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
@@ -45,12 +41,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        SingletonImageLoader.setSafe { context ->
-            ImageLoader.Builder(context).components {
-                if (Build.VERSION.SDK_INT >= 28) add(AnimatedImageDecoder.Factory())
-                else add(GifDecoder.Factory())
-            }.build()
-        }
         acceptIncomingIntent(intent)
         setContent {
             val preferencesStore = remember { UserPreferencesStore(applicationContext) }

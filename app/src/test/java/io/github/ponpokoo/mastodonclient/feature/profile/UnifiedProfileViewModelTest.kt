@@ -135,7 +135,7 @@ class UnifiedProfileViewModelTest : ScreenViewModelTestBase() {
             auth, accountId = "another-user"))
         advanceUntilIdle()
         val original = model.uiState.value.profile
-        sessions.value = listOf(testAccount.copy(displayName = "Renamed self", avatarRevision = 7))
+        sessions.value = listOf(testAccount.copy(displayName = "Renamed self"))
         advanceUntilIdle()
         assertEquals(original, model.uiState.value.profile)
         model.beginProfileEdit()

@@ -40,7 +40,7 @@ class ProfileNotificationAvatarDeviceTest {
 
     @Test fun profileAvatarAndItsBorderFollowShapeWithoutBreakingTap() {
         val author = author()
-        val preferences = mutableStateOf(AppPreferences())
+        val preferences = mutableStateOf(circlePreferences())
         var avatarOpened = false
         rule.setContent {
             MaterialTheme {
@@ -59,14 +59,14 @@ class ProfileNotificationAvatarDeviceTest {
         rule.onNodeWithTag("profile_avatar").performClick()
         rule.runOnIdle {
             assertEquals(true, avatarOpened)
-            preferences.value = AppPreferences()
+            preferences.value = circlePreferences()
         }
         assertShape("profile_avatar", square = false)
     }
 
     @Test fun notificationActorAndQuotedAuthorBothFollowShape() {
         val author = author()
-        val preferences = mutableStateOf(AppPreferences())
+        val preferences = mutableStateOf(circlePreferences())
         val status = TimelineStatus(
             timelineId = "post", statusId = "post", createdAt = "2026-10-01T00:00:00Z",
             author = author, boostedBy = null, contentHtml = "<p>本文</p>", spoilerText = "",
@@ -92,12 +92,16 @@ class ProfileNotificationAvatarDeviceTest {
         tags.forEach { assertShape(it, square = false) }
         rule.runOnIdle { preferences.value = squarePreferences() }
         tags.forEach { assertShape(it, square = true) }
-        rule.runOnIdle { preferences.value = AppPreferences() }
+        rule.runOnIdle { preferences.value = circlePreferences() }
         tags.forEach { assertShape(it, square = false) }
     }
 
     private fun squarePreferences() = AppPreferences(
         timelineDisplay = TimelineDisplayPreferences(avatarIconShape = AvatarIconShape.Square),
+    )
+
+    private fun circlePreferences() = AppPreferences(
+        timelineDisplay = TimelineDisplayPreferences(avatarIconShape = AvatarIconShape.Circle),
     )
 
     private fun assertShape(tag: String, square: Boolean) {

@@ -222,6 +222,9 @@ fun AppNavigation(
         io.github.ponpokoo.mastodonclient.data.repository.DefaultProfileImageRepository(
             io.github.ponpokoo.mastodonclient.data.local.ProfileImageDataSource(context))
     }
+    val accountAvatars = remember {
+        io.github.ponpokoo.mastodonclient.data.repository.DefaultAccountAvatarRepository(context)
+    }
     val mainSessionFactory = remember(authRepository, timelineRepository, preferences, appLifecycle) {
         ScreenViewModelFactory {
                 MainSessionViewModel(authRepository, timelineRepository, preferences,
@@ -419,7 +422,8 @@ fun AppNavigation(
                 )
             })
             val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
-                ProfileViewModel(timelineRepository, browsing, authRepository, profileImages, statusActionManager = statusActionManager)
+                ProfileViewModel(timelineRepository, browsing, authRepository, profileImages,
+                    statusActionManager = statusActionManager, avatarRepository = accountAvatars)
             })
             val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
                 StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
@@ -633,7 +637,7 @@ fun AppNavigation(
             val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
             val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
                 ProfileViewModel(timelineRepository, mainModel.browsing, authRepository, profileImages,
-                    accountId = route.accountId, statusActionManager = statusActionManager)
+                    accountId = route.accountId, statusActionManager = statusActionManager, avatarRepository = accountAvatars)
             })
             AccountProfileScreen(
                 viewModel = profileViewModel,

@@ -148,7 +148,7 @@ fun ModerationManagementScreen(viewModel: ModerationManagementViewModel, onBack:
                 }
                 items(list.accounts, key = { it.account.id }) { entry ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AsyncImage(entry.account.avatarUrl, null, Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop)
+                        AsyncImage(io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(entry.account.avatarUrl), null, Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentScale = ContentScale.Crop)
                         Column(Modifier.weight(1f)) {
                             Text(entry.account.displayName, style = MaterialTheme.typography.titleSmall)
                             Text("@${entry.account.accountName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

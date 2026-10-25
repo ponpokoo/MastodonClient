@@ -490,7 +490,7 @@ private fun AccountRow(account: StatusAuthor, onClick: () -> Unit) {
             }
             if (account.avatarUrl.isNotBlank()) {
                 AsyncImage(
-                    model = account.avatarUrl,
+                    model = io.github.ponpokoo.mastodonclient.feature.common.accountAvatarModel(account.avatarUrl),
                     contentDescription = null,
                     modifier = Modifier.matchParentSize(),
                     contentScale = ContentScale.Crop,
