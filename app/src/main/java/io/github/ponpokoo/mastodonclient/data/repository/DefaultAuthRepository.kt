@@ -99,6 +99,10 @@ class DefaultAuthRepository(
             error("認証がキャンセルされました。通知設定から再試行できます。")
         }
         val code = callback.getQueryParameter("code") ?: error("認証コードがありません")
+        val reauthorizing = pending.reauthorizeSessionId?.let { id ->
+            authStore.getSessions().firstOrNull { it.sessionId == id }
+                ?: error("再認証するアカウントの登録が変更されました")
+        }
 
         val token = apiClientFactory.create(pending.instanceUrl).exchangeToken(
             code = code,
@@ -110,9 +114,9 @@ class DefaultAuthRepository(
         require(token.tokenType.equals("Bearer", ignoreCase = true)) { "未対応のトークン形式です" }
 
         val account = apiClientFactory.create(pending.instanceUrl, token.accessToken).verifyCredentials()
-        val previous = authStore.getSessions().firstOrNull { it.instanceUrl == pending.instanceUrl && it.accountId == account.id }
+        val previous = reauthorizing ?: authStore.getSessions().firstOrNull { it.instanceUrl == pending.instanceUrl && it.accountId == account.id }
         if (pending.reauthorizeSessionId != null) {
-            require(previous?.sessionId == pending.reauthorizeSessionId) { "元のアカウントと一致しません。正しいアカウントで再認証してください。" }
+            require(reauthorizing?.instanceUrl == pending.instanceUrl && reauthorizing.accountId == account.id) { "元のアカウントと一致しません。正しいアカウントで再認証してください。" }
             require("push" in (token.scope ?: pending.scopes).split(' ')) { "通知の権限が許可されていません" }
         }
         // Cleanup before replacing any previously logged-in account, including the Add Account route.
@@ -128,7 +132,11 @@ class DefaultAuthRepository(
             scopes = token.scope ?: pending.scopes,
             avatarRevision = (previous?.avatarRevision ?: 0) + 1,
         )
-        accountDisplay.changeRegistration { authStore.saveSession(session) }
+        accountDisplay.changeRegistration {
+            if (reauthorizing != null) {
+                check(authStore.replaceSession(reauthorizing, session)) { "再認証するアカウントの登録が変更されました" }
+            } else authStore.saveSession(session)
+        }
         authStore.clearPending()
         // Authentication is committed even if notification registration needs a later retry.
         runCatching { pushLifecycle?.afterAuthorization(session) }

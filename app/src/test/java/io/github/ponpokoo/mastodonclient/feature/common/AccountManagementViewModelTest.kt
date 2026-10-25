@@ -60,13 +60,13 @@ class AccountManagementViewModelTest : ScreenViewModelTestBase() {
         val model = own(PushSettingsViewModel(Push(), auth))
         model.logout(secondAccount); model.logout(secondAccount); runCurrent()
         assertTrue(model.busy.value); assertEquals(1, calls)
-        assertEquals(0, model.authenticated.value)
+        assertEquals(0, model.accountRemoved.value)
         gate.complete(Unit); runCurrent()
         assertFalse(model.busy.value); assertFalse(model.requiresLogin)
-        assertEquals(1, model.authenticated.value)
+        assertEquals(1, model.accountRemoved.value)
         assertEquals(testAccount, store.getSession())
-        model.navigationHandled(); model.logout(testAccount); runCurrent()
-        assertTrue(model.requiresLogin); assertEquals(1, model.authenticated.value)
+        model.accountRemovalHandled(); model.logout(testAccount); runCurrent()
+        assertTrue(model.requiresLogin); assertEquals(1, model.accountRemoved.value)
     }
 
     @Test fun staleRemovalOrFailureShowsRetryErrorWithoutNavigationOrDeletion() = runTest(dispatcher) {
@@ -81,12 +81,12 @@ class AccountManagementViewModelTest : ScreenViewModelTestBase() {
         }
         val model = own(PushSettingsViewModel(Push(), auth))
         model.logout(testAccount); runCurrent()
-        assertNotNull(model.error.value); assertEquals(0, model.authenticated.value)
+        assertNotNull(model.error.value); assertEquals(0, model.accountRemoved.value)
         assertEquals(listOf(testAccount, secondAccount), store.getSessions())
         diskFailure = true; model.logout(secondAccount); runCurrent()
         assertFalse(model.busy.value); assertNotNull(model.error.value)
-        assertEquals(0, model.authenticated.value)
+        assertEquals(0, model.accountRemoved.value)
         diskFailure = false; model.logout(secondAccount); runCurrent()
-        assertNull(model.error.value); assertEquals(1, model.authenticated.value)
+        assertNull(model.error.value); assertEquals(1, model.accountRemoved.value)
     }
 }

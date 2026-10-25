@@ -15,7 +15,9 @@ import org.junit.Test
 
 class PushAuthorizationDeviceTest {
     private val account = AccountSession("existing", "https://instance.example", "123456789012345678901234567890", "test", "Test", "", "old", "read write")
-    private class MemoryAuth(private var account: AccountSession?) : AuthStore {
+    private class MemoryAuth(account: AccountSession?) : AuthStore {
+        private var accounts = listOfNotNull(account)
+        private var activeId = account?.sessionId
         var pending: PendingOAuth? = null
         var application: RegisteredApplication? = null
         override suspend fun findApplication(instanceUrl: String) = application
@@ -23,11 +25,19 @@ class PushAuthorizationDeviceTest {
         override suspend fun savePending(pending: PendingOAuth) { this.pending = pending }
         override suspend fun getPending() = pending
         override suspend fun clearPending() { pending = null }
-        override suspend fun saveSession(session: AccountSession) { account = session }
-        override suspend fun getSessions() = listOfNotNull(account)
-        override suspend fun getSession() = account
-        override suspend fun setActiveSession(sessionId: String) = account?.takeIf { it.sessionId == sessionId }
-        override suspend fun removeSession(sessionId: String) { if (account?.sessionId == sessionId) account = null }
+        override suspend fun saveSession(session: AccountSession) {
+            accounts = accounts.filterNot { it.sessionId == session.sessionId } + session
+            activeId = session.sessionId
+        }
+        override suspend fun replaceSession(expected: AccountSession, session: AccountSession): Boolean {
+            if (expected !in accounts) return false
+            accounts = accounts.map { if (it.sessionId == expected.sessionId) session else it }
+            return true
+        }
+        override suspend fun getSessions() = accounts
+        override suspend fun getSession() = accounts.firstOrNull { it.sessionId == activeId }
+        override suspend fun setActiveSession(sessionId: String) = accounts.firstOrNull { it.sessionId == sessionId }?.also { activeId = sessionId }
+        override suspend fun removeSession(sessionId: String) { accounts = accounts.filterNot { it.sessionId == sessionId } }
     }
     private inner class Fixture {
         val store = MemoryAuth(account)
@@ -35,11 +45,15 @@ class PushAuthorizationDeviceTest {
         var responseAccountId = account.accountId
         var grantedScopes = "read write push"
         var requests = 0
+        var onTokenExchange: () -> Unit = {}
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             requests++
             val body = when (chain.request().url.encodedPath) {
                 "/api/v1/apps" -> """{"id":"app","client_id":"client","client_secret":"secret","redirect_uri":"${DefaultAuthRepository.REDIRECT_URI}"}"""
-                "/oauth/token" -> """{"access_token":"new","token_type":"Bearer","scope":"$grantedScopes","created_at":1}"""
+                "/oauth/token" -> {
+                    onTokenExchange()
+                    """{"access_token":"new","token_type":"Bearer","scope":"$grantedScopes","created_at":1}"""
+                }
                 "/api/v1/accounts/verify_credentials" -> """{"id":"$responseAccountId","username":"test","acct":"test"}"""
                 else -> error("Unexpected endpoint")
             }
@@ -94,5 +108,25 @@ class PushAuthorizationDeviceTest {
         assertFalse(f.repo.pendingPushAuthorization())
         f.repo.logout()
         assertEquals(listOf("logout:old"), f.events); assertNull(f.store.getSession())
+    }
+
+    @Test fun reauthorizingInactiveAccountPreservesSelectedAccount() = runBlocking {
+        val f = Fixture()
+        val selected = account.copy(sessionId = "selected", accountId = "other")
+        f.store.saveSession(selected)
+        f.repo.createPushAuthorizationUrl(account.sessionId).getOrThrow()
+        val updated = f.repo.completeAuthorization(f.callback()).getOrThrow()
+        assertEquals("new", updated.accessToken)
+        assertEquals(selected, f.store.getSession())
+        assertEquals(listOf(updated, selected), f.store.getSessions())
+    }
+
+    @Test fun removalDuringTokenExchangeCannotRestoreAccount() = runBlocking {
+        val f = Fixture()
+        f.repo.createPushAuthorizationUrl(account.sessionId).getOrThrow()
+        f.onTokenExchange = { runBlocking { f.store.removeSession(account.sessionId) } }
+        assertTrue(f.repo.completeAuthorization(f.callback()).isFailure)
+        assertTrue(f.store.getSessions().isEmpty())
+        assertFalse(f.events.any { it.startsWith("register:") })
     }
 }

@@ -17,8 +17,8 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
     val authorizationUrl = mutableUrl.asStateFlow()
     private val mutableError = MutableStateFlow<String?>(null)
     val error = mutableError.asStateFlow()
-    private val mutableAuthenticated = MutableStateFlow(0)
-    val authenticated = mutableAuthenticated.asStateFlow()
+    private val mutableAccountRemoved = MutableStateFlow(0)
+    val accountRemoved = mutableAccountRemoved.asStateFlow()
     var requiresLogin: Boolean = false
         private set
     private val mutableBusy = MutableStateFlow(false)
@@ -59,7 +59,7 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
         }
     }
     fun urlOpened() { mutableUrl.value = null }
-    fun navigationHandled() { mutableAuthenticated.value = 0 }
+    fun accountRemovalHandled() { mutableAccountRemoved.value = 0 }
     fun browserFailed() { mutableUrl.value = null; mutableError.value = "認証用ブラウザーを開けませんでした。再試行してください。" }
     fun notificationPermissionDenied() { mutableError.value = "端末の通知許可が必要です。Androidのアプリ設定で通知を許可してください。" }
     suspend fun handlesCallback() = auth.pendingPushAuthorization()
@@ -68,7 +68,8 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
         mutableBusy.value = true
         viewModelScope.launch {
             try {
-                auth.completeAuthorization(callback).onSuccess { requiresLogin = false; mutableAuthenticated.value++ }
+                mutableError.value = null
+                auth.completeAuthorization(callback)
                     .onFailure { mutableError.value = "再認証を完了できませんでした。元のアカウントで再試行してください。" }
                 runCatchingCancellable { push.refresh() }
             } finally { mutableBusy.value = false }
@@ -83,7 +84,7 @@ class PushSettingsViewModel(private val push: PushControlRepository, private val
                 runCatchingCancellable {
                     check(auth.logout(expected)) { "削除対象が変更されました" }
                     requiresLogin = auth.restoreSession() == null
-                    mutableAuthenticated.value++
+                    mutableAccountRemoved.value++
                 }.onFailure { mutableError.value = "アカウントを削除できませんでした。対象を確認して再試行してください。" }
             } finally { mutableBusy.value = false }
         }

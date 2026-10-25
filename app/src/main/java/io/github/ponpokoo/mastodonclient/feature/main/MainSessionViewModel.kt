@@ -92,6 +92,12 @@ class MainSessionViewModel(
         }
         viewModelScope.launch {
             authRepository.observeSessions().collect { sessions ->
+                val current = mutableState.value.session
+                val updated = sessions.firstOrNull { it.sessionId == current?.sessionId }
+                if (current != null && updated != null && !current.hasSameCredentials(updated)) {
+                    activate(updated, sessions)
+                    return@collect
+                }
                 mutableState.update { state ->
                     val current = state.session
                     val updated = sessions.firstOrNull { it.sessionId == current?.sessionId }
@@ -121,11 +127,12 @@ class MainSessionViewModel(
         if (accountChangeJob?.isActive == true) return
         restoreJob?.cancel()
         restoreJob = viewModelScope.launch {
+            val before = browsing.snapshot.value
             runCatchingCancellable {
                 val sessions = authRepository.getSessions()
                 val account = authRepository.restoreSession()
                 currentCoroutineContext().ensureActive()
-                activate(account, sessions)
+                if (browsing.snapshot.value == before) activate(account, sessions)
             }.onFailure(::showError)
         }
     }
@@ -190,7 +197,7 @@ class MainSessionViewModel(
         viewModelScope.launch { runCatchingCancellable { pushSync?.recover(null, false) } }
     }
 
-    private suspend fun activate(account: AccountSession?, sessions: List<AccountSession>) {
+    private fun activate(account: AccountSession?, sessions: List<AccountSession>) {
         if (account != null && account.hasSameCredentials(browsing.snapshot.value.account)) {
             mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = false, errorMessage = null) }
             refreshAccountDisplay(account)
@@ -200,12 +207,17 @@ class MainSessionViewModel(
         streamingSnapshot = null
         settingsJob?.cancel()
         filterSyncJob?.cancel()
-        account?.let { runCatchingCancellable { timelineRepository.activateServerSettings(it); timelineRepository.prepareServerSettings(it) } }
+        displayRefreshJob?.cancel()
         browsing.activate(account)
+        val snapshot = browsing.snapshot.value
         mutableState.update { it.copy(session = account, sessions = sessions, requiresLogin = account == null, errorMessage = null) }
+        if (account != null) settingsJob = viewModelScope.launch {
+            runCatchingCancellable { timelineRepository.activateServerSettings(account); timelineRepository.prepareServerSettings(account) }
+            currentCoroutineContext().ensureActive()
+            if (browsing.snapshot.value == snapshot) timelineRepository.syncServerSettings(account)
+        }
         startStreaming()
         refreshAccountDisplay(account)
-        if (account != null) settingsJob = viewModelScope.launch { timelineRepository.syncServerSettings(account) }
     }
 
     fun moveAccount(sessionId: String, beforeSessionId: String?) {

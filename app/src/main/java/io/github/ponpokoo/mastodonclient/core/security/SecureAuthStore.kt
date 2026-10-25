@@ -62,6 +62,9 @@ interface AuthStore {
     suspend fun getPending(): PendingOAuth?
     suspend fun clearPending()
     suspend fun saveSession(session: AccountSession)
+    /** Replace existing credentials atomically without changing the selected account. */
+    suspend fun replaceSession(expected: AccountSession, session: AccountSession): Boolean =
+        throw UnsupportedOperationException()
     suspend fun getSessions(): List<AccountSession>
     suspend fun getSession(): AccountSession?
     suspend fun setActiveSession(sessionId: String): AccountSession?
@@ -132,6 +135,22 @@ class SecureAuthStore internal constructor(
 
     override suspend fun getSessions(): List<AccountSession> {
         return sessionsFrom(dataStore.data.first())
+    }
+
+    override suspend fun replaceSession(expected: AccountSession, session: AccountSession): Boolean {
+        require(session.sessionId == expected.sessionId && session.instanceUrl == expected.instanceUrl &&
+            session.accountId == expected.accountId)
+        var replaced = false
+        val caller = kotlinx.coroutines.currentCoroutineContext()
+        dataStore.edit { preferences ->
+            caller.ensureActive()
+            val sessions = sessionsFrom(preferences)
+            if (sessions.none { it.hasSameCredentials(expected) }) return@edit
+            putSessions(preferences, sessions.map { if (it.sessionId == expected.sessionId) session else it })
+            caller.ensureActive()
+            replaced = true
+        }
+        return replaced
     }
 
     override suspend fun getSession(): AccountSession? {
