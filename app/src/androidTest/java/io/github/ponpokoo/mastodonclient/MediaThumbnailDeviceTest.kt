@@ -56,6 +56,121 @@ class MediaThumbnailDeviceTest {
     @After fun cleanup() { files.forEach { it.delete() } }
 
     @Test
+    fun hiddenMediaKeepsRevealedFootprintAcrossThumbnailSizesAndLayouts() {
+        val portrait = attachment(image(120, 600)).copy(aspectRatio = .2f)
+        val landscape = attachment(image(600, 120)).copy(aspectRatio = 5f)
+        val square = attachment(image(200, 200)).copy(aspectRatio = 1f)
+        val current = mutableStateOf(status(listOf(portrait)).copy(sensitive = true))
+        val size = mutableStateOf(ThumbnailSize.Standard)
+        val detail = mutableStateOf(false)
+        rule.setContent {
+            MaterialTheme {
+                Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
+                    StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
+                        fullWidthContent = detail.value,
+                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                }
+            }
+        }
+        for (thumbnailSize in ThumbnailSize.entries) {
+            for (isDetail in listOf(false, true)) {
+                for ((index, media) in listOf(listOf(portrait), listOf(landscape), listOf(portrait, landscape, square)).withIndex()) {
+                    rule.runOnIdle {
+                        size.value = thumbnailSize
+                        detail.value = isDetail
+                        current.value = status(media).copy(
+                            sensitive = true, statusId = "$thumbnailSize-$isDetail-$index")
+                    }
+                    val reveal = rule.onNodeWithText("閲覧注意のメディアを表示")
+                    val hidden = reveal.getUnclippedBoundsInRoot()
+                    val hiddenWidth = (hidden.right - hidden.left).value
+                    val hiddenHeight = (hidden.bottom - hidden.top).value
+                    rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+                    reveal.performClick()
+                    val frames = rule.onAllNodesWithTag("media_attachment").fetchSemanticsNodes()
+                        .map { it.boundsInRoot }
+                    val width = frames.maxOf { it.right } - frames.minOf { it.left }
+                    val height = frames.maxOf { it.bottom } - frames.minOf { it.top }
+                    assertEquals(hiddenWidth * rule.density.density, width, 2f)
+                    assertEquals(hiddenHeight * rule.density.density, height, 2f)
+                    rule.onNodeWithText("非表示").performClick()
+                    val refolded = reveal.getUnclippedBoundsInRoot()
+                    assertEquals(hiddenWidth, (refolded.right - refolded.left).value, 1f)
+                    assertEquals(hiddenHeight, (refolded.bottom - refolded.top).value, 1f)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun refoldingMediaWithoutMetadataKeepsDecodedDimensions() {
+        val mediaByMetadata = listOf(null, 0f, Float.NaN).map { ratio ->
+            attachment(image(600, 120)).copy(aspectRatio = ratio)
+        }
+        val current = mutableStateOf(status(listOf(mediaByMetadata.first())).copy(sensitive = true))
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    StatusCard(current.value, onStatusClick = null, onUnavailableAction = {})
+                }
+            }
+        }
+        val reveal = rule.onNodeWithText("閲覧注意のメディアを表示")
+        for ((index, media) in mediaByMetadata.withIndex()) {
+            rule.runOnIdle { current.value = status(listOf(media)).copy(sensitive = true, statusId = "unknown-$index") }
+            val initial = reveal.getUnclippedBoundsInRoot()
+            // Missing or invalid dimensions retain the old full-width, 144 dp placeholder.
+            assertEquals(144f, (initial.bottom - initial.top).value, 1f)
+            reveal.performClick()
+            val thumbnail = rule.onNodeWithTag("media_attachment")
+            waitForRatio(thumbnail, 5f)
+            val decoded = thumbnail.getUnclippedBoundsInRoot()
+            assertEquals((initial.right - initial.left).value, (decoded.right - decoded.left).value, 1f)
+            rule.onNodeWithText("非表示").performClick()
+            val refolded = reveal.getUnclippedBoundsInRoot()
+            assertEquals((decoded.right - decoded.left).value, (refolded.right - refolded.left).value, 1f)
+            assertEquals((decoded.bottom - decoded.top).value, (refolded.bottom - refolded.top).value, 1f)
+        }
+    }
+
+    @Test
+    fun sensitiveMediaOverlayHidesWithoutOpeningMediaOrPost() {
+        val media = listOf(attachment(image(400, 300)), attachment(image(400, 300)).copy(id = "second"))
+        val openedMedia = AtomicInteger()
+        val openedPost = AtomicInteger()
+        rule.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    StatusCard(
+                        status(media).copy(sensitive = true),
+                        onStatusClick = { openedPost.incrementAndGet() },
+                        onMediaClick = { _, _ -> openedMedia.incrementAndGet() },
+                        onUnavailableAction = {},
+                    )
+                }
+            }
+        }
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        val thumbnails = rule.onAllNodesWithTag("media_attachment")
+        val lastThumbnail = thumbnails[1]
+        val hide = rule.onNodeWithText("非表示")
+        val imageBounds = lastThumbnail.getUnclippedBoundsInRoot()
+        val buttonBounds = hide.getUnclippedBoundsInRoot()
+        assertTrue(imageBounds.top <= buttonBounds.top && imageBounds.bottom >= buttonBounds.bottom)
+        assertTrue(imageBounds.left <= buttonBounds.left && imageBounds.right >= buttonBounds.right)
+        // The transparent edge outside the compact background must still hide the
+        // media rather than opening the clickable thumbnail underneath it.
+        hide.performTouchInput { click(Offset(center.x, 1f)) }
+        rule.onNodeWithText("閲覧注意のメディアを表示").assertExists()
+        assertEquals(0, openedMedia.get())
+        assertEquals(0, openedPost.get())
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        thumbnails[0].performTouchInput { click() }
+        assertEquals(1, openedMedia.get())
+        assertEquals(0, openedPost.get())
+    }
+
+    @Test
     fun standardSingleImageCropsPortraitAndFitsLandscapeWithoutMetadata() {
         val portrait = image(120, 600)
         val landscape = image(600, 120)
@@ -344,7 +459,7 @@ class MediaThumbnailDeviceTest {
                             rule.runOnIdle { assertEquals(1, favourites.get()); assertEquals(1, openedContent.get()) }
                         }
                         if (variant.sensitive) {
-                            rule.onNodeWithText("閲覧注意に戻す").performScrollTo().performClick()
+                            rule.onNodeWithText("非表示").performScrollTo().performClick()
                             rule.onNodeWithTag("media_attachment").assertDoesNotExist()
                         }
                     }

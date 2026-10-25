@@ -115,7 +115,7 @@ class ReadingSettingsDeviceTest {
         rule.onNodeWithTag("media_attachment").assertDoesNotExist()
         rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
         rule.onNodeWithTag("media_attachment").assertExists()
-        rule.onNodeWithText("閲覧注意に戻す").performClick()
+        rule.onNodeWithText("非表示").performClick()
         rule.onNodeWithTag("media_attachment").assertDoesNotExist()
         rule.runOnIdle { reading.value = reading.value.copy(preferences = ReadingPreferences(MediaDisplay.ShowAll, false)) }
         // The manual hide survives a changed preference on this card.
@@ -127,7 +127,7 @@ class ReadingSettingsDeviceTest {
         rule.runOnIdle { current.value = post.copy(statusId = "ordinary", sensitive = false) }
         rule.onNodeWithText("メディアを表示").performClick()
         rule.onNodeWithTag("media_attachment").assertExists()
-        rule.onNodeWithText("メディアを隠す").performClick()
+        rule.onNodeWithText("非表示").performClick()
         rule.onNodeWithTag("media_attachment").assertDoesNotExist()
         rule.runOnIdle { reading.value = ReadingSettings("b", ReadingPreferences(MediaDisplay.Default, false)) }
         rule.onNodeWithTag("media_attachment").assertExists()

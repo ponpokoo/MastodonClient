@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -87,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -362,7 +365,7 @@ internal fun StatusCard(
                 }
             }
             if (status.mediaAttachments.isNotEmpty() && contentExpanded) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 if (status.filterDisplay.mediaWarnings.isNotEmpty()) FilterWarning(
                     status.filterDisplay.mediaWarnings, filterMediaRevealed, { filterMediaRevealed = !filterMediaRevealed }, media = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -370,14 +373,7 @@ internal fun StatusCard(
                         lineHeight = displayPreferences.lineHeightSp().sp,
                     ),
                 )
-                if (mediaRevealed && (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed)) {
-                    if (status.sensitive || mediaPolicy == MediaDisplay.HideAll) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = { mediaOverride = false }) {
-                                Text(if (status.sensitive) "閲覧注意に戻す" else "メディアを隠す")
-                            }
-                        }
-                    }
+                if (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed) {
                     MediaGrid(
                         status.mediaAttachments,
                         onMediaClick,
@@ -386,18 +382,12 @@ internal fun StatusCard(
                         videoAutoplay,
                         audioAuthorAvatarUrl = status.author.avatarUrl,
                         useTimelineImagePreviews = useTimelineImagePreviews,
+                        onHideMedia = if (status.sensitive || mediaPolicy == MediaDisplay.HideAll) {
+                            { mediaOverride = false }
+                        } else null,
+                        onRevealMedia = if (mediaRevealed) null else { { mediaOverride = true } },
+                        revealMediaLabel = if (status.sensitive) "閲覧注意のメディアを表示" else "メディアを表示",
                     )
-                } else if (status.filterDisplay.mediaWarnings.isEmpty() || filterMediaRevealed) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().height(144.dp)
-                            .clickable { mediaOverride = true },
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(if (status.sensitive) "閲覧注意のメディアを表示" else "メディアを表示")
-                        }
-                    }
                 }
             }
             if (contentExpanded) {
@@ -629,11 +619,14 @@ private fun MediaGrid(
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     audioAuthorAvatarUrl: String? = null,
     useTimelineImagePreviews: Boolean = false,
+    onHideMedia: (() -> Unit)? = null,
+    onRevealMedia: (() -> Unit)? = null,
+    revealMediaLabel: String = "メディアを表示",
 ) {
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
     val context = LocalContext.current
     val density = LocalDensity.current
-    val maxHeight = when (thumbnailSize) {
+    val thumbnailMaxHeight = when (thumbnailSize) {
         ThumbnailSize.Compact -> if (attachments.size == 1) 180.dp else 220.dp
         ThumbnailSize.Standard -> null
     }
@@ -650,26 +643,59 @@ private fun MediaGrid(
     }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val rowMaxWidth = maxWidth
+        val rowFrames = rows.map { rowItems ->
+            if (rowItems.singleOrNull()?.type == "audio") {
+                listOf(DpSize(rowMaxWidth, (rowMaxWidth / 1.67f).coerceAtLeast(220.dp).coerceAtMost(maxHeight)))
+            } else {
+                val aspectRatios = rowItems.map { loadedAspectRatios[it.id] ?: it.aspectRatio }
+                if (thumbnailSize == ThumbnailSize.Standard && rowItems.all { it.type == "image" }) {
+                    croppedThumbnailRowSizes(aspectRatios, rowMaxWidth, 400.dp, 8.dp)
+                } else {
+                    fittedThumbnailRowSizes(aspectRatios, rowMaxWidth, thumbnailMaxHeight, 8.dp)
+                }
+            }
+        }
+        if (onRevealMedia != null) {
+            // Share the revealed layout without loading hidden images or starting players.
+            val hasUnknownDimensions = displayedAttachments.any { media ->
+                media.type != "audio" && (loadedAspectRatios[media.id] ?: media.aspectRatio)
+                    ?.let { it.isFinite() && it > 0f } != true
+            }
+            // Keep the legacy placeholder until metadata or a revealed image supplies dimensions.
+            val width = if (hasUnknownDimensions) rowMaxWidth else rowFrames.maxOf { frames ->
+                frames.fold(0.dp) { total, frame -> total + frame.width } + 8.dp * (frames.size - 1)
+            }
+            val height = if (hasUnknownDimensions) 144.dp else
+                rowFrames.fold(0.dp) { total, frames -> total + frames.maxOf { it.height } } +
+                8.dp * (rowFrames.size - 1)
+            Surface(
+                modifier = Modifier.size(width, height)
+                    .align(if (attachments.size == 1) Alignment.TopCenter else Alignment.TopStart)
+                    .clickable(onClick = onRevealMedia),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(revealMediaLabel)
+                }
+            }
+            return@BoxWithConstraints
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            rows.forEach { rowItems ->
+            rows.forEachIndexed { rowIndex, rowItems ->
                 if (rowItems.singleOrNull()?.type == "audio") {
                     val media = rowItems.single()
                     key(media.id, media.url) {
-                        AudioPlayer(media, authorAvatarUrl = audioAuthorAvatarUrl ?: media.authorAvatarUrl)
+                        Box {
+                            AudioPlayer(media, authorAvatarUrl = audioAuthorAvatarUrl ?: media.authorAvatarUrl)
+                            if (rowIndex == 0 && onHideMedia != null) {
+                                MediaHideButton(onHideMedia, Modifier.align(Alignment.TopEnd))
+                            }
+                        }
                     }
                 } else {
                     val cropImageRow = thumbnailSize == ThumbnailSize.Standard && rowItems.all { it.type == "image" }
-                    val aspectRatios = rowItems.map { loadedAspectRatios[it.id] ?: it.aspectRatio }
-                    val frames = if (cropImageRow) {
-                        croppedThumbnailRowSizes(aspectRatios, rowMaxWidth, 400.dp, 8.dp)
-                    } else {
-                        fittedThumbnailRowSizes(
-                            aspectRatios = aspectRatios,
-                            maxWidth = rowMaxWidth,
-                            maxHeight = maxHeight,
-                            gap = 8.dp,
-                        )
-                    }
+                    val frames = rowFrames[rowIndex]
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
@@ -758,11 +784,41 @@ private fun MediaGrid(
                                             tint = androidx.compose.ui.graphics.Color.White,
                                         )
                                     }
+                                    if (rowIndex == 0 && index == rowItems.lastIndex && onHideMedia != null) {
+                                        MediaHideButton(onHideMedia, Modifier.align(Alignment.TopEnd))
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaHideButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    TextButton(
+        onClick = onClick,
+        modifier = modifier.padding(4.dp).heightIn(min = 48.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+        contentPadding = PaddingValues(0.dp),
+    ) {
+        // Anchor the compact background at the top-right of the 48 dp touch target.
+        Box(
+            modifier = Modifier.heightIn(min = 48.dp),
+            contentAlignment = Alignment.TopEnd,
+        ) {
+            // Let enlarged text grow rather than clipping it to the normal height.
+            Box(
+                modifier = Modifier.heightIn(min = 32.dp)
+                    .background(Color(0xFF1E1E24).copy(alpha = .9f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("非表示")
             }
         }
     }
