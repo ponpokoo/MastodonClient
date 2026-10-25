@@ -85,7 +85,7 @@ internal fun CollapsibleStatusBody(
             val pressed by interaction.collectIsPressedAsState()
             val focused by interaction.collectIsFocusedAsState()
             Box(
-                modifier = Modifier.padding(top = 4.dp).heightIn(min = 48.dp).widthIn(min = 48.dp)
+                modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp)
                     .clickable(interactionSource = interaction, indication = null, role = Role.Button) {
                         if (!expanded) expanded = true else scope.launch {
                             // Bring the start back before shrinking a row that fills the viewport.
@@ -96,7 +96,7 @@ internal fun CollapsibleStatusBody(
                     }
                     .testTag("status_body_toggle").semantics {
                         stateDescription = if (expanded) "本文を展開中" else "本文を省略中"
-                    }.padding(horizontal = 12.dp),
+                    }.padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

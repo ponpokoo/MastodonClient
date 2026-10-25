@@ -58,7 +58,7 @@ class PrivacyPolicySettingsDeviceTest {
         rule.onNodeWithTag("settings_category_About").performClick()
         rule.onNodeWithTag("settings_privacy_policy").performScrollTo().performClick()
         rule.runOnIdle {
-            assertEquals("https://ponpokoo.github.io/nagisa-policy/", intents.single().dataString)
+            assertEquals("https://ponpokoo.github.io/nagisa-policy/policy/index.html#privacy", intents.single().dataString)
             assertEquals(Intent.ACTION_VIEW, intents.single().action)
             assertFalse(intents.single().hasExtra(CustomTabsIntent.EXTRA_SESSION))
         }

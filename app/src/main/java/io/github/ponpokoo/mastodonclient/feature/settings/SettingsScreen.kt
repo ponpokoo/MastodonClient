@@ -483,7 +483,7 @@ internal fun SettingsPageContent(
                         trailingContent = { Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null) },
                         modifier = Modifier.clickable {
                             if (!webLinkLauncher.open(
-                                    "https://ponpokoo.github.io/nagisa-policy/".toUri(),
+                                    "https://ponpokoo.github.io/nagisa-policy/policy/index.html#privacy".toUri(),
                                     inApp = preferences.openLinksInApp,
                                 )) {
                                 Toast.makeText(context, "リンクを開けるブラウザーが見つかりません", Toast.LENGTH_SHORT).show()
