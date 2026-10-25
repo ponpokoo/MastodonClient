@@ -51,6 +51,7 @@ interface TimelineRepository : ServerAccountSettingsRepository {
         Result.failure(UnsupportedOperationException("ハッシュタグのフォローは未対応です"))
 
     fun isNetworkAvailable(): Boolean = true
+    fun observeNetworkChanges(): Flow<Unit> = emptyFlow()
     suspend fun getCachedHomeWindow(session: AccountSession): Result<TimelinePage?> = Result.success(null)
     suspend fun protectHomeViewport(session: AccountSession, anchorId: String): Result<Unit> = Result.success(Unit)
     suspend fun saveHomeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change> = emptyList()): Result<Unit> = Result.success(Unit)

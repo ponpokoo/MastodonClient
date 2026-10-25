@@ -81,6 +81,7 @@ class DefaultTimelineRepository(
     private val notificationLocalDataSource: NotificationLocalDataSource? = null,
     private val homeTimelineLocalDataSource: io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource? = null,
     private val networkAvailable: () -> Boolean = { true },
+    private val networkChanges: Flow<Unit> = kotlinx.coroutines.flow.emptyFlow(),
     private val configurationClock: () -> Long = { System.nanoTime() / 1_000_000 },
     private val accountDisplay: AccountDisplaySynchronizer? = null,
     private val settingsStore: io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore? = null,
@@ -158,6 +159,7 @@ class DefaultTimelineRepository(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedConfiguration>?) = size > 8
     }
     override fun isNetworkAvailable() = networkAvailable()
+    override fun observeNetworkChanges() = networkChanges
     override suspend fun protectHomeViewport(session: AccountSession, anchorId: String): Result<Unit> = runCatching {
         homeTimelineLocalDataSource?.protectViewport(session, anchorId)
         Unit

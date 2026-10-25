@@ -86,7 +86,7 @@
 | --- | --- |
 | [UI試作アプリ（試作ブランチ）](https://github.com/ponpokoo/MastodonClient/blob/codex/ui-prototype/ui-prototype/README.md) | 開発先は`codex/ui-prototype`。本体UIを取り込んだ4画面の試作、再現範囲・ビルド手順を確認する。未適用の差分と移植手順は同ブランチの[UI変更履歴と本体への移植](https://github.com/ponpokoo/MastodonClient/blob/codex/ui-prototype/ui-prototype/ui-changes.md)を参照する |
 | [サーバー保存設定の取得・反映](investigations/server-account-settings-sync.md) | 同期対象6項目と閲覧注意関連の端末設定3項目は実装済み。採用した取得・更新方針、公式フィルターと端末内ワードミュートの併用、未確認の実サーバーでの他クライアント変更・権限・API・Streaming互換性を確認する。現行仕様は[UI仕様](ui/settings-moderation.md#サーバー保存設定と公式フィルター)を参照する |
-| [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | 原因未確定。サーバー側の仕様によるものかも未確定として、調査結果・再現条件・原因特定の限界を確認する |
+| [下書き経由の投稿遅延](investigations/draft-post-latency-report.md) | サーバー側処理による可能性が高いものとして経過観察。公開前の必須調査から外す方針、調査時点の証拠・限界、別件の送信キー再利用との区別を確認する |
 | [多数のカスタム絵文字と往復スクロール](investigations/custom-emoji-scroll-jank.md) | 本文・リアクションの寸法保持と本文描画の修正、スクロール位置の回帰テスト、修正前後の観測を参照する。総合的な滑らかさはRelease実機での確認が必要 |
 | [アカウント削除後の残る保持条件](investigations/account-removal-data-retention.md#4-push解除待ちの保存期間に上限がない) | ローカルデータの回収・再試行は実装済み。未実装のPush解除待ちの終了条件・保存期限と、旧孤立添付・共有画像キャッシュ・OAuth失効・過去のバックアップに関する対象外の範囲を確認する |
 | [misskey.ioのAPI互換性](investigations/misskey-io-api-compatibility.md) | 2026-10-06の公開API観測と互換性判断を参照する。Misskey直接対応は未実装。連合経由の投稿表示と直接ログインを区別する |

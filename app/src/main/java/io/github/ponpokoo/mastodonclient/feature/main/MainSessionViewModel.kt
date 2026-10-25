@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -75,6 +76,9 @@ class MainSessionViewModel(
 
     init {
         recoverPush()
+        viewModelScope.launch {
+            timelineRepository.observeNetworkChanges().collect { startStreaming() }
+        }
         viewModelScope.launch {
             var previous = emptyMap<String, List<io.github.ponpokoo.mastodonclient.domain.model.ServerFilter>?>()
             timelineRepository.serverSettings.collect { settings ->
@@ -231,30 +235,31 @@ class MainSessionViewModel(
         }
     }
 
-    private fun startStreaming() {
-        if (!preferencesReady) return
-        val snapshot = browsing.snapshot.value
-        val account = snapshot.account ?: return
+    private fun streamingAllowed(account: AccountSession): Boolean {
         val preferences = uiState.value.preferences
-        val allowed = (isForeground || !preferences.pauseStreamingInBackground) && when (preferences.forAccount(account.sessionId).streaming) {
+        return preferencesReady && (isForeground || !preferences.pauseStreamingInBackground) && when (preferences.forAccount(account.sessionId).streaming) {
             StreamingPolicy.Off -> false
             StreamingPolicy.WifiOnly -> networkIsWifi()
             StreamingPolicy.On -> true
         }
-        if (!allowed) { streamingJob?.cancel(); streamingSnapshot = null; return }
+    }
+
+    private fun startStreaming() {
+        val snapshot = browsing.snapshot.value
+        val account = snapshot.account ?: return
+        if (!streamingAllowed(account)) { streamingJob?.cancel(); streamingSnapshot = null; return }
         if (streamingJob?.isActive == true && streamingSnapshot == snapshot) return
         streamingJob?.cancel()
         streamingSnapshot = snapshot
-        when (preferences.forAccount(account.sessionId).streaming) {
-            StreamingPolicy.Off -> return
-            StreamingPolicy.WifiOnly -> if (!networkIsWifi()) return
-            StreamingPolicy.On -> Unit
-        }
         streamingJob = viewModelScope.launch {
             timelineRepository.observeUserStream(account)
                 .retryWhen { _, attempt ->
                     delay((2_000L * (attempt + 1)).coerceAtMost(30_000L))
-                    true
+                    browsing.snapshot.value == snapshot && streamingAllowed(account)
+                }.catch { error ->
+                    // retryWhen(false) rethrows the last connection error. A policy stop
+                    // is expected; a subsequent network event can start a new connection.
+                    if (browsing.snapshot.value == snapshot && streamingAllowed(account)) throw error
                 }.collect { event ->
                     currentCoroutineContext().ensureActive()
                     if (event is io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent.FiltersChanged ||

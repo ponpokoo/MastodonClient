@@ -223,6 +223,7 @@ fun AppNavigation(
         notificationLocalDataSource = notificationLocalDataSource,
         homeTimelineLocalDataSource = homeTimelineLocalDataSource,
         networkAvailable = networkAvailability::isAvailable,
+        networkChanges = networkAvailability.observeChanges(),
         onReactionSucceeded = { session, emoji -> preferences.recordReaction(session.sessionId, emoji) }) }
     val profileImages = remember {
         io.github.ponpokoo.mastodonclient.data.repository.DefaultProfileImageRepository(

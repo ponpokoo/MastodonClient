@@ -98,6 +98,20 @@ class ComposePostViewModel(
     private val _uiState = MutableStateFlow(ComposePostUiState(replyToId = initialReplyToId))
     val uiState: StateFlow<ComposePostUiState> = _uiState.asStateFlow()
     private var idempotencyKey = UUID.randomUUID().toString()
+    private var submittedRequest: Pair<AccountSession, CreateStatusRequest>? = null
+    private var mentionJob: Job? = null
+    private var mentionGeneration = 0
+
+    private fun resetSubmission() {
+        idempotencyKey = UUID.randomUUID().toString()
+        submittedRequest = null
+    }
+
+    private fun cancelMentions() {
+        mentionGeneration++
+        mentionJob?.cancel()
+        mentionJob = null
+    }
     private var activeReplyToId: String? = initialReplyToId
     private var visibilitySelectionGeneration = 0
     private enum class ReferenceKind { Reply, Quote }
@@ -238,6 +252,7 @@ class ComposePostViewModel(
                 val selected = _uiState.value.selectedSession
                 if (selected != null && sessions.none { it.hasSameCredentials(selected) }) {
                     postingJob?.cancel()
+                    cancelMentions()
                     cancelEmojiLoad()
                     stopMedia()
                     clearPendingShare()
@@ -531,8 +546,12 @@ class ComposePostViewModel(
         val current = _uiState.value.selectedSession ?: return
         if (_uiState.value.isLoadingMentions || _uiState.value.mentionCandidates.isNotEmpty()) return
         _uiState.update { it.copy(isLoadingMentions = true) }
-        viewModelScope.launch {
-            timelineRepository.getAccountList(current, current.accountId, followers = false).fold(
+        val generation = mentionGeneration
+        mentionJob = viewModelScope.launch {
+            val result = timelineRepository.getAccountList(current, current.accountId, followers = false)
+            currentCoroutineContext().ensureActive()
+            if (generation != mentionGeneration || _uiState.value.selectedSession?.hasSameCredentials(current) != true) return@launch
+            result.fold(
                 onSuccess = { accounts -> _uiState.update { it.copy(mentionCandidates = accounts, isLoadingMentions = false) } },
                 onFailure = { error -> _uiState.update { it.copy(isLoadingMentions = false, errorMessage = error.message ?: "候補を取得できませんでした") } },
             )
@@ -544,6 +563,7 @@ class ComposePostViewModel(
         if (waitForMediaImport()) return
         val session = _uiState.value.selectedSession ?: return
         if (draft.sessionId != session.sessionId || editStatusId != null || _uiState.value.isLoading) return
+        resetSubmission()
         stopMedia()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
         restoredDraftKey = draft.key
@@ -610,6 +630,8 @@ class ComposePostViewModel(
         val current = _uiState.value.selectedSession
         if (current?.sessionId == sessionId) return
         if (_uiState.value.sessions.none { it.sessionId == sessionId }) return
+        cancelMentions()
+        resetSubmission()
         cancelEmojiLoad()
         ReferenceKind.entries.forEach(::cancelTargetLoad)
         val replyText = _uiState.value.text.takeIf { activeReplyToId != null }
@@ -707,6 +729,9 @@ class ComposePostViewModel(
                 pollMultiple = state.pollMultiple,
             )
             val result = if (editStatusId == null) {
+                val previous = submittedRequest
+                if (previous != null && (!previous.first.hasSameCredentials(session) || previous.second != request)) resetSubmission()
+                submittedRequest = session to request
                 timelineRepository.createStatus(session, request, idempotencyKey)
             } else {
                 timelineRepository.updateStatus(
@@ -723,11 +748,22 @@ class ComposePostViewModel(
             currentCoroutineContext().ensureActive()
             result
                 .onSuccess {
-                    idempotencyKey = UUID.randomUUID().toString()
-                    restoredDraftKey?.let { preferencesStore.deleteDraft(it) }
+                    resetSubmission()
                     preferencesStore.removeComposeBuffer(draftKey(session.sessionId))
-                    state.attachments.forEach { deleteDraftFile(it.uri) }
+                    val completedDraftKey = restoredDraftKey
+                    restoredDraftKey = null
+                    // Server acceptance is final even if local cleanup fails. Navigation may
+                    // clear this ViewModel, so finish the bounded local cleanup independently.
                     _uiState.update { it.copy(isPosting = false, posted = true) }
+                    withContext(NonCancellable) {
+                        val removed = io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable {
+                            completedDraftKey?.let { preferencesStore.deleteDraft(it) }
+                        }.isSuccess
+                        // Keep files if a saved draft may still refer to them.
+                        if (removed) state.attachments.forEach { attachment ->
+                            runCatching { deleteDraftFile(attachment.uri) }
+                        }
+                    }
                 }
                 .onFailure { showPostError(it, "投稿できませんでした") }
         }
@@ -760,7 +796,7 @@ class ComposePostViewModel(
                 activeQuoteStatusUrl = null
                 activeNativeQuote = false
                 restoredDraftKey = null
-                idempotencyKey = UUID.randomUUID().toString()
+                resetSubmission()
                 _uiState.update { current -> ComposePostUiState(
                     sessions = current.sessions,
                     selectedSession = session,
@@ -1035,6 +1071,7 @@ class ComposePostViewModel(
     }
 
     override fun onCleared() {
+        cancelMentions()
         cancelEmojiLoad()
         stopMedia()
         clearPendingShare()

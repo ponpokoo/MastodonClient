@@ -30,14 +30,11 @@
 
 ## 今後の確認事項
 
-下書き送信の追加調査・修正は、2.5.8.1に含めない検討候補で、採用版・着手時期は未定。
-
 ### 下書き保存後の送信
 
 下書き保存・復元後の送信自体は、2026-10-03のユーザー報告で実機確認済み。
-[配送遅延の調査（Issue #5）](https://github.com/ponpokoo/MastodonClient/issues/5)と、
-[別下書き復元時の送信キー再利用（Issue #6）](https://github.com/ponpokoo/MastodonClient/issues/6)で管理する。
-確認済みの事実と調査の限界は[原因調査](investigations/draft-post-latency-report.md)に残す。
+投稿画面が閉じたあとの配送遅延は、サーバー側処理による可能性が高いものとして経過観察し、公開前の必須調査・修正項目にはしない。原因確定とは区別する。
+再調査の条件と継続管理は[配送遅延の経過観察（Issue #5）](https://github.com/ponpokoo/MastodonClient/issues/5)、確認済みの事実と調査の限界は[調査記録](investigations/draft-post-latency-report.md)を参照する。送信キー再利用は配送遅延とは別件であり、その扱いも同記録から参照する。
 
 ### Push・Relayの実運用
 
