@@ -91,6 +91,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
 import io.github.ponpokoo.mastodonclient.feature.common.rememberEmojiInlineContent
 import io.github.ponpokoo.mastodonclient.feature.common.replaceCustomEmojiShortcodes
+import io.github.ponpokoo.mastodonclient.ui.theme.FavouriteIconColor
 
 
 
@@ -511,7 +512,7 @@ private fun NotificationStatusQuote(
 private fun NotificationTypeIcon(icon: ImageVector, action: String, type: String) {
     val tint = when (type) {
         "mention", "reply" -> Color(0xFF2686C4)
-        "favourite" -> Color(0xFFD4A017)
+        "favourite" -> FavouriteIconColor
         else -> MaterialTheme.colorScheme.primary
     }
     Icon(

@@ -9,6 +9,8 @@ val MastodonPurpleDark = Color(0xFFB9C3FF)
 val MastodonSecondary = Color(0xFF5B5D72)
 val MastodonSecondaryDark = Color(0xFFC4C5DD)
 
+internal val FavouriteIconColor = Color(0xFFD4A017)
+
 internal val ColorScheme.profileFollowedByContainer: Color
     get() = if (surface.luminance() < 0.5f) Color.White.copy(alpha = 0.12f) else Color(0xFFEEEEEE)
 

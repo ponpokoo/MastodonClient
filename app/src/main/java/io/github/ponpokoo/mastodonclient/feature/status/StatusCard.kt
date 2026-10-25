@@ -126,6 +126,7 @@ import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailRowSize
 import io.github.ponpokoo.mastodonclient.feature.timeline.fittedThumbnailSize
 import io.github.ponpokoo.mastodonclient.ui.theme.reactionSelectedOutline
 import io.github.ponpokoo.mastodonclient.ui.theme.onReactionSelectedContainer
+import io.github.ponpokoo.mastodonclient.ui.theme.FavouriteIconColor
 
 internal val LocalReactionListOpener = staticCompositionLocalOf<((String, EmojiReaction) -> Unit)?> { null }
 internal val LocalFavouriteListOpener = staticCompositionLocalOf<((String) -> Unit)?> { null }
@@ -891,6 +892,7 @@ private fun StatusActionRow(
                             onLongClick = onQuote?.let { { boostMenuExpanded = true } },
                             enabled = canBoost,
                             crossedOut = !canBoost,
+                            activeTint = if (status.reblogged) MaterialTheme.colorScheme.primary else null,
                         )
                         DropdownMenu(expanded = boostMenuExpanded, onDismissRequest = { boostMenuExpanded = false }) {
                             DropdownMenuItem(text = { Text(if (status.reblogged) "ブースト解除" else "ブースト") }, onClick = {
@@ -925,6 +927,7 @@ private fun StatusActionRow(
                     preferences,
                     onFavourite,
                     onLongClick = onFavouriteLongClick,
+                    activeTint = if (status.favourited) FavouriteIconColor else null,
                 )
                 StatusAction.Reaction -> if (onReaction != null && io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities.current.supportsReactionActions) {
                     StatusActionButton(Icons.Outlined.SentimentSatisfiedAlt, "リアクション", null, preferences, onReaction)
@@ -989,6 +992,7 @@ private fun StatusActionButton(
     onLongClick: (() -> Unit)? = null,
     enabled: Boolean = true,
     crossedOut: Boolean = false,
+    activeTint: Color? = null,
 ) {
     val iconSize = when (preferences.actionIconSize) {
         ActionIconSize.Small -> 18.dp
@@ -1013,7 +1017,8 @@ private fun StatusActionButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         @Composable fun ButtonIcon() {
-            val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f)
+            val tint = if (enabled && activeTint != null) activeTint
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.68f else 0.35f)
             Box(Modifier.size(iconSize), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = label, modifier = Modifier.matchParentSize(), tint = tint)
                 if (crossedOut) {
