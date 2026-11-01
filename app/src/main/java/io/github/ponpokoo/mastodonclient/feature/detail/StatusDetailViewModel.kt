@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 
 data class StatusDetailUiState(
     val detail: StatusDetail? = null,
@@ -33,6 +34,7 @@ data class StatusDetailUiState(
     val isLoadingLists: Boolean = false,
     val actionMessage: String? = null,
     val isDeleted: Boolean = false,
+    val isVotingPoll: Boolean = false,
 )
 
 class StatusDetailViewModel(
@@ -83,9 +85,29 @@ class StatusDetailViewModel(
         timelineRepository.setFedibirdReaction(current, status.statusId, emoji)
     }
 
-    fun votePoll(choices: Set<Int>) = mutateStatus { current, status ->
-        val poll = status.poll ?: return@mutateStatus Result.failure(IllegalStateException("アンケートが見つかりません"))
-        timelineRepository.votePoll(current, status.statusId, poll.id, choices)
+    fun votePoll(choices: Set<Int>) {
+        val current = session ?: return
+        val poll = _uiState.value.detail?.status?.poll ?: return
+        if (_uiState.value.isVotingPoll || choices.isEmpty() || poll.expired || poll.voted == true) return
+        _uiState.update { it.copy(isVotingPoll = true) }
+        viewModelScope.launch {
+            try {
+                val result = timelineRepository.votePoll(current, statusId, poll.id, choices)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (!current.hasSameCredentials(authRepository.restoreSession())) return@launch
+                result.fold(
+                    onSuccess = { updated -> _uiState.update { it.copy(detail = it.detail?.copy(status = updated), actionMessage = "投票しました") } },
+                    onFailure = { error ->
+                        showActionError(error, "投票できませんでした。もう一度お試しください")
+                        if (error.requiresAuthentication) _uiState.update {
+                            it.copy(actionMessage = "もう一度ログインして、必要な権限を許可してください。")
+                        }
+                    },
+                )
+            } finally {
+                _uiState.update { it.copy(isVotingPoll = false) }
+            }
+        }
     }
 
     fun consumeActionMessage() = _uiState.update { it.copy(actionMessage = null) }

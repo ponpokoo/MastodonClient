@@ -5,6 +5,7 @@ data class ComposerConfiguration(
     val maxMediaAttachments: Int = 4,
     val mediaDescriptionLimit: Int = 1_500,
     val supportedMimeTypes: Set<String>? = null,
+    val polls: PollConfiguration = PollConfiguration(),
 )
 
 data class CustomEmoji(
@@ -43,4 +44,5 @@ data class CreateStatusRequest(
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long? = null,
     val pollMultiple: Boolean = false,
+    val pollHideTotals: Boolean = false,
 )

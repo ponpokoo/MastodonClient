@@ -48,6 +48,7 @@ data class StatusPoll(
     val voted: Boolean?,
     val ownVotes: Set<Int>,
     val options: List<PollOption>,
+    val customEmojis: Map<String, String> = emptyMap(),
 )
 
 @Serializable

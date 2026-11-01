@@ -52,6 +52,7 @@ data class PollDto(
     val voted: Boolean? = null,
     @SerialName("own_votes") val ownVotes: List<Int> = emptyList(),
     val options: List<PollOptionDto> = emptyList(),
+    val emojis: List<AccountEmojiDto> = emptyList(),
 )
 
 @Serializable

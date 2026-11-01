@@ -16,6 +16,7 @@ data class StatusActionsUiState(
     val lists: List<MastodonList> = emptyList(),
     val isLoadingLists: Boolean = false,
     val actionMessage: String? = null,
+    val votingPollIds: Set<String> = emptySet(),
 )
 
 /** Common actions for all main tabs; results are broadcast to each tab's own state. */
@@ -61,8 +62,26 @@ class StatusActionsViewModel(
 
     fun votePoll(status: TimelineStatus, choices: Set<Int>) {
         val poll = status.poll ?: return
-        mutateStatus(successMessage = "投票しました") {
-            timelineRepository.votePoll(it, status.statusId, poll.id, choices)
+        val snapshot = currentSnapshot() ?: return
+        if (poll.id in _uiState.value.votingPollIds || choices.isEmpty() || poll.expired || poll.voted == true) return
+        _uiState.update { it.copy(votingPollIds = it.votingPollIds + poll.id) }
+        requestScope.launch {
+            try {
+                timelineRepository.votePoll(snapshot.account!!, status.statusId, poll.id, choices)
+                    .forSession(snapshot).fold(
+                        onSuccess = { updated ->
+                            browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(updated))
+                            _uiState.update { it.copy(actionMessage = "投票しました") }
+                        },
+                        onFailure = { error ->
+                            if (error.requiresAuthentication) _uiState.update {
+                                it.copy(actionMessage = "もう一度ログインして、必要な権限を許可してください。")
+                            } else showActionError(error, "投票できませんでした。もう一度お試しください")
+                        },
+                    )
+            } finally {
+                if (snapshot == currentSnapshot()) _uiState.update { it.copy(votingPollIds = it.votingPollIds - poll.id) }
+            }
         }
     }
 

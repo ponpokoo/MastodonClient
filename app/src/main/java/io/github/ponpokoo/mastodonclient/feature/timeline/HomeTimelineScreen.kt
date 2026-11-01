@@ -539,7 +539,12 @@ fun HomeTimelineScreen(
             userScrollEnabled = false,
         ) { page ->
             val pagePadding = if (destinations[page] == destination) padding else savedPagePadding[destinations[page]] ?: padding
-            CompositionLocalProvider(LocalMediaSourceIsHome provides (destinations[page] == MainDestination.Home)) {
+            CompositionLocalProvider(
+                LocalMediaSourceIsHome provides (destinations[page] == MainDestination.Home),
+                io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
+                    io.github.ponpokoo.mastodonclient.feature.status.PollVoteUiState(
+                        mainState.session?.let { "${it.instanceUrl}:${it.sessionId}" }, actionsState.votingPollIds),
+            ) {
             when (val pageDestination = destinations[page]) {
                 MainDestination.Home -> TimelineContent(
                     state = state,

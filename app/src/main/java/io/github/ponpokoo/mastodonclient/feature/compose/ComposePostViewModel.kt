@@ -10,6 +10,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
+import io.github.ponpokoo.mastodonclient.domain.model.validationError
 import io.github.ponpokoo.mastodonclient.domain.model.ComposerConfiguration
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
@@ -56,6 +57,7 @@ data class ComposePostUiState(
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
     val pollMultiple: Boolean = false,
+    val pollHideTotals: Boolean = false,
     val configuration: ComposerConfiguration = ComposerConfiguration(),
     val customEmojis: List<CustomEmoji> = emptyList(),
     val drafts: List<ComposeDraft> = emptyList(),
@@ -489,15 +491,21 @@ class ComposePostViewModel(
     fun enablePoll() = change { state ->
         if (state.isImportingMedia) state.copy(actionMessage = "添付ファイルの読み込み完了をお待ちください")
         else if (state.attachments.isNotEmpty()) state.copy(errorMessage = "メディアと投票は同時に追加できません")
-        else state.copy(pollOptions = listOf("", ""))
+        else state.copy(pollOptions = listOf("", ""),
+            pollExpiresInSeconds = state.pollExpiresInSeconds.coerceIn(state.configuration.polls.minExpiration, state.configuration.polls.maxExpiration))
     }
 
     fun disablePoll() = change { it.copy(pollOptions = emptyList()) }
-    fun addPollOption() = change { if (it.pollOptions.size < 4) it.copy(pollOptions = it.pollOptions + "") else it }
+    fun addPollOption() = change { if (it.pollOptions.size < it.configuration.polls.maxOptions) it.copy(pollOptions = it.pollOptions + "") else it }
     fun setPollOption(index: Int, value: String) = change { state ->
         state.copy(pollOptions = state.pollOptions.mapIndexed { i, current -> if (i == index) value else current })
     }
     fun setPollMultiple(value: Boolean) = change { it.copy(pollMultiple = value) }
+    fun setPollHideTotals(value: Boolean) = change { it.copy(pollHideTotals = value) }
+    fun setPollDuration(seconds: Long) = change { it.copy(pollExpiresInSeconds = seconds) }
+    fun removePollOption(index: Int) = change { state ->
+        if (state.pollOptions.size <= 2) state else state.copy(pollOptions = state.pollOptions.filterIndexed { i, _ -> i != index })
+    }
 
     suspend fun loadEmojiHistory(): List<String> = _uiState.value.selectedSession?.let { session ->
         preferencesStore.composerEmojiHistory.first()[session.sessionId].orEmpty()
@@ -683,9 +691,12 @@ class ComposePostViewModel(
             _uiState.update { it.copy(errorMessage = "引用投稿にはメディアや投票を添付できません") }
             return
         }
-        if (state.pollOptions.isNotEmpty() && state.pollOptions.any(String::isBlank)) {
-            _uiState.update { it.copy(errorMessage = "投票の選択肢を入力してください") }
-            return
+        if (editStatusId == null) {
+            val error = state.configuration.polls.validationError(state.pollOptions, state.pollExpiresInSeconds)
+            if (error != null) {
+                _uiState.update { it.copy(errorMessage = error) }
+                return
+            }
         }
         if (!skipAltReminder && state.preferences.altTextReminder &&
             state.attachments.any { it.description.isBlank() }
@@ -727,6 +738,7 @@ class ComposePostViewModel(
                 pollOptions = state.pollOptions.map(String::trim).filter(String::isNotEmpty),
                 pollExpiresInSeconds = state.pollExpiresInSeconds.takeIf { state.pollOptions.isNotEmpty() },
                 pollMultiple = state.pollMultiple,
+                pollHideTotals = state.pollHideTotals,
             )
             val result = if (editStatusId == null) {
                 val previous = submittedRequest
@@ -893,6 +905,7 @@ class ComposePostViewModel(
                 pollOptions = draft?.pollOptions ?: current.pollOptions,
                 pollExpiresInSeconds = draft?.pollExpiresInSeconds ?: current.pollExpiresInSeconds,
                 pollMultiple = draft?.pollMultiple ?: current.pollMultiple,
+                pollHideTotals = draft?.pollHideTotals ?: current.pollHideTotals,
                 configuration = configuration,
                 errorMessage = if (configuration.supportedMimeTypes == null && (current.attachments.isNotEmpty() || pendingSharedMedia != null))
                     "サーバーの対応ファイル形式を確認できません。添付には設定の再取得が必要です" else current.errorMessage,
@@ -958,6 +971,7 @@ class ComposePostViewModel(
         pollOptions = pollOptions,
         pollExpiresInSeconds = pollExpiresInSeconds,
         pollMultiple = pollMultiple,
+        pollHideTotals = pollHideTotals,
         updatedAtEpochMillis = System.currentTimeMillis(),
     )
 
@@ -1061,6 +1075,7 @@ class ComposePostViewModel(
         pollOptions = draft.pollOptions,
         pollExpiresInSeconds = draft.pollExpiresInSeconds,
         pollMultiple = draft.pollMultiple,
+        pollHideTotals = draft.pollHideTotals,
     )
 
     private fun showPostError(error: Throwable, fallback: String) {

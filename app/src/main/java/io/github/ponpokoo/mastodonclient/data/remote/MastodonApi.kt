@@ -348,6 +348,7 @@ interface MastodonApi {
         @Field("poll[options][]") pollOptions: List<String>? = null,
         @Field("poll[expires_in]") pollExpiresInSeconds: Long? = null,
         @Field("poll[multiple]") pollMultiple: Boolean? = null,
+        @Field("poll[hide_totals]") pollHideTotals: Boolean? = null,
     ): StatusDto
 
     @FormUrlEncoded

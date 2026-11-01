@@ -95,66 +95,71 @@ internal fun ProfileScreen(
             }
         }
 
-        ProfileContent(
-            instanceUrl = state.instanceUrl,
-            state = state,
-            padding = padding,
-            onRetry = viewModel::retryProfile,
-            onRetryPosts = viewModel::retryProfile,
-            onSelectHashtag = viewModel::selectHashtag,
-            onRetryFeaturedTags = viewModel::retryFeaturedTags,
-            onRefresh = {
-                scrollAfterRefresh = !preferences.keepPositionOnPullRefresh
-                refreshStarted = false
-                viewModel.refreshProfile()
-            },
-            onStatusClick = onStatusClick, onOpenLink = onOpenLink,
-            onReply = onReply, onBoost = viewModel::toggleReblog, onQuote = onQuote,
-            onFavourite = viewModel::toggleFavourite,
-            onVotePoll = viewModel::votePoll,
-            onBookmark = viewModel::toggleBookmark, onReact = viewModel::setReaction, onAccountClick = onAccountClick,
-            onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.profileSelectedTab,
-            preferences = preferences,
-            isLoadingMore = state.isLoadingMoreProfile, onSelectTab = viewModel::selectProfileTab, onLoadMore = viewModel::loadMoreProfile,
-            onAutoLoadMore = viewModel::loadMoreProfileAutomatically,
-            onFollowers = { profile?.author?.id?.let(onFollowers) },
-            onFollowing = { profile?.author?.id?.let(onFollowing) },
-            onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-header", "image", it, it, "ヘッダー画像", cacheRevision = state.headerRefreshRevision)), 0) } },
-            onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-avatar", "image", it, it, "プロフィール画像", isAccountAvatar = true)), 0) } },
-            onEditProfile = { viewModel.beginProfileEdit() }, onToggleFollow = {
-                if (state.relationship?.following == true) confirmAction = ProfileAccountAction.Unfollow
-                else viewModel.toggleFollow()
-            },
-            onOpenLists = onOpenLists,
-            onOpenBookmarks = onOpenBookmarks,
-            onOpenFavourites = onOpenFavourites,
-            onOpenReactions = onOpenReactions,
-            onShareProfile = { profile?.url?.let {
-                context.startActivity(Intent.createChooser(
-                    Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it),
-                    "プロフィールを共有",
-                ))
-            } },
-            onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
-            onProfileMenuOpen = {
-                if (profile?.isOwnProfile == true) viewModel.loadReactionHistorySupport()
-                else if (profile != null) viewModel.loadModerationMenu()
-            },
-            moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
-            moderationError = moderationMenu.error,
-            onRetryModeration = { viewModel.loadModerationMenu() },
-            onMuteProfile = { confirmAction = if (moderationMenu.relationship?.muting == true) ProfileAccountAction.Unmute else ProfileAccountAction.Mute },
-            onBlockProfile = { confirmAction = if (moderationMenu.relationship?.blocking == true) ProfileAccountAction.Unblock else ProfileAccountAction.Block },
-            onReportProfile = { reportOpen = true },
-            isProfileMuted = moderationMenu.relationship?.muting == true,
-            isProfileBlocked = moderationMenu.relationship?.blocking == true,
-            onMoreClick = {
-                if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
-                statusMenu = it
-            },
-            listStates = listStates,
-            headerListState = headerListState,
-        )
+        androidx.compose.runtime.CompositionLocalProvider(
+            io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
+                io.github.ponpokoo.mastodonclient.feature.status.PollVoteUiState(state.imageSessionKey, state.votingPollIds),
+        ) {
+            ProfileContent(
+                instanceUrl = state.instanceUrl,
+                state = state,
+                padding = padding,
+                onRetry = viewModel::retryProfile,
+                onRetryPosts = viewModel::retryProfile,
+                onSelectHashtag = viewModel::selectHashtag,
+                onRetryFeaturedTags = viewModel::retryFeaturedTags,
+                onRefresh = {
+                    scrollAfterRefresh = !preferences.keepPositionOnPullRefresh
+                    refreshStarted = false
+                    viewModel.refreshProfile()
+                },
+                onStatusClick = onStatusClick, onOpenLink = onOpenLink,
+                onReply = onReply, onBoost = viewModel::toggleReblog, onQuote = onQuote,
+                onFavourite = viewModel::toggleFavourite,
+                onVotePoll = viewModel::votePoll,
+                onBookmark = viewModel::toggleBookmark, onReact = viewModel::setReaction, onAccountClick = onAccountClick,
+                onMediaClick = onMediaClick, relationship = state.relationship, selectedTab = state.profileSelectedTab,
+                preferences = preferences,
+                isLoadingMore = state.isLoadingMoreProfile, onSelectTab = viewModel::selectProfileTab, onLoadMore = viewModel::loadMoreProfile,
+                onAutoLoadMore = viewModel::loadMoreProfileAutomatically,
+                onFollowers = { profile?.author?.id?.let(onFollowers) },
+                onFollowing = { profile?.author?.id?.let(onFollowing) },
+                onHeaderClick = { profile?.headerUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-header", "image", it, it, "ヘッダー画像", cacheRevision = state.headerRefreshRevision)), 0) } },
+                onAvatarClick = { profile?.author?.avatarUrl?.takeIf(String::isNotBlank)?.let { onMediaClick(listOf(MediaAttachment("profile-avatar", "image", it, it, "プロフィール画像", isAccountAvatar = true)), 0) } },
+                onEditProfile = { viewModel.beginProfileEdit() }, onToggleFollow = {
+                    if (state.relationship?.following == true) confirmAction = ProfileAccountAction.Unfollow
+                    else viewModel.toggleFollow()
+                },
+                onOpenLists = onOpenLists,
+                onOpenBookmarks = onOpenBookmarks,
+                onOpenFavourites = onOpenFavourites,
+                onOpenReactions = onOpenReactions,
+                onShareProfile = { profile?.url?.let {
+                    context.startActivity(Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, it),
+                        "プロフィールを共有",
+                    ))
+                } },
+                onAddProfileToList = { profileListOpen = true; viewModel.loadLists() },
+                onProfileMenuOpen = {
+                    if (profile?.isOwnProfile == true) viewModel.loadReactionHistorySupport()
+                    else if (profile != null) viewModel.loadModerationMenu()
+                },
+                moderationReady = moderationMenu.accountId == profile?.author?.id && moderationMenu.relationship != null && !moderationMenu.loading && !moderationMenu.busy,
+                moderationError = moderationMenu.error,
+                onRetryModeration = { viewModel.loadModerationMenu() },
+                onMuteProfile = { confirmAction = if (moderationMenu.relationship?.muting == true) ProfileAccountAction.Unmute else ProfileAccountAction.Mute },
+                onBlockProfile = { confirmAction = if (moderationMenu.relationship?.blocking == true) ProfileAccountAction.Unblock else ProfileAccountAction.Block },
+                onReportProfile = { reportOpen = true },
+                isProfileMuted = moderationMenu.relationship?.muting == true,
+                isProfileBlocked = moderationMenu.relationship?.blocking == true,
+                onMoreClick = {
+                    if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
+                    statusMenu = it
+                },
+                listStates = listStates,
+                headerListState = headerListState,
+            )
+        }
 
         statusMenu?.let { status ->
             StatusMenuDialog(

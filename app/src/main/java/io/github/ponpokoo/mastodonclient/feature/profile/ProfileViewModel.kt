@@ -34,6 +34,7 @@ data class ProfileUiState(
     val lists: List<MastodonList> = emptyList(),
     val isLoadingLists: Boolean = false,
     val message: String? = null,
+    val votingPollIds: Set<String> = emptySet(),
     val profile: UserProfile? = null,
     val isLoadingProfile: Boolean = false,
     val isRefreshingProfile: Boolean = false,
@@ -475,7 +476,21 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus { timelineRepository.setFedibirdReaction(it, status.statusId, emoji) }
     fun votePoll(status: TimelineStatus, choices: Set<Int>) {
         val poll = status.poll ?: return
-        mutateStatus("投票しました") { timelineRepository.votePoll(it, status.statusId, poll.id, choices) }
+        val snapshot = currentSnapshot() ?: return
+        if (poll.id in _uiState.value.votingPollIds || choices.isEmpty() || poll.expired || poll.voted == true) return
+        _uiState.update { it.copy(votingPollIds = it.votingPollIds + poll.id) }
+        requestScope.launch {
+            try {
+                timelineRepository.votePoll(snapshot.account!!, status.statusId, poll.id, choices).forSession(snapshot).fold(
+                    { updated ->
+                        browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(updated))
+                        _uiState.update { it.copy(message = "投票しました") }
+                    }, ::showActionError,
+                )
+            } finally {
+                if (snapshot == currentSnapshot()) _uiState.update { it.copy(votingPollIds = it.votingPollIds - poll.id) }
+            }
+        }
     }
     fun setPinned(status: TimelineStatus) = mutateStatus(
         if (status.pinned) "プロフィールの固定を解除しました" else "プロフィールに固定しました",

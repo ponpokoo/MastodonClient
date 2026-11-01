@@ -833,6 +833,7 @@ class DefaultTimelineRepository(
             pollOptions = request.pollOptions.ifEmpty { null },
             pollExpiresInSeconds = request.pollExpiresInSeconds,
             pollMultiple = request.pollMultiple.takeIf { request.pollOptions.isNotEmpty() },
+            pollHideTotals = request.pollHideTotals.takeIf { request.pollOptions.isNotEmpty() },
         )
     }
 
@@ -847,6 +848,7 @@ class DefaultTimelineRepository(
                 api.getLegacyInstance()
             }.configuration
             val result = ComposerConfiguration(
+                polls = configuration?.polls.toDomain(),
                 maxCharacters = configuration?.statuses?.maxCharacters ?: 500,
                 maxMediaAttachments = configuration?.statuses?.maxMediaAttachments
                     ?: configuration?.mediaAttachments?.maxAttachments ?: 4,
@@ -1083,6 +1085,7 @@ private fun io.github.ponpokoo.mastodonclient.data.remote.dto.PollDto.toDomain()
         votersCount = votersCount,
         voted = voted,
         ownVotes = ownVotes.toSet(),
+        customEmojis = emojis.associate { it.shortcode to it.url },
         options = options.map { option ->
             io.github.ponpokoo.mastodonclient.domain.model.PollOption(option.title, option.votesCount)
         },

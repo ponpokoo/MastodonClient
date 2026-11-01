@@ -217,6 +217,7 @@ fun StatusDetailScreen(
                         },
                         onFavourite = viewModel::toggleFavourite,
                         onVotePoll = viewModel::votePoll,
+                        isVotingPoll = state.isVotingPoll,
                         onReact = viewModel::setReaction,
                         onReactionLongPress = { onShowReaction(status.statusId, it) },
                         onUnavailableAction = {},

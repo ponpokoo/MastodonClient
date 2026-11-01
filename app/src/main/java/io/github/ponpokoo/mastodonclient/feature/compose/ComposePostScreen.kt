@@ -323,7 +323,8 @@ fun ComposePostScreen(
                                 ComposerAction.Poll -> ComposerToolbarButton(
                                     icon = Icons.Outlined.Poll,
                                     contentDescription = if (state.pollOptions.isEmpty()) "アンケートを追加" else "アンケートを削除",
-                                    enabled = !state.quotingNative && state.attachments.isEmpty() && !state.isImportingMedia,
+                                    enabled = !isEditing && !state.quotingNative && state.attachments.isEmpty() && !state.isImportingMedia &&
+                                        !state.isLoading && !state.isPosting && !state.isSavingDraft,
                                 ) {
                                     if (state.pollOptions.isEmpty()) viewModel.enablePoll() else viewModel.disablePoll()
                                 }
@@ -596,27 +597,8 @@ fun ComposePostScreen(
                 }
             }
 
-            if (state.pollOptions.isNotEmpty()) {
-                Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                    state.pollOptions.forEachIndexed { index, option ->
-                        OutlinedTextField(
-                            value = option,
-                            onValueChange = { viewModel.setPollOption(index, it) },
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                            label = { Text("選択肢 ${index + 1}") },
-                            singleLine = true,
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = viewModel::disablePoll) { Text("アンケートを削除") }
-                        TextButton(onClick = viewModel::addPollOption, enabled = state.pollOptions.size < 4) {
-                            Text("選択肢を追加")
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Text("複数選択", style = MaterialTheme.typography.bodySmall)
-                        Switch(checked = state.pollMultiple, onCheckedChange = viewModel::setPollMultiple)
-                    }
-                }
+            if (!isEditing && state.pollOptions.isNotEmpty()) {
+                ComposerPollEditor(state, viewModel)
             }
 
             state.errorMessage?.let {

@@ -119,25 +119,30 @@ fun SavedTimelinesScreen(
                         }
                     } else {
                         items(state.statuses, key = TimelineStatus::timelineId) { status ->
-                            SocialStatus(
-                                status = status,
-                                onStatusClick = onStatusClick,
-                                onAccountClick = onAccountClick,
-                                onMediaClick = onMediaClick,
-                                onOpenLink = onOpenLink,
-                                onReply = { onReply(it.statusId) },
-                                onBoost = actionsViewModel::toggleReblog,
-                                onFavourite = actionsViewModel::toggleFavourite,
-                                onBookmark = actionsViewModel::toggleBookmark,
-                                onReact = actionsViewModel::setReaction,
-                                onVotePoll = actionsViewModel::votePoll,
-                                onQuote = onQuote,
-                                onMoreClick = {
-                                    if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
-                                    menuStatus = it
-                                },
-                                preferences = preferences,
-                            )
+                            androidx.compose.runtime.CompositionLocalProvider(
+                                io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
+                                    io.github.ponpokoo.mastodonclient.feature.status.PollVoteUiState(state.sessionKey, actionsState.votingPollIds),
+                            ) {
+                                SocialStatus(
+                                    status = status,
+                                    onStatusClick = onStatusClick,
+                                    onAccountClick = onAccountClick,
+                                    onMediaClick = onMediaClick,
+                                    onOpenLink = onOpenLink,
+                                    onReply = { onReply(it.statusId) },
+                                    onBoost = actionsViewModel::toggleReblog,
+                                    onFavourite = actionsViewModel::toggleFavourite,
+                                    onBookmark = actionsViewModel::toggleBookmark,
+                                    onReact = actionsViewModel::setReaction,
+                                    onVotePoll = actionsViewModel::votePoll,
+                                    onQuote = onQuote,
+                                    onMoreClick = {
+                                        if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
+                                        menuStatus = it
+                                    },
+                                    preferences = preferences,
+                                )
+                            }
                         }
                     }
                     if (state.error != null) {

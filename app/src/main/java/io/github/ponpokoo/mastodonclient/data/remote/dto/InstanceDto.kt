@@ -23,6 +23,7 @@ data class InstanceUrlsDto(
 data class InstanceConfigurationDto(
     val vapid: VapidConfigurationDto? = null,
     val statuses: StatusConfigurationDto? = null,
+    val polls: PollConfigurationDto? = null,
     @SerialName("media_attachments") val mediaAttachments: MediaConfigurationDto? = null,
     val urls: InstanceUrlsDto? = null,
 )
@@ -30,6 +31,14 @@ data class InstanceConfigurationDto(
 @Serializable
 data class VapidConfigurationDto(
     @SerialName("public_key") val publicKey: String? = null,
+)
+
+@Serializable
+data class PollConfigurationDto(
+    @SerialName("max_options") val maxOptions: Int? = null,
+    @SerialName("max_characters_per_option") val maxCharactersPerOption: Int? = null,
+    @SerialName("min_expiration") val minExpiration: Long? = null,
+    @SerialName("max_expiration") val maxExpiration: Long? = null,
 )
 
 @Serializable

@@ -133,6 +133,7 @@ data class ComposeDraft(
     val pollOptions: List<String> = emptyList(),
     val pollExpiresInSeconds: Long = 86_400,
     val pollMultiple: Boolean = false,
+    val pollHideTotals: Boolean = false,
     val updatedAtEpochMillis: Long = System.currentTimeMillis(),
 )
 
