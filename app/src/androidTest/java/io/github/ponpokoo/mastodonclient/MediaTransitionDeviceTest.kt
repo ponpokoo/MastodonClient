@@ -108,6 +108,22 @@ class MediaTransitionDeviceTest {
         rule.waitUntil(5_000) { phase() == MediaPhase.Viewing }
     }
 
+    @Test fun overviewSelectionReturnsToTheChosenThumbnailInTheProductionOverlay() {
+        render()
+        openFirst()
+        rule.onNodeWithContentDescription("画像一覧を開く").performClick()
+        rule.onNodeWithTag("media_overview_image_0").assertIsSelected()
+        rule.onNodeWithTag("media_overview_image_1").performClick()
+        rule.waitUntil(5_000) { motion.page == 1 }
+        assertEquals(1, viewerConfig()[MediaViewerPage])
+        rule.onNodeWithContentDescription("画像一覧を開く").performClick()
+        androidx.test.espresso.Espresso.pressBackUnconditionally()
+        rule.onNodeWithTag("media_image_overview").assertDoesNotExist()
+        assertEquals(MediaPhase.Viewing, phase())
+        rule.onNodeWithContentDescription("閉じる").performClick()
+        rule.waitUntil(5_000) { phase() == MediaPhase.Closed }
+    }
+
     @Test fun backButtonAndDownwardSwipeStartReturningWithoutASeparateCornerAnimation() {
         render()
         repeat(3) { method ->

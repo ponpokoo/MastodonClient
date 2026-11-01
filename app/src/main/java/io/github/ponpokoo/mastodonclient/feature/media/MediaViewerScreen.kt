@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -103,6 +104,8 @@ private class ViewerZoomState {
 internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTransitionState, onBack: () -> Unit, drawBackdrop: Boolean = false) {
     MediaTransitionAnimations(motion, onBack)
     val pager = rememberPagerState(initialPage = motion.page, pageCount = media::size)
+    val canShowOverview = media.size > 1 && media.all { it.type == "image" }
+    var overviewVisible by rememberSaveable(media) { mutableStateOf(false) }
     val zoomStates = media.map { image -> remember(image.id) { ViewerZoomState() } }
     val currentZoom = zoomStates[pager.currentPage]
     val scope = rememberCoroutineScope()
@@ -192,7 +195,9 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
         motion.close(pager.currentPage, fromDrag, currentZoom.scale,
             currentZoom.offset + Offset(-pager.currentPageOffsetFraction * motion.viewerSize.width, 0f), velocityY)
     }
-    BackHandler(enabled = motion.active) { closeViewer() }
+    BackHandler(enabled = motion.active) {
+        if (overviewVisible) overviewVisible = false else closeViewer()
+    }
     LaunchedEffect(pager.settledPage, pager.isScrollInProgress) {
         if (!pager.isScrollInProgress && motion.phase == MediaPhase.Viewing) {
             motion.page = pager.settledPage
@@ -227,8 +232,8 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
     }
     var returnJob by remember { mutableStateOf<Job?>(null) }
     val viewportHeight = motion.viewerSize.height.toFloat().coerceAtLeast(1f)
-    val interactive = motion.phase == MediaPhase.Viewing
-    val dismissEnabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.Viewing)
+    val interactive = motion.phase == MediaPhase.Viewing && !overviewVisible
+    val dismissEnabled = !overviewVisible && motion.phase in listOf(MediaPhase.Opening, MediaPhase.Viewing)
     val drawPager = drawBackdrop || motion.phase == MediaPhase.Viewing || motion.transitionPainter == null
     val controlsAlpha = motion.visibleBackdropAlpha
     DisposableEffect(interactive) {
@@ -288,8 +293,8 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                     this[MediaViewerDismissOffset] = motion.dragOffset
                 }) {
         HorizontalPager(pager,
-            Modifier.fillMaxSize().graphicsLayer { translationY = motion.dragOffset; alpha = if (!drawPager) 0f else if (motion.phase == MediaPhase.Closing && (drawBackdrop || motion.transitionPainter == null)) motion.progress.value else 1f }
-                .semantics { if (!drawPager) hideFromAccessibility() },
+            Modifier.fillMaxSize().graphicsLayer { translationY = motion.dragOffset; alpha = if (!drawPager || overviewVisible) 0f else if (motion.phase == MediaPhase.Closing && (drawBackdrop || motion.transitionPainter == null)) motion.progress.value else 1f }
+                .semantics { if (!drawPager || overviewVisible) hideFromAccessibility() },
             userScrollEnabled = interactive && currentZoom.scale <= MIN_DISMISS_SCALE, beyondViewportPageCount = 1,
         ) { page ->
             val item = media[page]
@@ -308,7 +313,17 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                     onTap = { setControlsVisible(!controlsVisible) })
             }
         }
-        if (controlsVisible) {
+        if (overviewVisible) {
+            MediaImageOverview(media, pager.currentPage, Modifier.fillMaxSize().mediaOverlay(1.5f) { motion.active }) { index ->
+                scope.launch {
+                    zoomStates[index].scale = 1f
+                    zoomStates[index].offset = Offset.Zero
+                    pager.scrollToPage(index)
+                    overviewVisible = false
+                }
+            }
+        }
+        if (controlsVisible || overviewVisible) {
             Box(Modifier.fillMaxSize().mediaOverlay(2f) { motion.active }) {
                 // Keep the control backgrounds lighter and smaller than their touch targets.
                 val controlsBackground = Color(0xFF303030).copy(alpha = 0.35f)
@@ -316,41 +331,59 @@ internal fun MediaViewerContent(media: List<MediaAttachment>, motion: MediaTrans
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .windowInsetsTopHeight(WindowInsets.statusBarsIgnoringVisibility)
                     .background(Color(0xFF303030).copy(alpha = 0.6f * controlsAlpha)))
-                IconButton(onClick = { closeViewer() },
+                IconButton(onClick = { if (overviewVisible) overviewVisible = false else closeViewer() },
                     enabled = motion.phase in listOf(MediaPhase.Opening, MediaPhase.Viewing),
                     modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp)
                         .graphicsLayer { alpha = controlsAlpha }
                         .testTag("media_viewer_close")) {
                     Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, "閉じる", modifier = Modifier.size(20.dp), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, if (overviewVisible) "画像表示に戻る" else "閉じる", modifier = Modifier.size(20.dp), tint = Color.White)
                     }
                 }
-                IconButton(onClick = {
-                        val item = media[pager.currentPage]
-                        val source = item.url ?: item.previewUrl
-                        if (source != null) {
-                            pendingSaveSource = source
-                            val path = source.toUri().lastPathSegment.orEmpty().substringBefore('?')
-                            val extension = path.substringAfterLast('.', "").lowercase()
-                                .takeIf { it.isNotBlank() && it.length <= 5 }
-                                ?: if (item.type == "video" || item.type == "gifv") "mp4" else "jpg"
-                            val baseName = path.substringBeforeLast('.', "media-${item.id}")
-                                .takeIf { it.isNotBlank() } ?: "media-${item.id}"
-                            saveLauncher.launch("$baseName.$extension")
+                if (overviewVisible) {
+                    Text("一覧", color = Color.White, style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 64.dp, top = 20.dp))
+                }
+                if (!overviewVisible) {
+                    if (canShowOverview) {
+                        IconButton(onClick = {
+                            returnJob?.cancel()
+                            motion.dragOffset = 0f
+                            overviewVisible = true
+                        }, enabled = interactive && !pager.isScrollInProgress,
+                            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 8.dp, end = 64.dp)) {
+                            Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.GridView, "画像一覧を開く", modifier = Modifier.size(20.dp), tint = Color.White)
+                            }
                         }
-                    },
-                    enabled = interactive, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
-                        .graphicsLayer { alpha = controlsAlpha }) {
-                    Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Download, "メディアを保存", modifier = Modifier.size(20.dp), tint = Color.White)
                     }
-                }
-                if (media.size > 1) {
-                    Text("${pager.currentPage + 1} / ${media.size}", color = Color.White,
-                        modifier = (if (itemIsPlayback(media[pager.currentPage])) Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp)
-                            else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp))
-                            .graphicsLayer { alpha = controlsAlpha }
-                            .background(controlsBackground, controlsShape).padding(horizontal = 8.dp, vertical = 4.dp))
+                    IconButton(onClick = {
+                            val item = media[pager.currentPage]
+                            val source = item.url ?: item.previewUrl
+                            if (source != null) {
+                                pendingSaveSource = source
+                                val path = source.toUri().lastPathSegment.orEmpty().substringBefore('?')
+                                val extension = path.substringAfterLast('.', "").lowercase()
+                                    .takeIf { it.isNotBlank() && it.length <= 5 }
+                                    ?: if (item.type == "video" || item.type == "gifv") "mp4" else "jpg"
+                                val baseName = path.substringBeforeLast('.', "media-${item.id}")
+                                    .takeIf { it.isNotBlank() } ?: "media-${item.id}"
+                                saveLauncher.launch("$baseName.$extension")
+                            }
+                        },
+                        enabled = interactive, modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(8.dp)
+                            .graphicsLayer { alpha = controlsAlpha }) {
+                        Box(Modifier.size(32.dp).background(controlsBackground, CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Download, "メディアを保存", modifier = Modifier.size(20.dp), tint = Color.White)
+                        }
+                    }
+                    if (media.size > 1) {
+                        Text("${pager.currentPage + 1} / ${media.size}", color = Color.White,
+                            modifier = (if (itemIsPlayback(media[pager.currentPage])) Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp)
+                                else Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 24.dp))
+                                .graphicsLayer { alpha = controlsAlpha }
+                                .background(controlsBackground, controlsShape).padding(horizontal = 8.dp, vertical = 4.dp))
+                    }
                 }
             }
         }

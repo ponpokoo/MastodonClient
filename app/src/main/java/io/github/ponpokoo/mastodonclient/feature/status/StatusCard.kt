@@ -620,6 +620,10 @@ private fun MediaGrid(
                         horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
                     ) {
                         rowItems.forEachIndexed { index, media ->
+                            val mediaIndex = attachments.indexOf(media)
+                            val remainingCount = if (mediaIndex == 3) (attachments.size - 4).coerceAtLeast(0) else 0
+                            val viewerIndex = if (remainingCount > 0) 4 else mediaIndex
+                            val viewerTarget = attachments[viewerIndex]
                             key(sessionKey, media.id, media.url, media.previewUrl) {
                                 var previewFailed by rememberSaveable { mutableStateOf(false) }
                                 val imageUrl = if (media.type == "image") {
@@ -649,15 +653,15 @@ private fun MediaGrid(
                                         .clip(RoundedCornerShape(8.dp))
                                         .testTag("media_attachment")
                                         .then(
-                                            if (onMediaClick == null || media.url == null) Modifier else {
-                                                Modifier.clickable {
-                                                    mediaSourceGroup.prepare(media)
+                                            if (onMediaClick == null || viewerTarget.url == null) Modifier else {
+                                                Modifier.clickable(onClickLabel = if (remainingCount > 0) "残り${remainingCount}枚を表示" else null) {
+                                                    mediaSourceGroup.prepare(viewerTarget)
                                                     // Older cached posts have no avatar context on attachments.
                                                     val viewerMedia = attachments.map { item ->
                                                         if (item.type == "audio") item.copy(authorAvatarUrl = audioAuthorAvatarUrl ?: item.authorAvatarUrl)
                                                         else item
                                                     }
-                                                    onMediaClick(viewerMedia, attachments.indexOf(media))
+                                                    onMediaClick(viewerMedia, viewerIndex)
                                                 }
                                             },
                                         )
@@ -716,6 +720,16 @@ private fun MediaGrid(
                                             modifier = Modifier.size(48.dp),
                                             tint = androidx.compose.ui.graphics.Color.White,
                                         )
+                                    }
+                                    if (remainingCount > 0) {
+                                        Box(
+                                            Modifier.fillMaxSize().background(Color.Black.copy(alpha = .5f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text("＋${remainingCount}枚", color = Color.White,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                     if (rowIndex == 0 && index == rowItems.lastIndex && onHideMedia != null) {
                                         MediaHideButton(onHideMedia, Modifier.align(Alignment.TopEnd))

@@ -28,6 +28,8 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -39,6 +41,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
@@ -54,6 +57,82 @@ class MediaThumbnailDeviceTest {
     private val files = mutableListOf<File>()
 
     @After fun cleanup() { files.forEach { it.delete() } }
+
+    @Test
+    fun overflowOpensFirstHiddenImageAndPassesAllAttachments() {
+        val url = image(400, 300)
+        val media = (1..8).map { attachment(url).copy(id = "image-$it", aspectRatio = 4f / 3f) }
+        val current = mutableStateOf(status(media.take(4)))
+        val size = mutableStateOf(ThumbnailSize.Standard)
+        val detail = mutableStateOf(false)
+        val opened = AtomicReference<Pair<List<MediaAttachment>, Int>>()
+        rule.setContent {
+            MaterialTheme {
+                Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
+                    StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
+                        onMediaClick = { items, index -> opened.set(items to index) },
+                        fullWidthContent = detail.value,
+                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                }
+            }
+        }
+        for (thumbnailSize in ThumbnailSize.entries) {
+            for (isDetail in listOf(false, true)) {
+                for (count in listOf(4, 5, 8)) {
+                    rule.runOnIdle {
+                        size.value = thumbnailSize
+                        detail.value = isDetail
+                        current.value = status(media.take(count))
+                    }
+                    val thumbnails = rule.onAllNodesWithTag("media_attachment")
+                    assertEquals(4, thumbnails.fetchSemanticsNodes().size)
+                    if (count > 4) rule.onNodeWithText("＋${count - 4}枚").assertExists()
+                    else rule.onNodeWithText("＋1枚").assertDoesNotExist()
+                    for (index in 0..3) {
+                        thumbnails[index].performScrollTo().performClick()
+                        rule.runOnIdle {
+                            assertEquals(media.take(count), opened.get().first)
+                            assertEquals(if (index == 3 && count > 4) 4 else index, opened.get().second)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun sensitiveOverflowStaysHiddenAndViewerCanReachEveryImage() {
+        val url = image(400, 300)
+        val media = (1..8).map { attachment(url).copy(id = "image-$it", aspectRatio = 4f / 3f) }
+        val opened = mutableStateOf<Pair<List<MediaAttachment>, Int>?>(null)
+        rule.setContent {
+            MaterialTheme {
+                val selection = opened.value
+                if (selection != null) {
+                    MediaViewerScreen(selection.first, selection.second, { opened.value = null })
+                } else {
+                    Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
+                        StatusCard(status(media).copy(sensitive = true), onStatusClick = null,
+                            onUnavailableAction = {}, onMediaClick = { items, index -> opened.value = items to index })
+                    }
+                }
+            }
+        }
+        rule.onNodeWithText("＋4枚").assertDoesNotExist()
+        rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        rule.onNodeWithText("非表示").performClick()
+        rule.onNodeWithText("＋4枚").assertDoesNotExist()
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        rule.onNodeWithText("＋4枚").performScrollTo().performClick()
+        rule.onNodeWithText("5 / 8").assertExists()
+        repeat(3) { rule.onNodeWithTag("media_viewer").performTouchInput { swipeLeft() } }
+        rule.onNodeWithText("8 / 8").assertExists()
+        repeat(7) { rule.onNodeWithTag("media_viewer").performTouchInput { swipeRight() } }
+        rule.onNodeWithText("1 / 8").assertExists()
+        rule.onNodeWithContentDescription("閉じる").performClick()
+        rule.onNodeWithTag("media_viewer").assertDoesNotExist()
+    }
 
     @Test
     fun hiddenMediaKeepsRevealedFootprintAcrossThumbnailSizesAndLayouts() {
