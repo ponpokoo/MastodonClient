@@ -2,6 +2,8 @@ package io.github.ponpokoo.mastodonclient.feature.notifications
 
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNotice
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.status.spValue
 import io.github.ponpokoo.mastodonclient.feature.status.lineHeightSp
 import io.github.ponpokoo.mastodonclient.feature.common.MessageContent
@@ -107,11 +109,11 @@ internal fun NotificationsContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
-    onQuote: (TimelineStatus, QuoteMode) -> Unit = { _, _ -> },
+    onQuote: ((TimelineStatus, QuoteMode) -> Unit)? = null,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
     onReact: (TimelineStatus, String?) -> Unit,
-    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
+    onVotePoll: ((TimelineStatus, Set<Int>) -> Unit)? = null,
     onMoreClick: (TimelineStatus) -> Unit = {},
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
@@ -237,18 +239,18 @@ internal fun NotificationsContent(
                                 onAuthorClick = onAccountClick,
                                 onMediaClick = onMediaClick,
                                 onOpenLink = onOpenLink,
-                                onReply = { onReply(status) },
-                                onBoost = { onBoost(status) },
-                                onQuote = { mode -> onQuote(status, mode) },
-                                onFavourite = { onFavourite(status) },
-                                onBookmark = { onBookmark(status) },
-                                onReact = { onReact(status, it) },
-                                onVotePoll = { choices -> onVotePoll(status, choices) },
+                                actions = StatusActions(
+                                    onReply = onReply,
+                                    onBoost = onBoost,
+                                    onQuote = onQuote,
+                                    onFavourite = onFavourite,
+                                    onBookmark = onBookmark,
+                                    onReact = onReact,
+                                    onVotePoll = onVotePoll,
+                                ),
                                 onMoreClick = onMoreClick,
                                 onUnavailableAction = {},
-                                displayPreferences = preferences.timelineDisplay,
-                                gifAutoplay = preferences.gifAutoplay,
-                                videoAutoplay = preferences.videoAutoplay,
+                                preferences = preferences.toStatusDisplayPreferences(),
                             )
                         } else {
                             if (row.grouped) GroupedNotificationHeader(row, onAccountClick, preferences.timelineDisplay.avatarIconShape)

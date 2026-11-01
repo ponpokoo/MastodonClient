@@ -129,18 +129,20 @@ fun SavedTimelinesScreen(
                                     onAccountClick = onAccountClick,
                                     onMediaClick = onMediaClick,
                                     onOpenLink = onOpenLink,
-                                    onReply = { onReply(it.statusId) },
-                                    onBoost = actionsViewModel::toggleReblog,
-                                    onFavourite = actionsViewModel::toggleFavourite,
-                                    onBookmark = actionsViewModel::toggleBookmark,
-                                    onReact = actionsViewModel::setReaction,
-                                    onVotePoll = actionsViewModel::votePoll,
-                                    onQuote = onQuote,
+                                    actions = StatusActions(
+                                        onReply = { onReply(it.statusId) },
+                                        onBoost = actionsViewModel::toggleReblog,
+                                        onFavourite = actionsViewModel::toggleFavourite,
+                                        onBookmark = actionsViewModel::toggleBookmark,
+                                        onReact = actionsViewModel::setReaction,
+                                        onVotePoll = actionsViewModel::votePoll,
+                                        onQuote = onQuote,
+                                    ),
                                     onMoreClick = {
                                         if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
                                         menuStatus = it
                                     },
-                                    preferences = preferences,
+                                    preferences = preferences.toStatusDisplayPreferences(),
                                 )
                             }
                         }

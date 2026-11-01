@@ -56,6 +56,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.test.doubleClick
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
+import io.github.ponpokoo.mastodonclient.feature.status.StatusDisplayPreferences
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
@@ -417,7 +420,7 @@ class VideoPlaybackDeviceTest {
                 author = StatusAuthor("author", "Example", "example", ""), boostedBy = null,
                 contentHtml = "", spoilerText = "", sensitive = false, visibility = "public", url = null,
                 repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = listOf(media),
-            ), onStatusClick = null, onUnavailableAction = {}, gifAutoplay = AutoplayPolicy.Always)
+            ), onStatusClick = null, onUnavailableAction = {}, preferences = AppPreferences(gifAutoplay = AutoplayPolicy.Always).toStatusDisplayPreferences())
         } }
         waitForPlayback()
         // The one-second clip must continue past its first playback.
@@ -438,7 +441,7 @@ class VideoPlaybackDeviceTest {
                 author = StatusAuthor("author", "Example", "example", ""), boostedBy = null,
                 contentHtml = "", spoilerText = "", sensitive = false, visibility = "public", url = null,
                 repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = listOf(media),
-            ), onStatusClick = null, onUnavailableAction = {}, videoAutoplay = AutoplayPolicy.Always,
+            ), onStatusClick = null, onUnavailableAction = {}, preferences = AppPreferences(videoAutoplay = AutoplayPolicy.Always).toStatusDisplayPreferences(),
                 onMediaClick = { _, _ -> viewerOpens++ })
         } }
         waitForPlayback()
@@ -462,7 +465,7 @@ class VideoPlaybackDeviceTest {
                 author = StatusAuthor("author", "Example", "example", ""), boostedBy = null,
                 contentHtml = "", spoilerText = "", sensitive = false, visibility = "public", url = null,
                 repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = listOf(media),
-            ), onStatusClick = null, onUnavailableAction = {}, gifAutoplay = AutoplayPolicy.Always)
+            ), onStatusClick = null, onUnavailableAction = {}, preferences = StatusDisplayPreferences(gifAutoplay = AutoplayPolicy.Always))
         } }
         waitForPlayback()
         rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
@@ -485,8 +488,8 @@ class VideoPlaybackDeviceTest {
                 author = StatusAuthor("author", "Example", "example", ""), boostedBy = null,
                 contentHtml = "", spoilerText = "", sensitive = false, visibility = "public", url = null,
                 repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = listOf(media),
-            ), onStatusClick = null, onUnavailableAction = {}, gifAutoplay = AutoplayPolicy.Always,
-                videoAutoplay = AutoplayPolicy.Always,
+            ), onStatusClick = null, onUnavailableAction = {}, preferences = StatusDisplayPreferences(
+                gifAutoplay = AutoplayPolicy.Always, videoAutoplay = AutoplayPolicy.Always),
                 onMediaClick = { items, index -> motion.open(items, index, "standalone", "standalone") })
         } } }
         waitForPlayback()

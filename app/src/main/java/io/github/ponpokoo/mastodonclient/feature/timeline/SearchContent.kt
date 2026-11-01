@@ -1,6 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
 import io.github.ponpokoo.mastodonclient.feature.status.SocialStatus
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.profile.AccountResult
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
@@ -70,9 +72,9 @@ internal fun SearchContent(
     onBoost: (TimelineStatus) -> Unit,
     onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
-    onBookmark: (TimelineStatus) -> Unit = {},
+    onBookmark: ((TimelineStatus) -> Unit)? = null,
     onReact: (TimelineStatus, String?) -> Unit,
-    onVotePoll: (TimelineStatus, Set<Int>) -> Unit = { _, _ -> },
+    onVotePoll: ((TimelineStatus, Set<Int>) -> Unit)? = null,
     onAccountClick: (String) -> Unit,
     onMediaClick: (List<MediaAttachment>, Int) -> Unit,
     onMoreClick: (TimelineStatus) -> Unit,
@@ -145,8 +147,21 @@ internal fun SearchContent(
                                 HorizontalDivider()
                             }
                             SearchTarget.Posts -> items(results.statuses, key = { it.timelineId }) { status -> SocialStatus(
-                                status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,
-                                onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
+                                status = status,
+                                onStatusClick = onStatusClick,
+                                onOpenLink = onOpenLink,
+                                actions = StatusActions(
+                                    onReply = onReply,
+                                    onBoost = onBoost,
+                                    onQuote = onQuote,
+                                    onFavourite = onFavourite,
+                                    onBookmark = onBookmark,
+                                    onReact = onReact,
+                                    onVotePoll = onVotePoll,
+                                ),
+                                onAccountClick = onAccountClick,
+                                onMediaClick = onMediaClick,
+                                preferences = preferences.toStatusDisplayPreferences(),
                                 onMoreClick = onMoreClick,
                             ) }
                         }
@@ -173,9 +188,24 @@ internal fun SearchContent(
         } else if (state.isSearchActive) MessageContent("キーワード、ユーザー名、URLを入力してください")
         else ExploreContent(exploreState, onSelectExploreFeed, onRefreshExplore, onLoadMoreExplore, onRetryExplore,
             onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxWidth().weight(1f), post = { status ->
-                SocialStatus(status, onStatusClick, onOpenLink, onReply, onBoost, onQuote, onFavourite,
-                    onBookmark, onReact, onVotePoll, onAccountClick, onMediaClick, preferences,
-                    onMoreClick = onMoreClick)
+                SocialStatus(
+                    status = status,
+                    onStatusClick = onStatusClick,
+                    onOpenLink = onOpenLink,
+                    actions = StatusActions(
+                        onReply = onReply,
+                        onBoost = onBoost,
+                        onQuote = onQuote,
+                        onFavourite = onFavourite,
+                        onBookmark = onBookmark,
+                        onReact = onReact,
+                        onVotePoll = onVotePoll,
+                    ),
+                    onAccountClick = onAccountClick,
+                    onMediaClick = onMediaClick,
+                    preferences = preferences.toStatusDisplayPreferences(),
+                    onMoreClick = onMoreClick,
+                )
             }, onFindTags = {
                 onSelectTarget(SearchTarget.Hashtags)
                 onEnterSearch()

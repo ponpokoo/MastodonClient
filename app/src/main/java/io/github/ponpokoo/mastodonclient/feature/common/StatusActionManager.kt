@@ -41,7 +41,7 @@ class StatusActionManager(private val repository: TimelineRepository) {
     fun beginReblog(session: AccountSession, status: TimelineStatus): PendingStatusAction? =
         begin(session, status, OptimisticStatusAction.Reblog)
 
-    suspend fun complete(action: PendingStatusAction): Result<TimelineStatus> {
+    suspend fun complete(action: PendingStatusAction, shouldPublish: () -> Boolean = { true }): Result<TimelineStatus> {
         val key = action.key()
         return try {
             val result = when (action.action) {
@@ -56,13 +56,13 @@ class StatusActionManager(private val repository: TimelineRepository) {
                     action.optimistic.reblogged,
                 )
             }
-            emit(action.session, action.action, result.getOrElse { action.original })
+            if (shouldPublish()) emit(action.session, action.action, result.getOrElse { action.original })
             result
         } catch (error: CancellationException) {
-            emit(action.session, action.action, action.original)
+            if (shouldPublish()) emit(action.session, action.action, action.original)
             throw error
         } catch (error: Throwable) {
-            emit(action.session, action.action, action.original)
+            if (shouldPublish()) emit(action.session, action.action, action.original)
             Result.failure(error)
         } finally {
             synchronized(pending) { pending.remove(key) }

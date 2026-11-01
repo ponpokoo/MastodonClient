@@ -50,6 +50,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
@@ -139,27 +141,34 @@ fun HashtagTimelineScreen(
             ) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(state.statuses, key = { it.timelineId }) { status ->
-                        StatusCard(
-                            status = status,
-                            onStatusClick = onStatusClick,
-                            onAuthorClick = onAccountClick,
-                            onMediaClick = onMediaClick,
-                            onOpenLink = onOpenLink,
-                            onReply = { onReply(status.statusId) },
-                            onBoost = { viewModel.toggleReblog(status) },
-                            onQuote = { mode -> onQuote(status, mode) },
-                            onFavourite = { viewModel.toggleFavourite(status) },
-                            onReact = { viewModel.setReaction(status, it) },
-                            onUnavailableAction = {},
-                            onMoreClick = {
-                                if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
-                                menuStatus = it
-                            },
-                            displayPreferences = preferences.timelineDisplay,
-                            gifAutoplay = preferences.gifAutoplay,
-                            videoAutoplay = preferences.videoAutoplay,
-                            useTimelineImagePreviews = true,
-                        )
+                        androidx.compose.runtime.CompositionLocalProvider(
+                            io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
+                                io.github.ponpokoo.mastodonclient.feature.status.PollVoteUiState(state.sessionKey, actionsState.votingPollIds),
+                        ) {
+                            StatusCard(
+                                status = status,
+                                onStatusClick = onStatusClick,
+                                onAuthorClick = onAccountClick,
+                                onMediaClick = onMediaClick,
+                                onOpenLink = onOpenLink,
+                                actions = StatusActions(
+                                    onReply = { onReply(it.statusId) },
+                                    onBoost = viewModel::toggleReblog,
+                                    onQuote = onQuote,
+                                    onFavourite = viewModel::toggleFavourite,
+                                    onReact = viewModel::setReaction,
+                                    onBookmark = actionsViewModel::toggleBookmark,
+                                    onVotePoll = actionsViewModel::votePoll,
+                                ),
+                                onUnavailableAction = {},
+                                onMoreClick = {
+                                    if (it.author.id != currentAccountId) actionsViewModel.loadModerationMenu(it.author.id)
+                                    menuStatus = it
+                                },
+                                preferences = preferences.toStatusDisplayPreferences(),
+                                useTimelineImagePreviews = true,
+                            )
+                        }
                         HorizontalDivider()
                     }
                     if (state.isLoadingMore) {

@@ -41,11 +41,12 @@ class RequestFailureViewModelTest : ScreenViewModelTestBase() {
             }
             advanceUntilIdle()
             profiles.forEach { it.loadProfile(); it.toggleBookmark(testStatus()) }
-            notifications.onNotificationsVisible(); actions.toggleBookmark(testStatus()); detail.setReaction("smile")
+            notifications.onNotificationsVisible(); actions.toggleBookmark(testStatus()); detail.setReaction(testStatus(), "smile")
             advanceUntilIdle()
             assertTrue(notifications.uiState.value.notificationsError.orEmpty().contains("もう一度ログイン"))
             assertTrue(actions.uiState.value.actionMessage.orEmpty().contains("もう一度ログイン"))
-            assertTrue(detail.uiState.value.errorMessage.orEmpty().contains("もう一度ログイン"))
+            assertTrue(detail.uiState.value.actionMessage.orEmpty().contains("もう一度ログイン"))
+            assertNull(detail.uiState.value.errorMessage)
             assertFalse(actions.uiState.value.actionMessage.orEmpty().contains("cause"))
             profiles.forEach { profile ->
                 assertTrue(profile.uiState.value.message.orEmpty().contains("もう一度ログイン"))

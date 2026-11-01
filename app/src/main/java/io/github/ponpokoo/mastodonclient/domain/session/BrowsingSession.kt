@@ -45,4 +45,5 @@ fun TimelineStatus.withUpdatedActions(updated: TimelineStatus): TimelineStatus =
         bookmarked = updated.bookmarked,
         pinned = updated.pinned,
         reactions = updated.reactions,
+        poll = updated.poll,
     )

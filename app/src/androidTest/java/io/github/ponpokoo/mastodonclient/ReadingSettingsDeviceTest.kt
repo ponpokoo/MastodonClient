@@ -31,6 +31,39 @@ import org.junit.Test
 class ReadingSettingsDeviceTest {
     @get:Rule val rule = createComposeRule()
 
+    @Test fun manualMediaChoiceSurvivesCwAndBodyFilterRefolding() {
+        val current = mutableStateOf(post.copy(spoilerText = "注意文", sensitive = true))
+        val reading = mutableStateOf(ReadingSettings("a", ReadingPreferences(MediaDisplay.ShowAll, true)))
+        rule.setContent { MaterialTheme {
+            CompositionLocalProvider(LocalReadingSettings provides reading.value) {
+                StatusCard(current.value, onStatusClick = null, onUnavailableAction = {})
+            }
+        } }
+        rule.onNodeWithText("非表示").performClick()
+        rule.onNodeWithText("注意文").performClick()
+        rule.onNodeWithText("注意文").performClick()
+        rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+        rule.onNodeWithText("閲覧注意のメディアを表示").performClick()
+        rule.runOnIdle {
+            reading.value = reading.value.copy(preferences = ReadingPreferences(MediaDisplay.HideAll, true))
+        }
+        rule.onNodeWithText("注意文").performClick()
+        rule.onNodeWithText("注意文").performClick()
+        rule.onNodeWithTag("media_attachment").assertExists()
+        rule.runOnIdle {
+            current.value = current.value.copy(filterDisplay = FilterPresentation(
+                warnings = listOf(ServerFilter("warning", "警告", setOf("home"))),
+            ))
+        }
+        rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+        rule.onNodeWithTag("filter_reveal").performClick()
+        rule.onNodeWithTag("media_attachment").assertExists()
+        rule.onNodeWithTag("filter_reveal").performClick()
+        rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+        rule.onNodeWithTag("filter_reveal").performClick()
+        rule.onNodeWithTag("media_attachment").assertExists()
+    }
+
     @Test fun mediaAndCwChoicesPersistPerAccountIndependentlyOfServerCacheUpdates() {
         val data = object : DataStore<Preferences> {
             override val data = MutableStateFlow(emptyPreferences())

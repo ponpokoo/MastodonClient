@@ -31,6 +31,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusMention
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
+import io.github.ponpokoo.mastodonclient.feature.status.StatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -75,8 +79,14 @@ class StatusInteractionDeviceTest {
                 androidx.compose.runtime.CompositionLocalProvider(
                     io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities provides capabilities.value,
                 ) {
-                    StatusCard(status = status().copy(reactions = listOf(EmojiReaction("👍", 1, false, null, emptySet()))),
-                        onStatusClick = null, onReact = { reactions++ }, onUnavailableAction = {})
+                    StatusCard(
+                        status = status().copy(reactions = listOf(EmojiReaction("👍", 1, false, null, emptySet()))),
+                        onStatusClick = null,
+                        actions = StatusActions(
+                            onReact = { _, it -> reactions++ },
+                        ),
+                        onUnavailableAction = {},
+                    )
                 }
             }
         }
@@ -150,24 +160,34 @@ class StatusInteractionDeviceTest {
 
     @Test
     fun reactionVisibilityCanBeToggledWithoutHidingTheActionButton() {
-        val display = mutableStateOf(io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences())
+        val preferences = mutableStateOf(AppPreferences())
         showContent {
             MaterialTheme {
                 StatusCard(
                     status = status().copy(
                         reactions = listOf(EmojiReaction("👍", 2, false, null, emptySet()))),
                     onStatusClick = null,
-                    onReact = {},
+                    actions = StatusActions(
+                        onReact = { _, it ->  },
+                    ),
                     onUnavailableAction = {},
-                    displayPreferences = display.value,
+                    preferences = preferences.value.toStatusDisplayPreferences(),
                 )
             }
         }
         composeRule.onNodeWithTag("displayed_reaction").assertExists()
-        composeRule.runOnIdle { display.value = display.value.copy(showReactions = false) }
+        composeRule.runOnIdle {
+            preferences.value = preferences.value.copy(
+                timelineDisplay = preferences.value.timelineDisplay.copy(showReactions = false),
+            )
+        }
         composeRule.onNodeWithTag("displayed_reaction").assertDoesNotExist()
         composeRule.onNodeWithContentDescription("リアクション").assertExists()
-        composeRule.runOnIdle { display.value = display.value.copy(showReactions = true) }
+        composeRule.runOnIdle {
+            preferences.value = preferences.value.copy(
+                timelineDisplay = preferences.value.timelineDisplay.copy(showReactions = true),
+            )
+        }
         composeRule.onNodeWithTag("displayed_reaction").assertExists()
     }
 
@@ -182,10 +202,14 @@ class StatusInteractionDeviceTest {
                     StatusCard(
                         status = status().copy(favouritesCount = 12),
                         onStatusClick = null,
-                        onFavourite = { favourites.incrementAndGet() },
+                        actions = StatusActions(
+                            onFavourite = { _ -> favourites.incrementAndGet() },
+                        ),
                         onUnavailableAction = {},
-                        displayPreferences = io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences(
-                            actionIconSize = iconSize.value,
+                        preferences = StatusDisplayPreferences(
+                            timelineDisplay = io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPreferences(
+                                actionIconSize = iconSize.value,
+                            ),
                         ),
                     )
                 }
@@ -259,7 +283,9 @@ class StatusInteractionDeviceTest {
                     StatusCard(
                         status = status().copy(favouritesCount = 1),
                         onStatusClick = null,
-                        onFavourite = { favourites.incrementAndGet() },
+                        actions = StatusActions(
+                            onFavourite = { _ -> favourites.incrementAndGet() },
+                        ),
                         onUnavailableAction = {},
                     )
                 }
@@ -284,7 +310,9 @@ class StatusInteractionDeviceTest {
                     status = status().copy(reactions = listOf(EmojiReaction("custom", 2, false,
                         "https://example.social/custom.png", emptySet(), domain = "misskey.example"))),
                     onStatusClick = null,
-                    onReact = sentReaction::set,
+                    actions = StatusActions(
+                        onReact = { _, value -> sentReaction.set(value) },
+                    ),
                     onReactionLongPress = { listedReaction.set(it.name) },
                     onUnavailableAction = {},
                 )
@@ -315,7 +343,9 @@ class StatusInteractionDeviceTest {
                     StatusCard(
                         status = status(),
                         onStatusClick = null,
-                        onReact = sentReaction::set,
+                        actions = StatusActions(
+                            onReact = { _, value -> sentReaction.set(value) },
+                        ),
                         onUnavailableAction = {},
                     )
                 }
@@ -346,7 +376,9 @@ class StatusInteractionDeviceTest {
                     StatusCard(
                         status = status(),
                         onStatusClick = null,
-                        onReact = {},
+                        actions = StatusActions(
+                            onReact = { _, it ->  },
+                        ),
                         onUnavailableAction = {},
                     )
                 }
@@ -447,8 +479,10 @@ class StatusInteractionDeviceTest {
                 StatusCard(
                     status = status(),
                     onStatusClick = null,
-                    onBoost = { boosts.incrementAndGet() },
-                    onQuote = quoteMode::set,
+                    actions = StatusActions(
+                        onBoost = { _ -> boosts.incrementAndGet() },
+                        onQuote = { _, value -> quoteMode.set(value) },
+                    ),
                     onUnavailableAction = {},
                 )
             }
@@ -476,8 +510,14 @@ class StatusInteractionDeviceTest {
         val quoteMode = AtomicReference<QuoteMode?>(null)
         showContent {
             MaterialTheme {
-                StatusCard(status = status().copy(quoteApproval = null), onStatusClick = null,
-                    onQuote = quoteMode::set, onUnavailableAction = {})
+                StatusCard(
+                    status = status().copy(quoteApproval = null),
+                    onStatusClick = null,
+                    actions = StatusActions(
+                        onQuote = { _, value -> quoteMode.set(value) },
+                    ),
+                    onUnavailableAction = {},
+                )
             }
         }
         composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
@@ -493,8 +533,14 @@ class StatusInteractionDeviceTest {
         val quoteMode = AtomicReference<QuoteMode?>(null)
         showContent {
             MaterialTheme {
-                StatusCard(status = status().copy(quoteApproval = approval.value), onStatusClick = null,
-                    onQuote = quoteMode::set, onUnavailableAction = {})
+                StatusCard(
+                    status = status().copy(quoteApproval = approval.value),
+                    onStatusClick = null,
+                    actions = StatusActions(
+                        onQuote = { _, value -> quoteMode.set(value) },
+                    ),
+                    onUnavailableAction = {},
+                )
             }
         }
         composeRule.onNodeWithContentDescription("ブースト（長押しで引用を選択）")
@@ -521,7 +567,9 @@ class StatusInteractionDeviceTest {
                 StatusCard(
                     status = status().copy(visibility = "private"),
                     onStatusClick = null,
-                    onBoost = { boosts.incrementAndGet() },
+                    actions = StatusActions(
+                        onBoost = { _ -> boosts.incrementAndGet() },
+                    ),
                     onUnavailableAction = {},
                     fullWidthContent = isDetail.value,
                 )

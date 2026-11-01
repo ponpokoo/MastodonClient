@@ -15,6 +15,8 @@ import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.NotificationNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNoticeStack
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.status.StatusMenuDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
@@ -1019,18 +1021,18 @@ internal fun TimelineContent(
                         onAuthorClick = onAccountClick,
                         onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,
-                        onReply = { onReply(status) },
-                        onBoost = { onBoost(status) },
-                        onQuote = { mode -> onQuote(status, mode) },
-                        onFavourite = { onFavourite(status) },
-                        onBookmark = { onBookmark(status) },
-                        onReact = { emoji -> onReact(status, emoji) },
-                        onVotePoll = { choices -> onVotePoll(status, choices) },
+                        actions = StatusActions(
+                            onReply = onReply,
+                            onBoost = onBoost,
+                            onQuote = onQuote,
+                            onFavourite = onFavourite,
+                            onBookmark = onBookmark,
+                            onReact = onReact,
+                            onVotePoll = onVotePoll,
+                        ),
                         onMoreClick = onMoreClick,
                         onUnavailableAction = onUnavailableAction,
-                        displayPreferences = preferences.timelineDisplay,
-                        gifAutoplay = preferences.gifAutoplay,
-                        videoAutoplay = preferences.videoAutoplay,
+                        preferences = preferences.toStatusDisplayPreferences(),
                         useTimelineImagePreviews = true,
                         reactionPickerMotion = EmojiPickerSheetMotion.Standard,
                     )

@@ -41,6 +41,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
+import io.github.ponpokoo.mastodonclient.feature.status.StatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.media.MediaViewerScreen
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import java.io.File
@@ -72,7 +74,7 @@ class MediaThumbnailDeviceTest {
                     StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
                         onMediaClick = { items, index -> opened.set(items to index) },
                         fullWidthContent = detail.value,
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = size.value)))
                 }
             }
         }
@@ -147,7 +149,7 @@ class MediaThumbnailDeviceTest {
                 Column(Modifier.width(360.dp).verticalScroll(rememberScrollState())) {
                     StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
                         fullWidthContent = detail.value,
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = size.value)))
                 }
             }
         }
@@ -262,7 +264,7 @@ class MediaThumbnailDeviceTest {
                     StatusCard(status(listOf(media.value)).copy(previewCard = PreviewCard(
                         "https://example.com", "Width reference", "", "link", "", null, null)),
                         onStatusClick = null, onUnavailableAction = {},
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value),
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = size.value)),
                         onMediaClick = { items, index -> opened.set(items to index) })
                 }
             }
@@ -304,7 +306,7 @@ class MediaThumbnailDeviceTest {
                             "https://example.com", "Width reference", "", "link", "", null, null)),
                         onStatusClick = null,
                         onUnavailableAction = {},
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard),
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard)),
                         fullWidthContent = detail.value,
                         onMediaClick = { items, index -> opened.set(items to index) },
                     )
@@ -346,7 +348,7 @@ class MediaThumbnailDeviceTest {
                     StatusCard(status(media).copy(previewCard = PreviewCard(
                         "https://example.com", "Width reference", "", "link", "", null, null)),
                         onStatusClick = null, onUnavailableAction = {},
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = size.value))
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = size.value)))
                 }
             }
         }
@@ -391,7 +393,7 @@ class MediaThumbnailDeviceTest {
                     StatusCard(status(media.value).copy(previewCard = PreviewCard(
                         "https://example.com", "Width reference", "", "link", "", null, null)),
                         onStatusClick = null, onUnavailableAction = {},
-                        displayPreferences = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard),
+                        preferences = StatusDisplayPreferences(timelineDisplay = TimelineDisplayPreferences(thumbnailSize = ThumbnailSize.Standard)),
                         onMediaClick = { items, index -> opened.set(items to index) })
                 }
             }
@@ -501,11 +503,17 @@ class MediaThumbnailDeviceTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale.value)) {
                 MastodonClientTheme(themeMode = theme.value) {
                     Column(Modifier.width(320.dp).fillMaxHeight().verticalScroll(rememberScrollState())) {
-                        StatusCard(current.value, onStatusClick = null, onUnavailableAction = {},
+                        StatusCard(
+                            current.value,
+                            onStatusClick = null,
+                            onUnavailableAction = {},
                             fullWidthContent = detail.value,
-                            onFavourite = { favourites.incrementAndGet() },
+                            actions = StatusActions(
+                                onFavourite = { _ -> favourites.incrementAndGet() },
+                            ),
                             onMediaClick = { _, _ -> openedContent.incrementAndGet() },
-                            onOpenLink = { openedContent.incrementAndGet() })
+                            onOpenLink = { openedContent.incrementAndGet() },
+                        )
                     }
                 }
             }

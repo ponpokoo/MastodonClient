@@ -467,6 +467,7 @@ fun AppNavigation(
                     timelineRepository,
                     authRepository,
                     statusActionManager,
+                    browsing = mainSessionModel?.browsing,
                 ),
             )
             StatusDetailScreen(

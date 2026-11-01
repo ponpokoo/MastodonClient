@@ -12,11 +12,18 @@ import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +41,8 @@ data class StatusDetailUiState(
     val isLoadingLists: Boolean = false,
     val actionMessage: String? = null,
     val isDeleted: Boolean = false,
-    val isVotingPoll: Boolean = false,
+    val votingPollIds: Set<String> = emptySet(),
+    val sessionKey: String? = null,
 )
 
 class StatusDetailViewModel(
@@ -42,12 +50,15 @@ class StatusDetailViewModel(
     private val timelineRepository: TimelineRepository,
     private val authRepository: AuthRepository,
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+    private val browsing: BrowsingSession? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StatusDetailUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
         state.withModeration(moderation, account)
     }
     private var session: AccountSession? = null
+    private val actionJob = SupervisorJob(viewModelScope.coroutineContext[Job])
+    private val actionScope = CoroutineScope(viewModelScope.coroutineContext + actionJob)
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
         session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
@@ -55,6 +66,16 @@ class StatusDetailViewModel(
     val moderationMenuState = moderationMenu.state
     fun loadModerationMenu(accountId: String?) = moderationMenu.load(accountId)
     init {
+        browsing?.let { browsing ->
+            viewModelScope.launch {
+                browsing.snapshot.drop(1).collect {
+                    actionJob.cancelChildren()
+                    session = null
+                    _uiState.value = StatusDetailUiState()
+                    load()
+                }
+            }
+        }
         io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, timelineRepository, { session }, "detail:$statusId") {
             _uiState.first { !it.isLoading }; load().join()
             _uiState.value.errorMessage == null
@@ -62,9 +83,13 @@ class StatusDetailViewModel(
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
                 val current = session ?: return@collect
-                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl) {
+                val snapshot = browsing?.snapshot?.value
+                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl &&
+                    current.hasSameCredentials(authRepository.restoreSession()) &&
+                    snapshot == browsing?.snapshot?.value &&
+                    (browsing == null || current.hasSameCredentials(browsing.snapshot.value.account))) {
                     _uiState.update { state -> state.copy(
-                        detail = state.detail?.copy(status = state.detail.status.withStatusActionUpdate(update)),
+                        detail = state.detail?.mapStatuses { it.withStatusActionUpdate(update) },
                     ) }
                 }
             }
@@ -77,35 +102,41 @@ class StatusDetailViewModel(
         if (!_uiState.value.isLoading) load()
     }
 
-    fun toggleFavourite() = runOptimisticAction(statusActionManager::beginFavourite)
+    fun toggleFavourite(status: TimelineStatus) = runOptimisticAction(status, statusActionManager::beginFavourite)
 
-    fun toggleReblog() = runOptimisticAction(statusActionManager::beginReblog)
+    fun toggleReblog(status: TimelineStatus) = runOptimisticAction(status, statusActionManager::beginReblog)
 
-    fun setReaction(emoji: String?) = mutateStatus { current, status ->
-        timelineRepository.setFedibirdReaction(current, status.statusId, emoji)
-    }
+    fun toggleBookmark(status: TimelineStatus) = mutateStatus(
+        status, update = { displayed, updated -> displayed.copy(bookmarked = updated.bookmarked) },
+    ) { current, target -> timelineRepository.setBookmarked(current, target.statusId, !target.bookmarked) }
 
-    fun votePoll(choices: Set<Int>) {
+    fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus(
+        status, update = { displayed, updated -> displayed.copy(reactions = updated.reactions) },
+    ) { current, target -> timelineRepository.setFedibirdReaction(current, target.statusId, emoji) }
+
+    fun votePoll(status: TimelineStatus, choices: Set<Int>) {
         val current = session ?: return
-        val poll = _uiState.value.detail?.status?.poll ?: return
-        if (_uiState.value.isVotingPoll || choices.isEmpty() || poll.expired || poll.voted == true) return
-        _uiState.update { it.copy(isVotingPoll = true) }
-        viewModelScope.launch {
+        val target = findStatus(status.statusId) ?: return
+        val poll = target.poll ?: return
+        if (poll.id in _uiState.value.votingPollIds || choices.isEmpty() || poll.expired || poll.voted == true) return
+        val snapshot = browsing?.snapshot?.value
+        _uiState.update { it.copy(votingPollIds = it.votingPollIds + poll.id) }
+        actionScope.launch {
             try {
-                val result = timelineRepository.votePoll(current, statusId, poll.id, choices)
-                kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                if (!current.hasSameCredentials(authRepository.restoreSession())) return@launch
+                if (!isCurrentAction(current, snapshot)) return@launch
+                val result = timelineRepository.votePoll(current, target.statusId, poll.id, choices)
+                if (!isCurrentAction(current, snapshot)) return@launch
                 result.fold(
-                    onSuccess = { updated -> _uiState.update { it.copy(detail = it.detail?.copy(status = updated), actionMessage = "投票しました") } },
-                    onFailure = { error ->
-                        showActionError(error, "投票できませんでした。もう一度お試しください")
-                        if (error.requiresAuthentication) _uiState.update {
-                            it.copy(actionMessage = "もう一度ログインして、必要な権限を許可してください。")
-                        }
+                    onSuccess = { updated ->
+                        updateStatus(target.statusId) { it.copy(poll = updated.poll) }
+                        _uiState.update { it.copy(actionMessage = "投票しました") }
                     },
+                    onFailure = { showActionError(it, "投票できませんでした。もう一度お試しください") },
                 )
             } finally {
-                _uiState.update { it.copy(isVotingPoll = false) }
+                if (snapshot == browsing?.snapshot?.value) {
+                    _uiState.update { it.copy(votingPollIds = it.votingPollIds - poll.id) }
+                }
             }
         }
     }
@@ -175,65 +206,90 @@ class StatusDetailViewModel(
     }
 
     private fun showActionError(error: Throwable, fallback: String) {
-        _uiState.update { it.copy(actionMessage = error.message ?: fallback) }
+        if (error is CancellationException) throw error
+        _uiState.update { it.copy(actionMessage = if (error.requiresAuthentication) {
+            "もう一度ログインして、必要な権限を許可してください。"
+        } else error.message ?: fallback) }
     }
 
-    private fun load() = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val current = authRepository.restoreSession()
-            if (current == null) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "ログインし直してください") }
-                return@launch
-            }
-            session = current
-            _uiState.update { it.copy(currentAccountId = current.accountId) }
-            if (_uiState.value.detail == null) {
-                timelineRepository.getCachedStatus(current, statusId)?.let { cached ->
-                    _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) }
-                }
-            }
-            timelineRepository.getStatusDetail(current, statusId)
-                .onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(isLoading = false, errorMessage = error.message ?: "投稿を取得できませんでした")
-                    }
-                }
+    private fun load() = actionScope.launch {
+        val snapshot = browsing?.snapshot?.value
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        val current = authRepository.restoreSession()
+        if (current == null) {
+            _uiState.update { it.copy(isLoading = false, errorMessage = "ログインし直してください") }
+            return@launch
         }
+        if (!isCurrentAction(current, snapshot)) return@launch
+        session = current
+        _uiState.update { it.copy(currentAccountId = current.accountId,
+            sessionKey = "${current.sessionId}|${current.instanceUrl}|${snapshot?.generation}") }
+        if (_uiState.value.detail == null) {
+            val cached = timelineRepository.getCachedStatus(current, statusId)
+            if (!isCurrentAction(current, snapshot)) return@launch
+            cached?.let { _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) } }
+        }
+        val result = timelineRepository.getStatusDetail(current, statusId)
+        if (!isCurrentAction(current, snapshot)) return@launch
+        result.onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                _uiState.update { it.copy(isLoading = false, errorMessage = error.message ?: "投稿を取得できませんでした") }
+            }
+    }
+
+    private fun findStatus(id: String): TimelineStatus? {
+        val detail = _uiState.value.detail ?: return null
+        return sequenceOf(detail.status).plus(detail.ancestors).plus(detail.descendants).firstOrNull { it.statusId == id }
+    }
+
+    private fun updateStatus(id: String, transform: (TimelineStatus) -> TimelineStatus) {
+        _uiState.update { state -> state.copy(
+            detail = state.detail?.mapStatuses { if (it.statusId == id) transform(it) else it },
+        ) }
+    }
+
+    private suspend fun isCurrentAction(current: AccountSession, snapshot: BrowsingSession.Snapshot?): Boolean {
+        val restored = authRepository.restoreSession()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return snapshot == browsing?.snapshot?.value &&
+            (browsing == null || current.hasSameCredentials(snapshot?.account)) &&
+            current.hasSameCredentials(restored)
+    }
 
     private fun mutateStatus(
-        request: suspend (AccountSession, io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus) ->
-            Result<io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus>,
+        status: TimelineStatus,
+        update: (TimelineStatus, TimelineStatus) -> TimelineStatus,
+        request: suspend (AccountSession, TimelineStatus) -> Result<TimelineStatus>,
     ) {
-        val currentSession = session ?: return
-        val currentStatus = _uiState.value.detail?.status ?: return
-        viewModelScope.launch {
-            request(currentSession, currentStatus)
-                .onSuccess { updated ->
-                    _uiState.update { state ->
-                        state.copy(detail = state.detail?.copy(status = updated))
-                    }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(errorMessage = if (error.requiresAuthentication) {
-                            "もう一度ログインして、必要な権限を許可してください。"
-                        } else error.message ?: "投稿を更新できませんでした")
-                    }
-                }
+        val current = session ?: return
+        val snapshot = browsing?.snapshot?.value
+        actionScope.launch {
+            if (!isCurrentAction(current, snapshot)) return@launch
+            val target = findStatus(status.statusId) ?: return@launch
+            val result = request(current, target)
+            if (!isCurrentAction(current, snapshot)) return@launch
+            result.onSuccess { updated ->
+                updateStatus(target.statusId) { update(it, updated) }
+            }.onFailure { showActionError(it, "投稿を更新できませんでした") }
         }
     }
 
     private fun runOptimisticAction(
+        status: TimelineStatus,
         begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
     ) {
         val current = session ?: return
-        val status = _uiState.value.detail?.status ?: return
-        val pending = begin(current, status) ?: return
-        viewModelScope.launch {
-            statusActionManager.complete(pending).onFailure { error ->
-                showActionError(error, "投稿を更新できませんでした")
+        val snapshot = browsing?.snapshot?.value
+        actionScope.launch {
+            if (!isCurrentAction(current, snapshot)) return@launch
+            val target = findStatus(status.statusId) ?: return@launch
+            val pending = begin(current, target) ?: return@launch
+            val result = statusActionManager.complete(pending) {
+                snapshot == browsing?.snapshot?.value
             }
+            if (!isCurrentAction(current, snapshot)) return@launch
+            result.onFailure { showActionError(it, "投稿を更新できませんでした") }
         }
     }
 
@@ -242,9 +298,16 @@ class StatusDetailViewModel(
         private val timelineRepository: TimelineRepository,
         private val authRepository: AuthRepository,
         private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
+        private val browsing: BrowsingSession? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager) as T
+            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager, browsing) as T
     }
 }
+
+private fun StatusDetail.mapStatuses(transform: (TimelineStatus) -> TimelineStatus) = copy(
+    status = transform(status),
+    ancestors = ancestors.map(transform),
+    descendants = descendants.map(transform),
+)

@@ -24,6 +24,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.common.LocalServerCapabilities
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineContent
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineUiState
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
@@ -60,8 +61,14 @@ class HomeReactionPickerDeviceTest {
                             preferences = AppPreferences(),
                         )
                     } else {
-                        StatusCard(status = status, onStatusClick = null, onReact = { selection = it },
-                            onUnavailableAction = {})
+                        StatusCard(
+                            status = status,
+                            onStatusClick = null,
+                            actions = StatusActions(
+                                onReact = { _, it -> selection = it },
+                            ),
+                            onUnavailableAction = {},
+                        )
                     }
                 }
             }

@@ -78,6 +78,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
+import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import coil3.compose.AsyncImage
@@ -648,9 +649,7 @@ internal fun TimelineDisplayPreview(preferences: AppPreferences) {
             collapseLongContent = false,
             onStatusClick = null,
             onUnavailableAction = {},
-            displayPreferences = preferences.timelineDisplay,
-            gifAutoplay = preferences.gifAutoplay,
-            videoAutoplay = preferences.videoAutoplay,
+            preferences = preferences.toStatusDisplayPreferences(),
             authorAvatarResource = R.drawable.nagisa_launcher_art,
         )
     }
