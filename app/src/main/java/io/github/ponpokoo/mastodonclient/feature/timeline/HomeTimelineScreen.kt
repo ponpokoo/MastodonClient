@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerSheetMotion
 import io.github.ponpokoo.mastodonclient.feature.timeline.components.DraggableComposeFab
 import io.github.ponpokoo.mastodonclient.core.preferences.FabPositionStore
 import io.github.ponpokoo.mastodonclient.feature.media.LocalMediaSourceIsHome
@@ -1031,7 +1032,7 @@ internal fun TimelineContent(
                         gifAutoplay = preferences.gifAutoplay,
                         videoAutoplay = preferences.videoAutoplay,
                         useTimelineImagePreviews = true,
-                        reactionPickerMotion = ReactionPickerSheetMotion.Standard,
+                        reactionPickerMotion = EmojiPickerSheetMotion.Standard,
                     )
                     HorizontalDivider()
                 }

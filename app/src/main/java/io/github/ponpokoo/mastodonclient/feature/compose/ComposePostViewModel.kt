@@ -4,6 +4,10 @@ import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerConnection
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataSource
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerEmojis
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerState
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ComposeDraft
 import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
@@ -30,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
@@ -135,6 +140,7 @@ class ComposePostViewModel(
     private var postingJob: Job? = null
     private var emojiLoadJob: Job? = null
     private var emojiLoadGeneration = 0
+    private var pickerConnection: EmojiPickerConnection? = null
 
     private fun stopMedia() = mediaTransfer.stop()
 
@@ -507,14 +513,23 @@ class ComposePostViewModel(
         if (state.pollOptions.size <= 2) state else state.copy(pollOptions = state.pollOptions.filterIndexed { i, _ -> i != index })
     }
 
-    suspend fun loadEmojiHistory(): List<String> = _uiState.value.selectedSession?.let { session ->
-        preferencesStore.composerEmojiHistory.first()[session.sessionId].orEmpty()
-    }.orEmpty()
-
-    suspend fun saveEmojiHistory(emojis: List<String>) {
-        _uiState.value.selectedSession?.let { session ->
-            preferencesStore.setComposerEmojiHistory(session.sessionId, emojis)
-        }
+    internal fun emojiPickerConnection(): EmojiPickerConnection? {
+        val account = _uiState.value.selectedSession ?: return null
+        val generation = mediaTransfer.generation
+        val key = "${account.sessionId}|$generation"
+        fun isCurrent() = generation == mediaTransfer.generation &&
+            _uiState.value.selectedSession?.hasSameCredentials(account) == true
+        return pickerConnection?.takeIf { it.sessionKey == key } ?: EmojiPickerConnection(key) {
+            EmojiPickerState(viewModelScope, EmojiPickerDataSource(
+                customEmojis = _uiState.map { EmojiPickerEmojis(it.customEmojis) }.distinctUntilChanged(),
+                loadHistory = { preferencesStore.composerEmojiHistory.first()[account.sessionId].orEmpty() },
+                saveHistory = { preferencesStore.setComposerEmojiHistory(account.sessionId, it) },
+                loadFavorites = { loadEmojiFavorites(account.sessionId) },
+                updateFavorite = { name, favorite -> setEmojiFavorite(account.sessionId, name, favorite) },
+            ), checkSession = {
+                if (!isCurrent()) throw CancellationException("Posting account changed")
+            }, sessionValid = _uiState.map { isCurrent() })
+        }.also { pickerConnection = it }
     }
 
     fun recordUsedEmoji(emoji: String) {

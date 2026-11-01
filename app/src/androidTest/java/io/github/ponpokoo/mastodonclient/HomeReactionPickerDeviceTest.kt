@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient
 
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionEmojiPickerConnection
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataSource
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerEmojis
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
@@ -39,8 +43,11 @@ class HomeReactionPickerDeviceTest {
             "<p>本文</p>", "", false, "public", null, 0, 0, 0, mediaAttachments = emptyList())
         rule.setContent {
             MastodonClientTheme {
-                CompositionLocalProvider(LocalServerCapabilities provides
-                    ServerCapabilities(reactionApi = EmojiReactionApi.Fedibird)) {
+                CompositionLocalProvider(
+                    LocalServerCapabilities provides ServerCapabilities(reactionApi = EmojiReactionApi.Fedibird),
+                    LocalReactionEmojiPickerConnection provides rememberTestEmojiPickerConnection(
+                        EmojiPickerDataSource(customEmojis = flowOf(EmojiPickerEmojis()))),
+                ) {
                     if (home.value) {
                         TimelineContent(
                             state = TimelineUiState(statuses = listOf(status), isInitialLoading = false),

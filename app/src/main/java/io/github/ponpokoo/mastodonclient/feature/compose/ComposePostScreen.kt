@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.compose
 
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerHost
 import android.net.Uri
 import android.text.format.Formatter
 import java.io.File
@@ -125,12 +126,6 @@ import io.github.ponpokoo.mastodonclient.core.preferences.ComposerAction
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.feature.common.showTwoSecondSnackbar
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoriteUpdater
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesSessionKey
-import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
 import io.github.ponpokoo.mastodonclient.domain.model.DraftAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MediaTransferState
@@ -747,25 +742,12 @@ fun ComposePostScreen(
     }
 
     if (emojiSheetOpen) {
-        val sessionId = state.selectedSession?.sessionId.orEmpty()
-        val loadFavorites: suspend () -> List<String> = remember(viewModel, sessionId) {
-            { viewModel.loadEmojiFavorites(sessionId) }
-        }
-        val updateFavorite: suspend (String, Boolean) -> List<String> = remember(viewModel, sessionId) {
-            { emoji, favorite -> viewModel.setEmojiFavorite(sessionId, emoji, favorite) }
-        }
-        CompositionLocalProvider(
-            LocalReactionHistoryLoader provides { viewModel.loadEmojiHistory() },
-            LocalReactionHistorySaver provides { viewModel.saveEmojiHistory(it) },
-            LocalEmojiFavoritesLoader provides loadFavorites,
-            LocalEmojiFavoriteUpdater provides updateFavorite,
-            LocalEmojiFavoritesSessionKey provides sessionId,
-        ) {
-            ReactionPickerSheet(
+        viewModel.emojiPickerConnection()?.let { connection ->
+            EmojiPickerHost(
+                connection = connection,
                 canUndo = false,
                 title = "絵文字",
                 selectionLabel = "この絵文字を挿入",
-                customEmojisOverride = state.customEmojis,
                 onDismiss = { emojiSheetOpen = false },
                 onSelected = { selected ->
                     emojiSheetOpen = false

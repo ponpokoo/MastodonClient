@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient
 
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionEmojiPickerConnection
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataSource
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerEmojis
+import kotlinx.coroutines.flow.flowOf
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.Box
@@ -27,10 +31,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusMention
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertHasClickAction
@@ -306,10 +307,10 @@ class StatusInteractionDeviceTest {
         showContent {
             MaterialTheme {
                 CompositionLocalProvider(
-                    LocalCustomReactionEmojiLoader provides {
-                        Result.success(listOf(CustomEmoji("custom", "https://example.social/custom.png", "https://example.social/custom.png", "テスト")))
-                    },
-                    LocalReactionHistoryLoader provides { listOf("custom") },
+                    LocalReactionEmojiPickerConnection provides rememberTestEmojiPickerConnection(EmojiPickerDataSource(
+                        customEmojis = flowOf(EmojiPickerEmojis(listOf(CustomEmoji("custom", "https://example.social/custom.png", "https://example.social/custom.png", "テスト")))),
+                        loadHistory = { listOf("custom") },
+                    )),
                 ) {
                     StatusCard(
                         status = status(),
@@ -337,8 +338,10 @@ class StatusInteractionDeviceTest {
         showContent {
             MaterialTheme {
                 CompositionLocalProvider(
-                    LocalReactionHistoryLoader provides { saved.get() },
-                    LocalReactionHistorySaver provides { saved.set(it) },
+                    LocalReactionEmojiPickerConnection provides rememberTestEmojiPickerConnection(EmojiPickerDataSource(
+                        customEmojis = flowOf(EmojiPickerEmojis()),
+                        loadHistory = { saved.get() }, saveHistory = { saved.set(it) },
+                    )),
                 ) {
                     StatusCard(
                         status = status(),

@@ -37,7 +37,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import io.github.ponpokoo.mastodonclient.feature.search.SearchBar
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.timeline.SearchContent
-import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataState
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -101,7 +102,7 @@ class SearchInputDeviceTest {
     @SdkSuppress(minSdkVersion = 29)
     fun emojiClearDiscardsUnconfirmedTextAndKeepsEditing() {
         rule.setContent { MaterialTheme {
-            ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, customEmojisOverride = emptyList())
+            EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, data = EmojiPickerDataState(customEmojis = emptyList()))
         } }
         rule.onNodeWithTag("reaction_search").performClick()
         var connection: InputConnection? = null
@@ -128,7 +129,7 @@ class SearchInputDeviceTest {
     @SdkSuppress(minSdkVersion = 29)
     fun emojiSheetLeavesBackgroundAboveTheKeyboardAndRestoresItsHeight() {
         rule.setContent { MaterialTheme {
-            ReactionPickerSheet(canUndo = true, onDismiss = {}, onSelected = {}, customEmojisOverride = emptyList())
+            EmojiPickerSheet(canUndo = true, onDismiss = {}, onSelected = {}, data = EmojiPickerDataState(customEmojis = emptyList()))
         } }
         val sheet = rule.onNodeWithTag("reaction_picker_sheet")
         fun waitForPickerKeyboard(visible: Boolean) {

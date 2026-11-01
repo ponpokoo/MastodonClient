@@ -1,6 +1,5 @@
 package io.github.ponpokoo.mastodonclient
 
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -8,9 +7,13 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoriteUpdater
-import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerHost
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataSource
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerEmojis
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -21,6 +24,51 @@ import java.util.concurrent.atomic.AtomicReference
 class EmojiFavoritesDeviceTest {
     @get:Rule val rule = createComposeRule()
     private val selected = AtomicReference<String?>(null)
+
+    @Test fun changingSessionDiscardsSearchPreviewAndDelayedSaveFeedback() {
+        val sessionKey = mutableStateOf("first-generation")
+        val saveGate = CompletableDeferred<Unit>()
+        val writeStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val writeFinished = java.util.concurrent.atomic.AtomicBoolean(false)
+        rule.setContent {
+            MastodonClientTheme {
+                val first = sessionKey.value == "first-generation"
+                val connection = rememberTestEmojiPickerConnection(EmojiPickerDataSource(
+                    customEmojis = flowOf(EmojiPickerEmojis()),
+                    loadFavorites = { if (first) emptyList() else listOf("🎉") },
+                    updateFavorite = { name, _ ->
+                        writeStarted.set(true)
+                        withContext(NonCancellable) { saveGate.await() }
+                        writeFinished.set(true)
+                        listOf(name)
+                    },
+                ), sessionKey.value)
+                EmojiPickerHost(connection, canUndo = false, onDismiss = {}, onSelected = selected::set)
+            }
+        }
+        try {
+            chooseCategory("標準")
+            rule.onNodeWithTag("reaction_search").performTextInput("いいね")
+            androidx.test.espresso.Espresso.closeSoftKeyboard()
+            rule.onNodeWithText("👍").performTouchInput { longClick() }
+            rule.onNodeWithTag("reaction_emoji_preview").assertIsDisplayed()
+            rule.onNodeWithText("お気に入りに追加").performClick()
+            rule.waitUntil(5_000) { writeStarted.get() }
+            rule.runOnIdle { sessionKey.value = "second-generation" }
+            rule.onNodeWithTag("reaction_emoji_preview").assertDoesNotExist()
+            rule.onNodeWithTag("reaction_search").assert(SemanticsMatcher.expectValue(
+                androidx.compose.ui.semantics.SemanticsProperties.EditableText,
+                androidx.compose.ui.text.AnnotatedString(""),
+            ))
+            chooseCategory("お気に入り")
+            rule.onNodeWithText("🎉").assertIsDisplayed()
+            rule.runOnIdle { saveGate.complete(Unit) }
+            rule.waitUntil(5_000) { writeFinished.get() }
+            rule.onNodeWithText("👍").assertDoesNotExist()
+            rule.onNodeWithText("お気に入りに追加しました").assertDoesNotExist()
+            rule.onNodeWithText("🎉").assertIsDisplayed()
+        } finally { saveGate.complete(Unit) }
+    }
 
     @Test fun standardPreviewAddsFavoritesAndReopeningAllowsConfirmedRemovalAndUndo() {
         val favorites = AtomicReference<List<String>>(emptyList())
@@ -119,12 +167,12 @@ class EmojiFavoritesDeviceTest {
     ) {
         rule.setContent {
             MastodonClientTheme {
-                if (visible?.value != false) CompositionLocalProvider(
-                    LocalEmojiFavoritesLoader provides loader,
-                    LocalEmojiFavoriteUpdater provides updater,
-                ) {
-                    ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = selected::set,
-                        customEmojisOverride = customEmojis)
+                if (visible?.value != false) {
+                    val connection = rememberTestEmojiPickerConnection(EmojiPickerDataSource(
+                        customEmojis = flowOf(EmojiPickerEmojis(customEmojis)),
+                        loadFavorites = loader, updateFavorite = updater,
+                    ))
+                    EmojiPickerHost(connection, canUndo = false, onDismiss = {}, onSelected = selected::set)
                 }
             }
         }

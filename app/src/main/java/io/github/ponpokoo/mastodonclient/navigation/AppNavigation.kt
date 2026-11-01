@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.navigation
 
+import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionEmojiPickerConnection
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import android.content.ActivityNotFoundException
@@ -50,12 +51,6 @@ import io.github.ponpokoo.mastodonclient.feature.login.LoginViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalCustomReactionEmojiLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistorySaver
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoriteUpdater
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalEmojiFavoritesSessionKey
 import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.ScreenViewModelFactory
 import io.github.ponpokoo.mastodonclient.feature.common.StatusInteractionsViewModel
@@ -91,7 +86,6 @@ import io.github.ponpokoo.mastodonclient.feature.media.rememberMediaTransitionSt
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
-import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
 import kotlinx.coroutines.launch
 import kotlinx.serialization.decodeFromString
@@ -333,19 +327,6 @@ fun AppNavigation(
             nativeQuote = mode == QuoteMode.Native,
         ))
     }
-    val loadCustomReactionEmojis: suspend () -> Result<List<CustomEmoji>> = {
-        interactions?.loadCustomEmojis() ?: Result.failure(IllegalStateException("ログインし直してください"))
-    }
-    val loadReactionHistory: suspend () -> List<String> = { interactions?.loadReactionHistory().orEmpty() }
-    val saveReactionHistory: suspend (List<String>) -> Unit = { interactions?.saveReactionHistory(it); Unit }
-    val favoritesSessionId = readingSession?.sessionId.orEmpty()
-    val loadEmojiFavorites: suspend () -> List<String> = remember(interactions, mediaSessionKey, favoritesSessionId) {
-        { interactions?.loadEmojiFavorites(favoritesSessionId).orEmpty() }
-    }
-    val updateEmojiFavorite: suspend (String, Boolean) -> List<String> = remember(interactions, mediaSessionKey, favoritesSessionId) {
-        { emoji, favorite -> interactions?.setEmojiFavorite(favoritesSessionId, emoji, favorite)
-            ?: error("お気に入りを保存できませんでした") }
-    }
     MediaTransitionHost(mediaMotion, mediaSessionKey, currentBackStackEntry?.id,
         sessionReady = (mediaSnapshot?.generation ?: 0) > 0 || currentBackStackEntry?.destination?.hasRoute<Route.Login>() == true) {
     CompositionLocalProvider(
@@ -357,12 +338,7 @@ fun AppNavigation(
                 transientSessionKey = mediaSessionKey.orEmpty()),
         LocalFavouriteListOpener provides { statusId -> interactions?.openFavourites(statusId); Unit },
         LocalReactionListOpener provides { statusId, reaction -> interactions?.openReaction(statusId, reaction); Unit },
-        LocalCustomReactionEmojiLoader provides loadCustomReactionEmojis,
-        LocalReactionHistoryLoader provides loadReactionHistory,
-        LocalReactionHistorySaver provides saveReactionHistory,
-        LocalEmojiFavoritesLoader provides loadEmojiFavorites,
-        LocalEmojiFavoriteUpdater provides updateEmojiFavorite,
-        LocalEmojiFavoritesSessionKey provides mediaSessionKey.orEmpty(),
+        LocalReactionEmojiPickerConnection provides interactions?.emojiPickerConnection(),
     ) {
     val initialRoute = startupRoute
     if (initialRoute == null) {

@@ -1,6 +1,5 @@
 package io.github.ponpokoo.mastodonclient
 
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -30,8 +29,8 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
-import io.github.ponpokoo.mastodonclient.feature.timeline.LocalReactionHistoryLoader
-import io.github.ponpokoo.mastodonclient.feature.timeline.ReactionPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerSheet
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataState
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -46,8 +45,8 @@ class ReactionPickerCategoryDeviceTest {
         var dismissed = false
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = {},
-                    customEmojisOverride = (0 until 160).map { emoji("custom_$it", "多数") })
+                EmojiPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = {},
+                    data = EmojiPickerDataState(customEmojis = (0 until 160).map { emoji("custom_$it", "多数") }))
             }
         }
         chooseCategory("カスタム · 多数")
@@ -74,8 +73,8 @@ class ReactionPickerCategoryDeviceTest {
         val visible = mutableStateOf(true)
         composeRule.setContent {
             MastodonClientTheme {
-                if (visible.value) ReactionPickerSheet(canUndo = false, onDismiss = { visible.value = false },
-                    onSelected = {}, customEmojisOverride = emptyList())
+                if (visible.value) EmojiPickerSheet(canUndo = false, onDismiss = { visible.value = false },
+                    onSelected = {}, data = EmojiPickerDataState(customEmojis = emptyList()))
             }
         }
         val sheet = composeRule.onNodeWithTag("reaction_picker_sheet")
@@ -105,8 +104,8 @@ class ReactionPickerCategoryDeviceTest {
         val visible = mutableStateOf(true)
         composeRule.setContent {
             MastodonClientTheme {
-                if (visible.value) ReactionPickerSheet(canUndo = false, onDismiss = { visible.value = false },
-                    onSelected = {}, customEmojisOverride = emptyList())
+                if (visible.value) EmojiPickerSheet(canUndo = false, onDismiss = { visible.value = false },
+                    onSelected = {}, data = EmojiPickerDataState(customEmojis = emptyList()))
             }
         }
         composeRule.onNodeWithTag("reaction_picker_header").performSemanticsAction(SemanticsActions.Dismiss) { it() }
@@ -127,8 +126,8 @@ class ReactionPickerCategoryDeviceTest {
         var selection: String? = null
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = { selection = it },
-                    customEmojisOverride = listOf(emoji("first", "選択中"), emoji("second", "選択中"), emoji("other", "別カテゴリ")))
+                EmojiPickerSheet(canUndo = false, onDismiss = { dismissed = true }, onSelected = { selection = it },
+                    data = EmojiPickerDataState(customEmojis = listOf(emoji("first", "選択中"), emoji("second", "選択中"), emoji("other", "別カテゴリ"))))
             }
         }
         chooseCategory("カスタム · 選択中")
@@ -155,8 +154,8 @@ class ReactionPickerCategoryDeviceTest {
     @Test fun switchingBetweenDenseAndEmptyCategoriesKeepsSheetAndSearchInPlace() {
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {},
-                    customEmojisOverride = (0 until 80).map { emoji("custom_$it", "多数") })
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = {},
+                    data = EmojiPickerDataState(customEmojis = (0 until 80).map { emoji("custom_$it", "多数") }))
             }
         }
         val sheet = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
@@ -175,8 +174,8 @@ class ReactionPickerCategoryDeviceTest {
         var selection: String? = null
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
-                    customEmojisOverride = emptyList())
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
+                    data = EmojiPickerDataState(customEmojis = emptyList()))
             }
         }
         savePreview("all")
@@ -193,8 +192,8 @@ class ReactionPickerCategoryDeviceTest {
         var selection: String? = null
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
-                    customEmojisOverride = listOf(emoji("shared_first", "気持ち"), emoji("shared_second", "別カテゴリ")))
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
+                    data = EmojiPickerDataState(customEmojis = listOf(emoji("shared_first", "気持ち"), emoji("shared_second", "別カテゴリ"))))
             }
         }
         chooseCategory("カスタム · 気持ち")
@@ -214,10 +213,8 @@ class ReactionPickerCategoryDeviceTest {
         var selection: String? = null
         composeRule.setContent {
             MastodonClientTheme {
-                CompositionLocalProvider(LocalReactionHistoryLoader provides { listOf("👍", "old_custom") }) {
-                    ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
-                        customEmojisOverride = emptyList())
-                }
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
+                    data = EmojiPickerDataState(history = listOf("👍", "old_custom")))
             }
         }
         composeRule.onNodeWithContentDescription("カテゴリ：履歴").performClick()
@@ -233,7 +230,7 @@ class ReactionPickerCategoryDeviceTest {
         val emojis = mutableStateOf(listOf(emoji("uncategorized", null), emoji("blank_category", " ")))
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, customEmojisOverride = emojis.value)
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, data = EmojiPickerDataState(customEmojis = emojis.value))
             }
         }
         chooseCategory("カスタム · その他")
@@ -249,7 +246,7 @@ class ReactionPickerCategoryDeviceTest {
         val emojis = (0 until 20).map { emoji("custom_$it", "group_$it") }
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, customEmojisOverride = emojis)
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = {}, data = EmojiPickerDataState(customEmojis = emojis))
             }
         }
         composeRule.onNodeWithContentDescription("カテゴリ：履歴").performClick()
@@ -265,8 +262,8 @@ class ReactionPickerCategoryDeviceTest {
         val square = imageEmoji("square_representative", "正方形", 40, 40)
         composeRule.setContent {
             MastodonClientTheme {
-                ReactionPickerSheet(canUndo = false, onDismiss = {}, onSelected = {},
-                    customEmojisOverride = listOf(wide, square))
+                EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = {},
+                    data = EmojiPickerDataState(customEmojis = listOf(wide, square)))
             }
         }
         chooseCategory("カスタム · 横長")

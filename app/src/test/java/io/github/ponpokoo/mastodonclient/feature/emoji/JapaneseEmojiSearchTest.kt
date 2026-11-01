@@ -1,4 +1,4 @@
-package io.github.ponpokoo.mastodonclient.feature.timeline
+package io.github.ponpokoo.mastodonclient.feature.emoji
 
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import org.junit.Assert.assertFalse

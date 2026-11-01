@@ -7,11 +7,19 @@ import io.github.ponpokoo.mastodonclient.domain.model.EmojiReaction
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerConnection
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataSource
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerEmojis
+import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerState
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -43,11 +51,13 @@ class StatusInteractionsViewModel(
     private var generation = 0L
     private val completedCursors = mutableSetOf<String>()
     private val emojiCache = mutableMapOf<String, List<CustomEmoji>>()
+    private var pickerConnection: EmojiPickerConnection? = null
 
     init { observeSession() }
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         dismissAccounts()
+        pickerConnection = null
     }
 
     fun openFavourites(statusId: String) = open(StatusAccountsRequest.Favourites(statusId))
@@ -124,17 +134,32 @@ class StatusInteractionsViewModel(
         repository.getCustomEmojis(account).forSession(snapshot).onSuccess { emojiCache[account.instanceUrl] = it }
     }.await()
 
-    suspend fun loadReactionHistory(): List<String> {
-        val snapshot = currentSnapshot() ?: return emptyList()
-        val history = preferences?.reactionHistory?.first()?.get(snapshot.account!!.sessionId).orEmpty()
-        Result.success(history).forSession(snapshot)
-        return history
-    }
-
-    suspend fun saveReactionHistory(emojis: List<String>) {
-        val snapshot = currentSnapshot() ?: return
-        preferences?.setReactionHistory(snapshot.account!!.sessionId, emojis)
-        Result.success(Unit).forSession(snapshot)
+    internal fun emojiPickerConnection(): EmojiPickerConnection? {
+        val snapshot = browsing.snapshot.value
+        val account = snapshot.account ?: return null
+        val key = "${account.sessionId}|${snapshot.generation}"
+        return pickerConnection?.takeIf { it.sessionKey == key } ?: EmojiPickerConnection(key) {
+            EmojiPickerState(viewModelScope, EmojiPickerDataSource(
+                customEmojis = flow {
+                    emit(EmojiPickerEmojis(loading = true))
+                    emit(loadCustomEmojis().fold(
+                        onSuccess = { EmojiPickerEmojis(it) },
+                        onFailure = { error ->
+                            if (error is CancellationException) throw error
+                            EmojiPickerEmojis(error = "カスタム絵文字を取得できませんでした")
+                        },
+                    ))
+                },
+                loadHistory = { preferences?.reactionHistory?.first()?.get(account.sessionId).orEmpty() },
+                saveHistory = { emojis ->
+                    checkNotNull(preferences).setReactionHistory(account.sessionId, emojis)
+                },
+                loadFavorites = { loadEmojiFavorites(account.sessionId) },
+                updateFavorite = { name, favorite -> setEmojiFavorite(account.sessionId, name, favorite) },
+            ), checkSession = {
+                if (snapshot != currentSnapshot()) throw CancellationException("Browsing session changed")
+            }, sessionValid = browsing.snapshot.map { it == snapshot })
+        }.also { pickerConnection = it }
     }
 
     suspend fun loadEmojiFavorites(sessionId: String): List<String> {
