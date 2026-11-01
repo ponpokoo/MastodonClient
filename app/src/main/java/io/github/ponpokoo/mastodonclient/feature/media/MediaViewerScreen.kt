@@ -23,8 +23,10 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -44,6 +46,7 @@ import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsAnimationControlListenerCompat
@@ -369,6 +372,7 @@ private fun ZoomableImage(
 ) {
     var sourceSize by remember(url) { mutableStateOf(fallbackPainter?.intrinsicSize ?: Size.Unspecified) }
     var originalLoaded by remember(url) { mutableStateOf(false) }
+    var imageFailed by rememberSaveable(url, cacheRevision) { mutableStateOf(false) }
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDisplayed by rememberUpdatedState(onDisplayed)
     val fallback = fallbackPainter
@@ -415,11 +419,13 @@ private fun ZoomableImage(
             placeholder = fallback,
             error = fallback,
             onSuccess = {
+                imageFailed = false
                 originalLoaded = true
                 sourceSize = it.painter.intrinsicSize
                 displayedPainter = it.painter
             },
             onError = {
+                imageFailed = true
                 sourceSize = fallback?.intrinsicSize ?: Size.Unspecified
                 displayedPainter = fallback
                 originalLoaded = true
@@ -506,6 +512,16 @@ private fun ZoomableImage(
                 },
             contentScale = ContentScale.Fit,
         )
+        if (imageFailed) {
+            Text(
+                "画像が取得できませんでした",
+                modifier = Modifier.padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(8.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

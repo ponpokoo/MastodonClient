@@ -20,7 +20,14 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
@@ -37,6 +45,11 @@ internal fun VideoPlayer(url: String?, loop: Boolean, active: Boolean,
     controlsVisible: Boolean = true, onTap: () -> Unit = {},
     fallbackPainter: Painter? = null, previewUrl: String? = null) {
     val playback = rememberMediaPlayback(url, active = active, autoplay = true, loop = loop)
+    var failed by rememberSaveable(url) { mutableStateOf(false) }
+    LaunchedEffect(playback.failed, playback.videoFrameRendered) {
+        if (playback.failed) failed = true
+        else if (playback.videoFrameRendered) failed = false
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).testTag("video_player").then(playback.visibilityModifier)
         .semantics { stateDescription = mediaPlaybackStatus(playback, "動画") }) {
         val landscape = maxWidth > maxHeight
@@ -64,6 +77,11 @@ internal fun VideoPlayer(url: String?, loop: Boolean, active: Boolean,
         Box(Modifier.matchParentSize().testTag("video_tap_target").pointerInput(active, onTap) {
             detectTapGestures { if (active) onTap() }
         })
+        if (failed) {
+            Text("動画が取得できませんでした",
+                modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f)).padding(8.dp),
+                color = Color.White, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        }
         if (controlsVisible) {
             Surface(modifier = Modifier.align(Alignment.BottomCenter)
                 // Keep both the fixed buttons and their upward popups inside camera/cutout insets.

@@ -139,6 +139,7 @@ internal class MediaPlayback(private val context: Context, val url: String?, pri
         duration = current.duration.takeIf { it > 0 } ?: 0L
         ended = current.playbackState == Player.STATE_ENDED
         failed = current.playerError != null
+        if (failed) videoFrameRendered = false
         requested = current.playWhenReady && !ended && !failed
         playing = current.isPlaying
         buffering = current.playbackState == Player.STATE_BUFFERING

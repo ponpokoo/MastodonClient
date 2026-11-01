@@ -3,6 +3,9 @@ package io.github.ponpokoo.mastodonclient
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +19,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -37,6 +41,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(coil3.annotation.DelicateCoilApi::class)
 class MediaImageLoadingDeviceTest {
@@ -81,14 +86,15 @@ class MediaImageLoadingDeviceTest {
         loader?.shutdown()
     }
 
-    private fun assertCenterIsBlue() {
+    private fun assertCenterIsBlue(verticalFraction: Float = 0.5f) {
         val pixels = rule.onRoot().captureToImage().toPixelMap()
-        val center = pixels[pixels.width / 2, pixels.height / 2]
+        val center = pixels[pixels.width / 2, (pixels.height * verticalFraction).toInt()]
         assertTrue("Keep the displayed source image: $center", center.blue > 0.98f && center.red < 0.02f && center.green < 0.02f)
     }
 
     @Test fun delayedImageKeepsItsSourceUntilTheFirstFrameAndThenDisplaysTheLoadedImage() {
         render()
+        rule.onNodeWithText("画像が取得できませんでした").assertDoesNotExist()
         rule.mainClock.autoAdvance = false
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
@@ -107,6 +113,7 @@ class MediaImageLoadingDeviceTest {
         assertEquals(2.5f, rule.onNodeWithTag("media_viewer").fetchSemanticsNode().config[MediaViewerScale], 0.01f)
         val pixels = rule.onRoot().captureToImage().toPixelMap()
         assertTrue(pixels[pixels.width / 2, pixels.height / 2].green > 0.98f)
+        rule.onNodeWithText("画像が取得できませんでした").assertDoesNotExist()
     }
 
     @Test fun fullScreenDownwardSwipeClosesBeforeTheDelayedImageLoads() {
@@ -143,7 +150,8 @@ class MediaImageLoadingDeviceTest {
         render(fail = true)
         rule.waitUntil(5_000) { motion.imageReady("delayed") }
         assertTrue(motion.imageReady("delayed"))
-        assertCenterIsBlue()
+        rule.onNodeWithText("画像が取得できませんでした").assertIsDisplayed()
+        assertCenterIsBlue(verticalFraction = 0.25f)
     }
 
     @Test fun timelineUsesSufficientPreviewButViewerStillRequestsOriginal() {
@@ -167,9 +175,110 @@ class MediaImageLoadingDeviceTest {
         val requests = renderTimelinePreview(failPreview = true)
         rule.waitUntil(5_000) { requests.contains("original") }
         assertTrue(requests.contains("preview"))
+        rule.waitForIdle()
+        rule.onNodeWithText("画像が取得できませんでした").assertDoesNotExist()
     }
 
-    private fun renderTimelinePreview(failPreview: Boolean = false, density: () -> Float = { 2f }): ConcurrentLinkedQueue<String> {
+    @Test fun failedPreviewAndOriginalShowFailureInTimelineAndViewer() {
+        renderTimelinePreview(failPreview = true, failOriginal = true)
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("画像が取得できませんでした").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithText("画像が取得できませんでした").assertIsDisplayed()
+        rule.onNodeWithTag("media_attachment").performClick()
+        rule.waitUntil(5_000) { motion.imageReady("picture") }
+        rule.onNode(hasText("画像が取得できませんでした") and hasAnyAncestor(hasTestTag("media_viewer")))
+            .assertIsDisplayed()
+    }
+
+    @Test fun imageFailureSurvivesScrollingAndRetryUntilSuccess() =
+        failureSurvivesScrollingAndRetryUntilSuccess("image")
+
+    @Test fun videoThumbnailFailureSurvivesScrollingAndRetryUntilSuccess() =
+        failureSurvivesScrollingAndRetryUntilSuccess("video")
+
+    private fun failureSurvivesScrollingAndRetryUntilSuccess(type: String) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        previousLoader = SingletonImageLoader.get(context)
+        val attempts = AtomicInteger()
+        loader = ImageLoader.Builder(context).components {
+            add(Fetcher.Factory<Uri> { uri, _, _ -> Fetcher {
+                if (uri.toString() == "https://images.example.test/retry") {
+                    if (attempts.incrementAndGet() == 1) error("Media unavailable")
+                    release.await()
+                }
+                ImageFetchResult(bitmap(android.graphics.Color.GREEN).asImage(), false, DataSource.MEMORY)
+            } })
+        }.build()
+        SingletonImageLoader.setUnsafe(loader!!)
+        val item = MediaAttachment("retry", type, "https://images.example.test/retry", "https://images.example.test/retry", null,
+            aspectRatio = 0.5f)
+        val status = TimelineStatus("retry", "retry", "2026-10-19T00:00:00Z",
+            StatusAuthor("author", "Author", "author", ""), null, "", "", false, "public", null,
+            0, 0, 0, mediaAttachments = listOf(item))
+        val message = if (type == "video") "動画が取得できませんでした" else "画像が取得できませんでした"
+        rule.setContent { MaterialTheme {
+            LazyColumn(Modifier.width(300.dp).height(500.dp).testTag("retry_list")) {
+                item(key = "media") { StatusCard(status, onStatusClick = null, onUnavailableAction = {}) }
+                items(80) { Text("Row $it", Modifier.height(100.dp)) }
+            }
+        } }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText(message).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("retry_list").performScrollToIndex(80)
+        rule.onNodeWithTag("media_attachment").assertDoesNotExist()
+        rule.onNodeWithTag("retry_list").performScrollToIndex(0)
+        rule.waitUntil(5_000) { attempts.get() >= 2 }
+        // A fresh request is still pending: keep the saved error rather than flash an empty frame.
+        rule.onNodeWithText(message).assertIsDisplayed()
+        release.complete(Unit)
+        rule.waitUntil(5_000) { rule.onAllNodesWithText(message).fetchSemanticsNodes().isEmpty() }
+        rule.onNodeWithTag("media_attachment").assertIsDisplayed()
+    }
+
+    @Test fun fullScreenVideoFailureSurvivesDisposalWhileInactive() {
+        val active = mutableStateOf(true)
+        val source = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
+            "missing-video-${System.nanoTime()}.mp4").toURI().toString()
+        rule.setContent { MaterialTheme {
+            LazyColumn(Modifier.height(500.dp).testTag("retry_list")) {
+                item(key = "video") {
+                    Box(Modifier.height(300.dp)) { VideoPlayer(source, loop = false, active = active.value) }
+                }
+                items(80) { Text("Row $it", Modifier.height(100.dp)) }
+            }
+        } }
+        rule.waitUntil(10_000) {
+            rule.onAllNodesWithText("動画が取得できませんでした").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("retry_list").performScrollToIndex(80)
+        rule.onNodeWithTag("video_player").assertDoesNotExist()
+        rule.runOnIdle { active.value = false }
+        rule.onNodeWithTag("retry_list").performScrollToIndex(0)
+        rule.onNodeWithText("動画が取得できませんでした").assertIsDisplayed()
+    }
+
+    @Test fun inlineVideoFailureSurvivesScrolling() {
+        val source = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
+            "missing-inline-video-${System.nanoTime()}.mp4").toURI().toString()
+        rule.setContent { MaterialTheme {
+            LazyColumn(Modifier.height(500.dp).testTag("retry_list")) {
+                item(key = "video") {
+                    Box(Modifier.height(300.dp)) { InlineVideo(source, loop = false, onDimensionsKnown = { _, _ -> }) }
+                }
+                items(80) { Text("Row $it", Modifier.height(100.dp)) }
+            }
+        } }
+        rule.waitUntil(10_000) {
+            rule.onAllNodesWithText("動画が取得できませんでした").fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithTag("retry_list").performScrollToIndex(80)
+        rule.onNodeWithTag("inline_video").assertDoesNotExist()
+        rule.onNodeWithTag("retry_list").performScrollToIndex(0)
+        rule.onNodeWithText("動画が取得できませんでした").assertIsDisplayed()
+    }
+
+    private fun renderTimelinePreview(failPreview: Boolean = false, failOriginal: Boolean = false,
+        density: () -> Float = { 2f }): ConcurrentLinkedQueue<String> {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val requests = ConcurrentLinkedQueue<String>()
         previousLoader = SingletonImageLoader.get(context)
@@ -178,6 +287,7 @@ class MediaImageLoadingDeviceTest {
                 val source = uri.toString().substringAfterLast('/')
                 if (source == "preview" || source == "original") requests.add(source)
                 if (source == "preview" && failPreview) error("Preview unavailable")
+                if (source == "original" && failOriginal) error("Original unavailable")
                 ImageFetchResult(Bitmap.createBitmap(200, 100, Bitmap.Config.ARGB_8888).asImage(), false, DataSource.MEMORY)
             } })
         }.build()

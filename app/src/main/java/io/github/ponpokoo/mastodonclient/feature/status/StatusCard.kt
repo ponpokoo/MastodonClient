@@ -88,6 +88,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -624,6 +625,7 @@ private fun MediaGrid(
     revealMediaLabel: String = "メディアを表示",
 ) {
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
+    val sessionKey = LocalReadingSettings.current.transientSessionKey
     val context = LocalContext.current
     val density = LocalDensity.current
     val thumbnailMaxHeight = when (thumbnailSize) {
@@ -701,8 +703,8 @@ private fun MediaGrid(
                         horizontalArrangement = if (attachments.size == 1) Arrangement.Center else Arrangement.spacedBy(8.dp),
                     ) {
                         rowItems.forEachIndexed { index, media ->
-                            key(media.id, media.url, media.previewUrl) {
-                                var previewFailed by remember(media.url, media.previewUrl) { mutableStateOf(false) }
+                            key(sessionKey, media.id, media.url, media.previewUrl) {
+                                var previewFailed by rememberSaveable { mutableStateOf(false) }
                                 val imageUrl = if (media.type == "image") {
                                     if (useTimelineImagePreviews && !previewFailed) with(density) {
                                         media.timelineImageUrl(frames[index].width.toPx(), frames[index].height.toPx(), cropImageRow)
@@ -712,6 +714,7 @@ private fun MediaGrid(
                                 }
                                 val usingPreview = media.type == "image" && useTimelineImagePreviews && media.url != null &&
                                     imageUrl != media.url && imageUrl == media.previewUrl
+                                var imageFailed by rememberSaveable { mutableStateOf(false) }
                                 var displayedPainter by remember(imageUrl) {
                                     mutableStateOf<androidx.compose.ui.graphics.painter.Painter?>(null)
                                 }
@@ -763,6 +766,7 @@ private fun MediaGrid(
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = if (cropImageRow) ContentScale.Crop else ContentScale.Fit,
                                             onSuccess = {
+                                                imageFailed = false
                                                 // Preview rounding/cropping must not change the original thumbnail geometry.
                                                 if (!usingPreview || media.aspectRatio == null) {
                                                     onDimensionsKnown(it.result.image.width, it.result.image.height)
@@ -772,11 +776,23 @@ private fun MediaGrid(
                                             onError = {
                                                 if (media.type == "image" && usingPreview) {
                                                     previewFailed = true
+                                                } else {
+                                                    imageFailed = true
                                                 }
                                             },
                                         )
                                     }
-                                    if (!autoplay && (media.type == "video" || media.type == "gifv")) {
+                                    if (!autoplay && imageFailed) {
+                                        Text(
+                                            if (media.type in setOf("video", "gifv")) "動画が取得できませんでした"
+                                            else "画像が取得できませんでした",
+                                            modifier = Modifier.padding(8.dp),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                    if (!autoplay && !imageFailed && (media.type == "video" || media.type == "gifv")) {
                                         Icon(
                                             Icons.Outlined.PlayCircle,
                                             contentDescription = "動画",
