@@ -376,7 +376,9 @@ internal fun ProfileContent(
 
                                 }
                                 webLinks?.about?.let { url ->
-                                    add(ProfileMenuAction("このサーバーについて", startsGroup = true) { profileMenuExpanded = false; onOpenLink(url) })
+                                    add(ProfileMenuAction("このサーバーについて",
+                                        startsGroup = !profile.isOwnProfile || webLinks.settings == null,
+                                    ) { profileMenuExpanded = false; onOpenLink(url) })
                                 }
                             },
                         )

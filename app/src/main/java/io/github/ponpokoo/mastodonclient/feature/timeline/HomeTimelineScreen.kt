@@ -75,8 +75,8 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenu
+import io.github.ponpokoo.mastodonclient.feature.common.AppDropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -793,18 +793,15 @@ internal fun TimelineTopBar(
                     )
                     Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
                 }
-                DropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
+                AppDropdownMenu(expanded = feedMenuOpen, onDismissRequest = { feedMenuOpen = false }) {
                     TimelineFeed.entries.forEach { feed ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    when (feed) {
-                                        TimelineFeed.Home -> "ホーム"
-                                        TimelineFeed.Local -> "ローカル"
-                                        TimelineFeed.Federated -> "連合"
-                                    },
-                                )
+                        AppDropdownMenuItem(
+                            label = when (feed) {
+                                TimelineFeed.Home -> "ホーム"
+                                TimelineFeed.Local -> "ローカル"
+                                TimelineFeed.Federated -> "連合"
                             },
+                            isSelected = feed == selectedFeed,
                             onClick = {
                                 feedMenuOpen = false
                                 onFeedSelected(feed)
@@ -822,7 +819,7 @@ internal fun TimelineTopBar(
                         activeSession?.accountId, "timeline-account-switcher"),
                     retainPreviousImage = true,
                     contentDescription = "アカウントを切り替える",
-                    modifier = Modifier.size(30.dp).clip(CircleShape)
+                    modifier = Modifier.size(36.dp).clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface),
                     contentScale = ContentScale.Crop,
                 )

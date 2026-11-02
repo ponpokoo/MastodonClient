@@ -24,8 +24,8 @@ internal fun ProfileDropdownMenu(
         onDismissRequest = onDismissRequest,
     ) {
         actions.forEachIndexed { index, action ->
-            if (index > 0) {
-                AppMenuDivider(startsGroup = action.startsGroup)
+            if (index > 0 && action.startsGroup) {
+                AppMenuDivider(startsGroup = true)
             }
             AppDropdownMenuItem(
                 label = action.label,
