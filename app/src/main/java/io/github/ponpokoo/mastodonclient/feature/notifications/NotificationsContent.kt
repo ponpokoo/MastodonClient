@@ -91,6 +91,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
 import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import kotlinx.coroutines.flow.distinctUntilChanged
 import io.github.ponpokoo.mastodonclient.feature.common.LocalReadingSettings
+import io.github.ponpokoo.mastodonclient.feature.common.withoutBottomPadding
 import io.github.ponpokoo.mastodonclient.feature.common.rememberEmojiInlineContent
 import io.github.ponpokoo.mastodonclient.feature.common.replaceCustomEmojiShortcodes
 import io.github.ponpokoo.mastodonclient.ui.theme.FavouriteIconColor
@@ -126,7 +127,11 @@ internal fun NotificationsContent(
     onAutoLoadMore: () -> Unit = onLoadMore,
     noticeContent: (@Composable () -> Unit)? = null,
     allDisplayRows: List<NotificationDisplayRow>? = null,
+    drawBehindBottomBar: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
+    val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
+    val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
     check(listStates.size == NotificationFilter.entries.size)
     val allRows = allDisplayRows ?: rememberNotificationDisplayRows(
         state.notifications, preferences.groupNotifications, LocalReadingSettings.current.transientSessionKey,
@@ -174,7 +179,7 @@ internal fun NotificationsContent(
             isRefreshing = isPullRefreshing,
             enabled = canPullRefresh,
             onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize().padding(padding).testTag("notifications_screen"),
+            modifier = modifier.fillMaxSize().padding(viewportPadding).testTag("notifications_screen"),
         ) {
             Column(Modifier.fillMaxSize()) {
                 AppTabRow(selectedTabIndex = filterTabs.selectedPage) {
@@ -204,7 +209,8 @@ internal fun NotificationsContent(
                     val initialLoading = supported && !pageState.isInitialPageLoaded &&
                         filteredNotifications.isEmpty() && pageState.notificationsError == null
                     Box(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize(), state = listStates[page]) {
+                    LazyColumn(Modifier.fillMaxSize().testTag("notifications_list_${filter.name.lowercase()}"),
+                        state = listStates[page], contentPadding = PaddingValues(bottom = bottomPadding)) {
                     if (!supported && !checkingCapabilities) item {
                         MessageContent("現在サポートしていません")
                     }

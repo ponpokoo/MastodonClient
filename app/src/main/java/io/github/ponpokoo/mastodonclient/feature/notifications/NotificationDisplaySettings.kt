@@ -15,6 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,8 +28,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun NotificationDisplaySettings(grouped: Boolean, onGroupedChange: (Boolean) -> Unit) {
+internal fun NotificationDisplaySettings(grouped: Boolean, onMenuVisibilityChanged: (Boolean) -> Unit = {},
+    onGroupedChange: (Boolean) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded) { onMenuVisibilityChanged(expanded) }
+    DisposableEffect(Unit) { onDispose { onMenuVisibilityChanged(false) } }
     Box {
         IconButton(onClick = { expanded = true }, modifier = Modifier.testTag("notification_display_settings")) {
             Icon(Icons.Outlined.Tune, contentDescription = "通知の表示設定")

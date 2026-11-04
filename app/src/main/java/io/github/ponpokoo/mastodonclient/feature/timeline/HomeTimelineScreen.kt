@@ -7,13 +7,13 @@ import io.github.ponpokoo.mastodonclient.feature.media.LocalMediaSourceIsHome
 import io.github.ponpokoo.mastodonclient.feature.media.mediaContentInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeState
 import io.github.ponpokoo.mastodonclient.feature.common.NewItemsNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.NotificationNoticeEffect
 import io.github.ponpokoo.mastodonclient.feature.common.TimelineNoticeStack
+import io.github.ponpokoo.mastodonclient.feature.common.withoutBottomPadding
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.StatusActions
 import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
@@ -83,14 +83,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.derivedStateOf
@@ -111,11 +114,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -143,6 +151,8 @@ import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+
+private const val MainNavigationBarAlpha = 0.88f
 
 private enum class MainDestination(
     val label: String,
@@ -240,6 +250,29 @@ fun HomeTimelineScreen(
     var scrollHomeAfterRefresh by remember { mutableStateOf(false) }
     var homeRefreshStarted by remember { mutableStateOf(false) }
     val destination = destinations[pagerState.currentPage]
+    val topBarStates = destinations.map { tab ->
+        key(mainState.session?.sessionId, tab, state.selectedFeed.takeIf { tab == MainDestination.Home }) {
+            rememberTopAppBarState()
+        }
+    }
+    val topMenus = remember(mainState.session?.sessionId) { mutableStateMapOf<MainDestination, Boolean>() }
+    var searchEditing by remember(mainState.session?.sessionId) { mutableStateOf(false) }
+    val topBarHeights = remember { mutableStateMapOf<MainDestination, Int>() }
+    val topInsetPx = mediaContentInsets().getTop(LocalDensity.current)
+    val scrollBehaviors = destinations.map { tab ->
+        TopAppBarDefaults.enterAlwaysScrollBehavior(
+            state = topBarStates[tab.ordinal],
+            canScroll = { destination == tab && topMenus[tab] != true && (tab != MainDestination.Explore || !searchEditing) },
+        )
+    }
+    val homeTopBarState = topBarStates[MainDestination.Home.ordinal]
+    val currentTopBarState = topBarStates[destination.ordinal]
+    LaunchedEffect(topMenus[destination], searchEditing, destination) {
+        if (topMenus[destination] == true || (destination == MainDestination.Explore && searchEditing)) {
+            currentTopBarState.heightOffset = 0f
+            currentTopBarState.contentOffset = 0f
+        }
+    }
     val topScrollScope = key(
         mainState.session?.sessionId, destination, state.selectedFeed,
         notificationFilter, profileState.profileSelectedTab,
@@ -470,14 +503,22 @@ fun HomeTimelineScreen(
                     sessions = mainState.sessions,
                     onAccountSelected = mainViewModel::switchAccount,
                     onSettings = onSettings,
+                    scrollBehavior = scrollBehaviors[MainDestination.Home.ordinal],
+                    onMenuVisibilityChanged = { topMenus[MainDestination.Home] = it },
+                    modifier = Modifier.onSizeChanged { topBarHeights[MainDestination.Home] = it.height },
                 )
             } else if (destination != MainDestination.Explore) {
                 TopAppBar(
+                    modifier = Modifier.testTag("main_top_bar_${destination.name.lowercase()}")
+                        .onSizeChanged { topBarHeights[destination] = it.height },
+                    scrollBehavior = scrollBehaviors[destination.ordinal],
+                    colors = TopAppBarDefaults.topAppBarColors(scrolledContainerColor = MaterialTheme.colorScheme.surface),
                     title = { Text(destination.label) },
                     actions = {
                         if (destination == MainDestination.Notifications) NotificationDisplaySettings(
                             grouped = mainState.preferences.groupNotifications,
                             onGroupedChange = { enabled -> scope.launch { preferencesStore.setGroupNotifications(enabled) } },
+                            onMenuVisibilityChanged = { topMenus[MainDestination.Notifications] = it },
                         )
                     },
                     windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
@@ -485,16 +526,23 @@ fun HomeTimelineScreen(
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 0.dp,
+            ShortNavigationBar(
+                modifier = Modifier.testTag("main_navigation_bar"),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+                    alpha = MainNavigationBarAlpha,
+                ),
                 windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)) {
                 MainDestination.entries.forEach { item ->
                     val page = destinations.indexOf(item)
-                    NavigationBarItem(
-                        modifier = Modifier.testTag("main_tab_${item.name.lowercase()}"),
+                    ShortNavigationBarItem(
+                        // The item already has 6 dp above its indicator; add 6 dp for a 12 dp top gap.
+                        modifier = Modifier.padding(top = 6.dp).testTag("main_tab_${item.name.lowercase()}"),
                         selected = destination == item,
                         onClick = {
                             if (pagerState.currentPage == page) {
                                 topScrollScope.launch {
+                                    currentTopBarState.heightOffset = 0f
+                                    currentTopBarState.contentOffset = 0f
                                     when (item) {
                                         MainDestination.Home -> {
                                             if (state.isResumedWindow) viewModel.goToLatest()
@@ -542,6 +590,8 @@ fun HomeTimelineScreen(
             userScrollEnabled = false,
         ) { page ->
             val pagePadding = if (destinations[page] == destination) padding else savedPagePadding[destinations[page]] ?: padding
+            val pageModifier = if (destinations[page] == destination)
+                Modifier.nestedScroll(scrollBehaviors[page].nestedScrollConnection) else Modifier
             CompositionLocalProvider(
                 LocalMediaSourceIsHome provides (destinations[page] == MainDestination.Home),
                 io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
@@ -552,6 +602,8 @@ fun HomeTimelineScreen(
                 MainDestination.Home -> TimelineContent(
                     state = state,
                     padding = pagePadding,
+                    drawBehindBottomBar = true,
+                    modifier = pageModifier,
                     listState = timelineListState,
                     onRefresh = {
                         viewModel.setKeepPositionOnRefresh(mainState.preferences.keepPositionOnPullRefresh)
@@ -581,6 +633,12 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Explore -> SearchContent(
                     state = searchState,
+                    modifier = pageModifier,
+                    drawBehindBottomBar = true,
+                    searchBarModifier = Modifier.testTag("main_search_header")
+                        .onSizeChanged { topBarHeights[MainDestination.Explore] = topInsetPx + it.height }
+                        .collapsingSearchHeader(topBarStates[MainDestination.Explore.ordinal]),
+                    onSearchEditingChanged = { searchEditing = it },
                     scrollToTopRequest = exploreScrollToTopRequest,
                     exploreState = exploreState,
                     onSelectExploreFeed = searchViewModel::selectExploreFeed,
@@ -616,6 +674,8 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Notifications -> NotificationsContent(
                     state = notificationsState,
+                    modifier = pageModifier,
+                    drawBehindBottomBar = true,
                     allDisplayRows = allNotificationRows,
                     padding = pagePadding,
                     onRefresh = notificationsViewModel::refreshNotifications,
@@ -645,6 +705,8 @@ fun HomeTimelineScreen(
                 )
                 MainDestination.Profile -> ProfileScreen(
                     viewModel = profileViewModel,
+                    modifier = pageModifier,
+                    drawBehindBottomBar = true,
                     preferences = mainState.preferences,
                     padding = pagePadding,
                     snackbarHostState = snackbarHostState,
@@ -680,13 +742,12 @@ fun HomeTimelineScreen(
                 notice = homeNotice.notice.takeIf { destination == MainDestination.Home },
                 snackbarHostState = snackbarHostState,
                 onClick = {
+                    homeTopBarState.heightOffset = 0f
+                    homeTopBarState.contentOffset = 0f
                     if (state.isResumedWindow) viewModel.goToLatest()
                     else topScrollScope.launch { timelineListState.animateToTimelineTop() }
                 },
-                modifier = Modifier
-                .align(Alignment.TopCenter)
-                .windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Top))
-                .padding(top = 64.dp),
+                modifier = Modifier.align(Alignment.TopCenter).offset { IntOffset(0, topBarHeights[destination] ?: topInsetPx) },
             )
         }
     }
@@ -772,11 +833,29 @@ internal fun TimelineTopBar(
     onAccountSelected: (String) -> Unit,
     onSettings: () -> Unit,
     hasUnreadAnnouncements: Boolean = false,
+    scrollBehavior: TopAppBarScrollBehavior? = null,
+    onMenuVisibilityChanged: (Boolean) -> Unit = {},
+    modifier: Modifier = Modifier,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var accountDialogOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(feedMenuOpen, accountDialogOpen) {
+        onMenuVisibilityChanged(feedMenuOpen || accountDialogOpen)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onMenuVisibilityChanged(false) }
+    }
 
     TopAppBar(
+        modifier = modifier.testTag("home_top_bar").graphicsLayer {
+            // Fade the shadow with the toolbar so it does not remain under the status bar.
+            shadowElevation = 2.dp.toPx() * (1f - (scrollBehavior?.state?.collapsedFraction ?: 0f))
+        },
+        scrollBehavior = scrollBehavior,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
         windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
         title = {
             Box {
@@ -947,7 +1026,10 @@ internal fun TimelineContent(
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
     onLoadGap: (String) -> Unit = {},
+    drawBehindBottomBar: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
+    val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val rows = remember(state.statuses, state.homeIndex, state.automaticGapCheck) { state.displayRows() }
     val rowKeys = remember(rows) { rows.map { it.key } }
     var previousKeys by remember(listState) { mutableStateOf<List<Any>>(emptyList()) }
@@ -993,11 +1075,12 @@ internal fun TimelineContent(
         else -> AppPullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = modifier.fillMaxSize().padding(viewportPadding),
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().testTag("timeline_list"),
+                contentPadding = PaddingValues(bottom = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp),
             ) {
                 items(items = rows, key = { it.key }) { row ->
                     if (row is TimelineRow.Gap) {

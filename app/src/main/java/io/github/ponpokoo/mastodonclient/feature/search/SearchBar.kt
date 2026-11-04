@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,9 +53,13 @@ internal fun SearchBar(
     modifier: Modifier = Modifier,
     isVisible: Boolean = true,
     focusRequester: FocusRequester = remember(sessionKey) { FocusRequester() },
+    onEditingChanged: (Boolean) -> Unit = {},
 ) {
     var value by remember(sessionKey) { mutableStateOf(TextFieldValue(query, TextRange(query.length))) }
     var acceptingEdits by remember(sessionKey) { mutableStateOf(false) }
+    var inputFocused by remember(sessionKey) { mutableStateOf(false) }
+    LaunchedEffect(inputFocused, isVisible) { onEditingChanged(inputFocused && isVisible) }
+    DisposableEffect(Unit) { onDispose { onEditingChanged(false) } }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(sessionKey) {
@@ -100,6 +105,7 @@ internal fun SearchBar(
                 modifier = Modifier.weight(1f),
                 inputModifier = Modifier.padding(vertical = 12.dp)
                     .focusRequester(focusRequester).onFocusChanged {
+                        inputFocused = it.isFocused
                         if (it.isFocused) { acceptingEdits = true; onEnterSearch() }
                     }.testTag("search_input"),
                 placeholder = "Mastodon を検索",

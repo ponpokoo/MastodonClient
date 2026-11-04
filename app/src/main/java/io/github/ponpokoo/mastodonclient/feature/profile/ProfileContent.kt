@@ -96,6 +96,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.feature.profile.withTab
 import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
+import io.github.ponpokoo.mastodonclient.feature.common.withoutBottomPadding
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
 import java.net.URI
 import java.time.LocalDate
@@ -158,7 +159,11 @@ internal fun ProfileContent(
     headerListState: LazyListState? = null,
     onSelectHashtag: (String) -> Unit = {},
     onRetryFeaturedTags: () -> Unit = {},
+    drawBehindBottomBar: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
+    val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
+    val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
     val profile = state.profile
     val mediaSourceGroup = io.github.ponpokoo.mastodonclient.feature.media.rememberMediaSourceGroup()
     val headerMedia = MediaAttachment("profile-header", "image", profile?.headerUrl, profile?.headerUrl,
@@ -252,7 +257,7 @@ internal fun ProfileContent(
             isRefreshing = isPullRefreshing,
             enabled = selectedPageLoaded,
             onRefresh = onRefresh,
-            modifier = Modifier.fillMaxSize().padding(padding).testTag("profile_screen"),
+            modifier = modifier.fillMaxSize().padding(viewportPadding).testTag("profile_screen"),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
             val pagerHeight = (maxHeight - tabRowHeight).coerceAtLeast(0.dp)
@@ -544,6 +549,7 @@ internal fun ProfileContent(
             Box(Modifier.fillMaxSize().testTag("profile_posts_${pageTab.name.lowercase()}")) {
             LazyColumn(
                 Modifier.fillMaxSize(), state = postListState,
+                contentPadding = PaddingValues(bottom = bottomPadding),
                 // A moving pager must not estimate its own vertical fling velocity.
                 // Keep one input owner while retaining each tab's list state.
                 userScrollEnabled = false,

@@ -19,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
@@ -38,6 +39,7 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     modifier: Modifier = Modifier,
     onFindTags: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
+    bottomContentPadding: Dp = 0.dp,
 ) {
     val tabs = key(state.sessionKey) {
         rememberSwipeTabs(state.selectedFeed.ordinal, ExploreFeed.entries.size) { onSelect(ExploreFeed.entries[it]) }
@@ -68,7 +70,8 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
             val tab = state.tabs[feed] ?: ExploreTabState()
             AppPullToRefreshBox(isRefreshing = tab.loading && tab.page != null, onRefresh = onRefresh,
                 enabled = tab.page != null, modifier = Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize(), state = lists[index]) {
+                LazyColumn(Modifier.fillMaxSize().testTag("explore_list_${feed.name.lowercase()}"), state = lists[index],
+                    contentPadding = PaddingValues(bottom = bottomContentPadding)) {
                     tab.page?.let { page ->
                         items(page.statuses, key = { it.timelineId }) { post(it) }
                         items(page.tags, key = { it.name.lowercase(java.util.Locale.ROOT) }) { tag ->

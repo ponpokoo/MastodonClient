@@ -50,7 +50,7 @@ import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 
-@OptIn(coil3.annotation.DelicateCoilApi::class)
+@OptIn(coil3.annotation.DelicateCoilApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 class ProfileImageRefreshDeviceTest {
     @get:Rule val rule = createComposeRule()
     private val revision = mutableStateOf(1L)

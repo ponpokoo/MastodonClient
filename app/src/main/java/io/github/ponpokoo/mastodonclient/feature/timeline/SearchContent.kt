@@ -52,6 +52,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.feature.search.SearchTabState
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.search.message
+import io.github.ponpokoo.mastodonclient.feature.common.withoutBottomPadding
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -89,7 +90,13 @@ internal fun SearchContent(
     onUnfollowTag: (io.github.ponpokoo.mastodonclient.domain.model.SearchTag) -> Unit = {},
     onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
     scrollToTopRequest: Long = 0L,
+    drawBehindBottomBar: Boolean = false,
+    modifier: Modifier = Modifier,
+    searchBarModifier: Modifier = Modifier,
+    onSearchEditingChanged: (Boolean) -> Unit = {},
 ) {
+    val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
+    val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
     val searchFocusRequester = remember(state.sessionKey) { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(isVisible, state.isSearchActive, state.sessionKey) {
@@ -109,14 +116,15 @@ internal fun SearchContent(
         rememberSwipeTabs(state.selectedTarget.ordinal, SearchTarget.entries.size) { onSelectTarget(SearchTarget.entries[it]) }
     }
     val pager = tabs.pagerState
-    Column(Modifier.fillMaxSize().padding(padding).testTag("search_screen")) {
+    Column(modifier.fillMaxSize().padding(viewportPadding).testTag("search_screen")) {
         SearchBar(
             query = state.searchQuery, active = state.isSearchActive, sessionKey = state.sessionKey,
             onQueryChanged = onQueryChanged, onEnterSearch = onEnterSearch,
             onBack = onBack, onClear = onClear, onSearch = onSearch,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = searchBarModifier.padding(horizontal = 16.dp, vertical = 10.dp),
             isVisible = isVisible,
             focusRequester = searchFocusRequester,
+            onEditingChanged = onSearchEditingChanged,
         )
         if (state.isSearchActive && state.searchQuery.isNotBlank()) {
             AppTabRow(selectedTabIndex = tabs.selectedPage) {
@@ -132,7 +140,8 @@ internal fun SearchContent(
                 val tab = state.tabs[target] ?: SearchTabState()
                 val results = tab.results
                 Box(Modifier.fillMaxSize()) {
-                LazyColumn(Modifier.fillMaxSize().testTag("search_results_${target.name.lowercase()}"), state = listStates[page]) {
+                LazyColumn(Modifier.fillMaxSize().testTag("search_results_${target.name.lowercase()}"), state = listStates[page],
+                    contentPadding = PaddingValues(bottom = bottomPadding)) {
                     if (results != null) {
                         when (target) {
                             SearchTarget.Accounts -> items(results.accounts, key = StatusAuthor::id) { AccountResult(it, onAccountClick) }
@@ -211,7 +220,7 @@ internal fun SearchContent(
                 onEnterSearch()
                 searchFocusRequester.requestFocus()
                 keyboard?.show()
-            }, scrollToTopRequest = scrollToTopRequest)
+            }, scrollToTopRequest = scrollToTopRequest, bottomContentPadding = bottomPadding)
     }
 }
 

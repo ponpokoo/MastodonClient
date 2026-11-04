@@ -49,6 +49,8 @@ internal fun ProfileScreen(
     profileListStates: List<androidx.compose.foundation.lazy.LazyListState>? = null,
     profileHeaderListState: androidx.compose.foundation.lazy.LazyListState? = null,
     onOpenReactions: () -> Unit = {},
+    drawBehindBottomBar: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.loadProfile() }
@@ -103,6 +105,8 @@ internal fun ProfileScreen(
                 instanceUrl = state.instanceUrl,
                 state = state,
                 padding = padding,
+                drawBehindBottomBar = drawBehindBottomBar,
+                modifier = modifier,
                 onRetry = viewModel::retryProfile,
                 onRetryPosts = viewModel::retryProfile,
                 onSelectHashtag = viewModel::selectHashtag,
