@@ -66,6 +66,9 @@ import io.github.ponpokoo.mastodonclient.ui.theme.profileFollowedByContainer
 import io.github.ponpokoo.mastodonclient.ui.theme.reactionSelectedOutline
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -160,6 +163,8 @@ internal fun ProfileContent(
     onSelectHashtag: (String) -> Unit = {},
     onRetryFeaturedTags: () -> Unit = {},
     drawBehindBottomBar: Boolean = false,
+    topContentPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    topBarVisibleHeight: () -> Float = { 0f },
     modifier: Modifier = Modifier,
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
@@ -258,6 +263,7 @@ internal fun ProfileContent(
             enabled = selectedPageLoaded,
             onRefresh = onRefresh,
             modifier = modifier.fillMaxSize().padding(viewportPadding).testTag("profile_screen"),
+            indicatorModifier = Modifier.offset { IntOffset(0, topBarVisibleHeight().toInt()) },
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
             val pagerHeight = (maxHeight - tabRowHeight).coerceAtLeast(0.dp)
@@ -268,6 +274,7 @@ internal fun ProfileContent(
                     .semantics { verticalScrollAxisRange = profileScrollRange }
                     .testTag("profile_scroll"),
                 state = resolvedHeaderListState,
+                contentPadding = PaddingValues(top = topContentPadding),
             ) {
             item(key = "profile_header") {
                 Column(Modifier.fillMaxWidth().testTag("profile_header")) {
@@ -490,7 +497,15 @@ internal fun ProfileContent(
             }
             stickyHeader(key = "profile_tabs") {
                 AppTabRow(selectedTabIndex = profileTabs.selectedPage,
-                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } },
+                    modifier = Modifier.onSizeChanged { tabRowHeight = with(density) { it.height.toDp() } }
+                        .graphicsLayer {
+                            val tabOffset = resolvedHeaderListState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.key == "profile_tabs" }?.offset ?: 0
+                            // LazyColumn reports a pinned header at -beforeContentPadding.
+                            // Its placed position already includes that padding.
+                            val placedOffset = tabOffset + with(density) { topContentPadding.roundToPx() }
+                            translationY = (topBarVisibleHeight() - placedOffset).coerceAtLeast(0f)
+                        },
                     divider = {
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }) {

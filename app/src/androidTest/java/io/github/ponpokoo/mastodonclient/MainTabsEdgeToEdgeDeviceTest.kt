@@ -57,12 +57,20 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         readOlderPosts()
         rule.waitForIdle()
         val collapsed = topBar().fetchSemanticsNode().boundsInRoot
-        assertTrue("Only the status-bar region should remain: $collapsed vs $expanded",
-            collapsed.height < expanded.height / 2)
-        nav().assertDoesNotExist()
+        assertEquals("Only the status-bar region should remain", topInsetPx(), collapsed.height, 1f)
+        nav().assertIsDisplayed()
+        assertEquals("The footer must stay fixed while the header collapses", navigation,
+            nav().fetchSemanticsNode().boundsInRoot)
         assertEquals(fab, rule.onNodeWithContentDescription("新規投稿").fetchSemanticsNode().boundsInRoot)
         assertEquals(viewportBottom, list().fetchSemanticsNode().boundsInRoot.bottom, 1f)
         savePreview("collapsed")
+
+        val collapsedPosition = scrollPosition()
+        rule.onNodeWithTag("main_tab_notifications").performClick()
+        rule.onNodeWithTag("main_tab_home").performClick()
+        assertEquals("Fixed navigation must work while the header is collapsed", collapsed.height,
+            topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
+        assertEquals(collapsedPosition, scrollPosition(), 1f)
 
         list().performScrollToIndex(15)
         revealNavigation()
@@ -72,7 +80,8 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         rule.onNodeWithTag("main_tab_notifications").performClick()
         val notifications = rule.onNode(hasScrollAction() and hasAnyAncestor(hasTestTag("notification_filter_pager")))
         readOlderPosts(notifications)
-        nav().assertDoesNotExist()
+        nav().assertIsDisplayed()
+        assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
         revealNavigation(notifications)
         rule.onNodeWithTag("main_tab_home").performClick()
         assertEquals(expanded.height, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
@@ -153,6 +162,32 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     }
 
     private fun list() = rule.onNodeWithTag("timeline_list")
+    @Test fun homeDragAndFlingTravelDoesNotDependOnWhetherTheHeaderStartsVisible() = withHome {
+        val viewport = list().fetchSemanticsNode().boundsInRoot
+        fun travel(expanded: Boolean, towardOlder: Boolean): Float {
+            if (expanded) revealNavigation() else readOlderPosts()
+            list().performScrollToIndex(15)
+            assertEquals("Collapsing chrome must not resize the scrolling viewport",
+                viewport, list().fetchSemanticsNode().boundsInRoot)
+            rule.mainClock.autoAdvance = false
+            try {
+                list().performTouchInput {
+                    val start = Offset(width * .5f, height * .5f)
+                    swipe(start, start + Offset(0f, if (towardOlder) -240f else 240f), 160)
+                }
+                rule.mainClock.advanceTimeBy(4_000)
+                return scrollPosition()
+            } finally { rule.mainClock.autoAdvance = true }
+        }
+        for (towardOlder in listOf(true, false)) {
+            val expandedTravel = travel(true, towardOlder)
+            val collapsedTravel = travel(false, towardOlder)
+            // LazyList reports integer-pixel positions; allow one pixel of rounding after a fling.
+            assertEquals("Header visibility must not consume drag distance or change inertia",
+                expandedTravel, collapsedTravel, 1f)
+        }
+    }
+
     @Test fun transparentSideGapLetsTheTimelineScrollWithoutMovingTheNavigation() = withHome {
         val navigation = nav().fetchSemanticsNode().boundsInRoot
         val viewport = list().fetchSemanticsNode().boundsInRoot
@@ -164,7 +199,8 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         }
         rule.waitForIdle()
         assertTrue("The transparent gap must not consume the timeline gesture", scrollPosition() > before)
-        nav().assertDoesNotExist()
+        nav().assertIsDisplayed()
+        assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
         revealNavigation()
         assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
     }
@@ -185,18 +221,47 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             rule.waitUntil(5_000) { rule.onAllNodesWithTag(tab.list).fetchSemanticsNodes().isNotEmpty() }
             val header = rule.onNodeWithTag(tab.header)
             val content = rule.onNodeWithTag(tab.list)
+            val viewport = content.fetchSemanticsNode().boundsInRoot
             val expanded = header.fetchSemanticsNode().boundsInRoot.height
             expandedHeights[tab.name] = expanded
+            savePreview("${tab.name}-expanded")
             repeat(if (tab.name == "profile") 3 else 1) { readOlderPosts(content) }
             val collapsed = header.fetchSemanticsNode().boundsInRoot.height
-            assertTrue("${tab.name} header must retreat: $collapsed vs $expanded", collapsed < expanded / 2)
+            assertEquals("${tab.name} viewport must stay fixed while the header collapses",
+                viewport, content.fetchSemanticsNode().boundsInRoot)
+            assertEquals("${tab.name} toolbar content must retreat completely",
+                if (tab.name == "explore") 0f else topInsetPx(), collapsed, 1f)
             rule.onNodeWithTag(tab.retainedTab).assertIsDisplayed()
+            assertEquals("${tab.name} tabs must meet the collapsed header without a gap",
+                if (tab.name == "explore") rule.onNodeWithTag("search_screen").fetchSemanticsNode().boundsInRoot.top
+                else header.fetchSemanticsNode().boundsInRoot.bottom,
+                rule.onNodeWithTag(tab.retainedTab).fetchSemanticsNode().boundsInRoot.top, 0.5f)
             assertTrue("${tab.name} content should continue behind the footer",
                 content.fetchSemanticsNode().boundsInRoot.bottom > footer.top)
-            nav().assertDoesNotExist()
+            nav().assertIsDisplayed()
+            assertEquals("${tab.name} footer must stay fixed while its header collapses", footer,
+                nav().fetchSemanticsNode().boundsInRoot)
             savePreview("${tab.name}-collapsed")
             revealNavigation(content)
+            assertEquals("${tab.name} viewport must stay fixed while the header returns",
+                viewport, content.fetchSemanticsNode().boundsInRoot)
             assertEquals(footer, nav().fetchSemanticsNode().boundsInRoot)
+            // Keep a drag active so fractional offsets are checked before the bars settle.
+            rule.mainClock.autoAdvance = false
+            try {
+                content.performTouchInput {
+                    down(Offset(width * .5f, height * .4f))
+                    moveBy(Offset(0f, -80.6f))
+                }
+                rule.mainClock.advanceTimeByFrame()
+                assertEquals("${tab.name} tabs must also meet the header during a drag",
+                    header.fetchSemanticsNode().boundsInRoot.bottom,
+                    rule.onNodeWithTag(tab.retainedTab).fetchSemanticsNode().boundsInRoot.top, 0.1f)
+            } finally {
+                content.performTouchInput { up() }
+                rule.mainClock.autoAdvance = true
+            }
+            revealNavigation(content)
             heights[tab.name] = header.fetchSemanticsNode().boundsInRoot.height
             positions[tab.name] = content.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
         }
@@ -217,6 +282,56 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
                 rule.onNodeWithTag("notification_group_toggle").assertIsDisplayed()
                 assertEquals(expandedHeights.getValue(tab.name), rule.onNodeWithTag(tab.header).fetchSemanticsNode().boundsInRoot.height, 1f)
                 androidx.test.espresso.Espresso.pressBack()
+            }
+        }
+    }
+
+    @Test fun searchHeaderMarginsHideTheScrollingContent() = withHome {
+        rule.onNodeWithTag("main_tab_explore").performClick()
+        rule.onNodeWithTag("explore_tab_hashtags").performClick()
+        val content = rule.onNodeWithTag("explore_list_hashtags")
+        rule.waitUntil(5_000) { rule.onAllNodesWithTag("explore_list_hashtags").fetchSemanticsNodes().isNotEmpty() }
+        // Move real post text and dividers under the expanded search header without hiding it.
+        assertSearchHeaderCovers(content)
+        savePreview("explore-opaque-header")
+
+        val input = rule.onNodeWithTag("search_input")
+        input.performClick().performTextInput("散歩")
+        input.performImeAction()
+        waitForKeyboard(false)
+        rule.onNodeWithTag("search_target_hashtags").performClick()
+        assertSearchHeaderCovers(rule.onNodeWithTag("search_results_hashtags"))
+        savePreview("search-opaque-header")
+    }
+
+    private fun assertSearchHeaderCovers(content: SemanticsNodeInteraction) {
+        content.performScrollToIndex(8)
+        readOlderPosts(content)
+        content.performTouchInput {
+            swipe(Offset(width * .5f, height * .25f), Offset(width * .5f, height * .45f), 600)
+        }
+        rule.waitForIdle()
+        assertSearchHeaderIsOpaque()
+    }
+
+    private fun assertSearchHeaderIsOpaque() {
+        val header = rule.onNodeWithTag("main_search_header").fetchSemanticsNode().boundsInRoot
+        val pixels = rule.onRoot().captureToImage().toPixelMap()
+        // The area outside the rounded field must be the same opaque surface as the tabs.
+        val expected = pixels[1, header.bottom.toInt() + 2]
+        for (x in 1 until pixels.width - 1) {
+            val actual = pixels[x, header.top.toInt() + 2]
+            assertTrue("Search header top margin must hide the list at x=$x, header=$header: $actual vs $expected",
+                abs(actual.red - expected.red) + abs(actual.green - expected.green) +
+                    abs(actual.blue - expected.blue) < .015f)
+        }
+        for (y in header.top.toInt() + 1 until header.bottom.toInt() - 1) {
+            for (x in listOf(1, pixels.width - 2)) {
+                val actual = pixels[x, y]
+                val difference = abs(actual.red - expected.red) + abs(actual.green - expected.green) +
+                    abs(actual.blue - expected.blue)
+                assertTrue("Search header margin must cover the list at ($x, $y): $actual vs $expected",
+                    difference < .015f)
             }
         }
     }
@@ -246,8 +361,8 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         nav().assertIsDisplayed()
         rule.onNodeWithTag("main_tab_explore").assertIsSelected()
         readOlderPosts(results)
-        assertTrue(header.fetchSemanticsNode().boundsInRoot.height < expanded / 2)
-        nav().assertDoesNotExist()
+        assertEquals(0f, header.fetchSemanticsNode().boundsInRoot.height, 1f)
+        nav().assertIsDisplayed()
         rule.onNodeWithTag("search_target_posts").assertIsDisplayed()
     }
 
@@ -259,13 +374,23 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         readOlderPosts(content)
         content.performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, 100_000f)) }
         rule.waitForIdle()
-        nav().assertDoesNotExist()
+        nav().assertIsDisplayed()
+        assertEquals(restingFooter, nav().fetchSemanticsNode().boundsInRoot)
         val last = rule.onNodeWithText("本文 39", substring = true)
         last.assertIsDisplayed()
         val lastPost = rule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().last().boundsInRoot
-        assertTrue("Last profile post must clear the resting footer even while it is hidden",
+        assertTrue("Last profile post must clear the fixed footer",
             lastPost.bottom <= restingFooter.top + 1f)
         savePreview("profile-end")
+    }
+
+    private fun topInsetPx(): Float {
+        var inset = 0
+        rule.runOnUiThread {
+            inset = requireNotNull(ViewCompat.getRootWindowInsets(rule.activity.window.decorView))
+                .getInsets(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.displayCutout()).top
+        }
+        return inset.toFloat()
     }
 
     private fun waitForKeyboard(visible: Boolean) {
@@ -313,11 +438,12 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             spoilerText = "", sensitive = false, visibility = "public", url = null,
             repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = emptyList(),
         ) }
+        val tags = List(40) { SearchTag("散歩$it", "https://example.test/tags/walk$it", postingAccounts = 3L) }
         val repository = object : TimelineRepository {
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(TimelinePage(posts, null, true))
             override suspend fun getExplore(session: AccountSession, feed: ExploreFeed, cursor: String?, limit: Int) =
-                Result.success(ExplorePage(statuses = posts))
+                Result.success(if (feed == ExploreFeed.Hashtags) ExplorePage(tags = tags) else ExplorePage(statuses = posts))
             override suspend fun getProfile(session: AccountSession, accountId: String) = Result.success(UserProfile(
                 author = StatusAuthor("me", "自分", "me@example.test", ""), headerUrl = "", noteHtml = "<p>プロフィール紹介</p>",
                 followersCount = 10, followingCount = 20, statusesCount = 40, statuses = posts,
@@ -327,7 +453,7 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
                 Result.success(TimelinePage(posts, null, true))
             override suspend fun getFeaturedTags(session: AccountSession, accountId: String) = Result.success(emptyList<FeaturedTag>())
             override suspend fun search(session: AccountSession, query: String, target: SearchTarget, offset: Int, limit: Int) =
-                Result.success(SearchPage(SearchResults(emptyList(), posts, emptyList()), null, true))
+                Result.success(SearchPage(SearchResults(emptyList(), posts, tags), null, true))
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(NotificationPage(List(40) { i -> TimelineNotification("notice-$i", "follow",
                     "2026-11-04T00:00:00Z", posts[i].author, null) }, null, true))

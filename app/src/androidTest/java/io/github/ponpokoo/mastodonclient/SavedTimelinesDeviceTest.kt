@@ -100,6 +100,15 @@ class SavedTimelinesDeviceTest {
         }
         rule.waitUntil(5_000) { ::model.isInitialized && model.state.value.loaded }
         rule.waitForIdle()
+        savePreview(kind?.name ?: "lists")
+    }
+
+    private fun savePreview(name: String) {
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = java.io.File(context.filesDir, "saved-timeline-previews").apply { mkdirs() }
+        java.io.File(directory, "$name.png").outputStream().use {
+            rule.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
     }
 
     private fun openAccountManagement() {
@@ -139,6 +148,7 @@ class SavedTimelinesDeviceTest {
         rule.runOnIdle { assertEquals("member-1", openedAccount) }
         rule.onNodeWithText("Saved fixture post").assertDoesNotExist()
         rule.onNodeWithText("投稿がありません").assertIsDisplayed()
+        savePreview("Favourites")
         rule.runOnIdle { assertEquals(2, calls.get()) }
     }
 

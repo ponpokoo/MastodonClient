@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.mutableIntStateOf
+import io.github.ponpokoo.mastodonclient.feature.common.OverlayHeaderColumn
+import io.github.ponpokoo.mastodonclient.feature.common.CollapsingHeaderSpacer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -128,8 +136,12 @@ internal fun NotificationsContent(
     noticeContent: (@Composable () -> Unit)? = null,
     allDisplayRows: List<NotificationDisplayRow>? = null,
     drawBehindBottomBar: Boolean = false,
+    topContentPadding: Dp = 0.dp,
+    headerCollapseOffset: () -> Int = { 0 },
     modifier: Modifier = Modifier,
 ) {
+    val headerDensity = LocalDensity.current
+    var filterRowHeightPx by remember { mutableIntStateOf(0) }
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
     check(listStates.size == NotificationFilter.entries.size)
@@ -180,9 +192,16 @@ internal fun NotificationsContent(
             enabled = canPullRefresh,
             onRefresh = onRefresh,
             modifier = modifier.fillMaxSize().padding(viewportPadding).testTag("notifications_screen"),
+            indicatorModifier = Modifier.offset {
+                IntOffset(0, (with(headerDensity) { topContentPadding.roundToPx() } + headerCollapseOffset() + filterRowHeightPx)
+                    .coerceAtLeast(0))
+            },
         ) {
-            Column(Modifier.fillMaxSize()) {
-                AppTabRow(selectedTabIndex = filterTabs.selectedPage) {
+            OverlayHeaderColumn(Modifier.fillMaxSize(), collapseOffset = headerCollapseOffset, header = {
+                Column {
+                CollapsingHeaderSpacer(topContentPadding, headerCollapseOffset)
+                AppTabRow(selectedTabIndex = filterTabs.selectedPage,
+                    modifier = Modifier.onSizeChanged { filterRowHeightPx = it.height }) {
                     NotificationFilter.entries.forEach { filter ->
                         AppTab(
                             modifier = Modifier.testTag("notification_filter_${filter.name.lowercase()}"),
@@ -192,7 +211,10 @@ internal fun NotificationsContent(
                         )
                     }
                 }
-                Box(Modifier.fillMaxWidth().weight(1f)) {
+                }
+            }) { overlayPadding ->
+                val density = LocalDensity.current
+                Box(Modifier.fillMaxSize()) {
                 HorizontalPager(
                     state = filterPagerState,
                     modifier = Modifier.fillMaxSize().testTag("notification_filter_pager"),
@@ -210,7 +232,7 @@ internal fun NotificationsContent(
                         filteredNotifications.isEmpty() && pageState.notificationsError == null
                     Box(Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.fillMaxSize().testTag("notifications_list_${filter.name.lowercase()}"),
-                        state = listStates[page], contentPadding = PaddingValues(bottom = bottomPadding)) {
+                        state = listStates[page], contentPadding = PaddingValues(top = overlayPadding, bottom = bottomPadding)) {
                     if (!supported && !checkingCapabilities) item {
                         MessageContent("現在サポートしていません")
                     }
@@ -298,7 +320,9 @@ internal fun NotificationsContent(
                     }
                 }
                 if (noticeContent != null || newNoticeMessage != null) {
-                    Box(Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+                    Box(Modifier.align(Alignment.TopCenter).offset {
+                        IntOffset(0, (with(density) { overlayPadding.roundToPx() } + headerCollapseOffset()).coerceAtLeast(0))
+                    }.padding(top = 8.dp)) {
                         if (noticeContent != null) noticeContent()
                         else newNoticeMessage?.let { TimelineNotice(it, onNewNoticeClick) }
                     }

@@ -27,6 +27,11 @@ import io.github.ponpokoo.mastodonclient.feature.common.rememberSwipeTabs
 import io.github.ponpokoo.mastodonclient.feature.common.AppTab
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabRow
 import io.github.ponpokoo.mastodonclient.feature.common.AppTabText
+import io.github.ponpokoo.mastodonclient.feature.common.OverlayHeaderColumn
+import io.github.ponpokoo.mastodonclient.feature.common.CollapsingHeaderSpacer
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreUiState
 import io.github.ponpokoo.mastodonclient.feature.search.ExploreTabState
 import io.github.ponpokoo.mastodonclient.feature.tag.TagSubscriptionButton
@@ -40,6 +45,8 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
     onFindTags: () -> Unit = {},
     scrollToTopRequest: Long = 0L,
     bottomContentPadding: Dp = 0.dp,
+    topHeaderPadding: Dp = 0.dp,
+    headerCollapseOffset: () -> Int = { 0 },
 ) {
     val tabs = key(state.sessionKey) {
         rememberSwipeTabs(state.selectedFeed.ordinal, ExploreFeed.entries.size) { onSelect(ExploreFeed.entries[it]) }
@@ -54,7 +61,9 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
         }
     }
     var confirm by remember(state.sessionKey) { mutableStateOf<SearchTag?>(null) }
-    Column(modifier) {
+    OverlayHeaderColumn(modifier, collapseOffset = headerCollapseOffset, header = {
+        Column {
+        CollapsingHeaderSpacer(topHeaderPadding, headerCollapseOffset)
         AppTabRow(selectedTabIndex = tabs.selectedPage) {
             ExploreFeed.entries.forEach { feed ->
                 AppTab(selected = feed.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(feed.ordinal) },
@@ -65,13 +74,19 @@ internal fun ExploreContent(state: ExploreUiState, onSelect: (ExploreFeed) -> Un
                 }
             }
         }
-        HorizontalPager(pager, key = { ExploreFeed.entries[it] }, modifier = Modifier.fillMaxWidth().weight(1f).testTag("explore_pager")) { index ->
+        }
+    }) { overlayPadding ->
+        val density = LocalDensity.current
+        HorizontalPager(pager, key = { ExploreFeed.entries[it] }, modifier = Modifier.fillMaxSize().testTag("explore_pager")) { index ->
             val feed = ExploreFeed.entries[index]
             val tab = state.tabs[feed] ?: ExploreTabState()
             AppPullToRefreshBox(isRefreshing = tab.loading && tab.page != null, onRefresh = onRefresh,
-                enabled = tab.page != null, modifier = Modifier.fillMaxSize()) {
+                enabled = tab.page != null, modifier = Modifier.fillMaxSize(),
+                indicatorModifier = Modifier.offset {
+                    IntOffset(0, (with(density) { overlayPadding.roundToPx() } + headerCollapseOffset()).coerceAtLeast(0))
+                }) {
                 LazyColumn(Modifier.fillMaxSize().testTag("explore_list_${feed.name.lowercase()}"), state = lists[index],
-                    contentPadding = PaddingValues(bottom = bottomContentPadding)) {
+                    contentPadding = PaddingValues(top = overlayPadding, bottom = bottomContentPadding)) {
                     tab.page?.let { page ->
                         items(page.statuses, key = { it.timelineId }) { post(it) }
                         items(page.tags, key = { it.name.lowercase(java.util.Locale.ROOT) }) { tag ->

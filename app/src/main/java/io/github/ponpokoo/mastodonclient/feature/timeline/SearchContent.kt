@@ -8,6 +8,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingMoreIndicator
 import io.github.ponpokoo.mastodonclient.feature.common.MessageContent
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,8 @@ import io.github.ponpokoo.mastodonclient.feature.search.SearchTabState
 import io.github.ponpokoo.mastodonclient.feature.search.SearchUiState
 import io.github.ponpokoo.mastodonclient.feature.search.message
 import io.github.ponpokoo.mastodonclient.feature.common.withoutBottomPadding
+import io.github.ponpokoo.mastodonclient.feature.common.OverlayHeaderColumn
+import io.github.ponpokoo.mastodonclient.feature.common.CollapsingHeaderSpacer
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -94,6 +97,7 @@ internal fun SearchContent(
     modifier: Modifier = Modifier,
     searchBarModifier: Modifier = Modifier,
     onSearchEditingChanged: (Boolean) -> Unit = {},
+    headerCollapseOffset: () -> Int = { 0 },
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
@@ -116,17 +120,24 @@ internal fun SearchContent(
         rememberSwipeTabs(state.selectedTarget.ordinal, SearchTarget.entries.size) { onSelectTarget(SearchTarget.entries[it]) }
     }
     val pager = tabs.pagerState
-    Column(modifier.fillMaxSize().padding(viewportPadding).testTag("search_screen")) {
-        SearchBar(
-            query = state.searchQuery, active = state.isSearchActive, sessionKey = state.sessionKey,
-            onQueryChanged = onQueryChanged, onEnterSearch = onEnterSearch,
-            onBack = onBack, onClear = onClear, onSearch = onSearch,
-            modifier = searchBarModifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            isVisible = isVisible,
-            focusRequester = searchFocusRequester,
-            onEditingChanged = onSearchEditingChanged,
-        )
+    OverlayHeaderColumn(modifier.fillMaxSize().padding(viewportPadding).testTag("search_screen"),
+        collapseOffset = headerCollapseOffset, header = {
+        Box(searchBarModifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+            SearchBar(
+                query = state.searchQuery, active = state.isSearchActive, sessionKey = state.sessionKey,
+                onQueryChanged = onQueryChanged, onEnterSearch = onEnterSearch,
+                onBack = onBack, onClear = onClear, onSearch = onSearch,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                isVisible = isVisible,
+                focusRequester = searchFocusRequester,
+                onEditingChanged = onSearchEditingChanged,
+            )
+        }
+    }) { searchHeaderHeight ->
         if (state.isSearchActive && state.searchQuery.isNotBlank()) {
+            OverlayHeaderColumn(Modifier.fillMaxSize(), collapseOffset = headerCollapseOffset, header = {
+            Column {
+            CollapsingHeaderSpacer(searchHeaderHeight, headerCollapseOffset)
             AppTabRow(selectedTabIndex = tabs.selectedPage) {
                 SearchTarget.entries.forEach { target -> AppTab(
                     selected = target.ordinal == tabs.selectedPage, onClick = { tabs.selectPage(target.ordinal) },
@@ -134,14 +145,16 @@ internal fun SearchContent(
                     modifier = Modifier.testTag("search_target_${target.name.lowercase()}"),
                 ) }
             }
+            }
+            }) { overlayPadding ->
             HorizontalPager(state = pager, key = { SearchTarget.entries[it] },
-                modifier = Modifier.fillMaxWidth().weight(1f).testTag("search_target_pager")) { page ->
+                modifier = Modifier.fillMaxSize().testTag("search_target_pager")) { page ->
                 val target = SearchTarget.entries[page]
                 val tab = state.tabs[target] ?: SearchTabState()
                 val results = tab.results
                 Box(Modifier.fillMaxSize()) {
                 LazyColumn(Modifier.fillMaxSize().testTag("search_results_${target.name.lowercase()}"), state = listStates[page],
-                    contentPadding = PaddingValues(bottom = bottomPadding)) {
+                    contentPadding = PaddingValues(top = overlayPadding, bottom = bottomPadding)) {
                     if (results != null) {
                         when (target) {
                             SearchTarget.Accounts -> items(results.accounts, key = StatusAuthor::id) { AccountResult(it, onAccountClick) }
@@ -194,9 +207,12 @@ internal fun SearchContent(
                 if (tab.isSearching) ListLoadingContent()
                 }
             }
-        } else if (state.isSearchActive) MessageContent("キーワード、ユーザー名、URLを入力してください")
+            }
+        } else if (state.isSearchActive) Box(Modifier.fillMaxSize().padding(top = searchHeaderHeight)) {
+            MessageContent("キーワード、ユーザー名、URLを入力してください")
+        }
         else ExploreContent(exploreState, onSelectExploreFeed, onRefreshExplore, onLoadMoreExplore, onRetryExplore,
-            onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxWidth().weight(1f), post = { status ->
+            onOpenTag, onOpenLink, onUnfollowTag, modifier = Modifier.fillMaxSize(), post = { status ->
                 SocialStatus(
                     status = status,
                     onStatusClick = onStatusClick,
@@ -220,7 +236,8 @@ internal fun SearchContent(
                 onEnterSearch()
                 searchFocusRequester.requestFocus()
                 keyboard?.show()
-            }, scrollToTopRequest = scrollToTopRequest, bottomContentPadding = bottomPadding)
+            }, scrollToTopRequest = scrollToTopRequest, bottomContentPadding = bottomPadding,
+            topHeaderPadding = searchHeaderHeight, headerCollapseOffset = headerCollapseOffset)
     }
 }
 

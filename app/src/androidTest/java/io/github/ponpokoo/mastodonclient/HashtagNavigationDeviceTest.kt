@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -112,6 +113,10 @@ class HashtagNavigationDeviceTest {
         render()
         rule.onNode(hasScrollAction()).performScrollToIndex(12)
         rule.onNodeWithText("Photo post 12").assertIsDisplayed()
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        java.io.File(context.filesDir, "hashtag-scrolled-preview.png").outputStream().use {
+            rule.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
         val originalPosition = scrollPosition()
         val originalModel = currentModel
         rule.runOnIdle { navigation.openHashtag("Other") }

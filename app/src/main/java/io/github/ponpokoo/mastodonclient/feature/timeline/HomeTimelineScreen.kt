@@ -130,6 +130,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -151,13 +152,17 @@ import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileScreen
 import io.github.ponpokoo.mastodonclient.feature.common.StatusContentText
 import io.github.ponpokoo.mastodonclient.feature.common.AppPullToRefreshBox
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarHeight
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarShadowElevation
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
+import io.github.ponpokoo.mastodonclient.ui.theme.MainTopBarTitleStyle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 
 private const val MainNavigationBarAlpha = 0.94f
 private val MainNavigationMaxWidth = 352.dp
@@ -268,22 +273,40 @@ fun HomeTimelineScreen(
             rememberTopAppBarState()
         }
     }
+    val navigationScrollStates = destinations.map { tab ->
+        key(mainState.session?.sessionId, tab, state.selectedFeed.takeIf { tab == MainDestination.Home }) {
+            val header = topBarStates[tab.ordinal]
+            remember(header) { MainNavigationScrollState(header) }
+        }
+    }
     val topMenus = remember(mainState.session?.sessionId) { mutableStateMapOf<MainDestination, Boolean>() }
     var searchEditing by remember(mainState.session?.sessionId) { mutableStateOf(false) }
     val topBarHeights = remember { mutableStateMapOf<MainDestination, Int>() }
     val topInsetPx = mediaContentInsets().getTop(LocalDensity.current)
+    val canScrollBars = destinations.map { tab ->
+        { destination == tab && topMenus[tab] != true && (tab != MainDestination.Explore || !searchEditing) }
+    }
     val scrollBehaviors = destinations.map { tab ->
         TopAppBarDefaults.enterAlwaysScrollBehavior(
             state = topBarStates[tab.ordinal],
-            canScroll = { destination == tab && topMenus[tab] != true && (tab != MainDestination.Explore || !searchEditing) },
+            canScroll = canScrollBars[tab.ordinal],
+            flingAnimationSpec = null,
         )
     }
     val homeTopBarState = topBarStates[MainDestination.Home.ordinal]
     val currentTopBarState = topBarStates[destination.ordinal]
-    LaunchedEffect(topMenus[destination], searchEditing, destination) {
+    val currentNavigationScrollState = navigationScrollStates[destination.ordinal]
+    val scrollConnections = scrollBehaviors.mapIndexed { index, behavior ->
+        val navigationState = navigationScrollStates[index]
+        remember(behavior, navigationState, scope) {
+            navigationState.connection(scope, canScrollBars[index])
+        }
+    }
+    LaunchedEffect(topMenus[destination], searchEditing, destination, currentNavigationScrollState) {
         if (topMenus[destination] == true || (destination == MainDestination.Explore && searchEditing)) {
             currentTopBarState.heightOffset = 0f
             currentTopBarState.contentOffset = 0f
+            currentNavigationScrollState.show()
         }
     }
     val topScrollScope = key(
@@ -458,7 +481,10 @@ fun HomeTimelineScreen(
         if (state.isRefreshing) {
             homeRefreshStarted = true
         } else if (homeRefreshStarted) {
-            if (scrollHomeAfterRefresh) timelineListState.animateToTimelineTop()
+            if (scrollHomeAfterRefresh) {
+                navigationScrollStates[MainDestination.Home.ordinal].show()
+                timelineListState.animateToTimelineTop()
+            }
             homeRefreshStarted = false
             scrollHomeAfterRefresh = false
         }
@@ -500,11 +526,7 @@ fun HomeTimelineScreen(
             }
         }
     }
-    val navigationHiddenByIme = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val navigationHiddenByScroll by remember(currentTopBarState) {
-        derivedStateOf { currentTopBarState.collapsedFraction >= 1f }
-    }
-    val navigationHidden = navigationHiddenByIme || navigationHiddenByScroll
+    val navigationHidden = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -527,11 +549,12 @@ fun HomeTimelineScreen(
                 )
             } else if (destination != MainDestination.Explore) {
                 TopAppBar(
+                    expandedHeight = AppTopBarHeight,
                     modifier = Modifier.testTag("main_top_bar_${destination.name.lowercase()}")
                         .onSizeChanged { topBarHeights[destination] = it.height },
                     scrollBehavior = scrollBehaviors[destination.ordinal],
                     colors = TopAppBarDefaults.topAppBarColors(scrolledContainerColor = MaterialTheme.colorScheme.surface),
-                    title = { Text(destination.label) },
+                    title = { Text(destination.label, style = MainTopBarTitleStyle) },
                     actions = {
                         if (destination == MainDestination.Notifications) NotificationDisplaySettings(
                             grouped = mainState.preferences.groupNotifications,
@@ -544,12 +567,11 @@ fun HomeTimelineScreen(
             }
         },
         bottomBar = {
-            // Reuse the header's scroll progress without resizing the list or moving the FAB.
-            // Fully hidden controls must not remain actionable or in accessibility traversal.
+            // Keep navigation fixed while the header retreats independently.
+            // Controls covered by the IME must not remain actionable or in accessibility traversal.
             Box(
                 Modifier.fillMaxWidth()
                     .graphicsLayer {
-                        translationY = size.height * currentTopBarState.collapsedFraction
                         alpha = if (navigationHidden) 0f else 1f
                     }
                     .then(if (navigationHidden) Modifier.clearAndSetSemantics {} else Modifier)
@@ -585,6 +607,7 @@ fun HomeTimelineScreen(
                                         topScrollScope.launch {
                                             currentTopBarState.heightOffset = 0f
                                             currentTopBarState.contentOffset = 0f
+                                            currentNavigationScrollState.show()
                                             when (item) {
                                                 MainDestination.Home -> {
                                                     if (state.isResumedWindow) viewModel.goToLatest()
@@ -625,7 +648,8 @@ fun HomeTimelineScreen(
         snackbarHost = {},
     ) { padding ->
         val measuredPadding = PaddingValues(
-            start = padding.calculateStartPadding(layoutDirection), top = padding.calculateTopPadding(),
+            start = padding.calculateStartPadding(layoutDirection),
+            top = with(LocalDensity.current) { topInsetPx.toDp() },
             end = padding.calculateEndPadding(layoutDirection),
             bottom = padding.calculateBottomPadding() + MainNavigationContentGap,
         )
@@ -637,10 +661,15 @@ fun HomeTimelineScreen(
             key = { destinations[it] },
             userScrollEnabled = false,
         ) { page ->
+            val pageDensity = LocalDensity.current
+            // Match Material's pixel rounding so the following tabs meet the bar during a drag.
+            val expandedTopBarHeight = with(pageDensity) {
+                (-topBarStates[page].heightOffsetLimit).takeIf { it < 1_000_000f }?.toDp() ?: AppTopBarHeight
+            }
             val pagePadding = if (destinations[page] == destination) measuredPadding
                 else savedPagePadding[destinations[page]] ?: measuredPadding
             val pageModifier = if (destinations[page] == destination)
-                Modifier.nestedScroll(scrollBehaviors[page].nestedScrollConnection) else Modifier
+                Modifier.nestedScroll(scrollConnections[page]) else Modifier
             CompositionLocalProvider(
                 LocalMediaSourceIsHome provides (destinations[page] == MainDestination.Home),
                 io.github.ponpokoo.mastodonclient.feature.status.LocalPollVoteState provides
@@ -652,6 +681,8 @@ fun HomeTimelineScreen(
                     state = state,
                     padding = pagePadding,
                     drawBehindBottomBar = true,
+                    topContentPadding = expandedTopBarHeight,
+                    headerCollapseOffset = { topBarStates[page].heightOffset.roundToInt() },
                     modifier = pageModifier,
                     listState = timelineListState,
                     onRefresh = {
@@ -687,6 +718,7 @@ fun HomeTimelineScreen(
                     searchBarModifier = Modifier.testTag("main_search_header")
                         .onSizeChanged { topBarHeights[MainDestination.Explore] = topInsetPx + it.height }
                         .collapsingSearchHeader(topBarStates[MainDestination.Explore.ordinal]),
+                    headerCollapseOffset = { topBarStates[page].heightOffset.roundToInt() },
                     onSearchEditingChanged = { searchEditing = it },
                     scrollToTopRequest = exploreScrollToTopRequest,
                     exploreState = exploreState,
@@ -725,6 +757,8 @@ fun HomeTimelineScreen(
                     state = notificationsState,
                     modifier = pageModifier,
                     drawBehindBottomBar = true,
+                    topContentPadding = expandedTopBarHeight,
+                    headerCollapseOffset = { topBarStates[page].heightOffset.roundToInt() },
                     allDisplayRows = allNotificationRows,
                     padding = pagePadding,
                     onRefresh = notificationsViewModel::refreshNotifications,
@@ -756,6 +790,11 @@ fun HomeTimelineScreen(
                     viewModel = profileViewModel,
                     modifier = pageModifier,
                     drawBehindBottomBar = true,
+                    topContentPadding = expandedTopBarHeight,
+                    topBarVisibleHeight = {
+                        (with(pageDensity) { expandedTopBarHeight.roundToPx() } +
+                            topBarStates[page].heightOffset.roundToInt()).coerceAtLeast(0).toFloat()
+                    },
                     preferences = mainState.preferences,
                     padding = pagePadding,
                     snackbarHostState = snackbarHostState,
@@ -793,6 +832,7 @@ fun HomeTimelineScreen(
                 onClick = {
                     homeTopBarState.heightOffset = 0f
                     homeTopBarState.contentOffset = 0f
+                    navigationScrollStates[MainDestination.Home.ordinal].show()
                     if (state.isResumedWindow) viewModel.goToLatest()
                     else topScrollScope.launch { timelineListState.animateToTimelineTop() }
                 },
@@ -896,9 +936,10 @@ internal fun TimelineTopBar(
     }
 
     TopAppBar(
+        expandedHeight = AppTopBarHeight,
         modifier = modifier.testTag("home_top_bar").graphicsLayer {
             // Fade the shadow with the toolbar so it does not remain under the status bar.
-            shadowElevation = 2.dp.toPx() * (1f - (scrollBehavior?.state?.collapsedFraction ?: 0f))
+            shadowElevation = AppTopBarShadowElevation.toPx() * (1f - (scrollBehavior?.state?.collapsedFraction ?: 0f))
         },
         scrollBehavior = scrollBehavior,
         colors = TopAppBarDefaults.topAppBarColors(
@@ -918,6 +959,7 @@ internal fun TimelineTopBar(
                             TimelineFeed.Local -> "ローカル"
                             TimelineFeed.Federated -> "連合"
                         },
+                        style = MainTopBarTitleStyle,
                     )
                     Icon(Icons.Outlined.ArrowDropDown, contentDescription = "フィードを切り替える")
                 }
@@ -1076,9 +1118,12 @@ internal fun TimelineContent(
     preferences: AppPreferences,
     onLoadGap: (String) -> Unit = {},
     drawBehindBottomBar: Boolean = false,
+    topContentPadding: Dp = 0.dp,
+    headerCollapseOffset: () -> Int = { 0 },
     modifier: Modifier = Modifier,
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
+    val contentDensity = LocalDensity.current
     val rows = remember(state.statuses, state.homeIndex, state.automaticGapCheck) { state.displayRows() }
     val rowKeys = remember(rows) { rows.map { it.key } }
     var previousKeys by remember(listState) { mutableStateOf<List<Any>>(emptyList()) }
@@ -1125,11 +1170,15 @@ internal fun TimelineContent(
             isRefreshing = state.isRefreshing,
             onRefresh = onRefresh,
             modifier = modifier.fillMaxSize().padding(viewportPadding),
+            indicatorModifier = Modifier.offset {
+                IntOffset(0, (with(contentDensity) { topContentPadding.roundToPx() } + headerCollapseOffset()).coerceAtLeast(0))
+            },
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize().testTag("timeline_list"),
-                contentPadding = PaddingValues(bottom = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp),
+                contentPadding = PaddingValues(top = topContentPadding,
+                    bottom = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp),
             ) {
                 items(items = rows, key = { it.key }) { row ->
                     if (row is TimelineRow.Gap) {

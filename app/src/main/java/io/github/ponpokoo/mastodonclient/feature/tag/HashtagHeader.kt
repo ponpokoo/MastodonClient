@@ -6,8 +6,11 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarHeight
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarShadowElevation
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -17,6 +20,12 @@ internal fun HashtagHeader(name: String, fromTrend: Boolean, following: Boolean?
     var confirm by remember(name) { mutableStateOf(false) }
     val toggle = { if (following == true) confirm = true else onToggle() }
     TopAppBar(title = { Text("#$name", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        expandedHeight = AppTopBarHeight,
+        modifier = Modifier.graphicsLayer { shadowElevation = AppTopBarShadowElevation.toPx() },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
         navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
         actions = {
             if (fromTrend) TagSubscriptionButton(following == true, following != null && !busy,

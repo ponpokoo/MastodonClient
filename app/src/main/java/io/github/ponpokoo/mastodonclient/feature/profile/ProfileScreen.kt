@@ -50,6 +50,8 @@ internal fun ProfileScreen(
     profileHeaderListState: androidx.compose.foundation.lazy.LazyListState? = null,
     onOpenReactions: () -> Unit = {},
     drawBehindBottomBar: Boolean = false,
+    topContentPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    topBarVisibleHeight: () -> Float = { 0f },
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -106,6 +108,8 @@ internal fun ProfileScreen(
                 state = state,
                 padding = padding,
                 drawBehindBottomBar = drawBehindBottomBar,
+                topContentPadding = topContentPadding,
+                topBarVisibleHeight = topBarVisibleHeight,
                 modifier = modifier,
                 onRetry = viewModel::retryProfile,
                 onRetryPosts = viewModel::retryProfile,

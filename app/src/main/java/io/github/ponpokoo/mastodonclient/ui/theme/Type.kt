@@ -15,3 +15,8 @@ val Typography = Typography(
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
     labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
 )
+
+internal val MainTopBarTitleStyle = Typography.titleLarge.copy(
+    fontSize = 20.sp,
+    fontWeight = FontWeight.Medium,
+)

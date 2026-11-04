@@ -23,6 +23,7 @@ fun AppPullToRefreshBox(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    indicatorModifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val state = rememberPullToRefreshState()
@@ -40,7 +41,7 @@ fun AppPullToRefreshBox(
             state = state,
             isRefreshing = isRefreshing,
             maxDistance = AppPullToRefreshIndicatorDistance,
-            modifier = Modifier.align(Alignment.TopCenter),
+            modifier = Modifier.align(Alignment.TopCenter).then(indicatorModifier),
         )
     }
 }

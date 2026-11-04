@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -84,6 +85,12 @@ fun SavedTimelinesScreen(
         modifier = Modifier.testTag("saved_timelines_screen"),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = { TopAppBar(
+            expandedHeight = AppTopBarHeight,
+            modifier = Modifier.graphicsLayer { shadowElevation = AppTopBarShadowElevation.toPx() },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
             windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
             title = { Text(title, Modifier.clickable { scope.launch { listState.animateToTimelineTop() } }) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "戻る") } },
