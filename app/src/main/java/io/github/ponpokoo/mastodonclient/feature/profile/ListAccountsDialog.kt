@@ -9,7 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,7 +27,7 @@ internal fun ListAccountsDialog(
     onAccountClick: (String) -> Unit,
 ) {
     val busy = state.loading || state.removingId != null
-    val maxHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
+    val maxHeight = LocalWindowInfo.current.containerDpSize.height * 0.55f
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("リストのメンバー") },

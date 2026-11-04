@@ -921,10 +921,10 @@ internal fun TimelineTopBar(
     sessions: List<AccountSession>,
     onAccountSelected: (String) -> Unit,
     onSettings: () -> Unit,
+    modifier: Modifier = Modifier,
     hasUnreadAnnouncements: Boolean = false,
     scrollBehavior: TopAppBarScrollBehavior? = null,
     onMenuVisibilityChanged: (Boolean) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     var feedMenuOpen by remember { mutableStateOf(false) }
     var accountDialogOpen by remember { mutableStateOf(false) }
@@ -1116,11 +1116,11 @@ internal fun TimelineContent(
     onMoreClick: (TimelineStatus) -> Unit,
     onUnavailableAction: (String) -> Unit,
     preferences: AppPreferences,
+    modifier: Modifier = Modifier,
     onLoadGap: (String) -> Unit = {},
     drawBehindBottomBar: Boolean = false,
     topContentPadding: Dp = 0.dp,
     headerCollapseOffset: () -> Int = { 0 },
-    modifier: Modifier = Modifier,
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val contentDensity = LocalDensity.current
@@ -1129,15 +1129,15 @@ internal fun TimelineContent(
     var previousKeys by remember(listState) { mutableStateOf<List<Any>>(emptyList()) }
     // Explicitly preserve the visible post, including index zero. Capture the viewport
     // at application time, not request time, so scrolling during HTTP is respected.
-    val anchor = if (preferences.keepPositionOnPullRefresh &&
-        state.resumeAnchorId == null && state.streamAutoScrollId == 0L &&
-        previousKeys.isNotEmpty() && previousKeys != rowKeys && !listState.isScrollInProgress) {
-        listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
-            item.key is String && item.key in previousKeys && item.key in rowKeys
-        }?.let { rowKeys.indexOf(it.key) to -it.offset }
-    } else null
     SideEffect {
         if (previousKeys != rowKeys) {
+            val anchor = if (preferences.keepPositionOnPullRefresh &&
+                state.resumeAnchorId == null && state.streamAutoScrollId == 0L &&
+                previousKeys.isNotEmpty() && !listState.isScrollInProgress) {
+                listState.layoutInfo.visibleItemsInfo.firstOrNull { item ->
+                    item.key is String && item.key in previousKeys && item.key in rowKeys
+                }?.let { rowKeys.indexOf(it.key) to -it.offset }
+            } else null
             if (anchor != null && !listState.isScrollInProgress) listState.requestScrollToItem(anchor.first, anchor.second)
             previousKeys = rowKeys
         }

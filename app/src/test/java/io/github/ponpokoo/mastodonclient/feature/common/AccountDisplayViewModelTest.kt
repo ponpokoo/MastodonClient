@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
@@ -138,7 +140,7 @@ class AccountDisplayViewModelTest : ScreenViewModelTestBase() {
             override fun observeUserStream(session: AccountSession) = flow<TimelineStreamEvent> { connections++; awaitCancellation() }
         }
         val main = own(MainSessionViewModel(auth, repository))
-        val timeline = own(TimelineViewModel(repository, main.browsing))
+        val timeline = own(TimelineViewModel(repository, main.browsing, SavedStateHandle()))
         runCurrent()
         val snapshot = main.browsing.snapshot.value
         val updated = testAccount.copy(displayName = "Fresh", username = "fresh", avatarUrl = "new.png")

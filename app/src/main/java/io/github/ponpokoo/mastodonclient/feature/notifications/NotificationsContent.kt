@@ -118,6 +118,7 @@ internal fun NotificationsContent(
     onOpenLink: (String) -> Unit,
     onReply: (TimelineStatus) -> Unit,
     onBoost: (TimelineStatus) -> Unit,
+    modifier: Modifier = Modifier,
     onQuote: ((TimelineStatus, QuoteMode) -> Unit)? = null,
     onFavourite: (TimelineStatus) -> Unit,
     onBookmark: (TimelineStatus) -> Unit,
@@ -138,7 +139,6 @@ internal fun NotificationsContent(
     drawBehindBottomBar: Boolean = false,
     topContentPadding: Dp = 0.dp,
     headerCollapseOffset: () -> Int = { 0 },
-    modifier: Modifier = Modifier,
 ) {
     val headerDensity = LocalDensity.current
     var filterRowHeightPx by remember { mutableIntStateOf(0) }

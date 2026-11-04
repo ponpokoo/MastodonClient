@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -60,7 +62,7 @@ class RequestFailureViewModelTest : ScreenViewModelTestBase() {
             val repository = object : ScreenRepositoryFake() {
                 override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int): Result<TimelinePage> = Result.failure(failure(kind))
             }
-            val vm = own(TimelineViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+            val vm = own(TimelineViewModel(repository, BrowsingSession().apply { activate(testAccount) }, SavedStateHandle()))
             advanceUntilIdle()
             assertTrue(vm.uiState.value.errorMessage.orEmpty().contains(expected))
             assertFalse(vm.uiState.value.isInitialLoading)

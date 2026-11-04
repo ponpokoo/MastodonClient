@@ -29,7 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,10 +45,11 @@ fun AccountSwitchDialog(
     onSelected: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val maxHeight = LocalWindowInfo.current.containerDpSize.height * 0.7f
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth()
-                .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.7f)
+                .heightIn(max = maxHeight)
                 .testTag("account_switch_dialog"),
             shape = RoundedCornerShape(24.dp),
             tonalElevation = 6.dp,

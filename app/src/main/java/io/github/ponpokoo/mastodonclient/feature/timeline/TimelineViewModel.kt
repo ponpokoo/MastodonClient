@@ -69,7 +69,7 @@ data class TimelineUiState(
 class TimelineViewModel(
     private val timelineRepository: TimelineRepository,
     browsing: BrowsingSession,
-    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val savedStateHandle: SavedStateHandle,
     private val announcementTimeMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : SessionScopedViewModel(browsing) {
     private val moderationCache = TimelineModerationCache()

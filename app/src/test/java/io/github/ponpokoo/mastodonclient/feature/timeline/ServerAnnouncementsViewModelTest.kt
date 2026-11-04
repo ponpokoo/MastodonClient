@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.ServerAnnouncement
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
@@ -33,7 +35,7 @@ class ServerAnnouncementsViewModelTest {
 
     private fun create(): TimelineViewModel {
         browsing.activate(SESSION)
-        return TimelineViewModel(repository, browsing, announcementTimeMillis = { now })
+        return TimelineViewModel(repository, browsing, SavedStateHandle(), announcementTimeMillis = { now })
     }
 
     @Test fun checksOnActivationAndThrottlesResumeWithoutOpeningSheet() = runTest(dispatcher) {

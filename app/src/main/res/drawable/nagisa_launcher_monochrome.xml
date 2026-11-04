@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The elephant and wave stay inside the adaptive icon's central safe zone. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M38,35 C33,28 23,29 23,40 C23,49 26,56 33,58 C28,46 31,39 38,35 Z M65,39 C74,36 80,44 79,53 C79,60 74,65 69,65 C74,60 74,54 71,53 C68,52 66,57 64,57 C68,51 68,45 65,39 Z M48,34 C36,34 30,42 31,53 C32,63 40,68 50,68 C47,65 46,61 47,57 C48,65 53,69 60,69 C68,69 74,63 75,57 C76,52 71,50 69,55 C67,60 63,62 60,60 C64,57 66,54 66,48 C66,39 59,34 48,34 Z M43,47 C45,48 44,52 42,54 C40,56 38,54 39,51 C39,49 41,46 43,47 Z M61,50 C63,51 62,55 60,56 C58,58 56,56 57,53 C57,51 59,49 61,50 Z" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M28,73 C38,68 46,71 54,74 C63,78 71,76 80,71" />
+</vector>

@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -118,7 +120,7 @@ class NotificationPrefetchDeviceTest {
         lateinit var actions: StatusActionsViewModel
         rule.runOnIdle {
             main = MainSessionViewModel(auth, repository).also { store.put("main", it) }
-            timeline = TimelineViewModel(repository, main.browsing).also { store.put("timeline", it) }
+            timeline = TimelineViewModel(repository, main.browsing, SavedStateHandle()).also { store.put("timeline", it) }
             search = SearchViewModel(repository, main.browsing).also { store.put("search", it) }
             notifications = NotificationsViewModel(repository, main.browsing, system).also { store.put("notifications", it) }
             profile = ProfileViewModel(repository, main.browsing).also { store.put("profile", it) }

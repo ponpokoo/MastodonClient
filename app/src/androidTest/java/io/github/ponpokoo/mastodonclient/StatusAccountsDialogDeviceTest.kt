@@ -20,9 +20,11 @@ import coil3.asImage
 import coil3.decode.DataSource
 import coil3.fetch.Fetcher
 import coil3.fetch.ImageFetchResult
+import coil3.intercept.Interceptor
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
+import io.github.ponpokoo.mastodonclient.core.image.AvatarImage
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusAccountsDialog
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -48,6 +50,12 @@ class StatusAccountsDialogDeviceTest {
     private fun prepareImages(): ImageLoader {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val loader = ImageLoader.Builder(context).components {
+            // These row-rendering tests use URL fixtures, including the shared avatar model.
+            add(Interceptor { chain ->
+                val avatar = chain.request.data as? AvatarImage
+                if (avatar == null) chain.proceed() else chain.withRequest(chain.request.newBuilder()
+                    .data(avatar.url).memoryCacheKey(avatar.url).diskCacheKey(avatar.url).build()).proceed()
+            })
             add(Fetcher.Factory<Uri> { data, _, _ ->
                 if (!data.toString().startsWith("https://avatars.example/")) null else Fetcher {
                     fetches.incrementAndGet()

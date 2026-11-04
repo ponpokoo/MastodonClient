@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
@@ -26,7 +28,7 @@ class WordMuteIntegrationTest : ScreenViewModelTestBase() {
                 Result.success(TimelinePage(listOf(wordMatch, serverMatch, kept), null, true))
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val model = own(TimelineViewModel(repository, browsing)); advanceUntilIdle()
+        val model = own(TimelineViewModel(repository, browsing, SavedStateHandle())); advanceUntilIdle()
         for (state in listOf(
             ServerAccountSettings(testAccount.instanceUrl, testAccount.accountId, filters = listOf(filter)),
             ServerAccountSettings(testAccount.instanceUrl, testAccount.accountId, fetch = mapOf(ServerSetting.Filters to SettingFetch(unsupported = true))),
@@ -55,7 +57,7 @@ class WordMuteIntegrationTest : ScreenViewModelTestBase() {
                 Result.success(NotificationPage(listOf(testNotification().copy(status = body)), null, true))
         }
         val browsing = BrowsingSession().also { it.activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing)); val notifications = own(NotificationsViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle())); val notifications = own(NotificationsViewModel(repository, browsing))
         advanceUntilIdle(); notifications.loadNotifications(); advanceUntilIdle()
         val initialFetches = fetches
         repository.wordMutes.value = mapOf(testAccount.sessionId to listOf("spoiler")); advanceUntilIdle()

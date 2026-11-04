@@ -56,24 +56,6 @@ class MainSessionViewModel(
     private var streamingSnapshot: BrowsingSession.Snapshot? = null
     private var preferencesReady = preferencesStore == null
     @Volatile private var isForeground = true
-    private var foregroundLifecycle: androidx.lifecycle.Lifecycle? = null
-    private val foregroundObserver = androidx.lifecycle.LifecycleEventObserver { _, _ ->
-        setForeground(foregroundLifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) == true)
-    }
-
-    fun bindForegroundLifecycle(lifecycle: androidx.lifecycle.Lifecycle) {
-        if (foregroundLifecycle === lifecycle) return
-        foregroundLifecycle?.removeObserver(foregroundObserver)
-        foregroundLifecycle = lifecycle
-        setForeground(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
-        lifecycle.addObserver(foregroundObserver)
-    }
-
-    override fun onCleared() {
-        foregroundLifecycle?.removeObserver(foregroundObserver)
-        foregroundLifecycle = null
-    }
-
     init {
         recoverPush()
         viewModelScope.launch {

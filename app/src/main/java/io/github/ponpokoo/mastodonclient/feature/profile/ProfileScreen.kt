@@ -45,6 +45,7 @@ internal fun ProfileScreen(
     onOpenBookmarks: () -> Unit,
     onOpenFavourites: () -> Unit,
     onEditStatus: (String) -> Unit,
+    modifier: Modifier = Modifier,
     openEditor: Boolean = false,
     profileListStates: List<androidx.compose.foundation.lazy.LazyListState>? = null,
     profileHeaderListState: androidx.compose.foundation.lazy.LazyListState? = null,
@@ -52,7 +53,6 @@ internal fun ProfileScreen(
     drawBehindBottomBar: Boolean = false,
     topContentPadding: androidx.compose.ui.unit.Dp = 0.dp,
     topBarVisibleHeight: () -> Float = { 0f },
-    modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.loadProfile() }

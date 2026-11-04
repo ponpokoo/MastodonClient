@@ -8,7 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -74,7 +74,7 @@ internal fun StatusMenuDialog(
     onRetryRelationship: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
+    val maxContentHeight = LocalWindowInfo.current.containerDpSize.height * 0.55f
     val relationship = moderation?.takeIf { it.accountId == status.author.id }?.relationship
     val relationshipReady = moderation != null && relationship != null && !moderation.loading && !moderation.busy
     if (!isOwnStatus && !relationshipReady) {

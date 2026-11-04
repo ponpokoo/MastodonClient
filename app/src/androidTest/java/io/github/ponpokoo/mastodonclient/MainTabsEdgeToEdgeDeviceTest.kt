@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.geometry.Offset
@@ -475,7 +477,7 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
         rule.runOnIdle {
             main = MainSessionViewModel(auth, repository).also { store.put("main", it) }
-            timeline = TimelineViewModel(repository, main.browsing).also { store.put("timeline", it) }
+            timeline = TimelineViewModel(repository, main.browsing, SavedStateHandle()).also { store.put("timeline", it) }
             search = SearchViewModel(repository, main.browsing).also { store.put("search", it) }
             notifications = NotificationsViewModel(repository, main.browsing).also { store.put("notifications", it) }
             profile = ProfileViewModel(repository, main.browsing).also { store.put("profile", it) }

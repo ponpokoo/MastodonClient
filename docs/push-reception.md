@@ -46,6 +46,8 @@ FIDを登録トークンとして送信する実装にはしていない。
 
 `NagisaMessagingService`は非公開ServiceとしてFCMのdataメッセージを受け取り、
 `FcmWorkScheduler`がWorkManagerへ暗号文または同期要求エンベロープと有効期限を保存する。
+WorkManagerは`NagisaApplication`の`Configuration.Provider`で必要時に初期化し、JobSchedulerのID範囲をポーリング通知の固定ID未満に限定する。
+ManifestではWorkManagerの既定Initializerだけを無効にし、ほかのAndroidX Startupの初期化は維持する。
 同じ登録・メッセージの実行中作業は重複登録しない。
 取得が必要な通知はネットワーク接続を待つ。Android 12以上の高優先度通知は
 expedited workを使用し、割当不足時は通常の作業として実行する。

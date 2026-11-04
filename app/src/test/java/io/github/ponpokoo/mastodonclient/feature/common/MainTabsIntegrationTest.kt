@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -140,7 +142,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
                 delayed.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
 
@@ -165,7 +167,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
                 delayed.await()
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
 
@@ -190,7 +192,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
             }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
 
@@ -213,7 +215,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
     @Test fun statusActionsUpdateAllTabsAndKeepBoostIdentity() = runTest(dispatcher) {
         val repository = ScreenRepositoryFake()
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val search = own(SearchViewModel(repository, browsing))
         val notifications = own(NotificationsViewModel(repository, browsing))
         val profile = own(ProfileViewModel(repository, browsing))
@@ -246,7 +248,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
                 withContext(NonCancellable) { delayed.await() }
         }
         val browsing = BrowsingSession().apply { activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
         actions.toggleFavourite(testStatus())
@@ -369,7 +371,7 @@ class MainTabsIntegrationTest : ScreenViewModelTestBase() {
             override suspend fun completeAuthorization(callbackUrl: String) = Result.failure<AccountSession>(UnsupportedOperationException())
         }
         val main = own(MainSessionViewModel(auth, repository))
-        val timeline = own(TimelineViewModel(repository, main.browsing))
+        val timeline = own(TimelineViewModel(repository, main.browsing, SavedStateHandle()))
         val notifications = own(NotificationsViewModel(repository, main.browsing))
         own(SearchViewModel(repository, main.browsing))
         own(ProfileViewModel(repository, main.browsing))

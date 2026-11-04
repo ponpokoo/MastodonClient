@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
+import androidx.lifecycle.SavedStateHandle
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -480,7 +482,7 @@ class HomeScrollDeviceTest {
         lateinit var actions: StatusActionsViewModel
         rule.runOnIdle {
             main = MainSessionViewModel(auth, repository).also(models::add)
-            timeline = TimelineViewModel(repository, main.browsing).also(models::add)
+            timeline = TimelineViewModel(repository, main.browsing, SavedStateHandle()).also(models::add)
             search = SearchViewModel(repository, main.browsing).also(models::add)
             notifications = NotificationsViewModel(repository, main.browsing).also(models::add)
             profile = ProfileViewModel(repository, main.browsing).also(models::add)

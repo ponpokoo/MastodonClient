@@ -8,8 +8,8 @@ import android.content.ComponentName
 import android.content.Context
 
 object NotificationPollingScheduler {
-    private const val PERIODIC_JOB_ID = 0x504f4e
-    private const val IMMEDIATE_JOB_ID = 0x504f4f
+    internal const val PERIODIC_JOB_ID = 0x504f4e
+    internal const val IMMEDIATE_JOB_ID = 0x504f4f
     private const val INTERVAL_MILLIS = 15 * 60 * 1000L
     const val CHANNEL_ID = "mastodon_simple_notifications"
 

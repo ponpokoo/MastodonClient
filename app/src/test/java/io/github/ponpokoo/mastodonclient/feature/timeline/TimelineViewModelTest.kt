@@ -750,7 +750,7 @@ class TimelineViewModelTest {
                 }
             }
             val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
-            val model = TimelineViewModel(repository, main.browsing)
+            val model = TimelineViewModel(repository, main.browsing, SavedStateHandle())
             model.setKeepPositionOnRefresh(true); advanceUntilIdle()
             suspend fun emit(event: TimelineStreamEvent) = main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(event))
             emit(TimelineStreamEvent.Connected); advanceUntilIdle()
@@ -776,7 +776,7 @@ class TimelineViewModelTest {
                 }
             }
             val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
-            val model = TimelineViewModel(repository, main.browsing)
+            val model = TimelineViewModel(repository, main.browsing, SavedStateHandle())
             model.setKeepPositionOnRefresh(true); advanceUntilIdle()
             main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))
             main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("new"))))
@@ -814,7 +814,7 @@ class TimelineViewModelTest {
                 else Result.success(TimelinePage(listOf(status("local")), "local", false))
         }
         val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
-        val model = TimelineViewModel(repository, main.browsing)
+        val model = TimelineViewModel(repository, main.browsing, SavedStateHandle())
         model.setKeepPositionOnRefresh(true); advanceUntilIdle()
         main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))
         main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusAdded(status("new"))))
@@ -839,7 +839,7 @@ class TimelineViewModelTest {
             }
         }
         val main = MainSessionViewModel(FakeAuthRepository(SESSION), repository)
-        val model = TimelineViewModel(repository, main.browsing)
+        val model = TimelineViewModel(repository, main.browsing, SavedStateHandle())
         model.setKeepPositionOnRefresh(true); advanceUntilIdle()
         model.refresh(); advanceUntilIdle()
         main.browsing.publish(main.browsing.snapshot.value, BrowsingSession.Change.Stream(TimelineStreamEvent.Connected))

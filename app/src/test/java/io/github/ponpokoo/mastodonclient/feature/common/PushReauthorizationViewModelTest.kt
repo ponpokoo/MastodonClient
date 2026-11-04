@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.core.security.memoryAuthStore
 import io.github.ponpokoo.mastodonclient.data.repository.DefaultAuthRepository
@@ -44,7 +46,7 @@ class PushReauthorizationViewModelTest : ScreenViewModelTestBase() {
             }
         }
         val main = own(MainSessionViewModel(auth, repository))
-        val timeline = own(TimelineViewModel(repository, main.browsing))
+        val timeline = own(TimelineViewModel(repository, main.browsing, SavedStateHandle()))
         runCurrent()
         val before = main.browsing.snapshot.value
         val updated = testAccount.copy(accessToken = "new", scopes = "read write push")

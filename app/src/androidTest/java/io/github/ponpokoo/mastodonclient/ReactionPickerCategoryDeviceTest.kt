@@ -1,6 +1,13 @@
 package io.github.ponpokoo.mastodonclient
 
+import android.content.res.Configuration
+import android.os.SystemClock
+import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
@@ -28,6 +35,9 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.swipe
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.RootMatchers.isDialog as isAndroidDialog
+import androidx.test.espresso.matcher.ViewMatchers.isRoot
 import io.github.ponpokoo.mastodonclient.domain.model.CustomEmoji
 import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerSheet
 import io.github.ponpokoo.mastodonclient.feature.emoji.EmojiPickerDataState
@@ -40,6 +50,28 @@ import java.io.File
 
 class ReactionPickerCategoryDeviceTest {
     @get:Rule val composeRule = createComposeRule()
+
+    @Test fun emojiRowsFitTheSheetWhenConfigurationReportsAWiderScreen() {
+        var selection: String? = null
+        composeRule.setContent {
+            val configuration = Configuration(LocalConfiguration.current).apply { screenWidthDp = 1200 }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                MastodonClientTheme {
+                    EmojiPickerSheet(canUndo = false, onDismiss = {}, onSelected = { selection = it },
+                        data = EmojiPickerDataState(customEmojis = emptyList()))
+                }
+            }
+        }
+        chooseCategory("表情")
+        val list = composeRule.onNodeWithTag("reaction_emoji_list").fetchSemanticsNode().boundsInWindow
+        val lastEmojiInRow = composeRule.onNodeWithText("😅")
+        lastEmojiInRow.assertIsDisplayed()
+        val bounds = lastEmojiInRow.fetchSemanticsNode().boundsInWindow
+        assertTrue("The last emoji must fit inside the sheet: $bounds vs $list",
+            bounds.width > 0f && bounds.left >= list.left && bounds.right <= list.right + 1f)
+        lastEmojiInRow.performClick()
+        composeRule.runOnIdle { assertEquals("😅", selection) }
+    }
 
     @Test fun scrollingAndPullingAtTheListStartNeverMovesOrDismissesTheSheet() {
         var dismissed = false
@@ -134,6 +166,7 @@ class ReactionPickerCategoryDeviceTest {
         composeRule.onNodeWithTag("reaction_search_clear").assertDoesNotExist()
         composeRule.onNodeWithTag("reaction_search").performTextInput("missing")
         composeRule.onNodeWithText("該当する絵文字がありません").assertIsDisplayed()
+        waitForPickerKeyboardAndLayout()
         val sheet = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
         composeRule.onNodeWithTag("reaction_search_clear").performClick()
         composeRule.onNodeWithTag("reaction_search_clear").assertDoesNotExist()
@@ -303,6 +336,28 @@ class ReactionPickerCategoryDeviceTest {
         bitmap.recycle()
         val url = android.net.Uri.fromFile(file).toString()
         return CustomEmoji(shortcode, url, url, category)
+    }
+
+    private fun waitForPickerKeyboardAndLayout() {
+        lateinit var pickerRoot: View
+        onView(isRoot()).inRoot(isAndroidDialog()).check { view, error ->
+            if (error != null) throw error
+            pickerRoot = view
+        }
+        var previousBounds = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+        var stableSince = SystemClock.uptimeMillis()
+        composeRule.waitUntil(5_000) {
+            var keyboardVisible = false
+            composeRule.runOnUiThread {
+                keyboardVisible = ViewCompat.getRootWindowInsets(pickerRoot)
+                    ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            }
+            val bounds = composeRule.onNodeWithTag("reaction_picker_sheet").fetchSemanticsNode().boundsInWindow
+            val now = SystemClock.uptimeMillis()
+            if (!keyboardVisible || bounds != previousBounds) stableSince = now
+            previousBounds = bounds
+            keyboardVisible && now - stableSince >= 250
+        }
     }
 
     private fun chooseCategory(label: String) {

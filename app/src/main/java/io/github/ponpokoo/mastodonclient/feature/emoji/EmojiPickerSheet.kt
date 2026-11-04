@@ -81,7 +81,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -221,9 +221,8 @@ internal fun EmojiPickerSheet(
     val showFavorites = selectedCategory.key == "favorites"
     val showCustomLoading = selectedCategory.key == "all" || selectedCategory.key == "history" ||
         showFavorites || selectedCategory.key.startsWith("custom:")
-    val screenWidth = LocalConfiguration.current.screenWidthDp
-    val columns = if (screenWidth >= 360) 8 else 7
-    val cellSize = ((screenWidth - 32 - (columns - 1) * 2).toFloat() / columns).dp
+    // Capture the host window before opening the sheet or any nested dialogs.
+    val windowHeight = LocalWindowInfo.current.containerDpSize.height
     val listState = rememberLazyListState()
     LaunchedEffect(searchText, selectedCategory.key) { listState.scrollToItem(0) }
     val scrollbarColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
@@ -270,11 +269,13 @@ internal fun EmojiPickerSheet(
         dragHandle = null,
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth >= 360.dp) 8 else 7
+        val cellSize = ((maxWidth - 32.dp - 2.dp * (columns - 1)) / columns).coerceAtLeast(0.dp)
         // The parent has already removed the IME area. Keep background visible above the sheet.
         val statusBarHeight = with(LocalDensity.current) { WindowInsets.statusBars.getTop(this).toDp() }
         val heightReduction = 48.dp
         val maxSheetHeight = (minOf(
-            LocalConfiguration.current.screenHeightDp.dp * 0.82f,
+            windowHeight * 0.82f,
             (maxHeight - statusBarHeight - 48.dp).coerceAtLeast(0.dp),
         ) - heightReduction).coerceAtLeast(0.dp)
         Column(Modifier.fillMaxWidth()
@@ -345,7 +346,7 @@ internal fun EmojiPickerSheet(
             LazyColumn(
                 modifier = Modifier.fillMaxWidth()
                     .weight(1f, fill = false)
-                    .height((LocalConfiguration.current.screenHeightDp.dp * 0.58f - heightReduction).coerceAtLeast(0.dp))
+                    .height((windowHeight * 0.58f - heightReduction).coerceAtLeast(0.dp))
                     .testTag("reaction_emoji_list")
                     .drawWithContent {
                         drawContent()
@@ -466,7 +467,7 @@ internal fun EmojiPickerSheet(
             title = { Text("カテゴリ") },
             text = {
                 LazyColumn(Modifier.fillMaxWidth()
-                    .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.5f)
+                    .heightIn(max = windowHeight * 0.5f)
                     .testTag("reaction_category_menu")
                     .selectableGroup()) {
                     items(categories, key = { it.key }) { category ->

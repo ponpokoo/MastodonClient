@@ -229,7 +229,7 @@ fun AppNavigation(
                     val manager = context.getSystemService(ConnectivityManager::class.java)
                     manager.getNetworkCapabilities(manager.activeNetwork)
                         ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                }).also { it.bindForegroundLifecycle(appLifecycle) }
+                }).also { it.setForeground(appLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) }
         }
     }
     val timelineEntry = remember(currentBackStackEntry) {
@@ -237,6 +237,17 @@ fun AppNavigation(
     }
     val mainSessionModel = timelineEntry?.let { entry ->
         viewModel<MainSessionViewModel>(viewModelStoreOwner = entry, factory = mainSessionFactory)
+    }
+    androidx.compose.runtime.DisposableEffect(appLifecycle, mainSessionModel) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { owner, _ ->
+            mainSessionModel?.setForeground(owner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        }
+        appLifecycle.addObserver(observer)
+        mainSessionModel?.setForeground(appLifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+        onDispose {
+            appLifecycle.removeObserver(observer)
+            mainSessionModel?.setForeground(false)
+        }
     }
     val readingSession = mainSessionModel?.uiState?.collectAsStateWithLifecycle()?.value?.session
     val mediaSnapshot = mainSessionModel?.browsing?.snapshot?.collectAsStateWithLifecycle()?.value
@@ -381,7 +392,6 @@ fun AppNavigation(
         }
         animatedScreen<Route.Timeline> { backStackEntry ->
             val mainViewModel: MainSessionViewModel = viewModel(factory = mainSessionFactory)
-            SideEffect { mainViewModel.bindForegroundLifecycle(appLifecycle) }
             val browsing = mainViewModel.browsing
             val timelineViewModel: TimelineViewModel = viewModel(
                 factory = TimelineViewModel.Factory(timelineRepository, browsing),

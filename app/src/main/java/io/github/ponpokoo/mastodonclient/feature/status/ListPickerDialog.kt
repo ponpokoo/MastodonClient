@@ -12,7 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -24,7 +24,7 @@ internal fun ListPickerDialog(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit,
 ) {
-    val maxContentHeight = LocalConfiguration.current.screenHeightDp.dp * 0.55f
+    val maxContentHeight = LocalWindowInfo.current.containerDpSize.height * 0.55f
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("追加するリストを選択") },

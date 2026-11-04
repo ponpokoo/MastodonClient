@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
+import androidx.lifecycle.SavedStateHandle
+
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -57,7 +59,7 @@ class AccountModerationIntegrationTest : ScreenViewModelTestBase() {
     @Test fun blockRemovesEveryReferenceAndLateRefreshAndStreamingCannotRestoreIt() = runTest(dispatcher) {
         val repository = Repository()
         val browsing = BrowsingSession().also { it.activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val notifications = own(NotificationsViewModel(repository, browsing))
         val search = own(SearchViewModel(repository, browsing))
         val profile = own(ProfileViewModel(repository, BrowsingSession().apply { activate(testAccount) }, auth, accountId = "target-author"))
@@ -96,7 +98,7 @@ class AccountModerationIntegrationTest : ScreenViewModelTestBase() {
     @Test fun failedBlockKeepsRowsAndAnotherLoginWithTheSameAuthorIsIndependent() = runTest(dispatcher) {
         val repository = Repository()
         val browsing = BrowsingSession().also { it.activate(testAccount) }
-        val timeline = own(TimelineViewModel(repository, browsing))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
         val actions = own(StatusActionsViewModel(repository, browsing))
         advanceUntilIdle()
         actions.loadModerationMenu(target.author.id); advanceUntilIdle()

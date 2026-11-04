@@ -122,6 +122,7 @@ internal fun ProfileContent(
     onBoost: (TimelineStatus) -> Unit,
     onQuote: (TimelineStatus, QuoteMode) -> Unit,
     onFavourite: (TimelineStatus) -> Unit,
+    modifier: Modifier = Modifier,
     onBookmark: ((TimelineStatus) -> Unit)? = null,
     onReact: (TimelineStatus, String?) -> Unit,
     onVotePoll: ((TimelineStatus, Set<Int>) -> Unit)? = null,
@@ -165,7 +166,6 @@ internal fun ProfileContent(
     drawBehindBottomBar: Boolean = false,
     topContentPadding: androidx.compose.ui.unit.Dp = 0.dp,
     topBarVisibleHeight: () -> Float = { 0f },
-    modifier: Modifier = Modifier,
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val bottomPadding = if (drawBehindBottomBar) padding.calculateBottomPadding() else 0.dp
