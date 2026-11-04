@@ -51,36 +51,40 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     @Test fun reverseScrollRevealsBarAndHomeStateSurvivesAnotherTab() = withHome {
         val expanded = topBar().fetchSemanticsNode().boundsInRoot
         val navigation = nav().fetchSemanticsNode().boundsInRoot
+        val fab = rule.onNodeWithContentDescription("新規投稿").fetchSemanticsNode().boundsInRoot
+        val viewportBottom = list().fetchSemanticsNode().boundsInRoot.bottom
         savePreview("expanded")
         readOlderPosts()
         rule.waitForIdle()
         val collapsed = topBar().fetchSemanticsNode().boundsInRoot
         assertTrue("Only the status-bar region should remain: $collapsed vs $expanded",
             collapsed.height < expanded.height / 2)
-        assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
+        nav().assertDoesNotExist()
+        assertEquals(fab, rule.onNodeWithContentDescription("新規投稿").fetchSemanticsNode().boundsInRoot)
+        assertEquals(viewportBottom, list().fetchSemanticsNode().boundsInRoot.bottom, 1f)
         savePreview("collapsed")
 
         list().performScrollToIndex(15)
+        revealNavigation()
+        assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
+        assertTrue("Reveal must not require returning to the first post", scrollPosition() > 1f)
         val position = scrollPosition()
         rule.onNodeWithTag("main_tab_notifications").performClick()
-        rule.onNode(hasScrollAction() and hasAnyAncestor(hasTestTag("notification_filter_pager")))
-            .performTouchInput { swipeUp() }
+        val notifications = rule.onNode(hasScrollAction() and hasAnyAncestor(hasTestTag("notification_filter_pager")))
+        readOlderPosts(notifications)
+        nav().assertDoesNotExist()
+        revealNavigation(notifications)
         rule.onNodeWithTag("main_tab_home").performClick()
-        assertEquals(collapsed.height, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
+        assertEquals(expanded.height, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
         assertEquals(position, scrollPosition(), 1f)
 
-        list().performTouchInput {
-            val start = Offset(width * .5f, height * .25f)
-            swipe(start, start + Offset(0f, expanded.height * 1.5f), durationMillis = 600)
-        }
-        rule.waitForIdle()
         assertEquals(expanded.height, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
-        assertTrue("Reveal must not require returning to the first post", scrollPosition() > 1f)
         rule.onNodeWithTag("feed_selector").performClick()
         rule.onNodeWithText("連合", useUnmergedTree = true).assertIsDisplayed()
         androidx.test.espresso.Espresso.pressBack()
 
         readOlderPosts()
+        revealNavigation()
         rule.onNodeWithTag("main_tab_home").performClick()
         rule.waitForIdle()
         assertEquals(expanded.height, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
@@ -115,6 +119,7 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         rule.waitForIdle()
         assertEquals(expanded, topBar().fetchSemanticsNode().boundsInRoot.height, 1f)
         assertEquals(0f, scrollPosition(), 1f)
+        nav().assertIsDisplayed()
     }
 
     @Test fun translucentFooterShowsScrollingPostsAndLastPostAndFabRemainReachable() = withHome {
@@ -123,9 +128,10 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             list().fetchSemanticsNode().boundsInRoot.bottom > navigation.top)
         list().performScrollToIndex(10)
         val before = nav().captureToImage().toPixelMap()
-        readOlderPosts()
+        // Direct list positioning leaves both bars visible for the translucency check.
+        list().performScrollToIndex(14)
         val after = nav().captureToImage().toPixelMap()
-        // No tab was pressed: fixed icons and labels stay still while posts move behind them.
+        // No tab was pressed: icons and labels stay still while posts move behind them.
         var changed = 0
         for (y in 1 until before.height - 1) for (x in 8 until before.width - 8) {
             val a = before[x, y]
@@ -137,7 +143,6 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         savePreview("translucent")
 
         list().performScrollToIndex(39)
-        readOlderPosts()
         rule.waitForIdle()
         val last = rule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().last().boundsInRoot
         assertTrue("The complete final post and its actions must clear the footer: $last vs $navigation",
@@ -148,6 +153,22 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     }
 
     private fun list() = rule.onNodeWithTag("timeline_list")
+    @Test fun transparentSideGapLetsTheTimelineScrollWithoutMovingTheNavigation() = withHome {
+        val navigation = nav().fetchSemanticsNode().boundsInRoot
+        val viewport = list().fetchSemanticsNode().boundsInRoot
+        assertTrue("The floating bar must leave a visible side gap", navigation.left > viewport.left)
+        val before = scrollPosition()
+        list().performTouchInput {
+            val start = Offset((navigation.left - viewport.left) / 2f, navigation.center.y - viewport.top)
+            swipe(start, start - Offset(0f, height * .4f), 600)
+        }
+        rule.waitForIdle()
+        assertTrue("The transparent gap must not consume the timeline gesture", scrollPosition() > before)
+        nav().assertDoesNotExist()
+        revealNavigation()
+        assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
+    }
+
     @Test fun otherTabsKeepTheirInnerTabsAndRestoreTheirOwnScrollAndHeaderState() = withHome {
         data class Tab(val name: String, val list: String, val header: String, val retainedTab: String)
         val tabs = listOf(
@@ -172,10 +193,12 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             rule.onNodeWithTag(tab.retainedTab).assertIsDisplayed()
             assertTrue("${tab.name} content should continue behind the footer",
                 content.fetchSemanticsNode().boundsInRoot.bottom > footer.top)
-            assertEquals(footer, nav().fetchSemanticsNode().boundsInRoot)
-            heights[tab.name] = collapsed
-            positions[tab.name] = content.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+            nav().assertDoesNotExist()
             savePreview("${tab.name}-collapsed")
+            revealNavigation(content)
+            assertEquals(footer, nav().fetchSemanticsNode().boundsInRoot)
+            heights[tab.name] = header.fetchSemanticsNode().boundsInRoot.height
+            positions[tab.name] = content.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
         }
         rule.onNodeWithTag("main_tab_home").performClick()
         for (tab in tabs) {
@@ -207,6 +230,11 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         results.assertIsDisplayed()
         input.performClick().assertIsFocused()
         waitForKeyboard(true)
+        // Native IME visibility can precede Compose receiving its animated insets.
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithTag("main_navigation_bar").fetchSemanticsNodes().isEmpty()
+        }
+        nav().assertDoesNotExist()
         val header = rule.onNodeWithTag("main_search_header")
         val expanded = header.fetchSemanticsNode().boundsInRoot.height
         results.performTouchInput {
@@ -215,23 +243,28 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         assertEquals("Input must remain visible while editing", expanded, header.fetchSemanticsNode().boundsInRoot.height, 1f)
         input.performImeAction()
         waitForKeyboard(false)
+        nav().assertIsDisplayed()
+        rule.onNodeWithTag("main_tab_explore").assertIsSelected()
         readOlderPosts(results)
         assertTrue(header.fetchSemanticsNode().boundsInRoot.height < expanded / 2)
+        nav().assertDoesNotExist()
         rule.onNodeWithTag("search_target_posts").assertIsDisplayed()
     }
 
     @Test fun profileLastPostCanMoveAboveTheFixedFooter() = withHome {
         rule.onNodeWithTag("main_tab_profile").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag("profile_scroll").fetchSemanticsNodes().isNotEmpty() }
+        val restingFooter = nav().fetchSemanticsNode().boundsInRoot
         val content = rule.onNodeWithTag("profile_scroll")
         readOlderPosts(content)
         content.performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, 100_000f)) }
         rule.waitForIdle()
+        nav().assertDoesNotExist()
         val last = rule.onNodeWithText("本文 39", substring = true)
         last.assertIsDisplayed()
         val lastPost = rule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().last().boundsInRoot
-        assertTrue("Last profile post and its actions must clear the footer",
-            lastPost.bottom <= nav().fetchSemanticsNode().boundsInRoot.top + 1f)
+        assertTrue("Last profile post must clear the resting footer even while it is hidden",
+            lastPost.bottom <= restingFooter.top + 1f)
         savePreview("profile-end")
     }
 
@@ -249,6 +282,13 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     private fun readOlderPosts(target: SemanticsNodeInteraction = list()) = target.performTouchInput {
         // The viewport extends behind the footer, so start above its touch targets.
         swipe(Offset(width * .5f, height * .65f), Offset(width * .5f, height * .25f), 600)
+    }
+    private fun revealNavigation(target: SemanticsNodeInteraction = list()) {
+        target.performTouchInput {
+            swipe(Offset(width * .5f, height * .25f), Offset(width * .5f, height * .65f), 600)
+        }
+        rule.waitForIdle()
+        nav().assertIsDisplayed()
     }
     private fun topBar() = rule.onNodeWithTag("home_top_bar")
     private fun nav() = rule.onNodeWithTag("main_navigation_bar")

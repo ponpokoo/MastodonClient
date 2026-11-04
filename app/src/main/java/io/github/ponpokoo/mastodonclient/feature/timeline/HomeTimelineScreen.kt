@@ -34,6 +34,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Row
@@ -48,6 +52,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -122,6 +127,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -152,7 +159,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-private const val MainNavigationBarAlpha = 0.88f
+private const val MainNavigationBarAlpha = 0.94f
+private val MainNavigationMaxWidth = 352.dp
+private val MainNavigationHorizontalMargin = 16.dp
+private val MainNavigationInnerHorizontalPadding = 8.dp
+private val MainNavigationBottomGap = 8.dp
+private val MainNavigationContentGap = 8.dp
+private val MainNavigationShape = RoundedCornerShape(28.dp)
 
 private enum class MainDestination(
     val label: String,
@@ -487,6 +500,11 @@ fun HomeTimelineScreen(
             }
         }
     }
+    val navigationHiddenByIme = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val navigationHiddenByScroll by remember(currentTopBarState) {
+        derivedStateOf { currentTopBarState.collapsedFraction >= 1f }
+    }
+    val navigationHidden = navigationHiddenByIme || navigationHiddenByScroll
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -526,52 +544,81 @@ fun HomeTimelineScreen(
             }
         },
         bottomBar = {
-            ShortNavigationBar(
-                modifier = Modifier.testTag("main_navigation_bar"),
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
-                    alpha = MainNavigationBarAlpha,
-                ),
-                windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)) {
-                MainDestination.entries.forEach { item ->
-                    val page = destinations.indexOf(item)
-                    ShortNavigationBarItem(
-                        // The item already has 6 dp above its indicator; add 6 dp for a 12 dp top gap.
-                        modifier = Modifier.padding(top = 6.dp).testTag("main_tab_${item.name.lowercase()}"),
-                        selected = destination == item,
-                        onClick = {
-                            if (pagerState.currentPage == page) {
-                                topScrollScope.launch {
-                                    currentTopBarState.heightOffset = 0f
-                                    currentTopBarState.contentOffset = 0f
-                                    when (item) {
-                                        MainDestination.Home -> {
-                                            if (state.isResumedWindow) viewModel.goToLatest()
-                                            else timelineListState.animateToTimelineTop()
+            // Reuse the header's scroll progress without resizing the list or moving the FAB.
+            // Fully hidden controls must not remain actionable or in accessibility traversal.
+            Box(
+                Modifier.fillMaxWidth()
+                    .graphicsLayer {
+                        translationY = size.height * currentTopBarState.collapsedFraction
+                        alpha = if (navigationHidden) 0f else 1f
+                    }
+                    .then(if (navigationHidden) Modifier.clearAndSetSemantics {} else Modifier)
+                    .windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                    .padding(start = MainNavigationHorizontalMargin, end = MainNavigationHorizontalMargin,
+                        bottom = MainNavigationBottomGap),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    // Keep the minimum loose so the bar can measure its four items separately.
+                    modifier = Modifier.widthIn(max = MainNavigationMaxWidth).testTag("main_navigation_bar"),
+                    shape = MainNavigationShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = MainNavigationBarAlpha),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    ShortNavigationBar(
+                        // Keep the end labels inside the rounded surface, including wrapped labels.
+                        modifier = Modifier.padding(horizontal = MainNavigationInnerHorizontalPadding),
+                        containerColor = Color.Transparent,
+                        windowInsets = WindowInsets(0, 0, 0, 0),
+                    ) {
+                        MainDestination.entries.forEach { item ->
+                            val page = destinations.indexOf(item)
+                            ShortNavigationBarItem(
+                                // The item already has 6 dp above its indicator; add 6 dp for a 12 dp top gap.
+                                modifier = Modifier.padding(top = 6.dp).testTag("main_tab_${item.name.lowercase()}"),
+                                selected = destination == item,
+                                enabled = !navigationHidden,
+                                onClick = {
+                                    if (pagerState.currentPage == page) {
+                                        topScrollScope.launch {
+                                            currentTopBarState.heightOffset = 0f
+                                            currentTopBarState.contentOffset = 0f
+                                            when (item) {
+                                                MainDestination.Home -> {
+                                                    if (state.isResumedWindow) viewModel.goToLatest()
+                                                    else timelineListState.animateToTimelineTop()
+                                                }
+                                                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
+                                                MainDestination.Profile -> {
+                                                    profileListState.animateToTimelineTop(profileHeaderListState)
+                                                }
+                                                MainDestination.Explore -> exploreScrollToTopRequest++
+                                            }
                                         }
-                                        MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
-                                        MainDestination.Profile -> {
-                                            profileListState.animateToTimelineTop(profileHeaderListState)
-                                        }
-                                        MainDestination.Explore -> exploreScrollToTopRequest++
+                                    } else {
+                                        scope.launch { pagerState.scrollToPage(page) }
                                     }
-                                }
-                            } else {
-                                scope.launch { pagerState.scrollToPage(page) }
-                            }
-                        },
-                        icon = {
-                            if (item == MainDestination.Notifications && notificationsState.unreadNotifications > 0) {
-                                BadgedBox(
-                                    badge = {
-                                        Badge { Text(notificationsState.unreadNotifications.coerceAtMost(99).toString()) }
-                                    },
-                                ) { Icon(item.icon, contentDescription = null) }
-                            } else {
-                                Icon(item.icon, contentDescription = null)
-                            }
-                        },
-                        label = { Text(item.label) },
-                    )
+                                },
+                                icon = {
+                                    if (item == MainDestination.Notifications && notificationsState.unreadNotifications > 0) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge { Text(notificationsState.unreadNotifications.coerceAtMost(99).toString()) }
+                                            },
+                                        ) { Icon(item.icon, contentDescription = null) }
+                                    } else {
+                                        Icon(item.icon, contentDescription = null)
+                                    }
+                                },
+                                label = {
+                                    Text(item.label, modifier = Modifier.padding(horizontal = 4.dp),
+                                        textAlign = TextAlign.Center)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -579,7 +626,8 @@ fun HomeTimelineScreen(
     ) { padding ->
         val measuredPadding = PaddingValues(
             start = padding.calculateStartPadding(layoutDirection), top = padding.calculateTopPadding(),
-            end = padding.calculateEndPadding(layoutDirection), bottom = padding.calculateBottomPadding(),
+            end = padding.calculateEndPadding(layoutDirection),
+            bottom = padding.calculateBottomPadding() + MainNavigationContentGap,
         )
         SideEffect { savedPagePadding[destination] = measuredPadding }
         Box(Modifier.fillMaxSize()) {
@@ -589,7 +637,8 @@ fun HomeTimelineScreen(
             key = { destinations[it] },
             userScrollEnabled = false,
         ) { page ->
-            val pagePadding = if (destinations[page] == destination) padding else savedPagePadding[destinations[page]] ?: padding
+            val pagePadding = if (destinations[page] == destination) measuredPadding
+                else savedPagePadding[destinations[page]] ?: measuredPadding
             val pageModifier = if (destinations[page] == destination)
                 Modifier.nestedScroll(scrollBehaviors[page].nestedScrollConnection) else Modifier
             CompositionLocalProvider(
