@@ -9,8 +9,8 @@ Mastodonのアカウントでログインして、投稿を読んだり書いた
 
 異なるサーバーのアカウントを切り替えて使え、文字の大きさや操作ボタンも好みに合わせて調整できます。
 
-現在はテスト用として配布しています。
-以下は現在のソースの機能説明です。2.5.7の準備状況は[リリース計画](docs/release-plan.md)をご覧ください。
+Google Playで製品版を公開しています。今後は保守と機能追加を進めます。
+以下は現在のソースの機能説明です。更新方針と配布候補は[保守・機能追加・リリース計画](docs/release-plan.md)をご覧ください。
 GitHubで配布した版の変更点とAPKは[GitHub Releases](https://github.com/ponpokoo/MastodonClient/releases)で確認できます。Playで配布される版と公開状況はPlay Consoleで管理します。
 
 ## 主な機能

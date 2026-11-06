@@ -53,7 +53,8 @@ adding, moving, or removing documentation entry points.
 
 ## Development priorities
 
-Follow [`docs/release-plan.md`](docs/release-plan.md) for current release scope and future development
+The closed test is complete and the app is in production. Focus ongoing work on maintenance and
+feature additions. Follow [`docs/release-plan.md`](docs/release-plan.md) for update scope and
 priorities. Distinguish planned candidates from implemented features.
 
 When an API detail is uncertain, verify it against the official Mastodon API documentation before
