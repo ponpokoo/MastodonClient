@@ -1153,6 +1153,46 @@ class DefaultTimelineRepositoryTest {
         }
     }
 
+    @Test fun reusesFetchedConversationBranchesWithCurrentPostStateAndCredentialIsolation() = runTest {
+        MockWebServer().use { server ->
+            fun post(id: String, parent: String? = null, favourite: Boolean = false) =
+                basicStatusJson(id).dropLast(1) + ",\"in_reply_to_id\":${parent?.let { "\"$it\"" } ?: "null"},\"favourited\":$favourite}"
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                    "/api/v1/statuses/root" -> MockResponse().setBody(post("root", "before"))
+                    "/api/v1/statuses/root/context" -> MockResponse().setBody(
+                        """{"ancestors":[${post("before")}],"descendants":[${post("branch", "root")},${post("sibling", "root")},${post("leaf", "branch")}]}""",
+                    )
+                    "/api/v1/statuses/branch/favourite" -> MockResponse().setBody(post("branch", "root", true))
+                    "/api/v1/statuses/leaf" -> MockResponse().setBody(post("leaf", "branch"))
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val session = testSession(server)
+            repository.getStatusDetail(session, "root").getOrThrow()
+            val fromHome = repository.getCachedConversation(session, "sibling", "sibling")!!
+            assertEquals(listOf("before", "root"), fromHome.ancestors.map { it.statusId })
+            assertTrue(fromHome.descendants.isEmpty())
+            val branch = repository.getCachedConversation(session, "root", "branch")!!
+            assertEquals(listOf("before", "root"), branch.ancestors.map { it.statusId })
+            assertEquals(listOf("leaf"), branch.descendants.map { it.statusId })
+            val parent = repository.getCachedConversation(session, "branch", "before")!!
+            assertEquals(emptyList<String>(), parent.ancestors.map { it.statusId })
+            assertEquals(listOf("root", "branch", "sibling", "leaf"), parent.descendants.map { it.statusId })
+            assertEquals(2, server.requestCount)
+            assertNull(repository.getCachedConversation(session, "root", "unknown"))
+            for (other in listOf(session.copy(sessionId = "other"), session.copy(instanceUrl = "https://other.test"),
+                session.copy(accountId = "other"), session.copy(accessToken = "replacement"), session.copy(scopes = "read"))) {
+                assertNull(repository.getCachedConversation(other, "root", "branch"))
+            }
+            repository.setFavourite(session, "branch", true).getOrThrow()
+            assertTrue(repository.getCachedConversation(session, "root", "branch")!!.status.favourited)
+            repository.deleteStatus(session, "leaf").getOrThrow()
+            assertNull(repository.getCachedConversation(session, "root", "branch"))
+        }
+    }
+
     private fun testSession(server: MockWebServer) = AccountSession(
         sessionId = "session",
         instanceUrl = server.url("/").toString().removeSuffix("/"),

@@ -189,6 +189,9 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> =
         Result.failure(UnsupportedOperationException("投稿詳細は未対応です"))
 
+    /** Reuse a fetched range; sourceStatusId equals statusId when opening from a timeline. */
+    fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String): StatusDetail? = null
+
     suspend fun getRebloggedBy(session: AccountSession, statusId: String, maxId: String? = null): Result<AccountListPage> =
         Result.failure(UnsupportedOperationException("ブースト一覧は未対応です"))
 

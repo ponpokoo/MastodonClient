@@ -478,6 +478,7 @@ fun AppNavigation(
                     authRepository,
                     statusActionManager,
                     browsing = mainSessionModel?.browsing,
+                    conversationSourceId = route.conversationSourceId,
                 ),
             )
             StatusDetailScreen(
@@ -490,7 +491,7 @@ fun AppNavigation(
                 onOpenLink = openLink,
                 onAccountClick = { navController.navigate(Route.AccountProfile(it)) },
                 onMediaClick = openMedia,
-                onStatusClick = { navController.navigate(Route.StatusDetail(it)) },
+                onStatusClick = { navController.navigate(Route.StatusDetail(it, conversationSourceId = route.statusId)) },
                 onShowBoosters = { interactions?.openBoosters(it) },
                 onShowFavourites = { interactions?.openFavourites(it) },
                 onShowReaction = { statusId, reaction -> interactions?.openReaction(statusId, reaction) },

@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -66,6 +67,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -177,12 +182,21 @@ fun StatusDetailScreen(
                             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
                         }
                     },
+                    actions = {
+                        if (status != null) IconButton(onClick = viewModel::refresh, enabled = !state.isLoading) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = "会話を更新")
+                        }
+                    },
                 )
             },
         ) { padding ->
             when {
-                state.isLoading && status == null -> ListLoadingContent(Modifier.padding(padding), label = null)
-                status == null -> Column(
+                state.isLoading && !conversationListState.isPositioned -> Box(Modifier.fillMaxSize().padding(padding)) {
+                    if (state.showInitialLoadingIndicator) {
+                        ListLoadingContent(Modifier.testTag("status_detail_loading"), label = null)
+                    }
+                }
+                status == null || (state.errorMessage != null && !conversationListState.isPositioned) -> Column(
                     Modifier.fillMaxSize().padding(padding).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
@@ -190,75 +204,95 @@ fun StatusDetailScreen(
                     Text(state.errorMessage ?: "投稿を表示できませんでした")
                     TextButton(onClick = viewModel::retry) { Text("再試行") }
                 }
-                else -> LazyColumn(
-                    state = conversationListState,
-                    modifier = Modifier.fillMaxSize().padding(padding).testTag("status_detail"),
-                ) {
-                    state.detail?.ancestors?.let { ancestors ->
-                        if (ancestors.isNotEmpty()) {
-                            item { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
-                            items(ancestors, key = { "ancestor-${it.timelineId}" }) { ancestor ->
-                                StatusCard(
-                                    status = ancestor,
-                                    collapseLongContent = false,
-                                    onStatusClick = onStatusClick,
-                                    onAuthorClick = onAccountClick,
-                                    onMediaClick = onMediaClick,
-                                    onOpenLink = onOpenLink,
-                                    actions = actions,
-                                    onReactionLongPress = { onShowReaction(ancestor.statusId, it) },
-                                    onUnavailableAction = {},
-                                    preferences = preferences.toStatusDisplayPreferences(),
-                                )
-                                HorizontalDivider()
+                else -> Box(Modifier.fillMaxSize().padding(padding)) {
+                    LazyColumn(
+                        state = conversationListState.listState,
+                        userScrollEnabled = conversationListState.isPositioned,
+                        // Lay out the complete conversation before exposing its initial position.
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            alpha = if (conversationListState.isPositioned) 1f else 0f
+                        }.then(if (conversationListState.isPositioned) Modifier else Modifier.clearAndSetSemantics {})
+                            .testTag("status_detail"),
+                    ) {
+                        state.detail?.ancestors?.let { ancestors ->
+                            if (ancestors.isNotEmpty()) {
+                                item { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
+                                items(ancestors, key = { "ancestor-${it.timelineId}" }) { ancestor ->
+                                    StatusCard(
+                                        status = ancestor,
+                                        collapseLongContent = false,
+                                        onStatusClick = onStatusClick,
+                                        onAuthorClick = onAccountClick,
+                                        onMediaClick = onMediaClick,
+                                        onOpenLink = onOpenLink,
+                                        actions = actions,
+                                        onReactionLongPress = { onShowReaction(ancestor.statusId, it) },
+                                        onUnavailableAction = {},
+                                        preferences = preferences.toStatusDisplayPreferences(),
+                                    )
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
+                        item(key = "selected-${status.statusId}") {
+                            StatusCard(
+                                status = status,
+                                collapseLongContent = false,
+                                onStatusClick = null,
+                                onAuthorClick = onAccountClick,
+                                onMediaClick = onMediaClick,
+                                onOpenLink = onOpenLink,
+                                actions = actions,
+                                onMoreClick = {
+                                    if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
+                                    menuStatus = it
+                                },
+                                onReactionLongPress = { onShowReaction(status.statusId, it) },
+                                onUnavailableAction = {},
+                                preferences = preferences.toStatusDisplayPreferences(),
+                                fullWidthContent = true,
+                                afterActions = {
+                                    StatusDetailMetadata(
+                                        status = status,
+                                        onOpenLink = onOpenLink,
+                                        onBoosters = { onShowBoosters(status.statusId) },
+                                        onFavourites = { onShowFavourites(status.statusId) },
+                                    )
+                                },
+                            )
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                        }
+                        state.detail?.descendants?.let { replies ->
+                            if (replies.isNotEmpty()) {
+                                item { Text("返信", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
+                                items(replies, key = { it.timelineId }) { reply ->
+                                    StatusCard(
+                                        reply,
+                                        collapseLongContent = false,
+                                        onStatusClick = onStatusClick,
+                                        onAuthorClick = onAccountClick,
+                                        onMediaClick = onMediaClick,
+                                        onOpenLink = onOpenLink,
+                                        actions = actions,
+                                        onReactionLongPress = { onShowReaction(reply.statusId, it) },
+                                        onUnavailableAction = {},
+                                        preferences = preferences.toStatusDisplayPreferences(),
+                                    )
+                                    HorizontalDivider()
+                                }
                             }
                         }
                     }
-                    item(key = "selected-${status.statusId}") {
-                        StatusCard(
-                            status = status,
-                            collapseLongContent = false,
-                            onStatusClick = null,
-                            onAuthorClick = onAccountClick,
-                            onMediaClick = onMediaClick,
-                            onOpenLink = onOpenLink,
-                            actions = actions,
-                            onMoreClick = {
-                                if (it.author.id != state.currentAccountId) viewModel.loadModerationMenu(it.author.id)
-                                menuStatus = it
-                            },
-                            onReactionLongPress = { onShowReaction(status.statusId, it) },
-                            onUnavailableAction = {},
-                            preferences = preferences.toStatusDisplayPreferences(),
-                            fullWidthContent = true,
-                            afterActions = {
-                                StatusDetailMetadata(
-                                    status = status,
-                                    onOpenLink = onOpenLink,
-                                    onBoosters = { onShowBoosters(status.statusId) },
-                                    onFavourites = { onShowFavourites(status.statusId) },
-                                )
-                            },
-                        )
-                        HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
-                    }
-                    state.detail?.descendants?.let { replies ->
-                        if (replies.isNotEmpty()) {
-                            item { Text("返信", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
-                            items(replies, key = { it.timelineId }) { reply ->
-                                StatusCard(
-                                    reply,
-                                    collapseLongContent = false,
-                                    onStatusClick = onStatusClick,
-                                    onAuthorClick = onAccountClick,
-                                    onMediaClick = onMediaClick,
-                                    onOpenLink = onOpenLink,
-                                    actions = actions,
-                                    onReactionLongPress = { onShowReaction(reply.statusId, it) },
-                                    onUnavailableAction = {},
-                                    preferences = preferences.toStatusDisplayPreferences(),
-                                )
-                                HorizontalDivider()
+                    if (!conversationListState.isPositioned) {
+                        Box(Modifier.fillMaxSize().pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                }
+                            }
+                        }) {
+                            if (state.showInitialLoadingIndicator) {
+                                ListLoadingContent(Modifier.testTag("status_detail_loading"), label = null)
                             }
                         }
                     }
@@ -326,8 +360,10 @@ fun StatusDetailScreen(
 }
 
 /** Position once after the complete conversation arrives; preserve later browsing position. */
+internal data class ConversationListState(val listState: LazyListState, val isPositioned: Boolean)
+
 @Composable
-internal fun rememberConversationListState(statusId: String?, ancestorCount: Int, ready: Boolean): LazyListState {
+internal fun rememberConversationListState(statusId: String?, ancestorCount: Int, ready: Boolean): ConversationListState {
     val listState = rememberLazyListState()
     var positionedStatusId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(listState, statusId) {
@@ -351,7 +387,7 @@ internal fun rememberConversationListState(statusId: String?, ancestorCount: Int
         listState.scrollBy((item.offset - desiredTop).toFloat())
         positionedStatusId = statusId
     }
-    return listState
+    return ConversationListState(listState, statusId != null && positionedStatusId == statusId)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

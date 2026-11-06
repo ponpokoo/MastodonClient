@@ -9,6 +9,7 @@ import io.github.ponpokoo.mastodonclient.data.remote.dto.StatusDto
 import io.github.ponpokoo.mastodonclient.data.remote.dto.NotificationDto
 import io.github.ponpokoo.mastodonclient.data.remote.MastodonStreamingDataSource
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.domain.model.withAccountDisplay
 import io.github.ponpokoo.mastodonclient.domain.model.AccountListPage
 import io.github.ponpokoo.mastodonclient.domain.model.MediaAttachment
@@ -195,6 +196,27 @@ class DefaultTimelineRepository(
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, TimelineStatus>?) = size > 500
         },
     )
+
+    // Keep only membership/order here; post updates and invalidation use the existing status cache.
+    private class CachedConversation(val session: AccountSession, val statusIds: List<String>)
+    private val conversationCache = Collections.synchronizedMap(
+        object : LinkedHashMap<StatusCacheKey, CachedConversation>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, CachedConversation>?) = size > 16
+        },
+    )
+
+    override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String): StatusDetail? {
+        val cached = conversationCache[cacheKey(session, sourceStatusId)] ?: (
+            if (sourceStatusId == statusId) synchronized(conversationCache) {
+                conversationCache.values.lastOrNull { session.hasSameCredentials(it.session) && statusId in it.statusIds }
+            } else null
+        ) ?: return null
+        if (!session.hasSameCredentials(cached.session)) return null
+        val posts = cached.statusIds.map { getCachedStatus(session, it) ?: return null }
+        val detail = posts.conversationAround(statusId) ?: return null
+        conversationCache[cacheKey(session, statusId)] = cached
+        return detail
+    }
 
     private val moderationAuthors = Collections.synchronizedMap(
         object : LinkedHashMap<StatusCacheKey, StatusAuthor>(128, 0.75f, true) {
@@ -727,7 +749,10 @@ class DefaultTimelineRepository(
             status = mappedStatus,
             ancestors = context.ancestors.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
             descendants = context.descendants.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
-        )
+        ).also { detail ->
+            conversationCache[cacheKey(session, statusId)] = CachedConversation(session,
+                (detail.ancestors + detail.status + detail.descendants).map { it.statusId }.distinct())
+        }
     } }
 
     override suspend fun getRebloggedBy(session: AccountSession, statusId: String, maxId: String?) =

@@ -38,6 +38,68 @@ class StatusDetailActionsTest : ScreenViewModelTestBase() {
             Result.success(StatusDetail(testStatus(statusId), emptyList(), emptyList()))
     }
 
+    @Test fun allEntryPointsReuseConversationAndExplicitRetryFetchesAgain() = runTest(dispatcher) {
+        var requests = 0
+        var cacheReads = 0
+        val cached = StatusDetail(testStatus("reply"), listOf(testStatus("root")), emptyList())
+        val repository = object : Repository() {
+            override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String): StatusDetail {
+                assertEquals(testAccount, session)
+                assertEquals(if (cacheReads == 0) "reply" else "root", sourceStatusId)
+                assertEquals("reply", statusId)
+                cacheReads++
+                return cached
+            }
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> {
+                requests++
+                return Result.success(cached)
+            }
+        }
+        val homeDetail = own(StatusDetailViewModel("reply", repository, auth))
+        advanceUntilIdle()
+        assertEquals(0, requests)
+        assertEquals(1, cacheReads)
+        assertFalse(homeDetail.uiState.value.showInitialLoadingIndicator)
+        val model = own(StatusDetailViewModel("reply", repository, auth, conversationSourceId = "root"))
+        advanceUntilIdle()
+        assertEquals("reply", model.uiState.value.detail!!.status.statusId)
+        assertEquals(listOf("root"), model.uiState.value.detail!!.ancestors.map { it.statusId })
+        assertFalse(model.uiState.value.isLoading)
+        assertFalse(model.uiState.value.showInitialLoadingIndicator)
+        assertEquals(0, requests)
+        assertEquals(2, cacheReads)
+        model.retry(); advanceUntilIdle()
+        assertEquals(1, requests)
+        assertEquals(2, cacheReads)
+        assertTrue(model.uiState.value.showInitialLoadingIndicator)
+    }
+
+    @Test fun cacheMissAndAccountSwitchFetchInsteadOfReusingTheOldConversation() = runTest(dispatcher) {
+        val requests = mutableListOf<AccountSession>()
+        var cacheReads = 0
+        val repository = object : Repository() {
+            override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String): StatusDetail? {
+                cacheReads++
+                return null
+            }
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> {
+                requests += session
+                return Result.success(StatusDetail(testStatus(statusId), emptyList(), emptyList()))
+            }
+        }
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val model = own(StatusDetailViewModel("reply", repository, auth, browsing = browsing, conversationSourceId = "root"))
+        advanceUntilIdle()
+        assertEquals(listOf(testAccount), requests)
+        assertEquals(1, cacheReads)
+        account = secondAccount
+        browsing.activate(secondAccount)
+        advanceUntilIdle()
+        assertEquals(listOf(testAccount, secondAccount), requests)
+        assertEquals(1, cacheReads)
+        assertFalse(model.uiState.value.isLoading)
+    }
+
     private val before = testStatus("before").copy(timelineId = "boost-before", poll = poll("before-poll"))
     private val selected = testStatus("original").copy(poll = poll("selected-poll"))
     private val after = testStatus("after")

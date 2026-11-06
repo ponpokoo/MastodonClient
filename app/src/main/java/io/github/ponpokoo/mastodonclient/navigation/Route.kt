@@ -13,7 +13,7 @@ sealed interface Route {
     data object Timeline : Route
 
     @Serializable
-    data class StatusDetail(val statusId: String) : Route
+    data class StatusDetail(val statusId: String, val conversationSourceId: String? = null) : Route
 
     @Serializable
     data class ComposePost(

@@ -35,6 +35,8 @@ import kotlinx.coroutines.ensureActive
 data class StatusDetailUiState(
     val detail: StatusDetail? = null,
     val isLoading: Boolean = true,
+    // Only a network fetch needs an indicator, including its subsequent initial layout.
+    val showInitialLoadingIndicator: Boolean = false,
     val errorMessage: String? = null,
     val currentAccountId: String? = null,
     val lists: List<MastodonList> = emptyList(),
@@ -51,6 +53,7 @@ class StatusDetailViewModel(
     private val authRepository: AuthRepository,
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
     private val browsing: BrowsingSession? = null,
+    private val conversationSourceId: String? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StatusDetailUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
@@ -94,7 +97,7 @@ class StatusDetailViewModel(
                 }
             }
         }
-        load()
+        load(reuseConversation = true)
     }
 
     fun retry() = load()
@@ -212,7 +215,7 @@ class StatusDetailViewModel(
         } else error.message ?: fallback) }
     }
 
-    private fun load() = actionScope.launch {
+    private fun load(reuseConversation: Boolean = false) = actionScope.launch {
         val snapshot = browsing?.snapshot?.value
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession()
@@ -224,11 +227,20 @@ class StatusDetailViewModel(
         session = current
         _uiState.update { it.copy(currentAccountId = current.accountId,
             sessionKey = "${current.sessionId}|${current.instanceUrl}|${snapshot?.generation}") }
+        if (reuseConversation) {
+            val cached = timelineRepository.getCachedConversation(current, conversationSourceId ?: statusId, statusId)
+            if (!isCurrentAction(current, snapshot)) return@launch
+            if (cached != null) {
+                _uiState.update { it.copy(detail = cached, isLoading = false, showInitialLoadingIndicator = false) }
+                return@launch
+            }
+        }
         if (_uiState.value.detail == null) {
             val cached = timelineRepository.getCachedStatus(current, statusId)
             if (!isCurrentAction(current, snapshot)) return@launch
             cached?.let { _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) } }
         }
+        _uiState.update { it.copy(showInitialLoadingIndicator = true) }
         val result = timelineRepository.getStatusDetail(current, statusId)
         if (!isCurrentAction(current, snapshot)) return@launch
         result.onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
@@ -299,10 +311,11 @@ class StatusDetailViewModel(
         private val authRepository: AuthRepository,
         private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
         private val browsing: BrowsingSession? = null,
+        private val conversationSourceId: String? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager, browsing) as T
+            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager, browsing, conversationSourceId) as T
     }
 }
 
