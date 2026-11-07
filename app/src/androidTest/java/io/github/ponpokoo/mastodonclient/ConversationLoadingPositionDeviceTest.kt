@@ -41,10 +41,12 @@ class ConversationLoadingPositionDeviceTest {
     )
 
     private fun show(cached: Boolean, reuseConversation: Boolean = false, authenticationReady: CompletableDeferred<Unit>? = null,
-        cachedConversationAvailable: Boolean = reuseConversation): Channel<Result<StatusDetail>> {
+        cachedConversationAvailable: Boolean = reuseConversation,
+        cachedStatus: TimelineStatus = selected.copy(repliesCount = 1),
+    ): Channel<Result<StatusDetail>> {
         val response = Channel<Result<StatusDetail>>(Channel.UNLIMITED)
         val repository = object : TimelineRepository {
-            override fun getCachedStatus(session: AccountSession, statusId: String) = selected.takeIf { cached }
+            override fun getCachedStatus(session: AccountSession, statusId: String) = cachedStatus.takeIf { cached }
             override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(TimelinePage(emptyList(), null, true))
             override suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> {
@@ -146,7 +148,32 @@ class ConversationLoadingPositionDeviceTest {
         assertNearCenter()
     }
 
-    @Test fun fetchedConversationOpensCenteredWithoutNetworkAndUpdateCanFetchAgain() {
+    @Test fun cachedStandalonePostOpensDuringFetchAndKeepsItsPositionWhenAReplyArrives() {
+        val response = show(cached = true, cachedStatus = selected)
+        rule.onNodeWithTag("status_detail_loading").assertDoesNotExist()
+        target().assertIsDisplayed()
+        rule.runOnIdle { assertEquals(1, detailRequests) }
+        val before = targetTop()
+        rule.runOnIdle {
+            response.trySend(Result.success(StatusDetail(
+                selected.copy(repliesCount = 1),
+                emptyList(),
+                listOf(post("new-reply").copy(inReplyToId = selected.statusId)),
+            )))
+        }
+        assertEquals(before, targetTop(), 3f)
+        rule.onNodeWithTag("status_detail").performScrollToNode(hasText("Author new-reply"))
+        rule.onNodeWithText("Author new-reply").assertIsDisplayed()
+    }
+
+    @Test fun cachedReplyWithNoRepliesWaitsForItsParentBeforeDisplaying() {
+        val response = show(cached = true, cachedStatus = selected.copy(inReplyToId = "before-7"))
+        assertLoading()
+        complete(response)
+        assertNearCenter()
+    }
+
+    @Test fun cachedConversationOpensCenteredDuringFetchAndRetainsPositionWhenPostsAreInsertedAbove() {
         val authenticationReady = CompletableDeferred<Unit>()
         val response = show(cached = true, reuseConversation = true, authenticationReady = authenticationReady)
         rule.onNodeWithTag("status_detail_loading").assertDoesNotExist()
@@ -167,13 +194,27 @@ class ConversationLoadingPositionDeviceTest {
         assertTrue("Cached conversation must appear after positioning", visibleFrames > 0)
         assertNearCenter()
         rule.onNodeWithTag("status_detail_loading").assertDoesNotExist()
-        rule.runOnIdle { assertEquals(0, detailRequests) }
-        val before = targetTop()
-        rule.onNodeWithContentDescription("会話を更新").performClick()
         rule.runOnIdle { assertEquals(1, detailRequests) }
+        rule.onNodeWithTag("status_detail").performTouchInput {
+            swipeDown(startY = height * 0.5f, endY = height * 0.6f, durationMillis = 1_000)
+        }
+        val before = targetTop()
+        rule.runOnIdle {
+            response.trySend(Result.success(StatusDetail(
+                selected,
+                listOf(post("added-ancestor")) + (0 until 8).map { post("before-$it") },
+                (0 until 9).map { post("after-$it") },
+            )))
+        }
         assertEquals(before, targetTop(), 3f)
-        complete(response)
-        assertEquals(before, targetTop(), 3f)
+        rule.onNodeWithTag("status_detail").performScrollToNode(hasText("Author after-8"))
+        rule.onNodeWithText("Author after-8").assertIsDisplayed()
+
+        rule.onNodeWithTag("status_detail").performScrollToNode(hasText("Author selected"))
+        val beforeManualRefresh = targetTop()
+        rule.onNodeWithContentDescription("会話を更新").performClick()
+        rule.runOnIdle { assertEquals(2, detailRequests) }
+        assertEquals(beforeManualRefresh, targetTop(), 3f)
     }
 
     @Test fun homeEntryReusesCachedConversationWithoutLoadingIndicator() {
@@ -194,7 +235,7 @@ class ConversationLoadingPositionDeviceTest {
         rule.mainClock.autoAdvance = true
         rule.waitForIdle()
         assertTrue(visibleFrames > 0)
-        rule.runOnIdle { assertEquals(0, detailRequests) }
+        rule.runOnIdle { assertEquals(1, detailRequests) }
     }
 
     @Test fun lastPostIsConstrainedByEndOfConversation() {

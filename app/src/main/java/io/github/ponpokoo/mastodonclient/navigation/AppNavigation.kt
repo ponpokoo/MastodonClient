@@ -98,6 +98,8 @@ private data class PendingNotificationNavigation(
     val backStackEntryId: String,
 )
 
+private const val POSTED_REPLY_TO_ID = "postedReplyToId"
+
 @Composable
 fun AppNavigation(
     preferences: UserPreferencesStore,
@@ -481,6 +483,15 @@ fun AppNavigation(
                     conversationSourceId = route.conversationSourceId,
                 ),
             )
+            LaunchedEffect(backStackEntry, detailViewModel) {
+                val handle = backStackEntry.savedStateHandle
+                handle.getStateFlow<String?>(POSTED_REPLY_TO_ID, null).collect { replyToId ->
+                    if (replyToId != null) {
+                        detailViewModel.onReplyPosted(replyToId)
+                        handle.set<String?>(POSTED_REPLY_TO_ID, null)
+                    }
+                }
+            }
             StatusDetailScreen(
                 detailViewModel,
                 preferences = appPreferences,
@@ -559,7 +570,16 @@ fun AppNavigation(
                 viewModel = composeViewModel,
                 isEditing = route.editStatusId != null,
                 onClose = { navController.popBackStack() },
-                onPosted = { navController.popBackStack() },
+                onPosted = {
+                    if (route.editStatusId == null) {
+                        val previous = navController.previousBackStackEntry
+                        val replyToId = composeViewModel.uiState.value.replyToId
+                        if (replyToId != null && previous?.destination?.hasRoute<Route.StatusDetail>() == true) {
+                            previous.savedStateHandle[POSTED_REPLY_TO_ID] = replyToId
+                        }
+                    }
+                    navController.popBackStack()
+                },
             )
         }
         animatedScreen<Route.Settings> { backStackEntry ->

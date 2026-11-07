@@ -54,6 +54,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -98,8 +99,11 @@ import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialo
 import io.github.ponpokoo.mastodonclient.feature.status.StatusReportDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
 import io.github.ponpokoo.mastodonclient.feature.common.CustomEmojiText
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarHeight
+import io.github.ponpokoo.mastodonclient.feature.common.AppTopBarShadowElevation
 import io.github.ponpokoo.mastodonclient.feature.common.ListLoadingContent
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.ui.theme.MainTopBarTitleStyle
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -139,7 +143,6 @@ fun StatusDetailScreen(
     val conversationListState = androidx.compose.runtime.key(state.sessionKey) { rememberConversationListState(
         status?.statusId,
         state.detail?.ancestors?.size ?: 0,
-        !state.isLoading && state.errorMessage == null,
     ) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -168,14 +171,26 @@ fun StatusDetailScreen(
         Scaffold(contentWindowInsets = mediaContentInsets(),
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                TopAppBar(windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+                TopAppBar(
+                    expandedHeight = AppTopBarHeight,
+                    modifier = Modifier.graphicsLayer { shadowElevation = AppTopBarShadowElevation.toPx() },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    ),
+                    windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
                     title = {
-                        if (status == null) Text("投稿") else CustomEmojiText(
-                            text = "${status.author.displayName}さんの投稿",
-                            emojis = status.author.customEmojis,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (status == null) {
+                            Text("投稿", style = MainTopBarTitleStyle)
+                        } else {
+                            CustomEmojiText(
+                                text = "${status.author.displayName}さんの投稿",
+                                emojis = status.author.customEmojis,
+                                style = MainTopBarTitleStyle,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
@@ -191,12 +206,12 @@ fun StatusDetailScreen(
             },
         ) { padding ->
             when {
-                state.isLoading && !conversationListState.isPositioned -> Box(Modifier.fillMaxSize().padding(padding)) {
+                status == null && state.isLoading -> Box(Modifier.fillMaxSize().padding(padding)) {
                     if (state.showInitialLoadingIndicator) {
                         ListLoadingContent(Modifier.testTag("status_detail_loading"), label = null)
                     }
                 }
-                status == null || (state.errorMessage != null && !conversationListState.isPositioned) -> Column(
+                status == null -> Column(
                     Modifier.fillMaxSize().padding(padding).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
@@ -216,8 +231,8 @@ fun StatusDetailScreen(
                     ) {
                         state.detail?.ancestors?.let { ancestors ->
                             if (ancestors.isNotEmpty()) {
-                                item { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
-                                items(ancestors, key = { "ancestor-${it.timelineId}" }) { ancestor ->
+                                item(key = "ancestors-heading") { Text("この会話の前の投稿", Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium) }
+                                items(ancestors, key = { "ancestor-${it.statusId}" }) { ancestor ->
                                     StatusCard(
                                         status = ancestor,
                                         collapseLongContent = false,
@@ -264,8 +279,8 @@ fun StatusDetailScreen(
                         }
                         state.detail?.descendants?.let { replies ->
                             if (replies.isNotEmpty()) {
-                                item { Text("返信", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
-                                items(replies, key = { it.timelineId }) { reply ->
+                                item(key = "replies-heading") { Text("返信", Modifier.padding(horizontal = 12.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium) }
+                                items(replies, key = { "reply-${it.statusId}" }) { reply ->
                                     StatusCard(
                                         reply,
                                         collapseLongContent = false,
@@ -363,7 +378,7 @@ fun StatusDetailScreen(
 internal data class ConversationListState(val listState: LazyListState, val isPositioned: Boolean)
 
 @Composable
-internal fun rememberConversationListState(statusId: String?, ancestorCount: Int, ready: Boolean): ConversationListState {
+internal fun rememberConversationListState(statusId: String?, ancestorCount: Int): ConversationListState {
     val listState = rememberLazyListState()
     var positionedStatusId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(listState, statusId) {
@@ -371,8 +386,8 @@ internal fun rememberConversationListState(statusId: String?, ancestorCount: Int
             if (interaction is DragInteraction.Start) positionedStatusId = statusId
         }
     }
-    LaunchedEffect(statusId, ready, positionedStatusId) {
-        if (statusId == null || !ready || positionedStatusId == statusId) return@LaunchedEffect
+    LaunchedEffect(statusId, ancestorCount, positionedStatusId) {
+        if (statusId == null || positionedStatusId == statusId) return@LaunchedEffect
         val index = ancestorCount + if (ancestorCount > 0) 1 else 0
         val key = "selected-$statusId"
         // First measure the selected row, including its media and metadata.

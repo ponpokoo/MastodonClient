@@ -35,7 +35,7 @@ import kotlinx.coroutines.ensureActive
 data class StatusDetailUiState(
     val detail: StatusDetail? = null,
     val isLoading: Boolean = true,
-    // Only a network fetch needs an indicator, including its subsequent initial layout.
+    // Show an indicator only when the initial conversation needs a network fetch.
     val showInitialLoadingIndicator: Boolean = false,
     val errorMessage: String? = null,
     val currentAccountId: String? = null,
@@ -62,6 +62,7 @@ class StatusDetailViewModel(
     private var session: AccountSession? = null
     private val actionJob = SupervisorJob(viewModelScope.coroutineContext[Job])
     private val actionScope = CoroutineScope(viewModelScope.coroutineContext + actionJob)
+    private var loadJob: Job? = null
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
         session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
@@ -81,7 +82,7 @@ class StatusDetailViewModel(
         }
         io.github.ponpokoo.mastodonclient.feature.common.observeServerFilterChanges(viewModelScope, timelineRepository, { session }, "detail:$statusId") {
             _uiState.first { !it.isLoading }; load().join()
-            _uiState.value.errorMessage == null
+            _uiState.first { !it.isLoading }.errorMessage == null
         }
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
@@ -97,12 +98,16 @@ class StatusDetailViewModel(
                 }
             }
         }
-        load(reuseConversation = true)
+        load(showCachedDetail = true)
     }
 
     fun retry() = load()
     fun refresh() {
         if (!_uiState.value.isLoading) load()
+    }
+
+    fun onReplyPosted(replyToId: String) {
+        if (replyToId == statusId || findStatus(replyToId) != null) load()
     }
 
     fun toggleFavourite(status: TimelineStatus) = runOptimisticAction(status, statusActionManager::beginFavourite)
@@ -215,38 +220,45 @@ class StatusDetailViewModel(
         } else error.message ?: fallback) }
     }
 
-    private fun load(reuseConversation: Boolean = false) = actionScope.launch {
+    private fun load(showCachedDetail: Boolean = false): Job {
+        loadJob?.cancel()
+        return actionScope.launch { loadConversation(showCachedDetail) }.also { loadJob = it }
+    }
+
+    private suspend fun loadConversation(showCachedDetail: Boolean) {
         val snapshot = browsing?.snapshot?.value
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         if (current == null) {
             _uiState.update { it.copy(isLoading = false, errorMessage = "ログインし直してください") }
-            return@launch
+            return
         }
-        if (!isCurrentAction(current, snapshot)) return@launch
+        if (!isCurrentAction(current, snapshot)) return
         session = current
         _uiState.update { it.copy(currentAccountId = current.accountId,
             sessionKey = "${current.sessionId}|${current.instanceUrl}|${snapshot?.generation}") }
-        if (reuseConversation) {
+        if (showCachedDetail) {
             val cached = timelineRepository.getCachedConversation(current, conversationSourceId ?: statusId, statusId)
-            if (!isCurrentAction(current, snapshot)) return@launch
-            if (cached != null) {
-                _uiState.update { it.copy(detail = cached, isLoading = false, showInitialLoadingIndicator = false) }
-                return@launch
-            }
+                ?: timelineRepository.getCachedStatus(current, statusId)
+                    ?.takeIf { it.inReplyToId == null && it.repliesCount == 0L }
+                    ?.let { StatusDetail(it, emptyList(), emptyList()) }
+            if (!isCurrentAction(current, snapshot)) return
+            if (cached != null) _uiState.update { it.copy(detail = cached) }
         }
-        if (_uiState.value.detail == null) {
-            val cached = timelineRepository.getCachedStatus(current, statusId)
-            if (!isCurrentAction(current, snapshot)) return@launch
-            cached?.let { _uiState.update { it.copy(detail = StatusDetail(cached, emptyList(), emptyList())) } }
-        }
-        _uiState.update { it.copy(showInitialLoadingIndicator = true) }
+        _uiState.update { it.copy(showInitialLoadingIndicator = it.detail == null) }
         val result = timelineRepository.getStatusDetail(current, statusId)
-        if (!isCurrentAction(current, snapshot)) return@launch
+        if (!isCurrentAction(current, snapshot)) return
         result.onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
             .onFailure { error ->
                 if (error is CancellationException) throw error
-                _uiState.update { it.copy(isLoading = false, errorMessage = error.message ?: "投稿を取得できませんでした") }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = error.message ?: "投稿を取得できませんでした",
+                        actionMessage = if (it.detail != null) "会話を更新できませんでした" else it.actionMessage,
+                    )
+                }
             }
     }
 

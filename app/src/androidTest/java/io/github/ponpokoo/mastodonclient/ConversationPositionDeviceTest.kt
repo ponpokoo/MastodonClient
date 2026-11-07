@@ -26,7 +26,7 @@ class ConversationPositionDeviceTest {
         val ready = mutableStateOf(false)
         lateinit var list: LazyListState
         rule.setContent {
-            list = rememberConversationListState("target", 10, ready.value).listState
+            list = rememberConversationListState("target".takeIf { ready.value }, 10).listState
             LazyColumn(Modifier.height(400.dp).testTag("conversation"), state = list) {
                 item { Box(Modifier.fillMaxWidth().height(40.dp)) }
                 items(10, key = { "ancestor-$it" }) { Box(Modifier.fillMaxWidth().height(80.dp)) }
@@ -54,7 +54,7 @@ class ConversationPositionDeviceTest {
     @Test fun tallSelectedRowStartsAtTop() {
         lateinit var list: LazyListState
         rule.setContent {
-            list = rememberConversationListState("target", 2, true).listState
+            list = rememberConversationListState("target", 2).listState
             LazyColumn(Modifier.height(400.dp), state = list) {
                 item { Box(Modifier.height(40.dp)) }
                 items(2) { Box(Modifier.height(80.dp)) }

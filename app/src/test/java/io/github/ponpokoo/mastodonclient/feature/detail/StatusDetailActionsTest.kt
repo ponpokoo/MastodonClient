@@ -38,10 +38,12 @@ class StatusDetailActionsTest : ScreenViewModelTestBase() {
             Result.success(StatusDetail(testStatus(statusId), emptyList(), emptyList()))
     }
 
-    @Test fun allEntryPointsReuseConversationAndExplicitRetryFetchesAgain() = runTest(dispatcher) {
+    @Test fun allEntryPointsShowCachedConversationWhileFetchingAndKeepItOnFailure() = runTest(dispatcher) {
         var requests = 0
         var cacheReads = 0
         val cached = StatusDetail(testStatus("reply"), listOf(testStatus("root")), emptyList())
+        val updated = cached.copy(descendants = listOf(testStatus("new-reply")))
+        val initialResponse = CompletableDeferred<Result<StatusDetail>>()
         val repository = object : Repository() {
             override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String): StatusDetail {
                 assertEquals(testAccount, session)
@@ -51,27 +53,38 @@ class StatusDetailActionsTest : ScreenViewModelTestBase() {
                 return cached
             }
             override suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> {
-                requests++
-                return Result.success(cached)
+                return if (++requests <= 2) initialResponse.await() else Result.success(updated)
             }
         }
         val homeDetail = own(StatusDetailViewModel("reply", repository, auth))
-        advanceUntilIdle()
-        assertEquals(0, requests)
+        runCurrent()
+        assertEquals(1, requests)
         assertEquals(1, cacheReads)
+        assertEquals("reply", homeDetail.uiState.value.detail?.status?.statusId)
+        assertEquals(listOf("root"), homeDetail.uiState.value.detail?.ancestors?.map { it.statusId })
         assertFalse(homeDetail.uiState.value.showInitialLoadingIndicator)
         val model = own(StatusDetailViewModel("reply", repository, auth, conversationSourceId = "root"))
-        advanceUntilIdle()
-        assertEquals("reply", model.uiState.value.detail!!.status.statusId)
-        assertEquals(listOf("root"), model.uiState.value.detail!!.ancestors.map { it.statusId })
-        assertFalse(model.uiState.value.isLoading)
+        runCurrent()
+        val displayedCache = model.uiState.value.detail
+        assertEquals("reply", displayedCache?.status?.statusId)
+        assertEquals(listOf("root"), displayedCache?.ancestors?.map { it.statusId })
+        assertTrue(model.uiState.value.isLoading)
         assertFalse(model.uiState.value.showInitialLoadingIndicator)
-        assertEquals(0, requests)
+        assertEquals(2, requests)
         assertEquals(2, cacheReads)
+
+        initialResponse.complete(Result.failure(IllegalStateException("offline")))
+        advanceUntilIdle()
+        assertEquals(displayedCache, model.uiState.value.detail)
+        assertEquals("offline", model.uiState.value.errorMessage)
+        assertNotNull(model.uiState.value.actionMessage)
+        assertFalse(model.uiState.value.isLoading)
+
         model.retry(); advanceUntilIdle()
-        assertEquals(1, requests)
+        assertEquals(listOf("new-reply"), model.uiState.value.detail?.descendants?.map { it.statusId })
+        assertEquals(3, requests)
         assertEquals(2, cacheReads)
-        assertTrue(model.uiState.value.showInitialLoadingIndicator)
+        assertFalse(model.uiState.value.showInitialLoadingIndicator)
     }
 
     @Test fun cacheMissAndAccountSwitchFetchInsteadOfReusingTheOldConversation() = runTest(dispatcher) {
@@ -97,6 +110,33 @@ class StatusDetailActionsTest : ScreenViewModelTestBase() {
         advanceUntilIdle()
         assertEquals(listOf(testAccount, secondAccount), requests)
         assertEquals(1, cacheReads)
+        assertFalse(model.uiState.value.isLoading)
+    }
+
+    @Test fun replySuccessReloadsTheOpenConversationAndSupersedesAnInFlightRefresh() = runTest(dispatcher) {
+        val cached = StatusDetail(testStatus("root"), emptyList(), listOf(testStatus("parent")))
+        val posted = testStatus("new-reply").copy(inReplyToId = "parent")
+        val staleResponse = CompletableDeferred<Result<StatusDetail>>()
+        var requests = 0
+        val repository = object : Repository() {
+            override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String) = cached
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String): Result<StatusDetail> =
+                if (++requests == 1) withContext(NonCancellable) { staleResponse.await() }
+                else Result.success(cached.copy(descendants = cached.descendants + posted))
+        }
+        val model = own(StatusDetailViewModel("root", repository, auth))
+        runCurrent()
+        model.onReplyPosted("unrelated")
+        runCurrent()
+        assertEquals(1, requests)
+
+        model.onReplyPosted("parent")
+        runCurrent()
+        staleResponse.complete(Result.success(cached))
+        advanceUntilIdle()
+
+        assertEquals(2, requests)
+        assertEquals(listOf("parent", "new-reply"), model.uiState.value.detail!!.descendants.map { it.statusId })
         assertFalse(model.uiState.value.isLoading)
     }
 
