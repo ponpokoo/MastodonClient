@@ -463,7 +463,7 @@ fun AppNavigation(
                 onOpenReactions = { navController.navigate(Route.SavedTimeline("reactions", title = "リアクションした投稿")) },
             )
             val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
-            io.github.ponpokoo.mastodonclient.feature.settings.FirstRunGuide(
+            io.github.ponpokoo.mastodonclient.feature.settings.StartupGuide(
                 store = preferences,
                 eligible = mainState.session != null && !mainState.requiresLogin &&
                     currentBackStackEntry?.id == backStackEntry.id,

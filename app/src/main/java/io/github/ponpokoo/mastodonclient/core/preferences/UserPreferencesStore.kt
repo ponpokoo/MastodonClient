@@ -84,6 +84,7 @@ data class AccountPreferences(
 @Serializable
 data class AppPreferences(
     val welcomeGuideCompleted: Boolean = false,
+    val updateNoticeSeenThroughVersionCode: Int = 0,
     val fabPosition: FabPosition? = null,
     val themeMode: ThemeMode = ThemeMode.System,
     val bottomTabBarStyle: BottomTabBarStyle = BottomTabBarStyle.Floating,
@@ -263,7 +264,16 @@ class UserPreferencesStore(
 
     suspend fun setThemeMode(value: ThemeMode) = update { it.copy(themeMode = value) }
     suspend fun setBottomTabBarStyle(value: BottomTabBarStyle) = update { it.copy(bottomTabBarStyle = value) }
-    suspend fun completeWelcomeGuide() = update { it.copy(welcomeGuideCompleted = true) }
+    suspend fun completeWelcomeGuide(versionCode: Int) = update {
+        it.copy(
+            welcomeGuideCompleted = true,
+            updateNoticeSeenThroughVersionCode = maxOf(it.updateNoticeSeenThroughVersionCode, versionCode),
+        )
+    }
+
+    suspend fun dismissUpdateNotice(versionCode: Int) = update {
+        it.copy(updateNoticeSeenThroughVersionCode = maxOf(it.updateNoticeSeenThroughVersionCode, versionCode))
+    }
     suspend fun setOpenLinksInApp(enabled: Boolean) = update { it.copy(openLinksInApp = enabled) }
     suspend fun setTimelineDisplay(value: TimelineDisplayPreferences) = update { it.copy(timelineDisplay = value) }
     suspend fun setGifAutoplay(value: AutoplayPolicy) = update { it.copy(gifAutoplay = value) }

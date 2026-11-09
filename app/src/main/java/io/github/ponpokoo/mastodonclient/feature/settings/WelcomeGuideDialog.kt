@@ -36,30 +36,61 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.ponpokoo.mastodonclient.BuildConfig
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import kotlinx.coroutines.launch
 
 internal const val USAGE_GUIDE_URL = "https://ponpokoo.github.io/nagisa-policy/guide/index.html"
 
-/** Wait for persisted preferences before deciding whether to show the first-use guide. */
+internal data class AppUpdateNotice(val versionCode: Int, val highlights: List<String>)
+
+internal val appUpdateNotice = AppUpdateNotice(
+    versionCode = 34,
+    highlights = listOf(
+        "「設定 → 外観 → 下部タブバー」で、フローティングと従来型（全幅）を切り替えられます。",
+        "投稿詳細では、すでに読み込んだ内容を先に表示し、最新の会話をあとから読み込みます。",
+    ),
+)
+
+/** Wait for persisted preferences before deciding which guide to show. */
 @Composable
-internal fun FirstRunGuide(
+internal fun StartupGuide(
     store: UserPreferencesStore,
     eligible: Boolean,
     onSettings: (String) -> Unit,
+    updateNotice: AppUpdateNotice = appUpdateNotice,
 ) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = null)
+    val saved = preferences ?: return
+    if (!eligible) return
+
     val scope = rememberCoroutineScope()
-    val openUsageGuide = rememberUsageGuideOpener(preferences?.openLinksInApp ?: true)
-    if (eligible && preferences?.welcomeGuideCompleted == false) {
+    if (!saved.welcomeGuideCompleted) {
         WelcomeGuideDialog(
-            onDismiss = { scope.launch { store.completeWelcomeGuide() } },
+            onDismiss = { scope.launch { store.completeWelcomeGuide(BuildConfig.VERSION_CODE) } },
             onNotifications = { onSettings(SettingsPage.Notifications.name) },
             onTextSize = { onSettings(SettingsPage.Timeline.name) },
             onTheme = { onSettings(SettingsPage.Appearance.name) },
-            onUsageGuide = openUsageGuide,
+            onUsageGuide = rememberUsageGuideOpener(saved.openLinksInApp),
         )
+    } else if (
+        updateNotice.versionCode == BuildConfig.VERSION_CODE &&
+        updateNotice.versionCode > saved.updateNoticeSeenThroughVersionCode
+    ) {
+        GuideDialog(
+            title = "Nagisa ${BuildConfig.VERSION_NAME} の更新",
+            dialogTag = "update_notice",
+            dismissLabel = "閉じる",
+            dismissTag = "update_notice_close",
+            onDismiss = { scope.launch { store.dismissUpdateNotice(updateNotice.versionCode) } },
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                updateNotice.highlights.forEach { highlight ->
+                    Text(highlight, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
     }
 }
 
@@ -75,44 +106,67 @@ internal fun rememberUsageGuideOpener(inApp: Boolean): () -> Unit {
 }
 
 @Composable
-internal fun WelcomeGuideDialog(
+private fun WelcomeGuideDialog(
     onDismiss: () -> Unit,
     onNotifications: () -> Unit,
     onTextSize: () -> Unit,
     onTheme: () -> Unit,
     onUsageGuide: () -> Unit,
 ) {
+    GuideDialog(
+        title = "Nagisaへようこそ",
+        dialogTag = "welcome_guide",
+        dismissLabel = "はじめる",
+        dismissTag = "welcome_start",
+        onDismiss = onDismiss,
+    ) {
+        Text("Push通知は設定からオンにしてください", style = MaterialTheme.typography.bodyLarge)
+        GuideLink("通知を設定する", "welcome_notifications", onNotifications)
+        Text(
+            "アカウント・サーバーごとに対応が異なります。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text("文字サイズやテーマを調整できます", style = MaterialTheme.typography.bodyLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GuideLink("文字サイズ", "welcome_text_size", onTextSize)
+            GuideLink("テーマ", "welcome_theme", onTheme)
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("使い方のQ＆Aは以下のサイトで確認できます", style = MaterialTheme.typography.bodyLarge)
+        GuideLink("使い方を見る", "welcome_usage", onUsageGuide, external = true)
+    }
+}
+
+@Composable
+private fun GuideDialog(
+    title: String,
+    dialogTag: String,
+    dismissLabel: String,
+    dismissTag: String,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth().testTag("welcome_guide"),
+            modifier = Modifier.fillMaxWidth().testTag(dialogTag),
         ) {
             Column(Modifier.padding(24.dp)) {
-                Text("Nagisaへようこそ", style = MaterialTheme.typography.titleLarge)
+                Text(title, style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(20.dp))
                 // Keep the completion action reachable on small screens and with large system fonts.
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-                    Text("Push通知は設定からオンにしてください", style = MaterialTheme.typography.bodyLarge)
-                    GuideLink("通知を設定する", "welcome_notifications", onNotifications)
-                    Text(
-                        "アカウント・サーバーごとに対応が異なります。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("文字サイズやテーマを調整できます", style = MaterialTheme.typography.bodyLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GuideLink("文字サイズ", "welcome_text_size", onTextSize)
-                        GuideLink("テーマ", "welcome_theme", onTheme)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text("使い方のQ＆Aは以下のサイトで確認できます", style = MaterialTheme.typography.bodyLarge)
-                    GuideLink("使い方を見る", "welcome_usage", onUsageGuide, external = true)
+                    content()
                 }
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = onDismiss, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp).testTag("welcome_start")) {
-                    Text("はじめる")
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp).testTag(dismissTag),
+                ) {
+                    Text(dismissLabel)
                 }
             }
         }

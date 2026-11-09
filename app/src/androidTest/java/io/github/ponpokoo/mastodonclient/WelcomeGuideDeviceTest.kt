@@ -54,7 +54,9 @@ class WelcomeGuideDeviceTest {
         var destination: String? = null
         rule.setContent {
             MastodonClientTheme {
-                key(generation) { FirstRunGuide(store, eligible, onSettings = { destination = it }) }
+                key(generation) {
+                    StartupGuide(store, eligible, onSettings = { destination = it }, updateNotice = currentNotice)
+                }
             }
         }
         rule.onNodeWithTag("welcome_guide").assertDoesNotExist()
@@ -69,6 +71,39 @@ class WelcomeGuideDeviceTest {
         rule.runOnIdle { generation++; eligible = false }
         rule.runOnIdle { eligible = true }
         rule.onNodeWithTag("welcome_guide").assertDoesNotExist()
+        rule.onNodeWithTag("update_notice").assertDoesNotExist()
+    }
+
+    private val currentNotice = AppUpdateNotice(BuildConfig.VERSION_CODE, listOf("今回の変更点"))
+
+    @Test fun upgradeShowsOnlyTheCurrentNoticeUntilDismissed() {
+        runBlocking { store.completeWelcomeGuide(BuildConfig.VERSION_CODE - 2) }
+        var eligible by mutableStateOf(false)
+        var notice by mutableStateOf(currentNotice.copy(versionCode = BuildConfig.VERSION_CODE - 1))
+        var generation by mutableStateOf(0)
+        rule.setContent {
+            MastodonClientTheme {
+                key(generation) { StartupGuide(store, eligible, onSettings = {}, updateNotice = notice) }
+            }
+        }
+        rule.runOnIdle { eligible = true }
+        rule.onNodeWithTag("update_notice").assertDoesNotExist()
+        rule.runOnIdle {
+            eligible = false
+            notice = currentNotice
+        }
+        rule.onNodeWithTag("update_notice").assertDoesNotExist()
+        rule.runOnIdle { eligible = true }
+        rule.onNodeWithTag("update_notice").assertIsDisplayed()
+        rule.onNodeWithTag("welcome_guide").assertDoesNotExist()
+
+        rule.runOnIdle { generation++ }
+        rule.onNodeWithTag("update_notice_close").performClick()
+        rule.waitUntil {
+            runBlocking { store.preferences.first().updateNoticeSeenThroughVersionCode == BuildConfig.VERSION_CODE }
+        }
+        rule.runOnIdle { generation++ }
+        rule.onNodeWithTag("update_notice").assertDoesNotExist()
     }
 
     @Test fun firstRunGuideNavigatesToAllSettingsAndReturnsToGuide() {
@@ -76,7 +111,7 @@ class WelcomeGuideDeviceTest {
         rule.setContent { MastodonClientTheme {
             val page = destination
             if (page == null) {
-                FirstRunGuide(store, eligible = true, onSettings = { destination = it })
+                StartupGuide(store, eligible = true, onSettings = { destination = it })
             } else {
                 SettingsScreen(store, null, emptyList(), maintenance, { destination = null }, {}, {}, initialPage = page,
                     preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
@@ -124,7 +159,7 @@ class WelcomeGuideDeviceTest {
                     SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
                         preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
                     )
-                    FirstRunGuide(store, eligible = eligible, onSettings = {})
+                    StartupGuide(store, eligible = eligible, onSettings = {})
                 }
             }
         }
@@ -151,7 +186,7 @@ class WelcomeGuideDeviceTest {
                 SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
                     preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
                 )
-                FirstRunGuide(store, eligible = true, onSettings = {})
+                StartupGuide(store, eligible = true, onSettings = {})
             }
         }
         for (theme in listOf(ThemeMode.Dark, ThemeMode.Light)) {
@@ -169,7 +204,7 @@ class WelcomeGuideDeviceTest {
             SettingsScreen(store, null, emptyList(), maintenance, {}, {}, {},
                 preferences = store.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences()).value,
             )
-            FirstRunGuide(store, eligible = true, onSettings = {})
+            StartupGuide(store, eligible = true, onSettings = {})
         } }
         rule.onNodeWithTag("welcome_start").assertIsDisplayed()
         rule.onNodeWithTag("welcome_usage").performScrollTo().assertIsDisplayed()

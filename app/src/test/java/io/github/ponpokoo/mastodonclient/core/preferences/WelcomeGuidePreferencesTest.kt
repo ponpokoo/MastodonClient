@@ -13,11 +13,12 @@ class WelcomeGuidePreferencesTest {
         val data = MemoryAuthPreferences()
         val store = UserPreferencesStore(data)
         assertFalse(store.preferences.first().welcomeGuideCompleted)
-        store.completeWelcomeGuide()
+        store.completeWelcomeGuide(versionCode = 34)
         store.setThemeMode(ThemeMode.Dark)
         store.setTimelineDisplay(TimelineDisplayPreferences(fontSize = FontSizePreset.Large))
         val restored = UserPreferencesStore(data).preferences.first()
         assertTrue(restored.welcomeGuideCompleted)
+        assertEquals(34, restored.updateNoticeSeenThroughVersionCode)
         assertEquals(ThemeMode.Dark, restored.themeMode)
         assertEquals(FontSizePreset.Large, restored.timelineDisplay.fontSize)
     }
@@ -28,10 +29,29 @@ class WelcomeGuidePreferencesTest {
         })
         val store = UserPreferencesStore(data)
         assertFalse(store.preferences.first().welcomeGuideCompleted)
-        store.completeWelcomeGuide()
+        store.completeWelcomeGuide(versionCode = 34)
         val restored = UserPreferencesStore(data).preferences.first()
         assertTrue(restored.welcomeGuideCompleted)
         assertEquals(ThemeMode.Dark, restored.themeMode)
         assertFalse(restored.openLinksInApp)
+    }
+
+    @Test fun legacyCompletionAllowsNoticeAndOlderVersionsCannotResetDismissal() = runTest {
+        val data = MemoryAuthPreferences(emptyPreferences().toMutablePreferences().apply {
+            this[stringPreferencesKey("app_preferences_v2")] =
+                """{"welcomeGuideCompleted":true,"themeMode":"Dark"}"""
+        })
+        val store = UserPreferencesStore(data)
+        val legacy = store.preferences.first()
+        assertTrue(legacy.welcomeGuideCompleted)
+        assertEquals(0, legacy.updateNoticeSeenThroughVersionCode)
+
+        store.dismissUpdateNotice(versionCode = 34)
+        store.dismissUpdateNotice(versionCode = 33)
+
+        val restored = UserPreferencesStore(data).preferences.first()
+        assertEquals(34, restored.updateNoticeSeenThroughVersionCode)
+        assertTrue(restored.welcomeGuideCompleted)
+        assertEquals(ThemeMode.Dark, restored.themeMode)
     }
 }
