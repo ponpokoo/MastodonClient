@@ -424,6 +424,7 @@ fun AppNavigation(
                 notificationsViewModel = notificationsViewModel,
                 profileViewModel = profileViewModel,
                 actionsViewModel = actionsViewModel,
+                tabBackEnabled = currentBackStackEntry?.id == backStackEntry.id && !mediaMotion.active,
                 notificationOpenRequest = readyNotificationNavigation
                     ?.takeIf { it.backStackEntryId == backStackEntry.id }?.target,
                 onNotificationOpenHandled = { handled ->

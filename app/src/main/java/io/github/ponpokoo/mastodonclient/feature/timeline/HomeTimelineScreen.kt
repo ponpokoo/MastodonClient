@@ -33,6 +33,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
@@ -60,7 +61,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
@@ -147,6 +148,8 @@ import io.github.ponpokoo.mastodonclient.ui.theme.MainTopBarTitleStyle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
 private val MainNavigationContentGap = 8.dp
@@ -181,6 +184,7 @@ fun HomeTimelineScreen(
     onOpenFavourites: () -> Unit,
     onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
     onOpenReactions: () -> Unit = {},
+    tabBackEnabled: Boolean = true,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
@@ -207,7 +211,19 @@ fun HomeTimelineScreen(
     // Keep an off-screen page's viewport when another tab has a different top bar.
     val savedPagePadding = remember { mutableStateMapOf<MainDestination, PaddingValues>() }
     val layoutDirection = LocalLayoutDirection.current
-    val pagerState = rememberPagerState(pageCount = { destinations.size })
+    var tabHistory by rememberSaveable(stateSaver = MainTabHistory.Saver) {
+        mutableStateOf(MainTabHistory())
+    }
+    LaunchedEffect(mainViewModel) {
+        // Startup can briefly have no account while restoring the saved timeline entry.
+        mainViewModel.uiState.map { it.session?.sessionId }.filterNotNull().distinctUntilChanged()
+            .collect { tabHistory = tabHistory.forSession(it) }
+    }
+    val pagerState = remember { PagerState(currentPage = tabHistory.selected.ordinal) { destinations.size } }
+    SideEffect {
+        val selectedPage = tabHistory.selected.ordinal
+        if (pagerState.currentPage != selectedPage) pagerState.requestScrollToPage(selectedPage)
+    }
     val timelineListState = rememberLazyListState()
     val allNotificationsListState = rememberLazyListState()
     val mentionsNotificationsListState = rememberLazyListState()
@@ -286,6 +302,13 @@ fun HomeTimelineScreen(
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.CREATED)
     // STARTED also includes an uncommitted predictive-back preview.
     val isScreenResumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    BackHandler(
+        enabled = tabBackEnabled && isScreenResumed && notificationOpenRequest == null &&
+            tabHistory.canGoBack && tabHistory.sessionId == mainState.session?.sessionId &&
+            !(destination == MainDestination.Explore && searchState.isSearchActive),
+    ) {
+        tabHistory = tabHistory.goBack()
+    }
     val hasBeenResumed = remember(lifecycleOwner) { mutableStateOf(false) }
     val homeNotice = key(mainState.session?.sessionId, state.selectedFeed) {
         rememberSaveable(saver = NewItemsNoticeState.Saver) { NewItemsNoticeState() }
@@ -376,8 +399,8 @@ fun HomeTimelineScreen(
             return@LaunchedEffect
         }
         notificationFilter = NotificationFilter.All
-        pagerState.scrollToPage(MainDestination.Notifications.ordinal)
-        allNotificationsListState.scrollToItem(0)
+        tabHistory = MainTabHistory.fromNotification(request.sessionId)
+        allNotificationsListState.requestScrollToItem(0)
         notificationsViewModel.onSystemNotificationOpened()
         onNotificationOpenHandled(request)
     }
@@ -463,7 +486,7 @@ fun HomeTimelineScreen(
             notificationsViewModel.consumeRefreshResult(result.id)
         }
     }
-    NotificationsLifecycleEffect(notificationsViewModel, destination == MainDestination.Notifications)
+    NotificationsLifecycleEffect(notificationsViewModel, tabHistory.selected == MainDestination.Notifications)
     LaunchedEffect(notificationFilter) { notificationsViewModel.selectCategory(notificationFilter) }
     LaunchedEffect(destination, isScreenResumed) {
         if (isScreenResumed && destination == MainDestination.Profile) profileViewModel.loadProfile()
@@ -538,13 +561,14 @@ fun HomeTimelineScreen(
         bottomBar = {
             MainTabBar(
                 style = mainState.preferences.bottomTabBarStyle,
-                selected = destination,
+                selected = tabHistory.selected,
                 windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                 hidden = navigationHidden,
                 unreadNotifications = notificationsState.unreadNotifications,
                 onTabSelected = { item ->
-                    val page = destinations.indexOf(item)
-                    if (pagerState.currentPage == page) {
+                    val sessionId = mainViewModel.uiState.value.session?.sessionId ?: return@MainTabBar
+                    val history = tabHistory.forSession(sessionId)
+                    if (history.selected == item && destination == item) {
                         topScrollScope.launch {
                             currentTopBarState.heightOffset = 0f
                             currentTopBarState.contentOffset = 0f
@@ -562,7 +586,7 @@ fun HomeTimelineScreen(
                             }
                         }
                     } else {
-                        scope.launch { pagerState.scrollToPage(page) }
+                        tabHistory = history.select(item)
                     }
                 },
             )

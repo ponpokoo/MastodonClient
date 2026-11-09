@@ -1,9 +1,15 @@
 package io.github.ponpokoo.mastodonclient
 
+import android.os.ParcelFileDescriptor
+import android.provider.Settings
 import androidx.lifecycle.SavedStateHandle
 
+import androidx.activity.BackEventCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -13,6 +19,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.datastore.core.DataStore
@@ -21,6 +28,11 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.toRoute
+import androidx.test.espresso.Espresso.pressBack
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -43,11 +55,16 @@ import io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceVie
 import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
+import io.github.ponpokoo.mastodonclient.navigation.Route
+import io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost
+import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
+import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +79,107 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     companion object {
         @JvmStatic @Parameterized.Parameters(name = "dark={0}")
         fun themes() = listOf(arrayOf(false), arrayOf(true))
+    }
+
+    @Test fun backRestoresSavedTabHistoryAndHomePosition() {
+        val restoration = StateRestorationTester(rule)
+        withHome(restoration = restoration) {
+            list().performScrollToIndex(12)
+            val position = scrollPosition()
+            rule.onNodeWithTag("main_tab_notifications").performClick()
+            rule.onNodeWithTag("main_tab_profile").performClick()
+            rule.onNodeWithTag("main_tab_profile").performClick()
+
+            restoration.emulateSavedInstanceStateRestore()
+            rule.onNodeWithTag("main_tab_profile").assertIsSelected()
+            pressBack()
+            rule.onNodeWithTag("main_tab_notifications").assertIsSelected()
+            pressBack()
+            rule.onNodeWithTag("main_tab_home").assertIsSelected()
+            assertEquals(position, scrollPosition(), 1f)
+            assertNoBackCallback()
+        }
+    }
+
+    @SdkSuppress(minSdkVersion = 34)
+    @Test fun predictiveBackRespectsDetailAndTabHistoryOnCancelAndCommit() = withHome(openDetails = true) {
+        rule.onNodeWithTag("main_tab_notifications").performClick()
+        rule.onNodeWithTag("notification_status_quote", useUnmergedTree = true).performClick()
+        val detail = rule.onNodeWithText("Detail post-0")
+
+        completePredictiveBack(commit = false)
+        detail.assertIsDisplayed()
+        completePredictiveBack(commit = true)
+        detail.assertDoesNotExist()
+        rule.onNodeWithTag("main_tab_notifications").assertIsSelected()
+
+        completePredictiveBack(commit = false)
+        rule.onNodeWithTag("main_tab_notifications").assertIsSelected()
+        completePredictiveBack(commit = true)
+        rule.onNodeWithTag("main_tab_home").assertIsSelected()
+        assertNoBackCallback()
+    }
+
+    @SdkSuppress(minSdkVersion = 34)
+    @Test fun systemBackGestureReturnsToPreviousTab() {
+        assumeTrue(Settings.Secure.getInt(rule.activity.contentResolver, "navigation_mode", 0) == 2)
+        withHome {
+            rule.onNodeWithTag("main_tab_notifications").performClick()
+            val screen = rule.runOnIdle { rule.activity.windowManager.currentWindowMetrics.bounds }
+            val start = screen.left + 1
+            val end = screen.left + screen.width() / 3
+            val y = screen.centerY()
+            val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+            ParcelFileDescriptor.AutoCloseInputStream(
+                automation.executeShellCommand("input swipe $start $y $end $y 350"),
+            ).use { it.readBytes() }
+            rule.waitUntil(5_000) {
+                rule.onAllNodes(hasTestTag("main_tab_home") and isSelected()).fetchSemanticsNodes().isNotEmpty()
+            }
+            list().assertIsDisplayed()
+            assertNoBackCallback()
+        }
+    }
+
+    @Test fun accountChangeAndNotificationOpenClearPreviousTabVisits() {
+        val request = mutableStateOf<NotificationOpenRequest?>(null)
+        withHome(notificationRequest = request) { models ->
+            val initialSession = checkNotNull(models.main.uiState.value.session)
+            rule.onNodeWithTag("main_tab_explore").performClick()
+            rule.runOnIdle { models.main.switchAccount("other-edge") }
+            rule.onNodeWithTag("main_tab_home").assertIsSelected()
+            assertNoBackCallback()
+
+            rule.onNodeWithTag("main_tab_profile").performClick()
+            rule.runOnIdle { request.value = NotificationOpenRequest(initialSession.sessionId, "notice-0") }
+            rule.onNodeWithTag("main_tab_notifications").assertIsSelected()
+            rule.runOnIdle { assertEquals(initialSession.sessionId, models.main.uiState.value.session?.sessionId) }
+            assertNoBackCallback()
+        }
+    }
+
+    private fun completePredictiveBack(commit: Boolean) {
+        val dispatcher = rule.activity.onBackPressedDispatcher
+        rule.mainClock.autoAdvance = false
+        try {
+            rule.runOnUiThread {
+                dispatcher.dispatchOnBackStarted(BackEventCompat(0f, 400f, 0f, BackEventCompat.EDGE_LEFT))
+            }
+            rule.mainClock.advanceTimeBy(64)
+            rule.runOnUiThread {
+                dispatcher.dispatchOnBackProgressed(BackEventCompat(200f, 400f, 0.6f, BackEventCompat.EDGE_LEFT))
+            }
+            rule.mainClock.advanceTimeBy(64)
+            rule.runOnUiThread {
+                if (commit) dispatcher.onBackPressed() else dispatcher.dispatchOnBackCancelled()
+            }
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun assertNoBackCallback() {
+        rule.runOnIdle { assertFalse(rule.activity.onBackPressedDispatcher.hasEnabledCallbacks()) }
     }
 
     @Test fun reverseScrollRevealsBarAndHomeStateSurvivesAnotherTab() = withHome {
@@ -473,6 +591,12 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         assertEquals(0f, header.fetchSemanticsNode().boundsInRoot.height, 1f)
         nav().assertIsDisplayed()
         rule.onNodeWithTag("search_target_posts").assertIsDisplayed()
+
+        pressBack()
+        rule.onNodeWithTag("search_open").assertExists()
+        rule.onNodeWithTag("main_tab_explore").assertIsSelected()
+        pressBack()
+        rule.onNodeWithTag("main_tab_home").assertIsSelected()
     }
 
     @Test fun profileLastPostCanMoveAboveTheFixedFooter() = withHome {
@@ -541,6 +665,9 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     private fun withHome(
         testPreferences: UserPreferencesStore? = null,
         onStatusClick: (String) -> Unit = {},
+        restoration: StateRestorationTester? = null,
+        openDetails: Boolean = false,
+        notificationRequest: MutableState<NotificationOpenRequest?>? = null,
         check: (Models) -> Unit,
     ) {
         val session = AccountSession("home-edge", "https://example.test", "me", "me", "自分", "", "")
@@ -568,16 +695,26 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             override suspend fun search(session: AccountSession, query: String, target: SearchTarget, offset: Int, limit: Int) =
                 Result.success(SearchPage(SearchResults(emptyList(), posts, tags), null, true))
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
-                Result.success(NotificationPage(List(40) { i -> TimelineNotification("notice-$i", "follow",
-                    "2026-11-04T00:00:00Z", posts[i].author, null) }, null, true))
+                Result.success(NotificationPage(List(40) { i ->
+                    val status = posts[i].takeIf { openDetails && i == 0 }
+                    TimelineNotification("notice-$i", if (status == null) "follow" else "favourite",
+                        "2026-11-04T00:00:00Z", posts[i].author, status)
+                }, null, true))
             override suspend fun getNotificationMarker(session: AccountSession): Result<String?> =
                 Result.success(if (testPreferences != null) "notice-2" else null)
         }
         val auth = object : AuthRepository {
+            private var active = session
+            private val accounts = if (notificationRequest == null) listOf(session)
+                else listOf(session, session.copy(sessionId = "other-edge", accountId = "other"))
+
             override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
             override suspend fun completeAuthorization(callbackUrl: String) = Result.success(session)
-            override suspend fun restoreSession() = session
-            override suspend fun getSessions() = listOf(session)
+            override suspend fun restoreSession() = active
+            override suspend fun getSessions() = accounts
+            override suspend fun switchSession(sessionId: String) =
+                accounts.find { it.sessionId == sessionId }?.also { active = it }
+
             override suspend fun logout() = Unit
         }
         val store = ViewModelStore()
@@ -606,18 +743,34 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
                 }).also { store.put("settings", it) }
             }
             var showSettings by mutableStateOf(false)
-            rule.setContent {
+            val content: @Composable () -> Unit = {
                 MastodonClientTheme(themeMode = if (dark) ThemeMode.Dark else ThemeMode.Light) {
-                    HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
-                        fabPositionStore = object : FabPositionStore {
-                            override val fabPosition = flowOf<FabPosition?>(null)
-                            override suspend fun setFabPosition(position: FabPosition) = Unit
-                            override suspend fun resetFabPosition() = Unit
-                        }, onLoggedOut = {}, onStatusClick = onStatusClick, onCompose = {}, onQuote = { _, _ -> },
-                        onOpenLink = {}, openLinksInApp = true, onOpenLinksInAppChange = {},
-                        onAccountClick = {}, onMediaClick = { _, _ -> },
-                        onSettings = { showSettings = testPreferences != null }, onFollowers = {},
-                        onFollowing = {}, onEditStatus = {}, onOpenLists = {}, onOpenBookmarks = {}, onOpenFavourites = {})
+                    val navigation = rememberNavController()
+                    val currentEntry by navigation.currentBackStackEntryAsState()
+                    ScreenNavHost(navigation, startDestination = Route.Timeline) {
+                        animatedScreen<Route.Timeline> { entry ->
+                            HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
+                                fabPositionStore = object : FabPositionStore {
+                                    override val fabPosition = flowOf<FabPosition?>(null)
+                                    override suspend fun setFabPosition(position: FabPosition) = Unit
+                                    override suspend fun resetFabPosition() = Unit
+                                },
+                                notificationOpenRequest = notificationRequest?.value,
+                                onNotificationOpenHandled = { notificationRequest?.value = null },
+                                onLoggedOut = {}, onStatusClick = { statusId ->
+                                    if (openDetails) navigation.navigate(Route.StatusDetail(statusId))
+                                    else onStatusClick(statusId)
+                                }, onCompose = {}, onQuote = { _, _ -> },
+                                onOpenLink = {}, openLinksInApp = true, onOpenLinksInAppChange = {},
+                                onAccountClick = {}, onMediaClick = { _, _ -> },
+                                onSettings = { showSettings = testPreferences != null }, onFollowers = {},
+                                onFollowing = {}, onEditStatus = {}, onOpenLists = {}, onOpenBookmarks = {},
+                                onOpenFavourites = {}, tabBackEnabled = currentEntry?.id == entry.id)
+                        }
+                        animatedScreen<Route.StatusDetail> {
+                            Text("Detail ${it.toRoute<Route.StatusDetail>().statusId}")
+                        }
+                    }
                     if (showSettings && testPreferences != null && maintenance != null) {
                         val preferences by testPreferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
                         SettingsScreen(
@@ -628,6 +781,7 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
                     }
                 }
             }
+            if (restoration != null) restoration.setContent(content) else rule.setContent(content)
             rule.onNodeWithTag("timeline_list").assertIsDisplayed()
             check(Models(main, timeline))
         } finally {
