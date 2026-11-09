@@ -132,7 +132,9 @@ fun HashtagTimelineScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(state.errorMessage ?: "投稿はありません", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = viewModel::refresh) { Text("再試行") }
+                if (state.errorMessage != null) {
+                    TextButton(onClick = viewModel::refresh) { Text("再試行") }
+                }
             }
             else -> AppPullToRefreshBox(
                 isRefreshing = state.isLoading,

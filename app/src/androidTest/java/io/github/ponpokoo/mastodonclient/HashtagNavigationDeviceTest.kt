@@ -1,7 +1,6 @@
 package io.github.ponpokoo.mastodonclient
 
 import androidx.activity.ComponentActivity
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.SideEffect
@@ -16,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
+import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
@@ -25,6 +25,8 @@ import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineViewModel
 import io.github.ponpokoo.mastodonclient.navigation.Route
 import io.github.ponpokoo.mastodonclient.navigation.openHashtag
+import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
+import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -37,6 +39,7 @@ class HashtagNavigationDeviceTest {
     private lateinit var navigation: NavHostController
     private lateinit var currentModel: HashtagTimelineViewModel
     private val timelineRequests = mutableListOf<String>()
+    private val timelineResponses = ArrayDeque<Result<TimelinePage>>()
     private val tagRequests = mutableListOf<String>()
     private val followedTags = mutableListOf<String>()
     private val repository = object : TimelineRepository {
@@ -45,6 +48,7 @@ class HashtagNavigationDeviceTest {
 
         override suspend fun getHashtagTimeline(session: AccountSession, hashtag: String, maxId: String?, limit: Int): Result<TimelinePage> {
             timelineRequests += hashtag
+            timelineResponses.removeFirstOrNull()?.let { return it }
             return Result.success(TimelinePage(List(20) { index ->
                 TimelineStatus("$hashtag-$index", "$hashtag-$index", "2026-10-20T00:00:00Z",
                     StatusAuthor("author", "Author", "author", ""), null,
@@ -64,9 +68,9 @@ class HashtagNavigationDeviceTest {
         }
     }
 
-    private fun render() {
+    private fun render(themeMode: ThemeMode = ThemeMode.System) {
         rule.setContent {
-            MaterialTheme {
+            MastodonClientTheme(themeMode) {
                 navigation = rememberNavController()
                 NavHost(navigation, startDestination = Route.Timeline) {
                     composable<Route.Timeline> {
@@ -108,6 +112,33 @@ class HashtagNavigationDeviceTest {
 
     private fun scrollPosition() = rule.onNode(hasScrollAction()).fetchSemanticsNode()
         .config[SemanticsProperties.VerticalScrollAxisRange].value()
+
+    @Test fun failedTimelineCanRetryToEmptyInLightTheme() {
+        assertFailedTimelineCanRetryToEmpty(ThemeMode.Light)
+    }
+
+    @Test fun failedTimelineCanRetryToEmptyInDarkTheme() {
+        assertFailedTimelineCanRetryToEmpty(ThemeMode.Dark)
+    }
+
+    private fun assertFailedTimelineCanRetryToEmpty(themeMode: ThemeMode) {
+        timelineResponses.addLast(Result.failure(IOException()))
+        timelineResponses.addLast(Result.success(TimelinePage(emptyList(), null, true)))
+        render(themeMode)
+
+        val error = rule.onNodeWithText("投稿を取得できませんでした。もう一度お試しください。")
+        val empty = rule.onNodeWithText("投稿はありません")
+        val retry = rule.onNodeWithText("再試行")
+        error.assertIsDisplayed()
+        empty.assertDoesNotExist()
+        retry.assertIsDisplayed().performClick()
+        waitForTag("Photo")
+
+        empty.assertIsDisplayed()
+        error.assertDoesNotExist()
+        retry.assertDoesNotExist()
+        rule.runOnIdle { assertEquals(listOf("Photo", "Photo"), timelineRequests) }
+    }
 
     @Test fun differentTagUsesItsOwnPostsAndActionsAndBackRestoresOriginalPosition() {
         render()
