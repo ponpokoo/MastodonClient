@@ -34,7 +34,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import io.github.ponpokoo.mastodonclient.domain.model.QuoteMode
 import android.content.Intent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
@@ -44,7 +43,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Row
@@ -52,7 +50,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,17 +62,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Badge
@@ -88,11 +80,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ShortNavigationBar
-import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -116,10 +105,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -127,8 +114,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -164,23 +149,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.roundToInt
 
-private const val MainNavigationBarAlpha = 0.94f
-private val MainNavigationMaxWidth = 352.dp
-private val MainNavigationHorizontalMargin = 16.dp
-private val MainNavigationInnerHorizontalPadding = 8.dp
-private val MainNavigationBottomGap = 8.dp
 private val MainNavigationContentGap = 8.dp
-private val MainNavigationShape = RoundedCornerShape(28.dp)
-
-private enum class MainDestination(
-    val label: String,
-    val icon: ImageVector,
-) {
-    Home("ホーム", Icons.Outlined.Home),
-    Explore("探索", Icons.Outlined.Search),
-    Notifications("通知", Icons.Outlined.NotificationsNone),
-    Profile("プロフィール", Icons.Outlined.PersonOutline),
-}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -567,83 +536,36 @@ fun HomeTimelineScreen(
             }
         },
         bottomBar = {
-            // Keep navigation fixed while the header retreats independently.
-            // Controls covered by the IME must not remain actionable or in accessibility traversal.
-            Box(
-                Modifier.fillMaxWidth()
-                    .graphicsLayer {
-                        alpha = if (navigationHidden) 0f else 1f
-                    }
-                    .then(if (navigationHidden) Modifier.clearAndSetSemantics {} else Modifier)
-                    .windowInsetsPadding(mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                    .padding(start = MainNavigationHorizontalMargin, end = MainNavigationHorizontalMargin,
-                        bottom = MainNavigationBottomGap),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    // Keep the minimum loose so the bar can measure its four items separately.
-                    modifier = Modifier.widthIn(max = MainNavigationMaxWidth).testTag("main_navigation_bar"),
-                    shape = MainNavigationShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = MainNavigationBarAlpha),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 4.dp,
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    ShortNavigationBar(
-                        // Keep the end labels inside the rounded surface, including wrapped labels.
-                        modifier = Modifier.padding(horizontal = MainNavigationInnerHorizontalPadding),
-                        containerColor = Color.Transparent,
-                        windowInsets = WindowInsets(0, 0, 0, 0),
-                    ) {
-                        MainDestination.entries.forEach { item ->
-                            val page = destinations.indexOf(item)
-                            ShortNavigationBarItem(
-                                // The item already has 6 dp above its indicator; add 6 dp for a 12 dp top gap.
-                                modifier = Modifier.padding(top = 6.dp).testTag("main_tab_${item.name.lowercase()}"),
-                                selected = destination == item,
-                                enabled = !navigationHidden,
-                                onClick = {
-                                    if (pagerState.currentPage == page) {
-                                        topScrollScope.launch {
-                                            currentTopBarState.heightOffset = 0f
-                                            currentTopBarState.contentOffset = 0f
-                                            currentNavigationScrollState.show()
-                                            when (item) {
-                                                MainDestination.Home -> {
-                                                    if (state.isResumedWindow) viewModel.goToLatest()
-                                                    else timelineListState.animateToTimelineTop()
-                                                }
-                                                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
-                                                MainDestination.Profile -> {
-                                                    profileListState.animateToTimelineTop(profileHeaderListState)
-                                                }
-                                                MainDestination.Explore -> exploreScrollToTopRequest++
-                                            }
-                                        }
-                                    } else {
-                                        scope.launch { pagerState.scrollToPage(page) }
-                                    }
-                                },
-                                icon = {
-                                    if (item == MainDestination.Notifications && notificationsState.unreadNotifications > 0) {
-                                        BadgedBox(
-                                            badge = {
-                                                Badge { Text(notificationsState.unreadNotifications.coerceAtMost(99).toString()) }
-                                            },
-                                        ) { Icon(item.icon, contentDescription = null) }
-                                    } else {
-                                        Icon(item.icon, contentDescription = null)
-                                    }
-                                },
-                                label = {
-                                    Text(item.label, modifier = Modifier.padding(horizontal = 4.dp),
-                                        textAlign = TextAlign.Center)
-                                },
-                            )
+            MainTabBar(
+                style = mainState.preferences.bottomTabBarStyle,
+                selected = destination,
+                windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                hidden = navigationHidden,
+                unreadNotifications = notificationsState.unreadNotifications,
+                onTabSelected = { item ->
+                    val page = destinations.indexOf(item)
+                    if (pagerState.currentPage == page) {
+                        topScrollScope.launch {
+                            currentTopBarState.heightOffset = 0f
+                            currentTopBarState.contentOffset = 0f
+                            currentNavigationScrollState.show()
+                            when (item) {
+                                MainDestination.Home -> {
+                                    if (state.isResumedWindow) viewModel.goToLatest()
+                                    else timelineListState.animateToTimelineTop()
+                                }
+                                MainDestination.Notifications -> notificationListStates[notificationFilter.ordinal].animateToTimelineTop()
+                                MainDestination.Profile -> {
+                                    profileListState.animateToTimelineTop(profileHeaderListState)
+                                }
+                                MainDestination.Explore -> exploreScrollToTopRequest++
+                            }
                         }
+                    } else {
+                        scope.launch { pagerState.scrollToPage(page) }
                     }
-                }
-            }
+                },
+            )
         },
         snackbarHost = {},
     ) { padding ->

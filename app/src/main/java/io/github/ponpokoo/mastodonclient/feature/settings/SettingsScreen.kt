@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -55,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import io.github.ponpokoo.mastodonclient.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ponpokoo.mastodonclient.core.preferences.AccountPreferences
@@ -70,6 +72,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.PostVisibility
 import io.github.ponpokoo.mastodonclient.core.preferences.StatusAction
 import io.github.ponpokoo.mastodonclient.core.preferences.StreamingPolicy
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.core.preferences.BottomTabBarStyle
 import io.github.ponpokoo.mastodonclient.core.preferences.ThumbnailSize
 import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
@@ -79,6 +82,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
+import io.github.ponpokoo.mastodonclient.feature.timeline.MainDestination
+import io.github.ponpokoo.mastodonclient.feature.timeline.MainTabBar
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import coil3.compose.AsyncImage
@@ -155,6 +160,12 @@ internal fun SettingsPageContent(
                     ChoiceRow("テーマ", preferences.themeMode, ThemeMode.entries) {
                         scope.launch { store.setThemeMode(it) }
                     }
+                }
+                item {
+                    ChoiceRow("下部タブバー", preferences.bottomTabBarStyle, BottomTabBarStyle.entries) {
+                        scope.launch { store.setBottomTabBarStyle(it) }
+                    }
+                    BottomTabBarPreview(preferences.bottomTabBarStyle)
                 }
             }
             if (page == SettingsPage.Timeline) {
@@ -627,11 +638,35 @@ private fun Any?.displayLabel(): String = when (this) {
     ThemeMode.Light -> "ライト"
     ThemeMode.Dark -> "ダーク"
     ThemeMode.System -> "端末の設定に合わせる"
+    BottomTabBarStyle.Floating -> "フローティング"
+    BottomTabBarStyle.FullWidth -> "従来型（全幅）"
     PostVisibility.Public -> "公開"
     PostVisibility.Unlisted -> "ひかえめな公開"
     PostVisibility.FollowersOnly -> "フォロワー限定"
     PostVisibility.Direct -> "指定した相手のみ"
     else -> toString()
+}
+
+@Composable
+private fun BottomTabBarPreview(style: BottomTabBarStyle) {
+    Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
+        Text(
+            "プレビュー",
+            modifier = Modifier.padding(bottom = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Box(
+            Modifier.fillMaxWidth()
+                .testTag("bottom_tab_bar_preview")
+                .clearAndSetSemantics {}
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(top = 16.dp),
+        ) {
+            MainTabBar(style = style, selected = MainDestination.Home)
+        }
+    }
 }
 
 @Composable

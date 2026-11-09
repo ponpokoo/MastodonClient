@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toPixelMap
@@ -11,16 +14,24 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.ponpokoo.mastodonclient.core.preferences.FabPosition
 import io.github.ponpokoo.mastodonclient.core.preferences.FabPositionStore
+import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
+import io.github.ponpokoo.mastodonclient.core.preferences.UserPreferencesStore
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
+import io.github.ponpokoo.mastodonclient.domain.repository.AppMaintenanceRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
@@ -28,10 +39,13 @@ import io.github.ponpokoo.mastodonclient.feature.main.MainSessionViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
+import io.github.ponpokoo.mastodonclient.feature.settings.SettingsMaintenanceViewModel
+import io.github.ponpokoo.mastodonclient.feature.settings.SettingsScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.HomeTimelineScreen
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.ui.theme.MastodonClientTheme
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Rule
@@ -139,8 +153,9 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             list().fetchSemanticsNode().boundsInRoot.bottom > navigation.top)
         list().performScrollToIndex(10)
         val before = nav().captureToImage().toPixelMap()
-        // Direct list positioning leaves both bars visible for the translucency check.
-        list().performScrollToIndex(14)
+        // Shift the actual content behind the footer. Other rows at the same offset can
+        // look nearly identical because the fixture repeats the same text and actions.
+        list().performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, 48f)) }
         val after = nav().captureToImage().toPixelMap()
         // No tab was pressed: icons and labels stay still while posts move behind them.
         var changed = 0
@@ -205,6 +220,98 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
         revealNavigation()
         assertEquals(navigation, nav().fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Test fun fullWidthChoiceCoversBothTimelineEdgesAndKeepsTabActions() {
+        val preferences = UserPreferencesStore(object : DataStore<Preferences> {
+            override val data = MutableStateFlow(emptyPreferences())
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+                transform(data.value).also { data.value = it }
+        })
+        val openedPosts = mutableListOf<String>()
+        withHome(preferences, onStatusClick = openedPosts::add) {
+            val floatingBar = nav().fetchSemanticsNode().boundsInRoot
+            val viewport = list().fetchSemanticsNode().boundsInRoot
+            val windowWidth = rule.onRoot().fetchSemanticsNode().boundsInRoot.width
+            val edgeOffset = with(rule.density) { 4.dp.toPx() }
+            fun expectedFloatingWidth(availableWidth: Float): Float = with(rule.density) {
+                val width = if (windowWidth.toDp() >= 600.dp) availableWidth * 0.9f else 352.dp.toPx()
+                minOf(width, availableWidth - 2 * 16.dp.roundToPx())
+            }
+            assertTrue(floatingBar.left > viewport.left + edgeOffset)
+            assertTrue(floatingBar.right < viewport.right - edgeOffset)
+            assertEquals(expectedFloatingWidth(viewport.width), floatingBar.width, 1f)
+            val notificationBadge = rule.onNode(hasTestTag("main_tab_notifications") and hasText("2"))
+            notificationBadge.assertIsDisplayed()
+            list().performScrollToIndex(10)
+            val edgePoints = listOf(
+                viewport.left + edgeOffset,
+                viewport.right - edgeOffset,
+            )
+            // Hit the top strip of the full-width surface, just above the tab controls.
+            val y = floatingBar.top + with(rule.density) { 8.dp.roundToPx() } + 1f
+            fun tapEdges(y: Float) {
+                list().performTouchInput {
+                    edgePoints.forEach { x -> click(Offset(x - viewport.left, y - viewport.top)) }
+                }
+                rule.waitForIdle()
+            }
+            tapEdges(y)
+            assertEquals("Both taps in the floating bar's gaps should reach the post", 2, openedPosts.size)
+
+            rule.onNodeWithContentDescription("設定").performClick()
+            rule.onNodeWithTag("settings_category_Appearance").performScrollTo().performClick()
+            val preview = hasTestTag("bottom_tab_bar_preview")
+            val previewBar = rule.onNode(hasTestTag("main_navigation_bar") and hasAnyAncestor(preview),
+                useUnmergedTree = true)
+            val previewWidth = rule.onNode(preview).fetchSemanticsNode().boundsInRoot.width
+            assertEquals(
+                expectedFloatingWidth(previewWidth),
+                previewBar.fetchSemanticsNode().boundsInRoot.width,
+                1f,
+            )
+            rule.onAllNodes(hasClickAction() and hasAnyAncestor(preview)).assertCountEquals(0)
+            rule.onNodeWithText("下部タブバー").performClick()
+            rule.onNode(hasText("従来型（全幅）") and hasAnyAncestor(isPopup())).performClick()
+            rule.onNodeWithText("従来型（全幅）").assertIsDisplayed()
+            assertEquals(previewWidth, previewBar.fetchSemanticsNode().boundsInRoot.width, 1f)
+            repeat(2) { rule.onNodeWithContentDescription("戻る").performClick() }
+
+            val fullWidthBar = nav().fetchSemanticsNode().boundsInRoot
+            notificationBadge.assertIsDisplayed()
+            assertEquals(viewport.left, fullWidthBar.left, 1f)
+            assertEquals(viewport.right, fullWidthBar.right, 1f)
+            assertTrue("Use the same taps inside both sides of the new bar", y in fullWidthBar.top..fullWidthBar.bottom)
+            tapEdges(y)
+            assertEquals("The full-width surface should cover the post at both edges", 2, openedPosts.size)
+
+            fun tapTab(name: String) {
+                rule.onNodeWithTag("main_tab_$name")
+                    .assertIsDisplayed()
+                    .performTouchInput { click(center) }
+                    .assertIsSelected()
+            }
+            tapTab("home")
+            rule.waitUntil(5_000) { scrollPosition() == 0f }
+            list().performScrollToIndex(39)
+            val last = rule.onAllNodesWithTag("timeline_status").fetchSemanticsNodes().last().boundsInRoot
+            assertTrue("The last post must clear the full-width footer", last.bottom <= fullWidthBar.top + 1f)
+            val fab = rule.onNodeWithContentDescription("新規投稿").fetchSemanticsNode().boundsInRoot
+            assertTrue("The FAB must clear the full-width footer", fab.bottom <= fullWidthBar.top)
+
+            tapTab("notifications")
+            tapTab("profile")
+            tapTab("explore")
+            val input = rule.onNodeWithTag("search_input")
+            input.performClick().performTextInput("散歩")
+            waitForKeyboard(true)
+            rule.waitUntil(5_000) {
+                rule.onAllNodesWithTag("main_navigation_bar").fetchSemanticsNodes().isEmpty()
+            }
+            input.performImeAction()
+            waitForKeyboard(false)
+            rule.onNodeWithTag("main_tab_explore").assertIsSelected()
+        }
     }
 
     @Test fun otherTabsKeepTheirInnerTabsAndRestoreTheirOwnScrollAndHeaderState() = withHome {
@@ -431,7 +538,11 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
 
     private data class Models(val main: MainSessionViewModel, val timeline: TimelineViewModel)
 
-    private fun withHome(check: (Models) -> Unit) {
+    private fun withHome(
+        testPreferences: UserPreferencesStore? = null,
+        onStatusClick: (String) -> Unit = {},
+        check: (Models) -> Unit,
+    ) {
         val session = AccountSession("home-edge", "https://example.test", "me", "me", "自分", "", "")
         val posts = List(40) { index -> TimelineStatus(
             timelineId = "post-$index", statusId = "post-$index", createdAt = "2026-11-04T00:00:00Z",
@@ -459,6 +570,8 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
             override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
                 Result.success(NotificationPage(List(40) { i -> TimelineNotification("notice-$i", "follow",
                     "2026-11-04T00:00:00Z", posts[i].author, null) }, null, true))
+            override suspend fun getNotificationMarker(session: AccountSession): Result<String?> =
+                Result.success(if (testPreferences != null) "notice-2" else null)
         }
         val auth = object : AuthRepository {
             override suspend fun createAuthorizationUrl(instanceUrl: String) = Result.success("")
@@ -476,7 +589,7 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         lateinit var actions: StatusActionsViewModel
         rule.runOnUiThread { rule.activity.enableEdgeToEdge() }
         rule.runOnIdle {
-            main = MainSessionViewModel(auth, repository).also { store.put("main", it) }
+            main = MainSessionViewModel(auth, repository, preferencesStore = testPreferences).also { store.put("main", it) }
             timeline = TimelineViewModel(repository, main.browsing, SavedStateHandle()).also { store.put("timeline", it) }
             search = SearchViewModel(repository, main.browsing).also { store.put("search", it) }
             notifications = NotificationsViewModel(repository, main.browsing).also { store.put("notifications", it) }
@@ -485,6 +598,14 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
         }
         try {
             rule.waitUntil(5_000) { timeline.uiState.value.statuses.isNotEmpty() }
+            val maintenance = testPreferences?.let {
+                SettingsMaintenanceViewModel(object : AppMaintenanceRepository {
+                    override val versionName = "test"
+                    override val versionCode = 1L
+                    override suspend fun clearImageCache() = Unit
+                }).also { store.put("settings", it) }
+            }
+            var showSettings by mutableStateOf(false)
             rule.setContent {
                 MastodonClientTheme(themeMode = if (dark) ThemeMode.Dark else ThemeMode.Light) {
                     HomeTimelineScreen(timeline, main, search, notifications, profile, actions,
@@ -492,10 +613,19 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
                             override val fabPosition = flowOf<FabPosition?>(null)
                             override suspend fun setFabPosition(position: FabPosition) = Unit
                             override suspend fun resetFabPosition() = Unit
-                        }, onLoggedOut = {}, onStatusClick = {}, onCompose = {}, onQuote = { _, _ -> },
+                        }, onLoggedOut = {}, onStatusClick = onStatusClick, onCompose = {}, onQuote = { _, _ -> },
                         onOpenLink = {}, openLinksInApp = true, onOpenLinksInAppChange = {},
-                        onAccountClick = {}, onMediaClick = { _, _ -> }, onSettings = {}, onFollowers = {},
+                        onAccountClick = {}, onMediaClick = { _, _ -> },
+                        onSettings = { showSettings = testPreferences != null }, onFollowers = {},
                         onFollowing = {}, onEditStatus = {}, onOpenLists = {}, onOpenBookmarks = {}, onOpenFavourites = {})
+                    if (showSettings && testPreferences != null && maintenance != null) {
+                        val preferences by testPreferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
+                        SettingsScreen(
+                            store = testPreferences, preferences = preferences,
+                            activeSession = session, sessions = listOf(session), maintenance = maintenance,
+                            onBack = { showSettings = false }, onLogout = {}, onAddAccount = {},
+                        )
+                    }
                 }
             }
             rule.onNodeWithTag("timeline_list").assertIsDisplayed()
