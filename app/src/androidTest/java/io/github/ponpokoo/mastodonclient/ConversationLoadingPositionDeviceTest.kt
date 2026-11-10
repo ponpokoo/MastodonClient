@@ -13,6 +13,7 @@ import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
+import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost
 import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
 import kotlinx.coroutines.channels.Channel
@@ -40,9 +41,16 @@ class ConversationLoadingPositionDeviceTest {
         repliesCount = 0, boostsCount = 0, favouritesCount = 0, mediaAttachments = emptyList(),
     )
 
+    private fun conversation() = StatusDetail(
+        selected,
+        (0 until 8).map { post("before-$it") },
+        (0 until 8).map { post("after-$it") },
+    )
+
     private fun show(cached: Boolean, reuseConversation: Boolean = false, authenticationReady: CompletableDeferred<Unit>? = null,
-        cachedConversationAvailable: Boolean = reuseConversation,
+        cachedConversation: StatusDetail? = if (reuseConversation) conversation() else null,
         cachedStatus: TimelineStatus = selected.copy(repliesCount = 1),
+        sourceStatus: TimelineStatus? = null,
     ): Channel<Result<StatusDetail>> {
         val response = Channel<Result<StatusDetail>>(Channel.UNLIMITED)
         val repository = object : TimelineRepository {
@@ -54,8 +62,7 @@ class ConversationLoadingPositionDeviceTest {
                 return response.receive()
             }
             override fun getCachedConversation(session: AccountSession, sourceStatusId: String, statusId: String) =
-                StatusDetail(selected, (0 until 8).map { post("before-$it") }, (0 until 8).map { post("after-$it") })
-                    .takeIf { cachedConversationAvailable }
+                cachedConversation
         }
         val auth = object : AuthRepository {
             override suspend fun restoreSession(): AccountSession {
@@ -75,7 +82,18 @@ class ConversationLoadingPositionDeviceTest {
             val navigation = rememberNavController()
             ScreenNavHost(navigation, "source") {
                 animatedScreen("source") {
-                    TextButton(onClick = { navigation.navigate("detail") }) { Text("Open conversation") }
+                    if (sourceStatus == null) {
+                        TextButton(onClick = { navigation.navigate("detail") }) { Text("Open conversation") }
+                    } else {
+                        StatusCard(
+                            status = sourceStatus,
+                            onStatusClick = { statusId ->
+                                assertEquals(selected.statusId, statusId)
+                                navigation.navigate("detail")
+                            },
+                            onUnavailableAction = {},
+                        )
+                    }
                 }
                 animatedScreen("detail") {
                     StatusDetailScreen(model, AppPreferences(), { navigation.popBackStack() }, {}, { _, _ -> }, {}, {},
@@ -86,7 +104,14 @@ class ConversationLoadingPositionDeviceTest {
                 }
             }
         } }
-        rule.onNodeWithText("Open conversation").performClick()
+        if (sourceStatus == null) {
+            rule.onNodeWithText("Open conversation").performClick()
+        } else {
+            if (sourceStatus.boostedBy != null) {
+                rule.onNodeWithTag("status_booster", useUnmergedTree = true).assertIsDisplayed()
+            }
+            rule.onNodeWithTag("timeline_status").performClick()
+        }
         rule.waitForIdle()
         return response
     }
@@ -142,10 +167,54 @@ class ConversationLoadingPositionDeviceTest {
     }
 
     @Test fun noCachedPostShowsLoadingThenCenteredConversation() {
-        val response = show(false)
+        val response = show(cached = false, sourceStatus = selected)
         assertLoading()
         complete(response)
         assertNearCenter()
+    }
+
+    @Test fun boostedStandaloneCacheShowsOriginalDuringFetchAndOnFailure() {
+        val boosted = selected.copy(timelineId = "boost-selected", boostedBy = post("booster").author)
+        val response = show(cached = true, cachedStatus = boosted, sourceStatus = boosted)
+        target().assertIsDisplayed()
+        rule.runOnIdle { assertEquals(1, detailRequests) }
+        assertNoBoostAttributionInDetail()
+
+        rule.runOnIdle { assertTrue(response.trySend(Result.failure(IllegalStateException("offline"))).isSuccess) }
+        rule.onNodeWithText("会話を更新できませんでした").assertIsDisplayed()
+        target().assertIsDisplayed()
+        assertNoBoostAttributionInDetail()
+    }
+
+    @Test fun boostedConversationCacheShowsAllPostsWithoutBoostAttribution() {
+        val booster = post("booster").author
+        fun boosted(status: TimelineStatus) = status.copy(timelineId = "boost-${status.statusId}", boostedBy = booster)
+        val original = conversation()
+        val cached = StatusDetail(boosted(original.status), original.ancestors.map(::boosted), original.descendants.map(::boosted))
+        val response = show(cached = false, cachedConversation = cached, sourceStatus = cached.status)
+        target().assertIsDisplayed()
+        rule.runOnIdle { assertEquals(1, detailRequests) }
+        assertNoBoostAttributionInDetail()
+
+        val detail = rule.onNodeWithTag("status_detail")
+        detail.performScrollToNode(hasText("Author before-7"))
+        rule.onNodeWithText("Author before-7").assertIsDisplayed()
+        assertNoBoostAttributionInDetail()
+        detail.performScrollToNode(hasText("Author after-0"))
+        rule.onNodeWithText("Author after-0").assertIsDisplayed()
+        assertNoBoostAttributionInDetail()
+
+        complete(response, replies = 9)
+        detail.performScrollToNode(hasText("Author after-8"))
+        rule.onNodeWithText("Author after-8").assertIsDisplayed()
+        assertNoBoostAttributionInDetail()
+    }
+
+    private fun assertNoBoostAttributionInDetail() {
+        rule.onNode(
+            hasTestTag("status_booster") and hasAnyAncestor(hasTestTag("status_detail")),
+            useUnmergedTree = true,
+        ).assertDoesNotExist()
     }
 
     @Test fun cachedStandalonePostOpensDuringFetchAndKeepsItsPositionWhenAReplyArrives() {
@@ -219,7 +288,7 @@ class ConversationLoadingPositionDeviceTest {
 
     @Test fun homeEntryReusesCachedConversationWithoutLoadingIndicator() {
         val authenticationReady = CompletableDeferred<Unit>()
-        show(cached = true, authenticationReady = authenticationReady, cachedConversationAvailable = true)
+        show(cached = true, authenticationReady = authenticationReady, cachedConversation = conversation())
         rule.mainClock.autoAdvance = false
         rule.onNodeWithTag("status_detail_loading").assertDoesNotExist()
         rule.runOnIdle { authenticationReady.complete(Unit) }

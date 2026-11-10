@@ -124,6 +124,7 @@ internal fun StatusCard(
     useTimelineImagePreviews: Boolean = false,
     collapseLongContent: Boolean = true,
     reactionPickerMotion: EmojiPickerSheetMotion = EmojiPickerSheetMotion.HeaderOnly,
+    showBoostAttribution: Boolean = true,
     enableBodySelection: Boolean = false,
 ) {
     val onReply = actions.onReply?.let { handler -> { handler(status) } }
@@ -165,7 +166,7 @@ internal fun StatusCard(
             .padding(start = 8.dp, top = 12.dp, end = 16.dp, bottom = 2.dp)
             .testTag("timeline_status"),
     ) {
-        status.boostedBy?.let {
+        status.boostedBy?.takeIf { showBoostAttribution }?.let {
             Row(
                 modifier = Modifier
                     .padding(start = contentStart, bottom = 6.dp)

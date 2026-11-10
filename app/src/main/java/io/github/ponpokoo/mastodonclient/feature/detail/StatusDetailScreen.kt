@@ -236,6 +236,7 @@ fun StatusDetailScreen(
                                     StatusCard(
                                         status = ancestor,
                                         collapseLongContent = false,
+                                        showBoostAttribution = false,
                                         onStatusClick = onStatusClick,
                                         onAuthorClick = onAccountClick,
                                         onMediaClick = onMediaClick,
@@ -253,6 +254,7 @@ fun StatusDetailScreen(
                             StatusCard(
                                 status = status,
                                 collapseLongContent = false,
+                                showBoostAttribution = false,
                                 enableBodySelection = true,
                                 onStatusClick = null,
                                 onAuthorClick = onAccountClick,
@@ -285,6 +287,7 @@ fun StatusDetailScreen(
                                     StatusCard(
                                         reply,
                                         collapseLongContent = false,
+                                        showBoostAttribution = false,
                                         onStatusClick = onStatusClick,
                                         onAuthorClick = onAccountClick,
                                         onMediaClick = onMediaClick,
