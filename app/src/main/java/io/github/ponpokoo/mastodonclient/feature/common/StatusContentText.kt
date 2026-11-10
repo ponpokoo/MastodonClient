@@ -3,8 +3,12 @@ package io.github.ponpokoo.mastodonclient.feature.common
 import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -25,6 +29,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventTimeoutCancellationException
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -56,6 +62,7 @@ fun StatusContentText(
     emojiHeight: Dp? = null,
     maxLines: Int = Int.MAX_VALUE,
     onTextLayout: ((TextLayoutResult) -> Unit)? = null,
+    enableSelection: Boolean = false,
 ) {
     if (emojiHeight != null && customEmojis.isNotEmpty()) {
         BoxWithConstraints(modifier.semantics(mergeDescendants = true) {}, propagateMinConstraints = true) {
@@ -83,12 +90,12 @@ fun StatusContentText(
                 contentHtml, customEmojis, Modifier, emojiStyle,
                 onLinkClick, onNonLinkClick, onOpenInBrowser,
                 EmojiInlineSize(emojiHeight, if (maxWidth.value.isFinite()) maxWidth else emojiHeight * 10),
-                maxLines, onTextLayout,
+                maxLines, onTextLayout, enableSelection,
             )
         }
     } else {
         StatusContentTextImpl(contentHtml, customEmojis, modifier, style, onLinkClick, onNonLinkClick, onOpenInBrowser,
-            maxLines = maxLines, onTextLayout = onTextLayout)
+            maxLines = maxLines, onTextLayout = onTextLayout, enableSelection = enableSelection)
     }
 }
 
@@ -104,6 +111,7 @@ private fun StatusContentTextImpl(
     emojiSize: EmojiInlineSize? = null,
     maxLines: Int = Int.MAX_VALUE,
     onTextLayout: ((TextLayoutResult) -> Unit)? = null,
+    enableSelection: Boolean,
 ) {
     val linkColor = MaterialTheme.colorScheme.primary
     val source = remember(contentHtml, linkColor) { htmlToAnnotatedString(contentHtml, linkColor) }
@@ -119,6 +127,13 @@ private fun StatusContentTextImpl(
     fun linkAt(position: Offset): AnnotatedString.Range<String>? {
         val layout = layoutResult[0] ?: return null
         val offset = layout.getOffsetForPosition(position)
+        if (enableSelection) {
+            // The nearest caret can be on either side of the glyph that was pressed.
+            val hit = (offset - 1..offset).firstOrNull {
+                it in 0 until text.length && layout.getBoundingBox(it).contains(position)
+            } ?: return null
+            return text.getStringAnnotations(URL_TAG, hit, hit).firstOrNull()
+        }
         if (layout.hasVisualOverflow) {
             val end = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
             // Offset mapping can map ellipsis/blank space to a hidden link. Only visible glyphs count.
@@ -127,9 +142,19 @@ private fun StatusContentTextImpl(
         return text.getStringAnnotations(URL_TAG, offset, offset).firstOrNull()
     }
     val bodyEmojis = if (emojiSize != null) rememberBodyEmojiContent(source.text, customEmojis, emojiSize) else null
-    Text(
-        text = text,
-        modifier = modifier.then(if (semanticLayout == null) Modifier else Modifier.clipToBounds().clearAndSetSemantics {
+    fun openLinkMenu(position: Offset, link: AnnotatedString.Range<String>) {
+        val anchor = textOrigin[0] + position
+        menuPosition = IntOffset(anchor.x.toInt(), anchor.y.toInt())
+        menuLink = link
+    }
+    fun tap(position: Offset) {
+        val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return
+        val link = linkAt(position)
+        recordStatusLinkTap(layoutResult[0], position, offset, link, onNonLinkClick != null)
+        if (link != null) onLinkClick(link.item) else onNonLinkClick?.invoke()
+    }
+    val bodyModifier = modifier
+        .then(if (semanticLayout == null) Modifier else Modifier.clipToBounds().clearAndSetSemantics {
             val result = semanticLayout.value
             this.text = if (result?.hasVisualOverflow == true) {
                 text.subSequence(0, result.getLineEnd(result.lineCount - 1, visibleEnd = true))
@@ -142,41 +167,64 @@ private fun StatusContentTextImpl(
                 (menuLink ?: pressedLink)?.let { link ->
                     layoutResult[0]?.let { drawRoundedLinkHighlight(it, link, highlightColor) }
                 }
-            }.pointerInput(text, onLinkClick, onNonLinkClick) {
-                detectTapGestures(
-                    onPress = { position ->
-                        pressedLink = linkAt(position)
+            }.pointerInput(text, onLinkClick, onNonLinkClick, enableSelection) {
+                if (enableSelection) {
+                    awaitEachGesture {
+                        // Claim only link presses, before the text's selection detector sees the down.
+                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                        val link = linkAt(down.position) ?: return@awaitEachGesture
+                        down.consume()
+                        pressedLink = link
                         try {
-                            tryAwaitRelease()
+                            awaitPointerEvent(PointerEventPass.Final)
+                            val up = withTimeout(viewConfiguration.longPressTimeoutMillis) {
+                                waitForUpOrCancellation()
+                            }
+                            if (up != null) {
+                                up.consume()
+                                tap(up.position)
+                            }
+                        } catch (_: PointerEventTimeoutCancellationException) {
+                            openLinkMenu(down.position, link)
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
                         } finally {
                             pressedLink = null
                         }
-                    },
-                    onLongPress = { position ->
-                        linkAt(position)?.let { link ->
-                            val anchor = textOrigin[0] + position
-                            menuPosition = IntOffset(anchor.x.toInt(), anchor.y.toInt())
-                            menuLink = link
-                        }
-                    },
-                    onTap = { position ->
-                        val offset = layoutResult[0]?.getOffsetForPosition(position) ?: return@detectTapGestures
-                        val link = linkAt(position)
-                        recordStatusLinkTap(layoutResult[0], position, offset, link, onNonLinkClick != null)
-                        if (link != null) onLinkClick(link.item) else onNonLinkClick?.invoke()
-                    },
-                )
+                    }
+                } else {
+                    detectTapGestures(
+                        onPress = { position ->
+                            pressedLink = linkAt(position)
+                            try {
+                                tryAwaitRelease()
+                            } finally {
+                                pressedLink = null
+                            }
+                        },
+                        onLongPress = { position -> linkAt(position)?.let { openLinkMenu(position, it) } },
+                        onTap = ::tap,
+                    )
+                }
+            }
+    val body: @Composable () -> Unit = {
+        Text(
+            text = text,
+            modifier = bodyModifier,
+            style = style.copy(color = MaterialTheme.colorScheme.onSurface),
+            inlineContent = bodyEmojis?.inline ?: rememberEmojiInlineContent(source.text, customEmojis),
+            maxLines = maxLines,
+            overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
+            onTextLayout = {
+                layoutResult[0] = it
+                semanticLayout?.value = it
+                onTextLayout?.invoke(it)
             },
-        style = style.copy(color = MaterialTheme.colorScheme.onSurface),
-        inlineContent = bodyEmojis?.inline ?: rememberEmojiInlineContent(source.text, customEmojis),
-        maxLines = maxLines,
-        overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
-        onTextLayout = {
-            layoutResult[0] = it
-            semanticLayout?.value = it
-            onTextLayout?.invoke(it)
-        },
-    )
+        )
+    }
+    if (enableSelection) SelectionContainer(content = body) else body()
     menuLink?.let { link ->
         LinkActionsPopup(
             url = link.item,

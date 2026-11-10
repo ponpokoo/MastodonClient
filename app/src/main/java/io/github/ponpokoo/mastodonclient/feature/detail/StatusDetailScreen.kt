@@ -253,6 +253,7 @@ fun StatusDetailScreen(
                             StatusCard(
                                 status = status,
                                 collapseLongContent = false,
+                                enableBodySelection = true,
                                 onStatusClick = null,
                                 onAuthorClick = onAccountClick,
                                 onMediaClick = onMediaClick,

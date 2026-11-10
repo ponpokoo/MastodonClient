@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuItem
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuSession
+import androidx.compose.foundation.text.contextmenu.provider.LocalTextContextMenuToolbarProvider
+import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuDataProvider
+import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuProvider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -24,11 +31,13 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.isPopup
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -45,6 +54,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.PreviewCard
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -54,7 +64,7 @@ class StatusLinkInteractionDeviceTest {
     private val url = "https://example.test/original/path?value=123"
     private val events = mutableListOf<String>()
 
-    private fun show(scrollable: Boolean = false) {
+    private fun show(scrollable: Boolean = false, selectable: Boolean = false) {
         rule.setContent {
             MaterialTheme {
                 val scroll = if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
@@ -64,11 +74,95 @@ class StatusLinkInteractionDeviceTest {
                         modifier = Modifier.width(200.dp).testTag("link_text"),
                         onLinkClick = { events.add("open:$it") },
                         onOpenInBrowser = { events.add("browser:$it") },
-                        onNonLinkClick = { events.add("detail") },
+                        onNonLinkClick = if (selectable) null else ({ events.add("detail") }),
+                        enableSelection = selectable,
                     )
                     if (scrollable) Spacer(Modifier.height(1600.dp))
                 }
             }
+        }
+    }
+
+    @Test fun selectableBodyStillOpensLinksAndShowsTheirLongPressMenu() {
+        show(scrollable = true, selectable = true)
+        val node = rule.onNodeWithTag("link_text", useUnmergedTree = true)
+        val layout = layout()
+        val link = layout.layoutInput.text.getStringAnnotations("url", 0, layout.layoutInput.text.length).single()
+        val point = layout.getBoundingBox(link.start + 2).center
+        node.performTouchInput { click(point) }
+        rule.runOnIdle { assertEquals(listOf("open:$url"), events); events.clear() }
+
+        holdLink()
+        rule.onNodeWithText("開く").assertExists()
+        Espresso.pressBack()
+        rule.onNodeWithText("開く").assertDoesNotExist()
+
+        val originalTop = node.fetchSemanticsNode().boundsInRoot.top
+        node.performTouchInput { swipe(point, point + Offset(0f, -60 * layout.layoutInput.density.density)) }
+        assertTrue(node.fetchSemanticsNode().boundsInRoot.top < originalTop)
+        rule.runOnIdle { assertTrue(events.isEmpty()) }
+    }
+
+    @OptIn(ExperimentalFoundationApi::class)
+    @Test fun draggingSelectionHandleAcrossLinkAndEmojiCopiesTheirVisibleTextAndShortcode() {
+        val expected = "Start linked\n:wave: finish"
+        lateinit var layout: TextLayoutResult
+        var copy: (() -> Unit)? = null
+        val toolbar = object : TextContextMenuProvider {
+            override suspend fun showTextContextMenu(dataProvider: TextContextMenuDataProvider) {
+                val closed = CompletableDeferred<Unit>()
+                val session = object : TextContextMenuSession {
+                    override fun close() { closed.complete(Unit) }
+                }
+                copy = {
+                    dataProvider.data().components.filterIsInstance<TextContextMenuItem>()
+                        .single { it.key == TextContextMenuKeys.CopyKey }.onClick(session)
+                }
+                try {
+                    closed.await()
+                } finally {
+                    copy = null
+                }
+            }
+        }
+        rule.setContent {
+            CompositionLocalProvider(LocalTextContextMenuToolbarProvider provides toolbar) {
+                MaterialTheme {
+                    StatusContentText(
+                        "<p>Prefix Start <a href=\"$url\">linked</a><br>:wave: finish</p>",
+                        modifier = Modifier.padding(32.dp).testTag("link_text"),
+                        customEmojis = mapOf("wave" to "android.resource://io.github.ponpokoo.mastodonclient/${R.drawable.nagisa_launcher_art}"),
+                        emojiHeight = 24.dp,
+                        onLinkClick = { events.add("open:$it") },
+                        enableSelection = true,
+                        onTextLayout = { layout = it },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        val text = layout.layoutInput.text.text
+        rule.onNodeWithTag("link_text", useUnmergedTree = true).performTouchInput {
+            longClick(layout.getBoundingBox(text.indexOf("Start") + 2).center)
+        }
+        val handles = rule.onAllNodes(SemanticsMatcher("selection handle") { node ->
+            node.config.any { it.key.name == "SelectionHandleInfo" }
+        }, useUnmergedTree = true)
+        handles.assertCountEquals(2)
+        val endHandleIndex = handles.fetchSemanticsNodes().withIndex().maxBy { it.value.positionOnScreen.x }.index
+        val from = layout.getBoundingBox(text.indexOf("Start") + "Start".lastIndex).bottomRight
+        val to = layout.getBoundingBox(text.indexOf("finish") + "finish".lastIndex).bottomRight
+        handles[endHandleIndex].performTouchInput {
+            swipe(center, center + to - from)
+        }
+        rule.runOnIdle {
+            checkNotNull(copy) { "Text selection did not offer a copy action" }.invoke()
+        }
+        rule.runOnIdle {
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
+            assertEquals(expected, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
+            assertTrue(events.isEmpty())
         }
     }
 

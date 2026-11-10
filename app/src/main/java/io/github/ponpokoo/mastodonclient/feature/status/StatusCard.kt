@@ -124,6 +124,7 @@ internal fun StatusCard(
     useTimelineImagePreviews: Boolean = false,
     collapseLongContent: Boolean = true,
     reactionPickerMotion: EmojiPickerSheetMotion = EmojiPickerSheetMotion.HeaderOnly,
+    enableBodySelection: Boolean = false,
 ) {
     val onReply = actions.onReply?.let { handler -> { handler(status) } }
     val onBoost = actions.onBoost?.let { handler -> { handler(status) } }
@@ -313,6 +314,7 @@ internal fun StatusCard(
                         onNonLinkClick = onStatusClick?.let { { it(status.statusId) } },
                         maxLines = maxLines,
                         onTextLayout = onLayout,
+                        enableSelection = enableBodySelection,
                     )
                 }
                 if (collapseLongContent && status.spoilerText.isBlank()) {
