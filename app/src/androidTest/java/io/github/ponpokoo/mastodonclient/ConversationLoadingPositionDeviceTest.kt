@@ -1,12 +1,20 @@
 package io.github.ponpokoo.mastodonclient
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.text.contextmenu.provider.LocalTextContextMenuToolbarProvider
+import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuDataProvider
+import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuProvider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.lifecycle.ViewModelStore
+import androidx.test.espresso.Espresso
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
@@ -18,12 +26,14 @@ import io.github.ponpokoo.mastodonclient.navigation.ScreenNavHost
 import io.github.ponpokoo.mastodonclient.navigation.animatedScreen
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 
-/** Slow responses must not expose the cached post before its final initial position. */
+/** Exercises conversation loading, positioning and navigation with the app's screen transitions. */
+@OptIn(ExperimentalFoundationApi::class)
 class ConversationLoadingPositionDeviceTest {
     @get:Rule val rule = createComposeRule()
     private val store = ViewModelStore()
@@ -51,6 +61,7 @@ class ConversationLoadingPositionDeviceTest {
         cachedConversation: StatusDetail? = if (reuseConversation) conversation() else null,
         cachedStatus: TimelineStatus = selected.copy(repliesCount = 1),
         sourceStatus: TimelineStatus? = null,
+        selectionToolbar: TextContextMenuProvider? = null,
     ): Channel<Result<StatusDetail>> {
         val response = Channel<Result<StatusDetail>>(Channel.UNLIMITED)
         val repository = object : TimelineRepository {
@@ -96,8 +107,10 @@ class ConversationLoadingPositionDeviceTest {
                     }
                 }
                 animatedScreen("detail") {
-                    StatusDetailScreen(model, AppPreferences(), { navigation.popBackStack() }, {}, { _, _ -> }, {}, {},
-                        { navigation.navigate("profile") }, { _, _ -> }, {})
+                    CompositionLocalProvider(LocalTextContextMenuToolbarProvider provides selectionToolbar) {
+                        StatusDetailScreen(model, AppPreferences(), { navigation.popBackStack() }, {}, { _, _ -> }, {}, {},
+                            { navigation.navigate("profile") }, { _, _ -> }, {})
+                    }
                 }
                 animatedScreen("profile") {
                     TextButton(onClick = { navigation.popBackStack() }) { Text("Return to conversation") }
@@ -142,6 +155,80 @@ class ConversationLoadingPositionDeviceTest {
     private fun assertLoading() {
         rule.onNodeWithTag("status_detail_loading").assertIsDisplayed()
         target().assertDoesNotExist()
+    }
+
+    @Test fun toolbarBackDismissesSelectionBeforeTheDetailExitAnimationFinishes() {
+        assertSelectionClosesOnBack { rule.onNodeWithContentDescription("戻る").performClick() }
+    }
+
+    @Test fun systemBackClearsSelectionThenReturnsToTimeline() {
+        assertSelectionClosesOnBack(
+            dismissSelection = { Espresso.pressBack() },
+            back = { Espresso.pressBack() },
+        )
+    }
+
+    private fun assertSelectionClosesOnBack(dismissSelection: (() -> Unit)? = null, back: () -> Unit) {
+        var selectionMenuOpen = false
+        val toolbar = object : TextContextMenuProvider {
+            override suspend fun showTextContextMenu(dataProvider: TextContextMenuDataProvider) {
+                selectionMenuOpen = true
+                try {
+                    awaitCancellation()
+                } finally {
+                    selectionMenuOpen = false
+                }
+            }
+        }
+        show(
+            cached = true,
+            cachedStatus = selected,
+            sourceStatus = selected.copy(contentHtml = "<p>Timeline post</p>"),
+            selectionToolbar = toolbar,
+        )
+        val body = rule.onNodeWithText("selected body", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        body.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        body.performTouchInput { longClick(layouts.single().getBoundingBox(2).center) }
+        rule.runOnIdle { assertTrue("Selection menu should be open before going back", selectionMenuOpen) }
+
+        if (dismissSelection != null) {
+            dismissSelection()
+            body.assertIsDisplayed()
+            rule.runOnIdle { assertFalse("First Back should close the selection menu", selectionMenuOpen) }
+        }
+
+        rule.mainClock.autoAdvance = false
+        try {
+            back()
+            rule.mainClock.advanceTimeByFrame()
+            rule.onNodeWithTag("status_detail").assertExists()
+            rule.runOnIdle { assertFalse("Selection menu should close during the exit", selectionMenuOpen) }
+        } finally {
+            rule.mainClock.autoAdvance = true
+        }
+        rule.onNodeWithText("Timeline post").assertIsDisplayed()
+        rule.onNodeWithTag("status_detail").assertDoesNotExist()
+    }
+
+    @Test fun systemBackClearsSelectionWithTheNativeToolbar() {
+        show(cached = true, cachedStatus = selected, sourceStatus = selected.copy(contentHtml = "<p>Timeline post</p>"))
+        val body = rule.onNodeWithText("selected body", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        body.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        body.performTouchInput { longClick(layouts.single().getBoundingBox(2).center) }
+        val handles = rule.onAllNodes(SemanticsMatcher("selection handle") { node ->
+            node.config.any { it.key.name == "SelectionHandleInfo" }
+        }, useUnmergedTree = true)
+        handles.assertCountEquals(2)
+
+        Espresso.pressBack()
+        body.assertIsDisplayed()
+        handles.assertCountEquals(0)
+
+        Espresso.pressBack()
+        rule.onNodeWithText("Timeline post").assertIsDisplayed()
+        rule.onNodeWithTag("status_detail").assertDoesNotExist()
     }
 
     @Test fun cachedPostIsHiddenUntilPositionedAndFirstVisibleFramesAreCentered() {

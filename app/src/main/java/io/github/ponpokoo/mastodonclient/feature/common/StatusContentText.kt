@@ -3,12 +3,14 @@ package io.github.ponpokoo.mastodonclient.feature.common
 import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.SelectionState
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -48,6 +50,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 
 @Suppress("DEPRECATION")
 @Composable
@@ -224,7 +229,18 @@ private fun StatusContentTextImpl(
             },
         )
     }
-    if (enableSelection) SelectionContainer(content = body) else body()
+    if (enableSelection) {
+        val selection = remember { SelectionState() }
+        val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+        BackHandler(
+            enabled = lifecycleState == Lifecycle.State.RESUMED &&
+                selection.selectedTexts.any { it.isNotEmpty() },
+            onBack = selection::clear,
+        )
+        SelectionContainer(state = selection, content = body)
+    } else {
+        body()
+    }
     menuLink?.let { link ->
         LinkActionsPopup(
             url = link.item,

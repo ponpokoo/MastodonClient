@@ -74,6 +74,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.LinkAnnotation
@@ -84,6 +85,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import coil3.compose.AsyncImage
@@ -153,9 +155,18 @@ fun StatusDetailScreen(
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val lifecycleState by lifecycle.currentStateAsState()
+    val focusManager = LocalFocusManager.current
+    val closeDetail = {
+        focusManager.clearFocus()
+        onBack()
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        // A committed system Back stops this entry before its exit animation ends.
+        focusManager.clearFocus()
+    }
     LaunchedEffect(state.isDeleted, lifecycle, lifecycleState) {
         // A deleted destination may be recomposed as an uncommitted back preview.
-        if (state.isDeleted && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) onBack()
+        if (state.isDeleted && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) closeDetail()
     }
     LaunchedEffect(state.actionMessage) {
         state.actionMessage?.let {
@@ -193,7 +204,7 @@ fun StatusDetailScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = closeDetail) {
                             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "戻る")
                         }
                     },
