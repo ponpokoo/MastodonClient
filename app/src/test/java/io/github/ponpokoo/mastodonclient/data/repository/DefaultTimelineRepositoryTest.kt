@@ -1,6 +1,10 @@
 package io.github.ponpokoo.mastodonclient.data.repository
 
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
+import io.github.ponpokoo.mastodonclient.data.local.HomeTimelineLocalDataSource
+import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change
+import io.github.ponpokoo.mastodonclient.feature.common.testStatus
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineFeed
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
@@ -10,6 +14,9 @@ import io.github.ponpokoo.mastodonclient.domain.model.replyToAccountName
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CompletableDeferred
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.Dispatcher
@@ -1190,6 +1197,78 @@ class DefaultTimelineRepositoryTest {
             assertTrue(repository.getCachedConversation(session, "root", "branch")!!.status.favourited)
             repository.deleteStatus(session, "leaf").getOrThrow()
             assertNull(repository.getCachedConversation(session, "root", "branch"))
+        }
+    }
+
+    private open class HomeCacheFake : HomeTimelineLocalDataSource {
+        override suspend fun readPage(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): TimelinePage? = null
+        override suspend fun writePage(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<Change>) = Unit
+        override suspend fun applyChange(session: AccountSession, change: Change) = Unit
+        override suspend fun deleteAccount(sessionId: String) = Unit
+    }
+
+    @Test fun restoredHomeWindowMakesTheOriginalPostAvailableInMemory() = runTest {
+        MockWebServer().use { server ->
+            val session = testSession(server)
+            val boost = testStatus("original").copy(timelineId = "boost", boostedBy = testStatus().author)
+            val local = object : HomeCacheFake() {
+                override suspend fun readWindow(session: AccountSession) = TimelinePage(listOf(boost), null, true)
+            }
+            val repository = DefaultTimelineRepository(ApiClientFactory(), homeTimelineLocalDataSource = local)
+            assertNull(repository.getCachedStatus(session, boost.statusId))
+            assertEquals(listOf(boost), repository.getCachedHomeWindow(session).getOrThrow()!!.statuses)
+            assertEquals(boost, repository.getCachedStatus(session, boost.statusId))
+            assertNull(repository.getCachedStatus(session.copy(accessToken = "other"), boost.statusId))
+        }
+    }
+
+    @Test fun lateConversationAndRoomResponsesKeepFavouriteResultInMemoryAndInHomeCache() = runTest {
+        MockWebServer().use { server ->
+            val requested = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            val original = basicStatusJson("original")
+            val confirmed = original.dropLast(1) + ""","favourited":true,"favourites_count":3}"""
+            val stored = mutableListOf<Change.StatusUpdated>()
+            val readingWindow = CompletableDeferred<Unit>()
+            val cachedWindow = CompletableDeferred<TimelinePage>()
+            val local = object : HomeCacheFake() {
+                override suspend fun readWindow(session: AccountSession): TimelinePage {
+                    readingWindow.complete(Unit)
+                    return cachedWindow.await()
+                }
+                override suspend fun applyChange(session: AccountSession, change: Change) {
+                    stored += change as Change.StatusUpdated
+                }
+            }
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                    "/api/v1/statuses/original" -> {
+                        requested.complete(Unit)
+                        if (release.await(10, TimeUnit.SECONDS)) MockResponse().setBody(original)
+                        else MockResponse().setResponseCode(500)
+                    }
+                    "/api/v1/statuses/original/context" -> MockResponse().setBody("""{"ancestors":[],"descendants":[]}""")
+                    "/api/v1/statuses/original/favourite" -> MockResponse().setBody(confirmed)
+                    else -> MockResponse().setResponseCode(404)
+                }
+            }
+            val session = testSession(server)
+            val repository = DefaultTimelineRepository(ApiClientFactory(), homeTimelineLocalDataSource = local)
+            val detail = async { repository.getStatusDetail(session, "original").getOrThrow() }
+            val window = async { repository.getCachedHomeWindow(session).getOrThrow()!! }
+            requested.await()
+            readingWindow.await()
+            try {
+                assertTrue(repository.setFavourite(session, "original", true).getOrThrow().favourited)
+            } finally {
+                release.countDown()
+            }
+            cachedWindow.complete(TimelinePage(listOf(testStatus("original").copy(timelineId = "boost")), null, true))
+            assertEquals(3L, detail.await().status.favouritesCount)
+            assertEquals(3L, window.await().statuses.single().favouritesCount)
+            assertTrue(repository.getCachedStatus(session, "original")!!.favourited)
+            assertEquals(listOf(3L, 3L), stored.map { it.status.favouritesCount })
+            assertTrue(stored.all { it.status.favourited })
         }
     }
 

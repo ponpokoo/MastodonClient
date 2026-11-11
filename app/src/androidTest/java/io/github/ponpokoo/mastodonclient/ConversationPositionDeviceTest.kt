@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,6 +50,29 @@ class ConversationPositionDeviceTest {
         }
         rule.runOnIdle { ready.value = true }
         rule.runOnIdle { assertEquals(position, list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset) }
+    }
+
+    @Test fun shortSelectedPostStaysInPlaceWhenAncestorsArriveWithoutReplies() {
+        val hasAncestors = mutableStateOf(false)
+        rule.setContent {
+            val count = if (hasAncestors.value) 3 else 0
+            val conversation = rememberConversationListState("target", count)
+            LazyColumn(
+                Modifier.height(400.dp),
+                state = conversation.listState,
+                contentPadding = PaddingValues(bottom = conversation.bottomPadding),
+            ) {
+                if (count > 0) {
+                    item(key = "heading") { Box(Modifier.height(40.dp)) }
+                    items(count, key = { "ancestor-$it" }) { Box(Modifier.height(80.dp)) }
+                }
+                item(key = "selected-target") { Box(Modifier.fillMaxWidth().height(80.dp).testTag("target")) }
+            }
+        }
+        val before = rule.onNodeWithTag("target").fetchSemanticsNode().boundsInRoot.top
+        rule.runOnIdle { hasAncestors.value = true }
+        val after = rule.onNodeWithTag("target").fetchSemanticsNode().boundsInRoot.top
+        assertEquals(before, after, 2f)
     }
 
     @Test fun tallSelectedRowStartsAtTop() {

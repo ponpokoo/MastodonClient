@@ -3,12 +3,16 @@ package io.github.ponpokoo.mastodonclient.domain.session
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 
+internal fun TimelineStatus.applyHomeStatusUpdate(change: BrowsingSession.Change.StatusUpdated): TimelineStatus {
+    if (statusId != change.status.statusId) return this
+    val updated = change.applyTo(this)
+    return if (change.field == null && updated.poll == null) updated.copy(poll = poll) else updated
+}
+
 /** Keep each boost row's identity and chronology when changing the underlying status. */
 fun List<TimelineStatus>.applyHomeChange(change: BrowsingSession.Change, includeNew: Boolean = false): List<TimelineStatus> = when (change) {
     is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated -> this
-    is BrowsingSession.Change.StatusUpdated -> map {
-        if (it.statusId == change.status.statusId) it.withUpdatedActions(change.status).copy(poll = change.status.poll ?: it.poll) else it
-    }
+    is BrowsingSession.Change.StatusUpdated -> map { it.applyHomeStatusUpdate(change) }
     is BrowsingSession.Change.StatusDeleted -> filterNot { it.statusId == change.statusId }
     is BrowsingSession.Change.Stream -> when (val event = change.event) {
         is TimelineStreamEvent.StatusDeleted -> filterNot { it.statusId == event.statusId || it.timelineId == event.statusId }

@@ -4,7 +4,6 @@ import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -54,7 +53,7 @@ class SavedTimelinesViewModel(
     private var accountsJob: Job? = null
     private var accountsGeneration = 0L
     val canManageAccounts: Boolean get() = kind == SavedTimelineKind.List && listId != null
-    private val updatesDuringRequest = mutableMapOf<String, TimelineStatus>()
+    private val updatesDuringRequest = mutableMapOf<String, MutableList<BrowsingSession.Change.StatusUpdated>>()
     private val deletedDuringRequest = mutableSetOf<String>()
 
     init {
@@ -182,7 +181,7 @@ class SavedTimelinesViewModel(
                 if (requestGeneration != generation) return@launch
                 response.fold(onSuccess = { page ->
                     val statuses = page.statuses.filterNot { it.statusId in deletedDuringRequest }.map { status ->
-                        updatesDuringRequest[status.statusId]?.let { status.mergeActions(it) } ?: status
+                        updatesDuringRequest[status.statusId].orEmpty().fold(status) { displayed, change -> change.applyTo(displayed) }
                     }
                     mutableState.update { it.copy(
                         statuses = (if (append) it.statuses + statuses else statuses).distinctBy(TimelineStatus::timelineId),
@@ -213,11 +212,8 @@ class SavedTimelinesViewModel(
             mutableState.update { it.copy(statuses = it.statuses.filterNot { status -> status.statusId == deleted }) }
         }
         if (change is BrowsingSession.Change.StatusUpdated) {
-            if (requesting) updatesDuringRequest[change.status.statusId] = change.status
-            mutableState.update { it.copy(statuses = it.statuses.map { status -> status.mergeActions(change.status) }) }
+            if (requesting) updatesDuringRequest.getOrPut(change.status.statusId) { mutableListOf() }.add(change)
+            mutableState.update { it.copy(statuses = it.statuses.map(change::applyTo)) }
         }
     }
-
-    private fun TimelineStatus.mergeActions(updated: TimelineStatus): TimelineStatus =
-        if (statusId != updated.statusId) this else withUpdatedActions(updated).copy(poll = updated.poll)
 }

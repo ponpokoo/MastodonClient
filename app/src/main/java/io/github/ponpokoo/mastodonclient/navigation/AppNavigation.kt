@@ -57,7 +57,6 @@ import io.github.ponpokoo.mastodonclient.feature.common.StatusInteractionsViewMo
 import io.github.ponpokoo.mastodonclient.feature.common.StatusAccountsRequest
 import io.github.ponpokoo.mastodonclient.feature.common.StatusAccountsUiState
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
-import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
 import io.github.ponpokoo.mastodonclient.feature.search.SearchViewModel
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsViewModel
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
@@ -65,6 +64,7 @@ import io.github.ponpokoo.mastodonclient.feature.profile.ProfileViewModel
 import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailScreen
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailViewModel
+import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailSeed
 import io.github.ponpokoo.mastodonclient.feature.detail.StatusAccountsDialog
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostScreen
 import io.github.ponpokoo.mastodonclient.feature.compose.ComposePostViewModel
@@ -280,7 +280,7 @@ fun AppNavigation(
         capabilitiesModel?.refresh()
     }
     LaunchedEffect(capabilitiesModel, currentBackStackEntry?.id) { capabilitiesModel?.refresh() }
-    val statusActionManager = remember(timelineRepository) { StatusActionManager(timelineRepository) }
+    var detailSeed by remember(mainSessionModel) { mutableStateOf<Pair<String, StatusDetailSeed>?>(null) }
     val navigationJson = remember { Json { ignoreUnknownKeys = true; explicitNulls = false } }
     val openLinksInApp by preferences.openLinksInApp.collectAsStateWithLifecycle(initialValue = true)
     val appPreferences by preferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
@@ -411,10 +411,10 @@ fun AppNavigation(
             })
             val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
                 ProfileViewModel(timelineRepository, browsing, authRepository, profileImages,
-                    statusActionManager = statusActionManager, avatarRepository = accountAvatars)
+                    statusActionManager = mainViewModel.statusActionManager, avatarRepository = accountAvatars)
             })
             val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
-                StatusActionsViewModel(timelineRepository, browsing, statusActionManager)
+                StatusActionsViewModel(timelineRepository, browsing, mainViewModel.statusActionManager)
             })
             HomeTimelineScreen(
                 fabPositionStore = preferences,
@@ -441,6 +441,13 @@ fun AppNavigation(
                 },
                 onStatusClick = { statusId ->
                     navController.navigate(Route.StatusDetail(statusId)) { launchSingleTop = true }
+                },
+                onTimelineStatusClick = { status ->
+                    val source = timelineViewModel.detailSource(status)
+                    navController.navigate(Route.StatusDetail(status.statusId)) { launchSingleTop = true }
+                    detailSeed = navController.currentBackStackEntry?.id?.let { entryId ->
+                        source?.let { (snapshot, confirmed) -> entryId to StatusDetailSeed(snapshot, confirmed) }
+                    }
                 },
                 onCompose = { replyToId -> navController.navigate(Route.ComposePost(replyToId)) },
                 onQuote = openQuote,
@@ -473,15 +480,22 @@ fun AppNavigation(
         }
         animatedScreen<Route.StatusDetail> { backStackEntry ->
             val route = backStackEntry.toRoute<Route.StatusDetail>()
+            val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
+            val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
+            val detailActionOwner: StatusActionsViewModel = viewModel(viewModelStoreOwner = mainEntry, factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, mainModel.browsing, mainModel.statusActionManager)
+            })
             val detailViewModel: StatusDetailViewModel = viewModel(
                 key = "status-detail-${route.statusId}",
                 factory = StatusDetailViewModel.Factory(
                     route.statusId,
                     timelineRepository,
                     authRepository,
-                    statusActionManager,
-                    browsing = mainSessionModel?.browsing,
+                    mainModel.statusActionManager,
+                    browsing = mainModel.browsing,
                     conversationSourceId = route.conversationSourceId,
+                    seed = detailSeed?.takeIf { it.first == backStackEntry.id }?.second,
+                    actionOwner = detailActionOwner,
                 ),
             )
             LaunchedEffect(backStackEntry, detailViewModel) {
@@ -647,7 +661,7 @@ fun AppNavigation(
             val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
             val profileViewModel: ProfileViewModel = viewModel(factory = ScreenViewModelFactory {
                 ProfileViewModel(timelineRepository, mainModel.browsing, authRepository, profileImages,
-                    accountId = route.accountId, statusActionManager = statusActionManager, avatarRepository = accountAvatars)
+                    accountId = route.accountId, statusActionManager = mainModel.statusActionManager, avatarRepository = accountAvatars)
             })
             AccountProfileScreen(
                 viewModel = profileViewModel,
@@ -692,9 +706,9 @@ fun AppNavigation(
             val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
             val mainState by mainModel.uiState.collectAsStateWithLifecycle()
             val actionsViewModel: StatusActionsViewModel = viewModel(
-                viewModelStoreOwner = backStackEntry,
+                viewModelStoreOwner = mainEntry,
                 factory = ScreenViewModelFactory {
-                    StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+                    StatusActionsViewModel(timelineRepository, mainModel.browsing, mainModel.statusActionManager)
                 },
             )
             val hashtagViewModel: HashtagTimelineViewModel = viewModel(
@@ -702,7 +716,7 @@ fun AppNavigation(
                     route.hashtag,
                     timelineRepository,
                     mainModel.browsing,
-                    statusActionManager,
+                    mainModel.statusActionManager,
                 ),
             )
             HashtagTimelineScreen(
@@ -726,8 +740,8 @@ fun AppNavigation(
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
             val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
             val mainState by mainModel.uiState.collectAsStateWithLifecycle()
-            val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
-                StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+            val actionsViewModel: StatusActionsViewModel = viewModel(viewModelStoreOwner = mainEntry, factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, mainModel.browsing, mainModel.statusActionManager)
             })
             val savedViewModel: SavedTimelinesViewModel = viewModel(
                 factory = ScreenViewModelFactory {
@@ -763,8 +777,8 @@ fun AppNavigation(
             val mainEntry = remember(backStackEntry) { navController.getBackStackEntry(Route.Timeline) }
             val mainModel = mainSessionViewModel(mainEntry, mainSessionFactory)
             val mainState by mainModel.uiState.collectAsStateWithLifecycle()
-            val actionsViewModel: StatusActionsViewModel = viewModel(factory = ScreenViewModelFactory {
-                StatusActionsViewModel(timelineRepository, mainModel.browsing, statusActionManager)
+            val actionsViewModel: StatusActionsViewModel = viewModel(viewModelStoreOwner = mainEntry, factory = ScreenViewModelFactory {
+                StatusActionsViewModel(timelineRepository, mainModel.browsing, mainModel.statusActionManager)
             })
             val savedViewModel: SavedTimelinesViewModel = viewModel(
                 factory = ScreenViewModelFactory {

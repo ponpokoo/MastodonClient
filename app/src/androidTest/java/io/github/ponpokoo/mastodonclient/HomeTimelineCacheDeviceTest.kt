@@ -77,6 +77,32 @@ class HomeTimelineCacheDeviceTest {
         } finally { database.close() }
     }
 
+    @Test fun findsBoostOnlyByOriginalIdAndRestoresActionsForAllRowsInTheSameAccount() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val other = account.copy(sessionId = "two")
+            val original = status("original").copy(statusId = "original")
+            val boost = original.copy(timelineId = "boost", boostedBy = author)
+            source.writePage(account, null, page(listOf(boost)))
+            source.writePage(other, null, page(listOf(original)))
+            assertEquals(boost, source.readStatus(account, original.statusId))
+            assertNull(source.readStatus(account, boost.timelineId))
+            assertNull(source.readStatus(account.copy(instanceUrl = "https://other.example"), original.statusId))
+
+            source.writeWindow(account, page(listOf(boost, original)), "boost", emptyList())
+            source.applyStatusUpdates(account, listOf(
+                BrowsingSession.Change.StatusUpdated(original.copy(favourited = true, favouritesCount = 8)),
+            ))
+            val restored = source.readWindow(account)!!
+            assertEquals(listOf("boost", "original"), restored.statuses.map { it.timelineId })
+            assertEquals(author, restored.statuses.first().boostedBy)
+            assertEquals(listOf(8L, 8L), restored.statuses.map { it.favouritesCount })
+            assertTrue(restored.statuses.all { it.favourited })
+            assertEquals(original, source.readStatus(other, original.statusId))
+        } finally { database.close() }
+    }
+
     @Test fun actionsEditsStreamingAndDeletionPersistWithoutLosingBoostIdentity() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
         try {

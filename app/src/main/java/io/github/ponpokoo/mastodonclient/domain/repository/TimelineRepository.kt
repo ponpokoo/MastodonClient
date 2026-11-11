@@ -60,6 +60,7 @@ interface TimelineRepository : ServerAccountSettingsRepository {
     suspend fun updateHomeTimelineCache(session: AccountSession, change: io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change): Result<Unit> = Result.success(Unit)
 
     fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? = null
+    suspend fun getCachedHomeStatus(session: AccountSession, statusId: String): TimelineStatus? = null
 
     suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> =
         Result.failure(UnsupportedOperationException("投稿の取得は未対応です"))

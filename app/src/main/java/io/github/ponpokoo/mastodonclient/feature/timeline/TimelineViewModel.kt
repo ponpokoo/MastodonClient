@@ -19,6 +19,8 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+import io.github.ponpokoo.mastodonclient.domain.session.StatusUpdateKind
+import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.domain.session.applyHomeChange
 import io.github.ponpokoo.mastodonclient.domain.session.homeIndex
 import io.github.ponpokoo.mastodonclient.domain.session.mergeHomePage
@@ -29,7 +31,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineGap
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import io.github.ponpokoo.mastodonclient.feature.common.withDisplayOverlay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -74,9 +76,13 @@ class TimelineViewModel(
 ) : SessionScopedViewModel(browsing) {
     private val moderationCache = TimelineModerationCache()
     private val _uiState = MutableStateFlow(TimelineUiState())
-    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
+    private val moderatedState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
         moderationCache.apply(state, moderation, account)
     }
+    val uiState = moderatedState.withDisplayOverlay(viewModelScope, browsing.optimisticActions) { state, actions ->
+        if (actions.isEmpty()) state else state.copy(statuses = state.statuses.map { actions[it.statusId]?.applyTo(it) ?: it })
+    }
+
     private var timelineJob: Job? = null
     private var streamGapProbeJob: Job? = null
     private var lastAnnouncementsCheck: Long? = null
@@ -92,6 +98,13 @@ class TimelineViewModel(
     private val keepsPosition get() = keepPositionPreference ?:
         (_uiState.value.isResumedWindow || currentSnapshot()?.account?.let { savedViewport(it.sessionId) } != null)
     private val keepsHomePosition get() = _uiState.value.selectedFeed == TimelineFeed.Home && keepsPosition
+
+    fun detailSource(status: TimelineStatus): Pair<BrowsingSession.Snapshot, TimelineStatus>? {
+        val snapshot = currentSnapshot() ?: return null
+        if (status !in uiState.value.statuses) return null
+        val confirmed = _uiState.value.statuses.firstOrNull { it.timelineId == status.timelineId } ?: return null
+        return snapshot to status.withUpdatedActions(confirmed)
+    }
 
     fun setKeepPositionOnRefresh(enabled: Boolean) {
         val wasKeeping = keepsPosition
@@ -643,13 +656,13 @@ class TimelineViewModel(
                         else -> previous.mergeHomePage(page, maxId)
                     }.let { window -> probe(previous, page, window) }
                         .let { window -> changes.fold(window) { value, change -> value.applyHomeWindowChange(change) } }
-                    timelineRepository.saveHomeWindow(session, merged, savedViewport(session.sessionId)?.anchorId, changes.toList()).forSession(snapshot)
+                    timelineRepository.saveHomeWindow(session, merged, savedViewport(session.sessionId)?.anchorId, changes.filter(::needsHomeCacheWrite)).forSession(snapshot)
                     _uiState.update { it.copy(isShowingSavedStatuses = false) }
                     return Result.success(changes.fold(merged) { value, change -> value.applyHomeWindowChange(change) })
                 }
                 // Merge the response and in-flight changes in one serialized transaction.
                 // Later events queue after this write; an older replay cannot undo them.
-                timelineRepository.cacheHomeTimeline(session, maxId, page, changes.toList()).forSession(snapshot)
+                timelineRepository.cacheHomeTimeline(session, maxId, page, changes.filter(::needsHomeCacheWrite)).forSession(snapshot)
                 _uiState.update { it.copy(isShowingSavedStatuses = false) }
                 return Result.success(page.copy(statuses = changes.fold(page.statuses) { rows, change ->
                     rows.applyHomeChange(change, includeNew = maxId == null)
@@ -726,10 +739,16 @@ class TimelineViewModel(
             return
         }
         if (change is BrowsingSession.Change.TagUpdated || change is BrowsingSession.Change.ProfileUpdated) return
+        if (change is BrowsingSession.Change.StatusUpdated &&
+            (change.kind == StatusUpdateKind.Optimistic || change.kind == StatusUpdateKind.RolledBack)) return
         homeChangesDuringRequest?.add(change)
-        if (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived) currentSnapshot()?.let { snapshot -> requestScope.launch {
-            timelineRepository.updateHomeTimelineCache(snapshot.account!!, change).forSession(snapshot)
-        } }
+        val snapshot = currentSnapshot() ?: return
+        if (needsHomeCacheWrite(change) &&
+            (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived)) {
+            requestScope.launch {
+                timelineRepository.updateHomeTimelineCache(snapshot.account!!, change).forSession(snapshot)
+            }
+        }
         val accountId = currentSnapshot()?.account?.accountId
         val previousGaps = _uiState.value.homeIndex?.gaps.orEmpty()
         _uiState.update { current ->
@@ -792,6 +811,9 @@ class TimelineViewModel(
                 ?.let(::probeStreamGap)
         }
     }
+
+    private fun needsHomeCacheWrite(change: BrowsingSession.Change): Boolean =
+        change !is BrowsingSession.Change.StatusUpdated || change.kind == StatusUpdateKind.Confirmed
 
     private fun showError(
         error: Throwable,

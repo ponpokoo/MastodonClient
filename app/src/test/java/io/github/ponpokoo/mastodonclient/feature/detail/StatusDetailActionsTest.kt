@@ -1,6 +1,13 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.timeline.TimelineViewModel
+import kotlinx.coroutines.cancel
 import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.StatusPoll
@@ -36,6 +43,120 @@ class StatusDetailActionsTest : ScreenViewModelTestBase() {
     private open class Repository : ScreenRepositoryFake() {
         override suspend fun getStatusDetail(session: AccountSession, statusId: String) =
             Result.success(StatusDetail(testStatus(statusId), emptyList(), emptyList()))
+    }
+
+    @Test fun tappedBoostShowsItsOriginalReplyAndActionsWithoutWaitingForRoomOrNetwork() = runTest(dispatcher) {
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val boosted = testStatus("reply").copy(
+            timelineId = "boost-wrapper", boostedBy = testStatus().author, inReplyToId = "parent",
+            repliesCount = 3, favouritesCount = 4, favourited = true, boostsCount = 5, reblogged = true,
+            reactions = listOf(EmojiReaction("👍", 2, true, null, emptySet())),
+        )
+        val pending = CompletableDeferred<Result<StatusDetail>>()
+        val repository = object : Repository() {
+            override suspend fun getCachedHomeStatus(session: AccountSession, statusId: String): TimelineStatus? =
+                error("A tapped post must bypass Room")
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String) = pending.await()
+        }
+        val model = own(StatusDetailViewModel("reply", repository, auth, browsing = browsing,
+            seed = StatusDetailSeed(browsing.snapshot.value, boosted)))
+        runCurrent()
+        assertEquals(boosted.copy(timelineId = "reply", boostedBy = null), model.uiState.value.detail?.status?.copy(filterScope = ""))
+        assertFalse(model.uiState.value.showInitialLoadingIndicator)
+        val fresh = boosted.copy(timelineId = "reply", boostedBy = null, favouritesCount = 9)
+        pending.complete(Result.success(StatusDetail(fresh, listOf(testStatus("parent")), listOf(testStatus("child")))))
+        advanceUntilIdle()
+        assertEquals(fresh, model.uiState.value.detail?.status?.copy(filterScope = ""))
+        assertEquals(listOf("parent"), model.uiState.value.detail?.ancestors?.map { it.statusId })
+    }
+
+    @Test fun detailFallsBackToMemoryThenRoomAndFetchesOnCacheMiss() = runTest(dispatcher) {
+        val cached = testStatus("reply").copy(inReplyToId = "parent", repliesCount = 2)
+        for (source in listOf("memory", "room", "miss")) {
+            var roomReads = 0
+            val pending = CompletableDeferred<Result<StatusDetail>>()
+            val repository = object : Repository() {
+                override fun getCachedStatus(session: AccountSession, statusId: String) = cached.takeIf { source == "memory" }
+                override suspend fun getCachedHomeStatus(session: AccountSession, statusId: String): TimelineStatus? {
+                    roomReads++
+                    return cached.takeIf { source == "room" }
+                }
+                override suspend fun getStatusDetail(session: AccountSession, statusId: String) = pending.await()
+            }
+            val model = own(StatusDetailViewModel("reply", repository, auth))
+            runCurrent()
+            assertEquals(if (source == "memory") 0 else 1, roomReads)
+            assertEquals(cached.takeUnless { source == "miss" }, model.uiState.value.detail?.status?.copy(filterScope = ""))
+            assertEquals(source == "miss", model.uiState.value.showInitialLoadingIndicator)
+            pending.complete(Result.success(StatusDetail(cached, emptyList(), emptyList())))
+            advanceUntilIdle()
+            assertEquals(cached, model.uiState.value.detail?.status?.copy(filterScope = ""))
+        }
+    }
+
+    @Test fun restoredDetailUsesRoomAfterTheBrowsingSessionIsActivated() = runTest(dispatcher) {
+        val browsing = BrowsingSession()
+        val cached = testStatus("reply").copy(inReplyToId = "parent", repliesCount = 2)
+        val pending = CompletableDeferred<Result<StatusDetail>>()
+        val repository = object : Repository() {
+            override suspend fun getCachedHomeStatus(session: AccountSession, statusId: String) = cached
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String) = pending.await()
+        }
+        val model = own(StatusDetailViewModel(cached.statusId, repository, auth, browsing = browsing))
+        runCurrent()
+        assertNull(model.uiState.value.detail)
+
+        browsing.activate(testAccount)
+        runCurrent()
+        assertEquals(cached.statusId, model.uiState.value.detail?.status?.statusId)
+        assertFalse(model.uiState.value.showInitialLoadingIndicator)
+        pending.complete(Result.success(StatusDetail(cached, emptyList(), emptyList())))
+        advanceUntilIdle()
+    }
+
+    @Test fun detailRefreshAndActionsUpdateBothHomeRowsEvenAfterClosingDetail() = runTest(dispatcher) {
+        val initial = testStatus().copy(inReplyToId = "parent")
+        val boost = initial.copy(timelineId = "boost-wrapper", boostedBy = initial.author)
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val detailResponse = CompletableDeferred<Result<StatusDetail>>()
+        val favouriteResponse = CompletableDeferred<Result<TimelineStatus>>()
+        val reaction = CompletableDeferred<Result<TimelineStatus>>()
+        val repository = object : Repository() {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) =
+                Result.success(TimelinePage(listOf(boost, initial), null, true))
+            override suspend fun getStatusDetail(session: AccountSession, statusId: String) = detailResponse.await()
+            override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
+                favouriteResponse.await()
+            override suspend fun setFedibirdReaction(session: AccountSession, statusId: String, emoji: String?) = reaction.await()
+        }
+        val manager = StatusActionManager(repository)
+        val actions = own(StatusActionsViewModel(repository, browsing, manager))
+        val timeline = own(TimelineViewModel(repository, browsing, SavedStateHandle()))
+        val model = own(StatusDetailViewModel(initial.statusId, repository, auth, manager, browsing,
+            seed = StatusDetailSeed(browsing.snapshot.value, boost), actionOwner = actions))
+        runCurrent()
+
+        model.toggleFavourite(initial)
+        runCurrent()
+        assertTrue(timeline.uiState.value.statuses.all { it.favourited })
+        favouriteResponse.complete(Result.failure(IllegalStateException("offline")))
+        runCurrent()
+        assertTrue(timeline.uiState.value.statuses.none { it.favourited })
+
+        detailResponse.complete(Result.success(StatusDetail(initial.copy(boostsCount = 5), listOf(testStatus("parent")), emptyList())))
+        runCurrent()
+        assertEquals(listOf(5L, 5L), timeline.uiState.value.statuses.map { it.boostsCount })
+        model.setReaction(initial, "👍")
+        runCurrent()
+        model.viewModelScope.cancel()
+        val updatedReactions = listOf(EmojiReaction("👍", 1, true, null, emptySet()))
+        reaction.complete(Result.success(initial.copy(reactions = updatedReactions)))
+        advanceUntilIdle()
+        val rows = timeline.uiState.value.statuses
+        assertEquals(listOf("boost-wrapper", initial.timelineId), rows.map { it.timelineId })
+        assertEquals(initial.author, rows.first().boostedBy)
+        assertEquals(listOf(updatedReactions, updatedReactions), rows.map { it.reactions })
+        assertEquals(listOf(5L, 5L), rows.map { it.boostsCount })
     }
 
     @Test fun allEntryPointsShowCachedConversationWhileFetchingAndKeepItOnFailure() = runTest(dispatcher) {

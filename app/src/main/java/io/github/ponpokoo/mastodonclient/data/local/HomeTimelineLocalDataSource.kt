@@ -6,6 +6,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
 import io.github.ponpokoo.mastodonclient.domain.session.applyHomeChange
+import io.github.ponpokoo.mastodonclient.domain.session.applyHomeStatusUpdate
 import io.github.ponpokoo.mastodonclient.domain.session.applyHomeWindowChange
 import io.github.ponpokoo.mastodonclient.domain.session.boundHomeWindow
 import io.github.ponpokoo.mastodonclient.domain.session.homeIndex
@@ -22,11 +23,15 @@ import kotlinx.serialization.json.Json
 interface HomeTimelineLocalDataSource {
     suspend fun protectViewport(session: AccountSession, anchorId: String) = Unit
     suspend fun readWindow(session: AccountSession): TimelinePage? = null
+    suspend fun readStatus(session: AccountSession, statusId: String): TimelineStatus? = null
     suspend fun writeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<BrowsingSession.Change>) = Unit
     suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) = Unit
     suspend fun readPage(session: AccountSession, maxId: String?, limit: Int, anchorId: String? = null): TimelinePage?
     suspend fun writePage(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<BrowsingSession.Change> = emptyList())
     suspend fun applyChange(session: AccountSession, change: BrowsingSession.Change)
+    suspend fun applyStatusUpdates(session: AccountSession, updates: List<BrowsingSession.Change.StatusUpdated>) {
+        updates.forEach { applyChange(session, it) }
+    }
     suspend fun deleteAccount(sessionId: String)
 }
 
@@ -54,6 +59,13 @@ class RoomHomeTimelineLocalDataSource(
 
     override suspend fun applyModeration(session: AccountSession, state: io.github.ponpokoo.mastodonclient.domain.model.AccountModerationState) =
         mutate(session) { previous -> moderation = state; previous }
+
+    override suspend fun readStatus(session: AccountSession, statusId: String): TimelineStatus? = withContext(Dispatchers.IO) {
+        if (!isAccountPresent(session)) return@withContext null
+        val rows = dao.readAll(session.sessionId, session.instanceUrl.trimEnd('/'))
+        rows.firstOrNull { it.id == statusId }?.let(::decode)?.takeIf { it.statusId == statusId }
+            ?: rows.asSequence().mapNotNull(::decode).firstOrNull { it.statusId == statusId }
+    }
 
     override suspend fun readWindow(session: AccountSession): TimelinePage? = withContext(Dispatchers.IO) {
         database.withTransaction {
@@ -120,9 +132,31 @@ class RoomHomeTimelineLocalDataSource(
             merged.lastOrNull()?.timelineId, if (hasTail) previous.endReached else page.endReached)
     }
 
-    override suspend fun applyChange(session: AccountSession, change: BrowsingSession.Change) = mutate(session) { previous ->
-        if (previous.homeIndex != null) previous.applyHomeWindowChange(change)
-        else previous.copy(statuses = previous.statuses.applyHomeChange(change, includeNew = true))
+    override suspend fun applyChange(session: AccountSession, change: BrowsingSession.Change) {
+        if (change is BrowsingSession.Change.StatusUpdated) {
+            applyStatusUpdates(session, listOf(change))
+        } else {
+            mutate(session) { previous ->
+                if (previous.homeIndex != null) previous.applyHomeWindowChange(change)
+                else previous.copy(statuses = previous.statuses.applyHomeChange(change, includeNew = true))
+            }
+        }
+    }
+
+    override suspend fun applyStatusUpdates(session: AccountSession, updates: List<BrowsingSession.Change.StatusUpdated>) = writes.withLock {
+        withContext(Dispatchers.IO) {
+            database.withTransaction {
+                if (!isAccountPresent(session)) return@withTransaction
+                val byStatus = updates.groupBy { it.status.statusId }
+                val changedRows = dao.readAll(session.sessionId, session.instanceUrl.trimEnd('/')).mapNotNull { row ->
+                    val status = decode(row) ?: return@mapNotNull null
+                    val changes = byStatus[status.statusId] ?: return@mapNotNull null
+                    val updated = changes.fold(status) { displayed, change -> displayed.applyHomeStatusUpdate(change) }
+                    if (updated == status) null else row.copy(payload = json.encodeToString(updated))
+                }
+                if (changedRows.isNotEmpty()) dao.insert(changedRows)
+            }
+        }
     }
 
     private suspend fun mutate(session: AccountSession, anchorId: String? = null, transform: (TimelinePage) -> TimelinePage) = writes.withLock {

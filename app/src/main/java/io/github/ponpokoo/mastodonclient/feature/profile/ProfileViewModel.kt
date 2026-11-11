@@ -12,7 +12,8 @@ import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.AccountAvatarRepository
 import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
+import io.github.ponpokoo.mastodonclient.domain.session.StatusActionField
+import io.github.ponpokoo.mastodonclient.domain.session.StatusUpdateKind
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -119,7 +120,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
             statusActionManager.updates.collect { update ->
                 val snapshot = currentSnapshot() ?: return@collect
                 val session = snapshot.account!!
-                if (update.sessionId == session.sessionId && update.instanceUrl == session.instanceUrl) {
+                if (update.session.hasSameCredentials(session)) {
                     _uiState.update { state -> state.copy(profile = state.profile?.let { profile ->
                         profile.copy(statuses = profile.statuses.map { it.withStatusActionUpdate(update) },
                             pinnedStatuses = profile.pinnedStatuses.map { it.withStatusActionUpdate(update) })
@@ -421,23 +422,26 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
             else -> null
         }
         _uiState.update { state -> state.copy(profile = state.profile?.let { profile ->
-            val updated = (change as? BrowsingSession.Change.StatusUpdated)?.status
+            val updated = change as? BrowsingSession.Change.StatusUpdated
+            val pin = updated?.takeIf {
+                it.field == StatusActionField.Pin || (it.field == null && it.kind == StatusUpdateKind.Confirmed)
+            }?.status
             profile.copy(
                 statuses = profile.statuses.filterNot { it.statusId == deleted }.map { status ->
-                    if (updated != null) status.withUpdatedActions(updated).copy(poll = updated.poll) else status
+                    if (updated != null) updated.applyTo(status) else status
                 },
                 pinnedStatuses = when {
-                    updated != null && updated.author.id == profile.author.id && updated.pinned ->
-                        (listOf(updated) + profile.pinnedStatuses.filterNot { it.statusId == updated.statusId })
+                    pin != null && pin.author.id == profile.author.id && pin.pinned ->
+                        (listOf(pin) + profile.pinnedStatuses.filterNot { it.statusId == pin.statusId })
                     else -> profile.pinnedStatuses.filterNot {
-                        it.statusId == deleted || (updated != null && it.statusId == updated.statusId && !updated.pinned)
-                    }.map { if (updated != null) it.withUpdatedActions(updated).copy(poll = updated.poll) else it }
+                        it.statusId == deleted || (pin != null && it.statusId == pin.statusId && !pin.pinned)
+                    }.map { if (updated != null) updated.applyTo(it) else it }
                 },
             )
         }).withTabs(state.profileTabs.mapValues { (_, tab) -> tab.copy(statuses = tab.statuses
             .filterNot { it.statusId == deleted }.map { status ->
-                val updated = (change as? BrowsingSession.Change.StatusUpdated)?.status
-                if (updated != null) status.withUpdatedActions(updated).copy(poll = updated.poll) else status
+                val updated = change as? BrowsingSession.Change.StatusUpdated
+                if (updated != null) updated.applyTo(status) else status
             }) }) }
     }
 
@@ -553,6 +557,6 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     private fun optimisticAction(status: TimelineStatus, begin: (AccountSession, TimelineStatus) -> PendingStatusAction?) {
         val snapshot = currentSnapshot() ?: return
         val pending = begin(snapshot.account!!, status) ?: return
-        requestScope.launch { statusActionManager.complete(pending).forSession(snapshot).onFailure(::showActionError) }
+        requestScope.launch { statusActionManager.complete(pending) { snapshot == currentSnapshot() }.forSession(snapshot).onFailure(::showActionError) }
     }
 }

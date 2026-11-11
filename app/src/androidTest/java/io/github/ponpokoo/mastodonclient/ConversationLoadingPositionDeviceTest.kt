@@ -231,8 +231,8 @@ class ConversationLoadingPositionDeviceTest {
         rule.onNodeWithTag("status_detail").assertDoesNotExist()
     }
 
-    @Test fun cachedPostIsHiddenUntilPositionedAndFirstVisibleFramesAreCentered() {
-        val response = show(true)
+    @Test fun firstVisibleFramesOfAnUncachedConversationAreCentered() {
+        val response = show(false)
         assertLoading()
         rule.mainClock.autoAdvance = false
         rule.runOnIdle { response.trySend(Result.success(StatusDetail(
@@ -322,11 +322,15 @@ class ConversationLoadingPositionDeviceTest {
         rule.onNodeWithText("Author new-reply").assertIsDisplayed()
     }
 
-    @Test fun cachedReplyWithNoRepliesWaitsForItsParentBeforeDisplaying() {
+    @Test fun cachedReplyDisplaysImmediatelyAndStaysInPlaceWhenItsParentArrives() {
         val response = show(cached = true, cachedStatus = selected.copy(inReplyToId = "before-7"))
-        assertLoading()
+        target().assertIsDisplayed()
+        rule.onNodeWithTag("status_detail_loading").assertDoesNotExist()
+        val before = targetTop()
         complete(response)
-        assertNearCenter()
+        assertEquals(before, targetTop(), 3f)
+        rule.onNodeWithTag("status_detail").performScrollToNode(hasText("Author before-7"))
+        rule.onNodeWithText("Author before-7").assertIsDisplayed()
     }
 
     @Test fun cachedConversationOpensCenteredDuringFetchAndRetainsPositionWhenPostsAreInsertedAbove() {
@@ -395,7 +399,7 @@ class ConversationLoadingPositionDeviceTest {
     }
 
     @Test fun lastPostIsConstrainedByEndOfConversation() {
-        val response = show(true)
+        val response = show(false)
         assertLoading()
         complete(response, replies = 0)
         val viewport = rule.onNodeWithTag("status_detail").fetchSemanticsNode().boundsInRoot
@@ -403,7 +407,7 @@ class ConversationLoadingPositionDeviceTest {
     }
 
     @Test fun draggingWhileLoadingDoesNotSuppressInitialCentering() {
-        val response = show(true)
+        val response = show(false)
         assertLoading()
         rule.onNodeWithTag("status_detail_loading").performTouchInput { swipeUp() }
         complete(response)
@@ -423,16 +427,19 @@ class ConversationLoadingPositionDeviceTest {
         assertEquals(before, after, 3f)
     }
 
-    @Test fun failedInitialLoadWithCacheOffersRetryWithoutShowingUnpositionedPost() {
-        assertFailureAndRetry(cached = true)
+    @Test fun failedRefreshKeepsCachedReplyVisibleAndAllowsAnotherRefresh() {
+        val response = show(cached = true)
+        val before = targetTop()
+        rule.runOnIdle { response.trySend(Result.failure(IllegalStateException("offline"))) }
+        rule.onNodeWithText("会話を更新できませんでした").assertIsDisplayed()
+        assertEquals(before, targetTop(), 3f)
+        rule.onNodeWithContentDescription("会話を更新").performClick()
+        complete(response)
+        assertEquals(before, targetTop(), 3f)
     }
 
     @Test fun failedInitialLoadWithoutCacheOffersRetry() {
-        assertFailureAndRetry(cached = false)
-    }
-
-    private fun assertFailureAndRetry(cached: Boolean) {
-        val response = show(cached)
+        val response = show(false)
         rule.runOnIdle { response.trySend(Result.failure(IllegalStateException("offline"))) }
         rule.onNodeWithText("offline").assertIsDisplayed()
         target().assertDoesNotExist()

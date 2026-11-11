@@ -57,7 +57,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,6 +77,8 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.LinkAnnotation
@@ -233,8 +237,9 @@ fun StatusDetailScreen(
                 else -> Box(Modifier.fillMaxSize().padding(padding)) {
                     LazyColumn(
                         state = conversationListState.listState,
+                        contentPadding = PaddingValues(bottom = conversationListState.bottomPadding),
                         userScrollEnabled = conversationListState.isPositioned,
-                        // Lay out the complete conversation before exposing its initial position.
+                        // Measure the initial rows before exposing the selected post.
                         modifier = Modifier.fillMaxSize().graphicsLayer {
                             alpha = if (conversationListState.isPositioned) 1f else 0f
                         }.then(if (conversationListState.isPositioned) Modifier else Modifier.clearAndSetSemantics {})
@@ -389,13 +394,40 @@ fun StatusDetailScreen(
 
 }
 
-/** Position once after the complete conversation arrives; preserve later browsing position. */
-internal data class ConversationListState(val listState: LazyListState, val isPositioned: Boolean)
+/** Position the selected post once and keep the visible offset when ancestors arrive. */
+internal data class ConversationListState(val listState: LazyListState, val isPositioned: Boolean, val bottomPadding: Dp)
 
 @Composable
 internal fun rememberConversationListState(statusId: String?, ancestorCount: Int): ConversationListState {
     val listState = rememberLazyListState()
     var positionedStatusId by rememberSaveable { mutableStateOf<String?>(null) }
+    var previousAncestorCount by remember(statusId) { mutableIntStateOf(ancestorCount) }
+    var bottomPaddingPx by rememberSaveable { mutableIntStateOf(0) }
+    var waitingForAncestors by remember { mutableStateOf(false) }
+    val preserveAnchor = statusId != null && positionedStatusId == statusId &&
+        previousAncestorCount == 0 && ancestorCount > 0
+    val layout = if (preserveAnchor) listState.layoutInfo else null
+    val anchor = layout?.visibleItemsInfo?.firstOrNull { it.key == "selected-$statusId" }
+    // Reserve enough trailing space to keep the anchor even if there are no replies.
+    val provisionalPadding = anchor?.let { (requireNotNull(layout).viewportEndOffset - it.offset - it.size).coerceAtLeast(0) }
+    SideEffect {
+        if (anchor != null) {
+            bottomPaddingPx = provisionalPadding ?: 0
+            waitingForAncestors = bottomPaddingPx > 0
+            listState.requestScrollToItem(ancestorCount + 1, -anchor.offset)
+        }
+        previousAncestorCount = ancestorCount
+    }
+    LaunchedEffect(waitingForAncestors, ancestorCount) {
+        if (!waitingForAncestors) return@LaunchedEffect
+        val positioned = snapshotFlow { listState.layoutInfo }
+            .first { info -> info.visibleItemsInfo.any { it.key == "selected-$statusId" && it.index == ancestorCount + 1 } }
+        val last = positioned.visibleItemsInfo.last()
+        bottomPaddingPx = if (last.index == positioned.totalItemsCount - 1) {
+            (positioned.viewportEndOffset - last.offset - last.size).coerceAtLeast(0)
+        } else 0
+        waitingForAncestors = false
+    }
     LaunchedEffect(listState, statusId) {
         listState.interactionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Start) positionedStatusId = statusId
@@ -417,7 +449,8 @@ internal fun rememberConversationListState(statusId: String?, ancestorCount: Int
         listState.scrollBy((item.offset - desiredTop).toFloat())
         positionedStatusId = statusId
     }
-    return ConversationListState(listState, statusId != null && positionedStatusId == statusId)
+    val bottomPadding = with(LocalDensity.current) { (provisionalPadding ?: bottomPaddingPx).toDp() }
+    return ConversationListState(listState, statusId != null && positionedStatusId == statusId, bottomPadding)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

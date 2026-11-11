@@ -186,6 +186,7 @@ fun HomeTimelineScreen(
     onOpenTag: (String, Boolean) -> Unit = { _, _ -> },
     onOpenReactions: () -> Unit = {},
     tabBackEnabled: Boolean = true,
+    onTimelineStatusClick: ((TimelineStatus) -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val mainState by mainViewModel.uiState.collectAsStateWithLifecycle()
@@ -647,6 +648,7 @@ fun HomeTimelineScreen(
                     onLoadMore = viewModel::loadNextPage,
                     onLoadGap = viewModel::loadGap,
                     onStatusClick = onStatusClick,
+                    onTimelineStatusClick = onTimelineStatusClick,
                     onAccountClick = onAccountClick,
                     onMediaClick = onMediaClick,
                     onOpenLink = onOpenLink,
@@ -1073,6 +1075,7 @@ internal fun TimelineContent(
     drawBehindBottomBar: Boolean = false,
     topContentPadding: Dp = 0.dp,
     headerCollapseOffset: () -> Int = { 0 },
+    onTimelineStatusClick: ((TimelineStatus) -> Unit)? = null,
 ) {
     val viewportPadding = if (drawBehindBottomBar) padding.withoutBottomPadding() else padding
     val contentDensity = LocalDensity.current
@@ -1147,7 +1150,10 @@ internal fun TimelineContent(
                     val status = (row as TimelineRow.Post).status
                     StatusCard(
                         status = status,
-                        onStatusClick = onStatusClick,
+                        onStatusClick = { id ->
+                            if (id == status.statusId && onTimelineStatusClick != null) onTimelineStatusClick(status)
+                            else onStatusClick(id)
+                        },
                         onAuthorClick = onAccountClick,
                         onMediaClick = onMediaClick,
                         onOpenLink = onOpenLink,

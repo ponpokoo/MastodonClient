@@ -6,7 +6,6 @@ import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.SystemNotificationRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
@@ -477,7 +476,7 @@ class NotificationsViewModel(
                     val updated = when {
                         status == null -> null
                         status.statusId == deleted -> null
-                        change is BrowsingSession.Change.StatusUpdated -> status.withUpdatedActions(change.status)
+                        change is BrowsingSession.Change.StatusUpdated -> change.applyTo(status)
                         else -> status
                     }
                     if (updated == status) notification else notification.copy(status = updated)

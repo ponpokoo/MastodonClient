@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.tag
 
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
@@ -8,7 +9,6 @@ import androidx.lifecycle.ViewModelProvider
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.*
 import io.github.ponpokoo.mastodonclient.feature.search.exploreMessage
 import kotlinx.coroutines.Job
@@ -39,7 +39,7 @@ class HashtagTimelineViewModel(private val hashtag: String, private val timeline
         viewModelScope.launch {
             statusActionManager.updates.collect { update ->
                 val current = currentSnapshot()?.account ?: return@collect
-                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl) mutableState.update {
+                if (update.session.hasSameCredentials(current)) mutableState.update {
                     it.copy(statuses = it.statuses.map { status -> status.withStatusActionUpdate(update) })
                 }
             }
@@ -126,7 +126,7 @@ class HashtagTimelineViewModel(private val hashtag: String, private val timeline
             else -> null
         }
         mutableState.update { it.copy(statuses = it.statuses.filterNot { status -> status.statusId == deleted }.map { status ->
-            if (change is BrowsingSession.Change.StatusUpdated) status.withUpdatedActions(change.status) else status
+            if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(status) else status
         }) }
     }
 
@@ -148,7 +148,7 @@ class HashtagTimelineViewModel(private val hashtag: String, private val timeline
         val snapshot = currentSnapshot() ?: return
         val pending = begin(snapshot.account!!, status) ?: return
         requestScope.launch {
-            statusActionManager.complete(pending).forSession(snapshot).onFailure { mutableState.update {
+            statusActionManager.complete(pending) { snapshot == currentSnapshot() }.forSession(snapshot).onFailure { mutableState.update {
                 it.copy(actionMessage = "投稿を更新できませんでした")
             } }
         }

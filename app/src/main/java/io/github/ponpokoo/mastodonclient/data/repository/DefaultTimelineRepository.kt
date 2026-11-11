@@ -62,6 +62,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change.StatusUpdated
+import io.github.ponpokoo.mastodonclient.domain.session.StatusActionField
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -167,35 +171,106 @@ class DefaultTimelineRepository(
     }
     override suspend fun getCachedHomeWindow(session: AccountSession): Result<TimelinePage?> = runCatching {
         homeTimelineLocalDataSource?.readWindow(session)?.let { page ->
-            page.copy(statuses = page.statuses.filterNot { moderation.value.hides(session, it) })
+            restoredHomePage(session, page)
         }
     }
     override suspend fun saveHomeWindow(session: AccountSession, page: TimelinePage, anchorId: String?, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change>): Result<Unit> = runCatching {
-        homeTimelineLocalDataSource?.writeWindow(session, page, anchorId, changes)
+        statusWrites.withLock {
+            homeTimelineLocalDataSource?.writeWindow(session, page.withRecentActions(session), anchorId, changes)
+        }
         Unit
     }
     override suspend fun getCachedHomeTimeline(session: AccountSession, maxId: String?, limit: Int, anchorId: String?): Result<TimelinePage?> = runCatching {
         homeTimelineLocalDataSource?.readPage(session, maxId, limit, anchorId)
-            ?.let { it.copy(statuses = it.statuses.filterNot { status -> moderation.value.hides(session, status) }) }
-            ?.also { page -> page.statuses.forEach { cacheStatus(session, it) } }
+            ?.let { restoredHomePage(session, it) }
     }
     override suspend fun cacheHomeTimeline(session: AccountSession, maxId: String?, page: TimelinePage, changes: List<io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change>): Result<Unit> = runCatching {
-        homeTimelineLocalDataSource?.writePage(session, maxId, page, changes)
+        statusWrites.withLock {
+            homeTimelineLocalDataSource?.writePage(session, maxId, page.withRecentActions(session), changes)
+        }
         Unit
     }
     override suspend fun updateHomeTimelineCache(session: AccountSession, change: io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession.Change): Result<Unit> = runCatching {
         homeTimelineLocalDataSource?.applyChange(session, change)
         Unit
     }
-    private data class StatusCacheKey(val instanceUrl: String, val sessionId: String, val statusId: String)
+    private data class StatusCacheKey(
+        val instanceUrl: String,
+        val sessionId: String,
+        val accountId: String,
+        val accessToken: String,
+        val scopes: String,
+        val statusId: String,
+    )
+
     private fun cacheKey(session: AccountSession, statusId: String) =
-        StatusCacheKey(session.instanceUrl.trimEnd('/'), session.sessionId, statusId)
+        StatusCacheKey(session.instanceUrl.trimEnd('/'), session.sessionId, session.accountId, session.accessToken, session.scopes, statusId)
 
     private val statusCache = Collections.synchronizedMap(
         object : LinkedHashMap<StatusCacheKey, TimelineStatus>(128, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, TimelineStatus>?) = size > 500
         },
     )
+
+    // Order network reads by request start and mutations by completion. Keep per-field updates
+    // so an older response can still supply fields that the mutation did not change.
+    private data class VersionedStatusUpdate(val version: Long, val change: StatusUpdated)
+    private val recentStatusUpdates = object : LinkedHashMap<StatusCacheKey, List<VersionedStatusUpdate>>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatusCacheKey, List<VersionedStatusUpdate>>?) = size > 500
+    }
+    private val statusVersion = java.util.concurrent.atomic.AtomicLong()
+    private val statusWrites = Mutex()
+
+    private fun applyRecentActions(key: StatusCacheKey, status: TimelineStatus, afterVersion: Long = 0): TimelineStatus =
+        recentStatusUpdates[key].orEmpty().fold(status) { displayed, update ->
+            if (update.version > afterVersion) update.change.applyTo(displayed) else displayed
+        }
+
+    private fun recordStatusUpdate(key: StatusCacheKey, change: StatusUpdated, version: Long) {
+        val updates = recentStatusUpdates[key].orEmpty()
+        if (updates.any { it.version > version && (it.change.field == null || it.change.field == change.field) }) return
+        recentStatusUpdates[key] = (updates.filter {
+            it.version > version || (change.field != null && it.change.field != change.field)
+        } + VersionedStatusUpdate(version, change)).sortedBy { it.version }
+    }
+
+    private fun invalidateCachedStatus(session: AccountSession, statusId: String) = synchronized(statusCache) {
+        val key = cacheKey(session, statusId)
+        recentStatusUpdates.remove(key)
+        statusCache.remove(key)
+    }
+
+    private fun TimelinePage.withRecentActions(session: AccountSession): TimelinePage = synchronized(statusCache) {
+        copy(statuses = statuses.map { applyRecentActions(cacheKey(session, it.statusId), it) })
+    }
+
+    private fun restoredHomePage(session: AccountSession, page: TimelinePage): TimelinePage = synchronized(statusCache) {
+        page.withRecentActions(session).let { restored ->
+            restored.copy(statuses = restored.statuses.filterNot { moderation.value.hides(session, it) }.onEach {
+                statusCache.putIfAbsent(cacheKey(session, it.statusId), it)
+            })
+        }
+    }
+
+    override suspend fun getCachedHomeStatus(session: AccountSession, statusId: String): TimelineStatus? {
+        val restored = runCatching { homeTimelineLocalDataSource?.readStatus(session, statusId) }.getOrNull()
+        currentCoroutineContext().ensureActive()
+        return synchronized(statusCache) {
+            getCachedStatus(session, statusId) ?: restored?.takeUnless { moderation.value.hides(session, it) }
+                ?.let { cacheStatus(session, it) }
+        }
+    }
+
+    private suspend fun storeStatusUpdates(session: AccountSession, updates: List<StatusUpdated>) {
+        // A local cache error must not turn a successful server response into a failed operation.
+        try {
+            homeTimelineLocalDataSource?.applyStatusUpdates(session, updates)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // The next Home cache write will include the updated values from memory.
+        }
+    }
 
     // Keep only membership/order here; post updates and invalidation use the existing status cache.
     private class CachedConversation(val session: AccountSession, val statusIds: List<String>)
@@ -230,9 +305,14 @@ class DefaultTimelineRepository(
     override fun getCachedStatus(session: AccountSession, statusId: String): TimelineStatus? =
         statusCache[cacheKey(session, statusId)]?.takeUnless { moderation.value.hides(session, it) }
 
-    private fun cacheStatus(session: AccountSession, status: TimelineStatus): TimelineStatus = status.also {
-        if (!moderation.value.hides(session, it)) statusCache[cacheKey(session, it.statusId)] = it
-    }
+    private fun cacheStatus(session: AccountSession, status: TimelineStatus, readVersion: Long = 0): TimelineStatus =
+        synchronized(statusCache) {
+            val key = cacheKey(session, status.statusId)
+            val merged = applyRecentActions(key, status, readVersion)
+            if (readVersion > 0 && key in recentStatusUpdates) recordStatusUpdate(key, StatusUpdated(status), readVersion)
+            if (!moderation.value.hides(session, merged)) statusCache[key] = merged
+            merged
+        }
 
     override suspend fun getAnnouncements(session: AccountSession): Result<List<ServerAnnouncement>> = runCatching {
         apiClientFactory.create(session.instanceUrl, session.accessToken)
@@ -271,7 +351,7 @@ class DefaultTimelineRepository(
         val pinned = pinnedRequest.await()
         val registered = accountDisplay?.commit(displayRequest, account.toDomain().copy(displayName = account.displayName))
         pinned.forEach { cacheStatus(session, it) }
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         account.toProfile(
             author = rememberModerationAuthor(session, account.toDomain().withAccountDisplay(registered)),
             statuses = statuses, pinnedStatuses = pinned,
@@ -327,7 +407,7 @@ class DefaultTimelineRepository(
             tagged = hashtag,
         )
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         TimelinePage(statuses, response.lastOrNull()?.id, response.size < 20)
     }
 
@@ -412,7 +492,7 @@ class DefaultTimelineRepository(
             endReached = nextMaxId == null || response.isEmpty()
         }
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         TimelinePage(statuses, nextMaxId, endReached)
     }
 
@@ -647,7 +727,7 @@ class DefaultTimelineRepository(
                             .takeUnless { moderation.value.hides(session, it.status) }
                     }.getOrNull()
                     "delete" -> TimelineStreamEvent.StatusDeleted(message.payload.trim('"')).also {
-                        statusCache.remove(cacheKey(session, it.statusId))
+                        invalidateCachedStatus(session, it.statusId)
                     }
                     "notification" -> runCatching {
                         TimelineStreamEvent.NotificationReceived(
@@ -668,14 +748,15 @@ class DefaultTimelineRepository(
         limit: Int,
     ): Result<TimelinePage> = requestResult {
         require(limit in 1..40) { "タイムラインの取得件数が範囲外です" }
+        val readVersion = statusVersion.incrementAndGet()
         val response = apiClientFactory
             .create(session.instanceUrl, session.accessToken)
             .getHomeTimeline(maxId = maxId, limit = limit)
         if (!response.isSuccessful) throw retrofit2.HttpException(response)
         if (response.code() == 206) throw java.io.IOException("ホームを準備中です。しばらくしてから再試行してください。")
         val body = response.body() ?: throw java.io.IOException("ホームを取得できませんでした。")
-        val statuses = body.map(StatusDto::toDomain)
-        statuses.forEach { cacheStatus(session, it) }
+        currentCoroutineContext().ensureActive()
+        val statuses = body.map { cacheStatus(session, it.toDomain(), readVersion) }
         TimelinePage(
             statuses = statuses.filterNot { moderation.value.hides(session, it) },
             nextMaxId = body.lastOrNull()?.id,
@@ -702,7 +783,7 @@ class DefaultTimelineRepository(
                 limit = limit,
             )
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
@@ -711,8 +792,10 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun getTimelineStatus(session: AccountSession, timelineId: String): Result<TimelineStatus> = requestResult {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).getStatus(timelineId).toDomain()
-            .also { cacheStatus(session, it) }
+        val readVersion = statusVersion.incrementAndGet()
+        val status = apiClientFactory.create(session.instanceUrl, session.accessToken).getStatus(timelineId).toDomain()
+        currentCoroutineContext().ensureActive()
+        cacheStatus(session, status, readVersion)
     }
 
     override suspend fun getHashtagTimeline(
@@ -726,7 +809,7 @@ class DefaultTimelineRepository(
         val response = apiClientFactory.create(session.instanceUrl, session.accessToken)
             .getHashtagTimeline(hashtag = hashtag, maxId = maxId, limit = limit)
         val statuses = response.map(StatusDto::toDomain)
-        statuses.forEach { statusCache[cacheKey(session, it.statusId)] = it }
+        statuses.forEach { cacheStatus(session, it) }
         TimelinePage(
             statuses = statuses,
             nextMaxId = response.lastOrNull()?.id,
@@ -739,19 +822,25 @@ class DefaultTimelineRepository(
         statusId: String,
     ): Result<StatusDetail> = requestResult { coroutineScope {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
+        val readVersion = statusVersion.incrementAndGet()
         val statusRequest = async { api.getStatus(statusId) }
         val contextRequest = async { api.getStatusContext(statusId) }
         val status = statusRequest.await()
         val context = contextRequest.await()
-        val mappedStatus = status.toDomain()
-        statusCache[cacheKey(session, mappedStatus.statusId)] = mappedStatus
-        StatusDetail(
-            status = mappedStatus,
-            ancestors = context.ancestors.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
-            descendants = context.descendants.map(StatusDto::toDomain).onEach { cacheStatus(session, it) },
-        ).also { detail ->
-            conversationCache[cacheKey(session, statusId)] = CachedConversation(session,
-                (detail.ancestors + detail.status + detail.descendants).map { it.statusId }.distinct())
+        statusWrites.withLock {
+            currentCoroutineContext().ensureActive()
+            val detail = synchronized(statusCache) {
+                fun remember(post: StatusDto): TimelineStatus {
+                    val mapped = post.toDomain()
+                    recordStatusUpdate(cacheKey(session, mapped.statusId), StatusUpdated(mapped), readVersion)
+                    return cacheStatus(session, mapped)
+                }
+                StatusDetail(remember(status), context.ancestors.map(::remember), context.descendants.map(::remember))
+            }
+            val posts = (listOf(detail.status) + detail.ancestors + detail.descendants).distinctBy { it.statusId }
+            conversationCache[cacheKey(session, statusId)] = CachedConversation(session, posts.map { it.statusId })
+            storeStatusUpdates(session, posts.map { StatusUpdated(it) })
+            detail
         }
     } }
 
@@ -776,13 +865,13 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun setFavourite(session: AccountSession, statusId: String, favourite: Boolean) =
-        updateStatus(session) { if (favourite) favourite(statusId) else unfavourite(statusId) }
+        requestStatusUpdate(session, StatusActionField.Favourite) { if (favourite) favourite(statusId) else unfavourite(statusId) }
 
     override suspend fun setReblogged(session: AccountSession, statusId: String, reblogged: Boolean) =
-        updateStatus(session) { if (reblogged) reblog(statusId) else unreblog(statusId) }
+        requestStatusUpdate(session, StatusActionField.Reblog) { if (reblogged) reblog(statusId) else unreblog(statusId) }
 
     override suspend fun setBookmarked(session: AccountSession, statusId: String, bookmarked: Boolean) =
-        updateStatus(session) { if (bookmarked) bookmark(statusId) else unbookmark(statusId) }
+        requestStatusUpdate(session, StatusActionField.Bookmark) { if (bookmarked) bookmark(statusId) else unbookmark(statusId) }
 
     override suspend fun votePoll(
         session: AccountSession,
@@ -794,17 +883,16 @@ class DefaultTimelineRepository(
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val poll = api.votePoll(pollId, choices.sorted())
         val cached = statusCache[cacheKey(session, statusId)] ?: api.getStatus(statusId).toDomain()
-        cached.copy(poll = poll.toDomain()).also { updated ->
-            statusCache[cacheKey(session, statusId)] = updated
-        }
+        currentCoroutineContext().ensureActive()
+        cacheStatusAction(session, StatusUpdated(cached.copy(poll = poll.toDomain()), StatusActionField.Poll))
     }
 
     override suspend fun setPinned(session: AccountSession, statusId: String, pinned: Boolean) =
-        updateStatus(session) { if (pinned) pin(statusId) else unpin(statusId) }
+        requestStatusUpdate(session, StatusActionField.Pin) { if (pinned) pin(statusId) else unpin(statusId) }
 
     override suspend fun deleteStatus(session: AccountSession, statusId: String) = requestResult {
         apiClientFactory.create(session.instanceUrl, session.accessToken).deleteStatus(statusId)
-        statusCache.remove(cacheKey(session, statusId))
+        invalidateCachedStatus(session, statusId)
         Unit
     }
 
@@ -822,7 +910,7 @@ class DefaultTimelineRepository(
     }
 
     override suspend fun updateStatus(session: AccountSession, status: EditableStatus) =
-        updateStatus(session) {
+        requestStatusUpdate(session) {
             updateStatus(
                 id = status.id,
                 status = status.text,
@@ -837,13 +925,13 @@ class DefaultTimelineRepository(
         text: String,
         replyToId: String?,
         idempotencyKey: String,
-    ) = updateStatus(session) { createStatus(idempotencyKey, text, replyToId) }
+    ) = requestStatusUpdate(session) { createStatus(idempotencyKey, text, replyToId) }
 
     override suspend fun createStatus(
         session: AccountSession,
         request: CreateStatusRequest,
         idempotencyKey: String,
-    ) = updateStatus(session) {
+    ) = requestStatusUpdate(session) {
         createStatus(
             idempotencyKey = idempotencyKey,
             status = request.text,
@@ -959,7 +1047,7 @@ class DefaultTimelineRepository(
         if (!capabilities.supportsReactionActions) {
             return Result.failure(UnsupportedOperationException("このサーバーのリアクション操作には対応していません"))
         }
-        val result = updateStatus(session) {
+        val result = requestStatusUpdate(session, StatusActionField.Reaction) {
             if (emoji == null) removeFedibirdReaction(statusId)
             else addFedibirdReaction(statusId, emoji)
         }
@@ -970,12 +1058,26 @@ class DefaultTimelineRepository(
         return result
     }
 
-    private suspend fun updateStatus(
+    private suspend fun requestStatusUpdate(
         session: AccountSession,
+        field: StatusActionField? = null,
         request: suspend io.github.ponpokoo.mastodonclient.data.remote.MastodonApi.() -> StatusDto,
     ) = requestResult {
-        apiClientFactory.create(session.instanceUrl, session.accessToken).request().toDomain()
-            .also { statusCache[cacheKey(session, it.statusId)] = it }
+        val status = apiClientFactory.create(session.instanceUrl, session.accessToken).request().toDomain()
+        statusWrites.withLock {
+            currentCoroutineContext().ensureActive()
+            val change = StatusUpdated(status, field)
+            val updated = if (field != null) cacheStatusAction(session, change) else cacheStatus(session, status)
+            if (field == StatusActionField.Favourite || field == StatusActionField.Reblog || field == StatusActionField.Reaction) {
+                storeStatusUpdates(session, listOf(change))
+            }
+            updated
+        }
+    }
+
+    private fun cacheStatusAction(session: AccountSession, change: StatusUpdated): TimelineStatus = synchronized(statusCache) {
+        recordStatusUpdate(cacheKey(session, change.status.statusId), change, statusVersion.incrementAndGet())
+        cacheStatus(session, change.status)
     }
 
     private suspend fun loadAccounts(

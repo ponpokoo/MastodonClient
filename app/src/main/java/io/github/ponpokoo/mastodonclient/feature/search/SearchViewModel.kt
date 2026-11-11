@@ -13,7 +13,6 @@ import io.github.ponpokoo.mastodonclient.domain.model.SearchTag
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStreamEvent
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
-import io.github.ponpokoo.mastodonclient.domain.session.withUpdatedActions
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -279,12 +278,12 @@ class SearchViewModel(private val repository: TimelineRepository, browsing: Brow
         }
         mutableState.update { state -> state.copy(tabs = state.tabs.mapValues { (_, tab) ->
             tab.copy(results = tab.results?.let { results -> results.copy(statuses = results.statuses.filterNot { it.statusId == deleted }.map { status ->
-                if (change is BrowsingSession.Change.StatusUpdated) status.withUpdatedActions(change.status) else status
+                if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(status) else status
             }) })
         }) }
         mutableExplore.update { state -> state.copy(tabs = state.tabs.mapValues { (_, tab) -> tab.copy(
             page = tab.page?.let { page -> page.copy(statuses = page.statuses.filterNot { it.statusId == deleted }.map {
-                if (change is BrowsingSession.Change.StatusUpdated) it.withUpdatedActions(change.status) else it
+                if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(it) else it
             }) },
         ) }) }
     }

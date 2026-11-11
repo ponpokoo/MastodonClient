@@ -13,11 +13,13 @@ import io.github.ponpokoo.mastodonclient.domain.model.StatusDetail
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.session.BrowsingSession
+import io.github.ponpokoo.mastodonclient.domain.session.StatusUpdateKind
 import io.github.ponpokoo.mastodonclient.domain.repository.AuthRepository
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
 import io.github.ponpokoo.mastodonclient.feature.common.PendingStatusAction
 import io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager
-import io.github.ponpokoo.mastodonclient.feature.common.withStatusActionUpdate
+import io.github.ponpokoo.mastodonclient.feature.common.StatusActionsViewModel
+import io.github.ponpokoo.mastodonclient.feature.common.withDisplayOverlay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -47,6 +49,8 @@ data class StatusDetailUiState(
     val sessionKey: String? = null,
 )
 
+data class StatusDetailSeed(val snapshot: BrowsingSession.Snapshot, val status: TimelineStatus)
+
 class StatusDetailViewModel(
     private val statusId: String,
     private val timelineRepository: TimelineRepository,
@@ -54,15 +58,34 @@ class StatusDetailViewModel(
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
     private val browsing: BrowsingSession? = null,
     private val conversationSourceId: String? = null,
+    private val seed: StatusDetailSeed? = null,
+    private val actionOwner: StatusActionsViewModel? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(StatusDetailUiState())
-    val uiState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
+    private var session: AccountSession? = null
+    private val moderatedState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
         state.withModeration(moderation, account)
     }
-    private var session: AccountSession? = null
+    val uiState = if (browsing != null && actionOwner != null) {
+        moderatedState.withDisplayOverlay(viewModelScope, browsing.optimisticActions, ::displayOptimisticActions)
+    } else {
+        moderatedState.withDisplayOverlay(viewModelScope, statusActionManager.optimisticActions) { state, updates ->
+            val active = updates.filter { it.session.hasSameCredentials(session) }
+                .associate { it.change.status.statusId to it.change }
+            displayOptimisticActions(state, active)
+        }
+    }
+
+    private fun displayOptimisticActions(
+        state: StatusDetailUiState,
+        actions: Map<String, BrowsingSession.Change.StatusUpdated>,
+    ): StatusDetailUiState = if (actions.isEmpty()) state else state.copy(detail = state.detail?.mapStatuses {
+        actions[it.statusId]?.applyTo(it) ?: it
+    })
     private val actionJob = SupervisorJob(viewModelScope.coroutineContext[Job])
     private val actionScope = CoroutineScope(viewModelScope.coroutineContext + actionJob)
     private var loadJob: Job? = null
+    private var updatesDuringLoad: MutableList<BrowsingSession.Change.StatusUpdated>? = null
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
         session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
@@ -72,11 +95,21 @@ class StatusDetailViewModel(
     init {
         browsing?.let { browsing ->
             viewModelScope.launch {
-                browsing.snapshot.drop(1).collect {
+                var previous = browsing.snapshot.value
+                browsing.snapshot.drop(1).collect { next ->
+                    val firstActivation = previous.generation == 0L
+                    previous = next
                     actionJob.cancelChildren()
                     session = null
                     _uiState.value = StatusDetailUiState()
-                    load()
+                    load(showCachedDetail = firstActivation)
+                }
+            }
+            viewModelScope.launch {
+                browsing.events.collect { event ->
+                    val change = event.change as? BrowsingSession.Change.StatusUpdated ?: return@collect
+                    if (event.snapshot == browsing.snapshot.value && change.field == null &&
+                        session?.hasSameCredentials(event.snapshot.account) == true) applyStatusChange(change)
                 }
             }
         }
@@ -88,13 +121,11 @@ class StatusDetailViewModel(
             statusActionManager.updates.collect { update ->
                 val current = session ?: return@collect
                 val snapshot = browsing?.snapshot?.value
-                if (update.sessionId == current.sessionId && update.instanceUrl == current.instanceUrl &&
+                if (update.session.hasSameCredentials(current) &&
                     current.hasSameCredentials(authRepository.restoreSession()) &&
                     snapshot == browsing?.snapshot?.value &&
                     (browsing == null || current.hasSameCredentials(browsing.snapshot.value.account))) {
-                    _uiState.update { state -> state.copy(
-                        detail = state.detail?.mapStatuses { it.withStatusActionUpdate(update) },
-                    ) }
+                    if (update.change.kind == StatusUpdateKind.Stored) applyStatusChange(update.change)
                 }
             }
         }
@@ -118,9 +149,9 @@ class StatusDetailViewModel(
         status, update = { displayed, updated -> displayed.copy(bookmarked = updated.bookmarked) },
     ) { current, target -> timelineRepository.setBookmarked(current, target.statusId, !target.bookmarked) }
 
-    fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus(
-        status, update = { displayed, updated -> displayed.copy(reactions = updated.reactions) },
-    ) { current, target -> timelineRepository.setFedibirdReaction(current, target.statusId, emoji) }
+    fun setReaction(status: TimelineStatus, emoji: String?) = runOptimisticAction(status) { current, target ->
+        statusActionManager.beginReaction(current, target, emoji)
+    }
 
     fun votePoll(status: TimelineStatus, choices: Set<Int>) {
         val current = session ?: return
@@ -222,10 +253,21 @@ class StatusDetailViewModel(
 
     private fun load(showCachedDetail: Boolean = false): Job {
         loadJob?.cancel()
-        return actionScope.launch { loadConversation(showCachedDetail) }.also { loadJob = it }
+        return actionScope.launch {
+            val updates = mutableListOf<BrowsingSession.Change.StatusUpdated>()
+            updatesDuringLoad = updates
+            try {
+                loadConversation(showCachedDetail, updates)
+            } finally {
+                if (updatesDuringLoad === updates) updatesDuringLoad = null
+            }
+        }.also { loadJob = it }
     }
 
-    private suspend fun loadConversation(showCachedDetail: Boolean) {
+    private suspend fun loadConversation(
+        showCachedDetail: Boolean,
+        updates: MutableList<BrowsingSession.Change.StatusUpdated>,
+    ) {
         val snapshot = browsing?.snapshot?.value
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         val current = authRepository.restoreSession()
@@ -239,17 +281,36 @@ class StatusDetailViewModel(
         _uiState.update { it.copy(currentAccountId = current.accountId,
             sessionKey = "${current.sessionId}|${current.instanceUrl}|${snapshot?.generation}") }
         if (showCachedDetail) {
-            val cached = timelineRepository.getCachedConversation(current, conversationSourceId ?: statusId, statusId)
-                ?: timelineRepository.getCachedStatus(current, statusId)
-                    ?.takeIf { it.inReplyToId == null && it.repliesCount == 0L }
-                    ?.let { StatusDetail(it, emptyList(), emptyList()) }
-            if (!isCurrentAction(current, snapshot)) return
-            if (cached != null) _uiState.update { it.copy(detail = cached) }
+            val tapped = seed?.takeIf { it.snapshot == snapshot && it.status.statusId == statusId }?.status
+            val conversation = timelineRepository.getCachedConversation(current, conversationSourceId ?: statusId, statusId)
+            val cachedStatus = tapped ?: conversation?.status ?: timelineRepository.getCachedStatus(current, statusId)
+            val initial = cachedStatus ?: timelineRepository.getCachedHomeStatus(current, statusId)
+            if (cachedStatus == null && !isCurrentAction(current, snapshot)) return
+            if (initial != null) {
+                val selected = initial.copy(timelineId = statusId, boostedBy = null)
+                val cached = conversation?.copy(status = selected) ?: StatusDetail(selected, emptyList(), emptyList())
+                _uiState.update { state ->
+                    state.copy(detail = cached.mapStatuses { status ->
+                        updates.fold(status) { post, change -> change.applyTo(post) }
+                    })
+                }
+            }
         }
         _uiState.update { it.copy(showInitialLoadingIndicator = it.detail == null) }
+        updates.clear()
         val result = timelineRepository.getStatusDetail(current, statusId)
         if (!isCurrentAction(current, snapshot)) return
-        result.onSuccess { detail -> _uiState.update { it.copy(detail = detail, isLoading = false) } }
+        result.onSuccess { detail ->
+            val confirmed = detail.mapStatuses { status -> updates.fold(status) { post, change -> change.applyTo(post) } }
+            _uiState.update { state ->
+                state.copy(detail = confirmed, isLoading = false)
+            }
+            if (snapshot != null) {
+                (listOf(confirmed.status) + confirmed.ancestors + confirmed.descendants).distinctBy { it.statusId }.forEach { status ->
+                    browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(status, kind = StatusUpdateKind.Stored))
+                }
+            }
+        }
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 _uiState.update {
@@ -260,6 +321,13 @@ class StatusDetailViewModel(
                     )
                 }
             }
+    }
+
+    private fun applyStatusChange(change: BrowsingSession.Change.StatusUpdated) {
+        if (change.kind == StatusUpdateKind.Stored || change.kind == StatusUpdateKind.Confirmed) {
+            updatesDuringLoad?.add(change)
+        }
+        _uiState.update { state -> state.copy(detail = state.detail?.mapStatuses(change::applyTo)) }
     }
 
     private fun findStatus(id: String): TimelineStatus? {
@@ -305,16 +373,18 @@ class StatusDetailViewModel(
     ) {
         val current = session ?: return
         val snapshot = browsing?.snapshot?.value
-        actionScope.launch {
-            if (!isCurrentAction(current, snapshot)) return@launch
-            val target = findStatus(status.statusId) ?: return@launch
-            val pending = begin(current, target) ?: return@launch
+        val block: suspend CoroutineScope.() -> Unit = action@{
+            if (!isCurrentAction(current, snapshot)) return@action
+            val target = findStatus(status.statusId) ?: return@action
+            val pending = begin(current, target) ?: return@action
             val result = statusActionManager.complete(pending) {
                 snapshot == browsing?.snapshot?.value
             }
-            if (!isCurrentAction(current, snapshot)) return@launch
+            if (!isCurrentAction(current, snapshot)) return@action
             result.onFailure { showActionError(it, "投稿を更新できませんでした") }
         }
+        if (actionOwner != null && snapshot != null) actionOwner.launchStatusAction(snapshot, block)
+        else actionScope.launch(block = block)
     }
 
     class Factory(
@@ -324,10 +394,12 @@ class StatusDetailViewModel(
         private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
         private val browsing: BrowsingSession? = null,
         private val conversationSourceId: String? = null,
+        private val seed: StatusDetailSeed? = null,
+        private val actionOwner: StatusActionsViewModel? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager, browsing, conversationSourceId) as T
+            StatusDetailViewModel(statusId, timelineRepository, authRepository, statusActionManager, browsing, conversationSourceId, seed, actionOwner) as T
     }
 }
 

@@ -32,3 +32,19 @@ internal fun <T> MutableStateFlow<T>.moderated(
         override val replayCache: List<T> get() = listOf(value)
     }
 }
+
+/** Apply temporary display state without making it part of the saved model. */
+@OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+internal fun <T, O> StateFlow<T>.withDisplayOverlay(
+    scope: CoroutineScope,
+    overlay: StateFlow<O>,
+    display: (T, O) -> T,
+): StateFlow<T> {
+    val source = this
+    val rendered = combine(source, overlay, display)
+        .stateIn(scope, SharingStarted.Eagerly, display(source.value, overlay.value))
+    return object : StateFlow<T> by rendered {
+        override val value: T get() = display(source.value, overlay.value)
+        override val replayCache: List<T> get() = listOf(value)
+    }
+}

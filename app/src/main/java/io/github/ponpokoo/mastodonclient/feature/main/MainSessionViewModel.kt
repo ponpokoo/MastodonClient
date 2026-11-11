@@ -44,6 +44,7 @@ class MainSessionViewModel(
     private val pushSync: io.github.ponpokoo.mastodonclient.domain.repository.PushSyncRepository? = null,
 ) : ViewModel() {
     val browsing = BrowsingSession()
+    val statusActionManager = io.github.ponpokoo.mastodonclient.feature.common.StatusActionManager(timelineRepository)
     private val mutableState = MutableStateFlow(MainSessionUiState(preferencesLoaded = preferencesStore == null))
     val uiState = mutableState.asStateFlow()
     private var restoreJob: Job? = null

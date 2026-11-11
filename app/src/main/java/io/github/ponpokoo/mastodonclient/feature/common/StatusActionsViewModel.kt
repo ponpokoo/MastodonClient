@@ -1,6 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.common
 
 import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
+import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
+import kotlinx.coroutines.CoroutineScope
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -38,13 +40,17 @@ class StatusActionsViewModel(
             statusActionManager.updates.collect { update ->
                 val snapshot = currentSnapshot() ?: return@collect
                 val account = snapshot.account ?: return@collect
-                if (update.sessionId == account.sessionId && update.instanceUrl == account.instanceUrl) {
-                    browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(update.status))
+                if (update.session.hasSameCredentials(account)) {
+                    browsing.publish(snapshot, update.change)
                 }
             }
         }
     }
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) { moderationMenu.reset(); _uiState.value = StatusActionsUiState() }
+
+    internal fun launchStatusAction(snapshot: BrowsingSession.Snapshot, block: suspend CoroutineScope.() -> Unit) {
+        if (snapshot == currentSnapshot()) requestScope.launch(block = block)
+    }
 
     fun toggleFavourite(status: TimelineStatus) =
         runOptimisticAction(status, statusActionManager::beginFavourite)
@@ -56,8 +62,8 @@ class StatusActionsViewModel(
         timelineRepository.setBookmarked(it, status.statusId, !status.bookmarked)
     }
 
-    fun setReaction(status: TimelineStatus, emoji: String?) = mutateStatus {
-        timelineRepository.setFedibirdReaction(it, status.statusId, emoji)
+    fun setReaction(status: TimelineStatus, emoji: String?) = runOptimisticAction(status) { session, target ->
+        statusActionManager.beginReaction(session, target, emoji)
     }
 
     fun votePoll(status: TimelineStatus, choices: Set<Int>) {
@@ -151,9 +157,10 @@ class StatusActionsViewModel(
         begin: (AccountSession, TimelineStatus) -> PendingStatusAction?,
     ) {
         val snapshot = currentSnapshot() ?: return
-        val pending = begin(snapshot.account!!, status) ?: return
         requestScope.launch {
-            statusActionManager.complete(pending).forSession(snapshot).onFailure { error ->
+            if (snapshot != currentSnapshot()) return@launch
+            val pending = begin(snapshot.account!!, status) ?: return@launch
+            statusActionManager.complete(pending) { snapshot == currentSnapshot() }.forSession(snapshot).onFailure { error ->
                 val message = if (error.requiresAuthentication) {
                     "もう一度ログインして、必要な権限を許可してください。"
                 } else error.message ?: "投稿を更新できませんでした"
