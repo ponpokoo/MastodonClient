@@ -46,10 +46,11 @@ internal const val USAGE_GUIDE_URL = "https://ponpokoo.github.io/nagisa-policy/g
 internal data class AppUpdateNotice(val versionCode: Int, val highlights: List<String>)
 
 internal val appUpdateNotice = AppUpdateNotice(
-    versionCode = 34,
+    versionCode = 35,
     highlights = listOf(
-        "「設定 → 外観 → 下部タブバー」で、フローティングと従来型（全幅）を切り替えられます。",
-        "投稿詳細では、すでに読み込んだ内容を先に表示し、最新の会話をあとから読み込みます。",
+        "「設定 → 外観 → 下部タブバー」で、iOS風の「Liquid Glass」を選べるようになりました（効果はAndroid 13以降）。",
+        "投稿詳細で本文を長押してコピーできるようになりました",
+        "投稿詳細を開いたときに読み込み済みの投稿を先に表示するようにして読み込みを極力なくしました。会話では投稿を先に表示してあとから会話を読み込む方式にしました。",
     ),
 )
 
