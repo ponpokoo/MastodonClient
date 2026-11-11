@@ -2,6 +2,11 @@
 
 製品版公開後の保守・機能追加を中心に、目的に応じて以下の文書を参照する。現行仕様・設計判断・過去の調査や検証記録は、それぞれの文書で確認する。
 
+## Nagisaの公開リンク
+
+- [Google Play](https://play.google.com/store/apps/details?id=io.github.ponpokoo.mastodonclient) — Nagisaのインストール・更新
+- [公開ポリシーと問い合わせ窓口](https://ponpokoo.github.io/nagisa-policy/) — プライバシーポリシー、利用規約、安全基準、削除案内、連絡先
+
 ## 開発・仕様・設計判断
 
 | 文書 | 読むとき |
@@ -42,7 +47,6 @@
 | [内部リリースノートの保管](release-plan.md#内部リリースノートの保管) | Git管理外のノートへ成果物・確認結果・公開状況をまとめ、バックアップする方法を確認する |
 | [push後の提出・配布結果の反映](release-plan.md#提出配布後の結果反映) | 準備完了後の引き継ぎ、提出・配信・Play動作確認の連絡を同じ内部ノートへ反映する方法を確認する |
 | [製品版の保守・更新ワークフロー](google-play-publication-workflow.md) | 製品版の通常更新、変更に応じた確認、不具合対応とPush・Relayの運用を確認する |
-| [公開ポリシーと問い合わせ窓口](https://ponpokoo.github.io/nagisa-policy/) | プライバシー、利用規約、安全基準、削除案内と連絡先を確認する |
 | [GitHub Issues](https://github.com/ponpokoo/MastodonClient/issues) | 移行済みの継続確認・改善候補と対応の進捗を確認する |
 
 ## Push・Relay
