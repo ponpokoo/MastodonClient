@@ -11,6 +11,14 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import io.github.ponpokoo.mastodonclient.core.preferences.ThemeMode
 
+enum class NagisaColorTheme {
+    Nagisa;
+
+    internal fun colorScheme(dark: Boolean) = when (this) {
+        Nagisa -> if (dark) DarkColorScheme else LightColorScheme
+    }
+}
+
 // Muted blue accents over a slightly violet gray. Keep surface levels explicit
 // so Material defaults do not introduce unrelated purple container colors.
 private val DarkColorScheme = darkColorScheme(
@@ -67,6 +75,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MastodonClientTheme(
     themeMode: ThemeMode = ThemeMode.System,
+    colorTheme: NagisaColorTheme = NagisaColorTheme.Nagisa,
     content: @Composable () -> Unit,
 ) {
     val useDarkTheme = when (themeMode) {
@@ -74,10 +83,8 @@ fun MastodonClientTheme(
         ThemeMode.Dark -> true
         ThemeMode.System -> isSystemInDarkTheme()
     }
-    val colorScheme = if (useDarkTheme) DarkColorScheme else LightColorScheme
-
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = colorTheme.colorScheme(useDarkTheme),
         typography = Typography,
         shapes = Shapes(
             extraSmall = RoundedCornerShape(6.dp),

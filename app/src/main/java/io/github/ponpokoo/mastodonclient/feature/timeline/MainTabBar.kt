@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.timeline
 
+import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,7 +36,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.rememberHazeState
 import io.github.ponpokoo.mastodonclient.core.preferences.BottomTabBarStyle
+import io.github.ponpokoo.mastodonclient.ui.theme.glassSurface
 
 internal enum class MainDestination(val label: String, val icon: ImageVector) {
     Home("ホーム", Icons.Outlined.Home),
@@ -45,6 +49,14 @@ internal enum class MainDestination(val label: String, val icon: ImageVector) {
 }
 
 @Composable
+internal fun rememberBottomTabBarHazeState(style: BottomTabBarStyle, hidden: Boolean = false): HazeState? =
+    if (style == BottomTabBarStyle.LiquidGlass && !hidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        rememberHazeState()
+    } else {
+        null
+    }
+
+@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun MainTabBar(
     style: BottomTabBarStyle,
@@ -52,6 +64,7 @@ internal fun MainTabBar(
     windowInsets: WindowInsets = WindowInsets(0, 0, 0, 0),
     hidden: Boolean = false,
     unreadNotifications: Int = 0,
+    hazeState: HazeState? = null,
     onTabSelected: ((MainDestination) -> Unit)? = null,
 ) {
     val items: @Composable () -> Unit = {
@@ -107,17 +120,21 @@ internal fun MainTabBar(
         ) {
             // Measure the proportion against the safe width before subtracting the minimum margins.
             val maxBarWidth = if (wideWindow) (maxWidth + sideMargin * 2) * 0.9f else 352.dp
+            val shape = RoundedCornerShape(28.dp)
+            val surfaceColor = MaterialTheme.colorScheme.surfaceContainerLow
+            val glass = hazeState.takeIf { style == BottomTabBarStyle.LiquidGlass && !hidden }
             Surface(
                 modifier = Modifier.widthIn(max = maxBarWidth).testTag("main_navigation_bar"),
-                shape = RoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.94f),
+                shape = shape,
+                color = if (glass == null) surfaceColor.copy(alpha = 0.94f) else Color.Transparent,
                 tonalElevation = 0.dp,
                 shadowElevation = 4.dp,
                 border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 ShortNavigationBar(
                     // Keep the end labels inside the rounded surface, including wrapped labels.
-                    modifier = Modifier.padding(horizontal = 8.dp),
+                    modifier = Modifier.glassSurface(glass, shape, surfaceColor)
+                        .padding(horizontal = 8.dp),
                     containerColor = Color.Transparent,
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     content = items,

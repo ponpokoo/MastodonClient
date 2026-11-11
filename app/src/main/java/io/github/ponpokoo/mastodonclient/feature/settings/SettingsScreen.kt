@@ -5,6 +5,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import io.github.ponpokoo.mastodonclient.feature.web.WebLinkLauncher
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
@@ -84,6 +86,8 @@ import io.github.ponpokoo.mastodonclient.feature.status.StatusCard
 import io.github.ponpokoo.mastodonclient.feature.status.toStatusDisplayPreferences
 import io.github.ponpokoo.mastodonclient.feature.timeline.MainDestination
 import io.github.ponpokoo.mastodonclient.feature.timeline.MainTabBar
+import io.github.ponpokoo.mastodonclient.feature.timeline.rememberBottomTabBarHazeState
+import io.github.ponpokoo.mastodonclient.ui.theme.glassBackdrop
 import io.github.ponpokoo.mastodonclient.feature.status.LocalFavouriteListOpener
 import io.github.ponpokoo.mastodonclient.feature.status.LocalReactionListOpener
 import coil3.compose.AsyncImage
@@ -640,6 +644,7 @@ private fun Any?.displayLabel(): String = when (this) {
     ThemeMode.System -> "端末の設定に合わせる"
     BottomTabBarStyle.Floating -> "フローティング"
     BottomTabBarStyle.FullWidth -> "従来型（全幅）"
+    BottomTabBarStyle.LiquidGlass -> "Liquid Glass"
     PostVisibility.Public -> "公開"
     PostVisibility.Unlisted -> "ひかえめな公開"
     PostVisibility.FollowersOnly -> "フォロワー限定"
@@ -649,6 +654,8 @@ private fun Any?.displayLabel(): String = when (this) {
 
 @Composable
 private fun BottomTabBarPreview(style: BottomTabBarStyle) {
+    val hazeState = rememberBottomTabBarHazeState(style)
+    val colors = MaterialTheme.colorScheme
     Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
         Text(
             "プレビュー",
@@ -664,7 +671,14 @@ private fun BottomTabBarPreview(style: BottomTabBarStyle) {
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 .padding(top = 16.dp),
         ) {
-            MainTabBar(style = style, selected = MainDestination.Home)
+            if (hazeState != null) {
+                Canvas(Modifier.matchParentSize().glassBackdrop(hazeState)) {
+                    drawRect(colors.surfaceContainerHighest)
+                    drawCircle(colors.primary, size.minDimension * 0.48f, Offset(size.width * 0.25f, size.height * 0.3f))
+                    drawCircle(colors.tertiary, size.minDimension * 0.58f, Offset(size.width * 0.7f, size.height * 0.8f))
+                }
+            }
+            MainTabBar(style = style, selected = MainDestination.Home, hazeState = hazeState)
         }
     }
 }

@@ -86,44 +86,44 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.collection:collection-jvm:1.6.0",
+      "id": "androidx.collection:collection-jvm:1.7.0",
       "title": "collections",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.collection:collection-ktx:1.6.0",
+      "id": "androidx.collection:collection-ktx:1.7.0",
       "title": "Collections Kotlin Extensions",
-      "version": "1.6.0",
+      "version": "1.7.0",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.animation:animation-android:1.10.5",
+      "id": "androidx.compose.animation:animation-android:1.12.1",
       "title": "Compose Animation",
-      "version": "1.10.5",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.animation:animation-core-android:1.10.5",
+      "id": "androidx.compose.animation:animation-core-android:1.12.1",
       "title": "Compose Animation Core",
-      "version": "1.10.5",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.foundation:foundation-android:1.10.5",
+      "id": "androidx.compose.foundation:foundation-android:1.12.1",
       "title": "Compose Foundation",
-      "version": "1.10.5",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.foundation:foundation-layout-android:1.10.5",
+      "id": "androidx.compose.foundation:foundation-layout-android:1.12.1",
       "title": "Compose Layouts",
-      "version": "1.10.5",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
@@ -156,79 +156,79 @@
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.runtime:runtime-android:1.11.2",
+      "id": "androidx.compose.runtime:runtime-android:1.12.1",
       "title": "Compose Runtime",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.runtime:runtime-annotation-android:1.11.2",
+      "id": "androidx.compose.runtime:runtime-annotation-android:1.12.1",
       "title": "Compose Runtime Annotation",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.runtime:runtime-retain-android:1.11.2",
+      "id": "androidx.compose.runtime:runtime-retain-android:1.12.1",
       "title": "Compose Runtime Retain",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.runtime:runtime-saveable-android:1.11.2",
+      "id": "androidx.compose.runtime:runtime-saveable-android:1.12.1",
       "title": "Compose Saveable",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-android:1.11.2",
+      "id": "androidx.compose.ui:ui-android:1.12.1",
       "title": "Compose UI",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-geometry-android:1.11.2",
+      "id": "androidx.compose.ui:ui-geometry-android:1.12.1",
       "title": "Compose Geometry",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-graphics-android:1.11.2",
+      "id": "androidx.compose.ui:ui-graphics-android:1.12.1",
       "title": "Compose Graphics",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-text-android:1.11.2",
+      "id": "androidx.compose.ui:ui-text-android:1.12.1",
       "title": "Compose UI Text",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-tooling-preview-android:1.11.2",
+      "id": "androidx.compose.ui:ui-tooling-preview-android:1.12.1",
       "title": "Compose UI Preview Tooling",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-unit-android:1.11.2",
+      "id": "androidx.compose.ui:ui-unit-android:1.12.1",
       "title": "Compose Unit",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.compose.ui:ui-util-android:1.11.2",
+      "id": "androidx.compose.ui:ui-util-android:1.12.1",
       "title": "Compose Util",
-      "version": "1.11.2",
+      "version": "1.12.1",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
@@ -347,13 +347,6 @@
     {
       "id": "androidx.drawerlayout:drawerlayout:1.0.0",
       "title": "Android Support Library Drawer Layout",
-      "version": "1.0.0",
-      "license": "Apache License 2.0",
-      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
-    },
-    {
-      "id": "androidx.dynamicanimation:dynamicanimation:1.0.0",
-      "title": "Android Support DynamicAnimation",
       "version": "1.0.0",
       "license": "Apache License 2.0",
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
@@ -695,23 +688,16 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
-      "id": "androidx.tracing:tracing-android:2.0.0",
+      "id": "androidx.tracing:tracing-android:2.0.5",
       "title": "Tracing",
-      "version": "2.0.0",
+      "version": "2.0.5",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
     {
-      "id": "androidx.tracing:tracing-ktx:2.0.0",
+      "id": "androidx.tracing:tracing-ktx:2.0.5",
       "title": "Tracing Kotlin Extensions",
-      "version": "2.0.0",
-      "license": "Apache License 2.0",
-      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
-    },
-    {
-      "id": "androidx.transition:transition:1.6.0",
-      "title": "Transition",
-      "version": "1.6.0",
+      "version": "2.0.5",
       "license": "Apache License 2.0",
       "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
     },
@@ -996,6 +982,27 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
+      "id": "dev.chrisbanes.haze:haze-android:2.1.0",
+      "title": "Haze",
+      "version": "2.1.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
+      "id": "dev.chrisbanes.haze:haze-glass-android:2.1.0",
+      "title": "Haze Glass",
+      "version": "2.1.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
+      "id": "dev.chrisbanes.haze:haze-utils-android:2.1.0",
+      "title": "Haze Utils",
+      "version": "2.1.0",
+      "license": "Apache License 2.0",
+      "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
+    },
+    {
       "id": "io.coil-kt.coil3:coil-android:3.2.0",
       "title": "coil",
       "version": "3.2.0",
@@ -1059,6 +1066,111 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
+      "id": "org.jetbrains.androidx.lifecycle:lifecycle-common-jvm:2.11.0",
+      "title": "Lifecycle-Common",
+      "version": "2.11.0",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.androidx.lifecycle:lifecycle-runtime-android:2.11.0",
+      "title": "Lifecycle Runtime",
+      "version": "2.11.0",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose-android:2.11.0",
+      "title": "Lifecycle Runtime Compose",
+      "version": "2.11.0",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.animation:animation-android:1.12.2",
+      "title": "Compose Animation",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.animation:animation-core-android:1.12.2",
+      "title": "Compose Animation Core",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.foundation:foundation-android:1.12.2",
+      "title": "Compose Foundation",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.foundation:foundation-layout-android:1.12.2",
+      "title": "Compose Layouts",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.runtime:runtime-android:1.12.2",
+      "title": "Compose Runtime",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.runtime:runtime-saveable-android:1.12.2",
+      "title": "Compose Saveable",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-android:1.12.2",
+      "title": "Compose UI",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-geometry-android:1.12.2",
+      "title": "Compose Geometry",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-graphics-android:1.12.2",
+      "title": "Compose Graphics",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-text-android:1.12.2",
+      "title": "Compose UI Text",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-unit-android:1.12.2",
+      "title": "Compose Unit",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
+      "id": "org.jetbrains.compose.ui:ui-util-android:1.12.2",
+      "title": "Compose Util",
+      "version": "1.12.2",
+      "license": "Apache License 2.0",
+      "file": "15be90d299e6c12d402c007a294fc6d9761dab6988e13b5898114d2078bce075.txt"
+    },
+    {
       "id": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.0",
       "title": "Kotlin Stdlib Jdk7",
       "version": "1.9.0",
@@ -1073,9 +1185,9 @@
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },
     {
-      "id": "org.jetbrains.kotlin:kotlin-stdlib:2.2.10",
+      "id": "org.jetbrains.kotlin:kotlin-stdlib:2.4.21",
       "title": "Kotlin Stdlib",
-      "version": "2.2.10",
+      "version": "2.4.21",
       "license": "Apache License 2.0",
       "file": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt"
     },

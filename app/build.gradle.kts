@@ -106,6 +106,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.haze.glass)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.reorderable)
     implementation(libs.androidx.core.ktx)

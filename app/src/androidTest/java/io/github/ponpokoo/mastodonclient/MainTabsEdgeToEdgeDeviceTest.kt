@@ -1,7 +1,13 @@
 package io.github.ponpokoo.mastodonclient
 
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.provider.Settings
+import android.util.Log
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.lifecycle.SavedStateHandle
 
 import androidx.activity.BackEventCompat
@@ -297,6 +303,88 @@ class MainTabsEdgeToEdgeDeviceTest(private val dark: Boolean) {
     }
 
     private fun list() = rule.onNodeWithTag("timeline_list")
+
+    @Test fun liquidGlassChoiceUpdatesPreviewAndShowsTheScrollingBackdrop() {
+        val preferences = UserPreferencesStore(object : DataStore<Preferences> {
+            override val data = MutableStateFlow(emptyPreferences())
+            override suspend fun updateData(transform: suspend (Preferences) -> Preferences) =
+                transform(data.value).also { data.value = it }
+        })
+        withHome(preferences) {
+            val floatingBounds = nav().fetchSemanticsNode().boundsInRoot
+            measureFooterScroll("Floating")
+            rule.onNodeWithContentDescription("設定").performClick()
+            rule.onNodeWithTag("settings_category_Appearance").performScrollTo().performClick()
+            rule.onNodeWithText("下部タブバー").performClick()
+            rule.onNode(hasText("Liquid Glass") and hasAnyAncestor(isPopup())).performClick()
+            rule.onNodeWithText("Liquid Glass").assertIsDisplayed()
+            val preview = hasTestTag("bottom_tab_bar_preview")
+            rule.onNode(hasTestTag("main_navigation_bar") and hasAnyAncestor(preview), useUnmergedTree = true)
+                .assertIsDisplayed()
+            rule.onAllNodes(hasClickAction() and hasAnyAncestor(preview)).assertCountEquals(0)
+            repeat(2) { rule.onNodeWithContentDescription("戻る").performClick() }
+
+            assertEquals(floatingBounds, nav().fetchSemanticsNode().boundsInRoot)
+            rule.onNode(hasTestTag("main_tab_notifications") and hasText("2")).assertIsDisplayed()
+            list().performScrollToIndex(10)
+            val before = nav().captureToImage().toPixelMap()
+            list().performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, 48f)) }
+            val after = nav().captureToImage().toPixelMap()
+            val backgroundChanged = (8 until before.width - 8).any { x ->
+                (1 until before.height - 1).any { y ->
+                    val a = before[x, y]
+                    val b = after[x, y]
+                    abs(a.red - b.red) + abs(a.green - b.green) + abs(a.blue - b.blue) > .02f
+                }
+            }
+            assertTrue("Scrolling content must change pixels inside the fixed bar", backgroundChanged)
+            assertEquals(floatingBounds, nav().fetchSemanticsNode().boundsInRoot)
+            savePreview("liquid-glass")
+            measureFooterScroll("LiquidGlass")
+            rule.onNodeWithTag("main_tab_home").performClick()
+            rule.waitUntil(5_000) { scrollPosition() == 0f }
+            rule.onNodeWithTag("main_tab_notifications").performClick().assertIsSelected()
+        }
+    }
+
+    private fun measureFooterScroll(style: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            InstrumentationRegistry.getArguments().getString("measureNavigationGlass") != "true"
+        ) return
+
+        val distance = with(rule.density) { 480.dp.toPx() }
+        fun scrollPair() {
+            for (delta in listOf(distance, -distance)) {
+                list().performSemanticsAction(SemanticsActions.ScrollBy) { assertTrue(it(0f, delta)) }
+                rule.waitForIdle()
+            }
+        }
+        list().performScrollToIndex(10)
+        scrollPair()
+        list().performScrollToIndex(10)
+        val frameTimes = mutableListOf<Long>()
+        var missedDeadlines = 0
+        val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+            if (metrics.getMetric(FrameMetrics.FIRST_DRAW_FRAME) == 0L) {
+                val total = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
+                val deadline = metrics.getMetric(FrameMetrics.DEADLINE)
+                frameTimes.add(total)
+                if (deadline > 0 && total > deadline) missedDeadlines++
+            }
+        }
+        val window = rule.activity.window
+        rule.runOnIdle { window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper())) }
+        try {
+            repeat(4) { scrollPair() }
+        } finally {
+            rule.runOnIdle { window.removeOnFrameMetricsAvailableListener(listener) }
+        }
+        check(frameTimes.isNotEmpty())
+        val sorted = frameTimes.sorted()
+        val p95Ms = sorted[(sorted.lastIndex * 0.95).toInt()] / 1_000_000.0
+        Log.i("NagisaGlassFrames", "style=$style dark=$dark frames=${sorted.size} p95Ms=$p95Ms missedDeadlines=$missedDeadlines")
+    }
+
     @Test fun homeDragAndFlingTravelDoesNotDependOnWhetherTheHeaderStartsVisible() = withHome {
         val viewport = list().fetchSemanticsNode().boundsInRoot
         fun travel(expanded: Boolean, towardOlder: Boolean): Float {

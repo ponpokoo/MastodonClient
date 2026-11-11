@@ -145,6 +145,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.core.preferences.AppPreferences
 import io.github.ponpokoo.mastodonclient.notification.NotificationOpenRequest
 import io.github.ponpokoo.mastodonclient.ui.theme.MainTopBarTitleStyle
+import io.github.ponpokoo.mastodonclient.ui.theme.glassBackdrop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -519,6 +520,10 @@ fun HomeTimelineScreen(
         }
     }
     val navigationHidden = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val navigationGlass = rememberBottomTabBarHazeState(
+        mainState.preferences.bottomTabBarStyle,
+        navigationHidden,
+    )
     Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -565,6 +570,7 @@ fun HomeTimelineScreen(
                 windowInsets = mediaContentInsets().only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                 hidden = navigationHidden,
                 unreadNotifications = notificationsState.unreadNotifications,
+                hazeState = navigationGlass,
                 onTabSelected = { item ->
                     val sessionId = mainViewModel.uiState.value.session?.sessionId ?: return@MainTabBar
                     val history = tabHistory.forSession(sessionId)
@@ -603,7 +609,7 @@ fun HomeTimelineScreen(
         Box(Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().glassBackdrop(navigationGlass),
             key = { destinations[it] },
             userScrollEnabled = false,
         ) { page ->

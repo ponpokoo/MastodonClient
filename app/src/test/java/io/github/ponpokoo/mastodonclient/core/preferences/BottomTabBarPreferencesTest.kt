@@ -46,6 +46,12 @@ class BottomTabBarPreferencesTest {
             val preferences = store.preferences.first()
             assertEquals(BottomTabBarStyle.FullWidth, preferences.bottomTabBarStyle)
             assertEquals(ThemeMode.Dark, preferences.themeMode)
+            store.setBottomTabBarStyle(BottomTabBarStyle.LiquidGlass)
+        }
+        withStore { store ->
+            val preferences = store.preferences.first()
+            assertEquals(BottomTabBarStyle.LiquidGlass, preferences.bottomTabBarStyle)
+            assertEquals(ThemeMode.Dark, preferences.themeMode)
             store.setBottomTabBarStyle(BottomTabBarStyle.Floating)
         }
         withStore { store ->
