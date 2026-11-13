@@ -1,6 +1,7 @@
 package io.github.ponpokoo.mastodonclient
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
 import androidx.compose.foundation.text.contextmenu.provider.LocalTextContextMenuToolbarProvider
 import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuDataProvider
 import androidx.compose.foundation.text.contextmenu.provider.TextContextMenuProvider
@@ -170,8 +171,10 @@ class ConversationLoadingPositionDeviceTest {
 
     private fun assertSelectionClosesOnBack(dismissSelection: (() -> Unit)? = null, back: () -> Unit) {
         var selectionMenuOpen = false
+        lateinit var menuData: TextContextMenuDataProvider
         val toolbar = object : TextContextMenuProvider {
             override suspend fun showTextContextMenu(dataProvider: TextContextMenuDataProvider) {
+                menuData = dataProvider
                 selectionMenuOpen = true
                 try {
                     awaitCancellation()
@@ -193,9 +196,16 @@ class ConversationLoadingPositionDeviceTest {
         rule.runOnIdle { assertTrue("Selection menu should be open before going back", selectionMenuOpen) }
 
         if (dismissSelection != null) {
+            rule.runOnIdle {
+                assertTrue(menuData.data().components.any { it.key == TextContextMenuKeys.SelectAllKey })
+            }
             dismissSelection()
             body.assertIsDisplayed()
-            rule.runOnIdle { assertFalse("First Back should close the selection menu", selectionMenuOpen) }
+            rule.runOnIdle {
+                assertFalse("First Back should close the selection menu", selectionMenuOpen)
+                // Simulate the platform requesting items again while the toolbar is closing.
+                assertFalse(menuData.data().components.any { it.key == TextContextMenuKeys.SelectAllKey })
+            }
         }
 
         rule.mainClock.autoAdvance = false

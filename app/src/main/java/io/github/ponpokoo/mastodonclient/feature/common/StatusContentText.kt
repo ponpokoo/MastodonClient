@@ -4,11 +4,14 @@ import android.util.LruCache
 import android.text.Spanned
 import android.text.style.URLSpan
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.text.contextmenu.data.TextContextMenuKeys
+import androidx.compose.foundation.text.contextmenu.modifier.filterTextContextMenuComponents
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.SelectionState
 import androidx.compose.material3.LocalTextStyle
@@ -104,6 +107,7 @@ fun StatusContentText(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StatusContentTextImpl(
     contentHtml: String,
@@ -231,13 +235,31 @@ private fun StatusContentTextImpl(
     }
     if (enableSelection) {
         val selection = remember { SelectionState() }
+        var dismissedByBack by remember { mutableStateOf(false) }
         val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
         BackHandler(
             enabled = lifecycleState == Lifecycle.State.RESUMED &&
                 selection.selectedTexts.any { it.isNotEmpty() },
-            onBack = selection::clear,
+        ) {
+            dismissedByBack = true
+            selection.clear()
+        }
+        SelectionContainer(
+            state = selection,
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        dismissedByBack = false
+                    }
+                }
+                .filterTextContextMenuComponents { item ->
+                    // The platform toolbar can refresh its items while it is closing.
+                    item.key != TextContextMenuKeys.SelectAllKey || !dismissedByBack ||
+                        selection.selectedTexts.any { it.isNotEmpty() }
+                },
+            content = body,
         )
-        SelectionContainer(state = selection, content = body)
     } else {
         body()
     }
