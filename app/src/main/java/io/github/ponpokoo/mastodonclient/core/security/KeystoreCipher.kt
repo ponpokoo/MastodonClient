@@ -10,7 +10,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class KeystoreCipher {
-    private val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
+    private val keyStore by lazy { KeyStore.getInstance(KEYSTORE).apply { load(null) } }
 
     fun encrypt(plaintext: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -30,9 +30,9 @@ class KeystoreCipher {
         return cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
     }
 
-    private fun getOrCreateKey(): SecretKey {
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
+    private fun getOrCreateKey(): SecretKey = synchronized(keyLock) {
+        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return@synchronized it }
+        KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
             init(
                 KeyGenParameterSpec.Builder(
                     KEY_ALIAS,
@@ -48,6 +48,7 @@ class KeystoreCipher {
     }
 
     private companion object {
+        val keyLock = Any()
         const val KEYSTORE = "AndroidKeyStore"
         const val KEY_ALIAS = "mastodon_client_auth_v1"
         const val TRANSFORMATION = "AES/GCM/NoPadding"

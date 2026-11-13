@@ -1,5 +1,10 @@
 package io.github.ponpokoo.mastodonclient.core.security
 
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
@@ -25,9 +30,46 @@ class MemoryAuthPreferences(initial: Preferences = emptyPreferences()) : DataSto
     }
 }
 
-fun memoryAuthStore(data: DataStore<Preferences> = MemoryAuthPreferences()) = SecureAuthStore(data, { it }, { it })
+fun memoryAuthStore(
+    data: DataStore<Preferences> = MemoryAuthPreferences(),
+    dispatcher: CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
+) = SecureAuthStore(data, { it }, { it }, dispatcher = dispatcher)
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AccountDisplayStoreTest {
+    @Test fun cryptographyUsesInjectedDispatcherAndCancelledReadsDoNotDecrypt() = runTest {
+        val scheduled = StandardTestDispatcher(testScheduler)
+        var onStoreDispatcher = false
+        val dispatcher = object : CoroutineDispatcher() {
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                scheduled.dispatch(context) {
+                    onStoreDispatcher = true
+                    try { block.run() } finally { onStoreDispatcher = false }
+                }
+            }
+        }
+        var decryptions = 0
+        val store = SecureAuthStore(MemoryAuthPreferences(), encrypt = {
+            assertTrue(onStoreDispatcher)
+            it
+        }, decrypt = {
+            assertTrue(onStoreDispatcher)
+            decryptions++
+            it
+        }, dispatcher = dispatcher)
+
+        store.saveSession(testAccount)
+        assertEquals(testAccount, store.getSession())
+        assertEquals(listOf(testAccount), store.getSessions())
+        assertEquals(listOf(testAccount), store.observeSessions().first())
+
+        val beforeCancellation = decryptions
+        val pending = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { store.getSession() }
+        pending.cancel()
+        runCurrent()
+        assertEquals(beforeCancellation, decryptions)
+    }
+
     private val author = StatusAuthor(testAccount.accountId, "New name", "new-user", "https://one.example/avatar.png")
 
     @Test fun updatePreservesOrderSelectionCredentialsAndSurvivesStoreRecreation() = runTest {

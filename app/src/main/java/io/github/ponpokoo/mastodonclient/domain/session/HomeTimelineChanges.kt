@@ -13,6 +13,11 @@ internal fun TimelineStatus.applyHomeStatusUpdate(change: BrowsingSession.Change
 fun List<TimelineStatus>.applyHomeChange(change: BrowsingSession.Change, includeNew: Boolean = false): List<TimelineStatus> = when (change) {
     is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated -> this
     is BrowsingSession.Change.StatusUpdated -> map { it.applyHomeStatusUpdate(change) }
+    is BrowsingSession.Change.StoredStatusUpdates -> map { displayed ->
+        change.byStatusId[displayed.statusId]?.fold(displayed) { status, update ->
+            status.applyHomeStatusUpdate(update)
+        } ?: displayed
+    }
     is BrowsingSession.Change.StatusDeleted -> filterNot { it.statusId == change.statusId }
     is BrowsingSession.Change.Stream -> when (val event = change.event) {
         is TimelineStreamEvent.StatusDeleted -> filterNot { it.statusId == event.statusId || it.timelineId == event.statusId }

@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.notifications
 
+import io.github.ponpokoo.mastodonclient.domain.session.applyStatusUpdateTo
+import io.github.ponpokoo.mastodonclient.feature.common.ModerationTextCache
 import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.*
@@ -94,9 +96,10 @@ class NotificationsViewModel(
     private val pushSync: io.github.ponpokoo.mastodonclient.domain.repository.PushSyncRepository? = null,
     private val capabilityClock: () -> Long = System::currentTimeMillis,
 ) : SessionScopedViewModel(browsing) {
+    private val moderationTextCache = ModerationTextCache()
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     private val pageJobs = mutableMapOf<NotificationCategory, Job>()
     private data class PendingRefresh(val pull: Boolean, val keepHighlights: Boolean)
@@ -353,16 +356,18 @@ class NotificationsViewModel(
     }
 
     fun onNotificationsVisible() = loadCategory(_uiState.value.selectedCategory, force = true, keepHighlights = true)
-    fun onLifecycleStarted() {
+    fun onLifecycleStarted(becameVisible: Boolean = false) {
         // Keep this across observer reattachment: navigation or Activity recreation must
         // still refresh an existing list. Only the first start uses session prefetch alone.
-        if (hasObservedStart) onAppForeground()
+        val selected = _uiState.value.selectedCategory.takeIf { becameVisible }
+        if (hasObservedStart) refreshRequestedCategories(excluding = selected)
         hasObservedStart = true
+        if (becameVisible) onNotificationsVisible()
     }
-    fun onAppForeground() {
-        if (requestedCategories.isNotEmpty()) {
-            requestedCategories.toList().forEach { loadCategory(it, force = true) }
-        }
+    fun onAppForeground() = refreshRequestedCategories()
+
+    private fun refreshRequestedCategories(excluding: NotificationCategory? = null) {
+        requestedCategories.toList().forEach { if (it != excluding) loadCategory(it, force = true) }
     }
     fun onSystemNotificationOpened() { selectCategory(NotificationCategory.All); loadCategory(NotificationCategory.All, force = true, keepHighlights = true) }
     fun refreshNotifications() {
@@ -461,7 +466,8 @@ class NotificationsViewModel(
             else -> null
         }
         // Ordinary timeline posts, connection events and tag changes cannot affect notifications.
-        if (notification == null && deleted == null && change !is BrowsingSession.Change.StatusUpdated) return
+        if (notification == null && deleted == null && change !is BrowsingSession.Change.StatusUpdated &&
+            change !is BrowsingSession.Change.StoredStatusUpdates) return
         val before = _uiState.value
         if (notification != null) {
             val known = NotificationCategory.entries.any { category -> _uiState.value.list(category).notifications.any { it.id == notification.id } }
@@ -470,17 +476,20 @@ class NotificationsViewModel(
             }
             if (!known && notification.id !in readState.viewedIds) addUnread(setOf(notification.id))
         } else {
-            for (category in NotificationCategory.entries) updateList(category) { tab ->
-                tab.copy(notifications = tab.notifications.map { notification ->
-                    val status = notification.status
-                    val updated = when {
-                        status == null -> null
-                        status.statusId == deleted -> null
-                        change is BrowsingSession.Change.StatusUpdated -> change.applyTo(status)
-                        else -> status
+            _uiState.update { state ->
+                NotificationCategory.entries.fold(state) { current, category ->
+                    val tab = current.list(category)
+                    val rows = tab.notifications.map { notification ->
+                        val status = notification.status
+                        val updated = when {
+                            status == null -> null
+                            status.statusId == deleted -> null
+                            else -> change.applyStatusUpdateTo(status)
+                        }
+                        if (updated == status) notification else notification.copy(status = updated)
                     }
-                    if (updated == status) notification else notification.copy(status = updated)
-                })
+                    if (rows == tab.notifications) current else current.withList(category, tab.copy(notifications = rows))
+                }
             }
         }
         val after = _uiState.value

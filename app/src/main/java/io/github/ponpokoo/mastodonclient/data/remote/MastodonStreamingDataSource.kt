@@ -42,13 +42,14 @@ class MastodonStreamingDataSource(
                 call.execute().use { response ->
                     if (!response.isSuccessful) throw IOException("ストリーミング接続に失敗しました (${response.code})")
                     val source = response.body?.source() ?: throw IOException("ストリーミング応答が空です")
-                    trySend(StreamingMessage("connected", ""))
+                    send(StreamingMessage("connected", ""))
                     var eventName: String? = null
                     val payload = StringBuilder()
-                    fun dispatchPendingEvent() {
+                    // A slow collector suspends the reader when the channel fills.
+                    suspend fun dispatchPendingEvent() {
                         val event = eventName
                         if (event != null && (payload.isNotEmpty() || event == "filters_changed")) {
-                            trySend(StreamingMessage(event, payload.toString()))
+                            send(StreamingMessage(event, payload.toString()))
                         }
                         eventName = null
                         payload.clear()

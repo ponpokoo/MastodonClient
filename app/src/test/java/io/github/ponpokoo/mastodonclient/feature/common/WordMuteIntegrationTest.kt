@@ -16,6 +16,22 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class WordMuteIntegrationTest : ScreenViewModelTestBase() {
+    @Test fun htmlConversionIsReusedAcrossActionChangesAndBounded() {
+        val converted = mutableListOf<String>()
+        val cache = ModerationTextCache(capacity = 1) { html ->
+            converted += html
+            html.removePrefix("<p>").removeSuffix("</p>")
+        }
+        val original = testStatus().copy(contentHtml = "<p>Before</p>")
+        assertFalse(original.matchesWordMute(emptyList(), cache))
+        assertTrue(original.matchesWordMute(listOf("before"), cache))
+        assertFalse(original.copy(favourited = true).matchesWordMute(listOf("after"), cache))
+        val edited = original.copy(contentHtml = "<p>After</p>")
+        assertTrue(edited.matchesWordMute(listOf("after"), cache))
+        assertTrue(original.matchesWordMute(listOf("before"), cache))
+        assertEquals(listOf(original.contentHtml, edited.contentHtml, original.contentHtml), converted)
+    }
+
     @Test fun localWordMutesWorkWithSupportedUnsupportedFailedAndEmptyServerFilters() = runTest(dispatcher) {
         val filter = ServerFilter("server", "server", setOf("home"), action = "hide")
         val wordMatch = testStatus("local").copy(contentHtml = "SPOILER")

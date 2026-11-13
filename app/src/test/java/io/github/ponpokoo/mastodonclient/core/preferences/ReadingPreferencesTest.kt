@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient.core.preferences
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.ponpokoo.mastodonclient.core.security.MemoryAuthPreferences
 import io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay
@@ -8,7 +12,34 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ReadingPreferencesTest {
+    @Test fun unrelatedWritesDoNotReachSettingsDecodingButSettingsAndFallbackChangesDo() = runTest {
+        val data = MemoryAuthPreferences()
+        val store = UserPreferencesStore(data)
+        store.setThemeMode(ThemeMode.Dark)
+        val observed = mutableListOf<AppPreferences>()
+        backgroundScope.launch { store.preferences.toList(observed) }
+        runCurrent()
+
+        val unrelated = stringPreferencesKey("avatar_validation")
+        repeat(3) { revision ->
+            data.updateData { it.toMutablePreferences().apply { this[unrelated] = revision.toString() } }
+            runCurrent()
+        }
+        assertEquals(listOf(ThemeMode.Dark), observed.map { it.themeMode })
+
+        store.setThemeMode(ThemeMode.Light)
+        runCurrent()
+        data.updateData { it.toMutablePreferences().apply {
+            this[stringPreferencesKey("app_preferences_v2")] = "{"
+            this[androidx.datastore.preferences.core.booleanPreferencesKey("open_links_in_app")] = false
+        } }
+        runCurrent()
+        assertEquals(listOf(ThemeMode.Dark, ThemeMode.Light, ThemeMode.System), observed.map { it.themeMode })
+        assertFalse(observed.last().openLinksInApp)
+    }
+
     @Test fun allLocalChoicesSurviveReloadAndPreserveOtherAccountAndAppPreferences() = runTest {
         val data = MemoryAuthPreferences()
         val store = UserPreferencesStore(data)

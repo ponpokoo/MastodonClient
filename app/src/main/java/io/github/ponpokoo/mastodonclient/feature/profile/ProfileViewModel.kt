@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.domain.session.applyStatusUpdateTo
+import io.github.ponpokoo.mastodonclient.feature.common.ModerationTextCache
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
@@ -61,6 +63,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
     private val avatarRepository: AccountAvatarRepository? = null,
 ) : SessionScopedViewModel(browsing) {
+    private val moderationTextCache = ModerationTextCache()
     private val imageEditor = ProfileImageEditor(profileImageRepository, viewModelScope)
     val profileImageEditState = imageEditor.state
     fun beginProfileEdit() { if (_uiState.value.profile?.isOwnProfile == true) imageEditor.open() }
@@ -69,7 +72,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     override fun onCleared() { imageEditor.dismiss() }
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     private var profileJob: Job? = null
     private var reactionHistorySupportJob: Job? = null
@@ -112,7 +115,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 if (moderation.relationship(snapshot.account!!, target)?.let { it.muting || it.blocking } == true) {
                     postsGeneration++
                     tabJobs.values.forEach { it.cancel() }
-                    _uiState.update { it.withModeration(moderation, snapshot.account) }
+                    _uiState.update { it.withModeration(moderation, snapshot.account, moderationTextCache) }
                 }
             }
         }
@@ -427,21 +430,21 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
                 it.field == StatusActionField.Pin || (it.field == null && it.kind == StatusUpdateKind.Confirmed)
             }?.status
             profile.copy(
-                statuses = profile.statuses.filterNot { it.statusId == deleted }.map { status ->
-                    if (updated != null) updated.applyTo(status) else status
+                statuses = profile.statuses.mapNotNull { status ->
+                    if (status.statusId == deleted) null else change.applyStatusUpdateTo(status)
                 },
                 pinnedStatuses = when {
                     pin != null && pin.author.id == profile.author.id && pin.pinned ->
                         (listOf(pin) + profile.pinnedStatuses.filterNot { it.statusId == pin.statusId })
-                    else -> profile.pinnedStatuses.filterNot {
-                        it.statusId == deleted || (pin != null && it.statusId == pin.statusId && !pin.pinned)
-                    }.map { if (updated != null) updated.applyTo(it) else it }
+                    else -> profile.pinnedStatuses.mapNotNull { status ->
+                        if (status.statusId == deleted || (pin != null && status.statusId == pin.statusId && !pin.pinned)) null
+                        else change.applyStatusUpdateTo(status)
+                    }
                 },
             )
         }).withTabs(state.profileTabs.mapValues { (_, tab) -> tab.copy(statuses = tab.statuses
-            .filterNot { it.statusId == deleted }.map { status ->
-                val updated = change as? BrowsingSession.Change.StatusUpdated
-                if (updated != null) updated.applyTo(status) else status
+            .mapNotNull { status ->
+                if (status.statusId == deleted) null else change.applyStatusUpdateTo(status)
             }) }) }
     }
 

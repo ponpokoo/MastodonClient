@@ -2,6 +2,7 @@ package io.github.ponpokoo.mastodonclient.data.remote
 
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -12,6 +13,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MastodonStreamingDataSourceTest {
+    @Test fun deliversEntireBurstInOrderWhenCollectorIsSlow() = runTest {
+        MockWebServer().use { server ->
+            val events = List(300) { index ->
+                val event = listOf("update", "status.update", "delete", "notification", "filters_changed")[index % 5]
+                StreamingMessage(event, index.toString())
+            }
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+                events.joinToString("") { "event: ${it.event}\ndata: ${it.payload}\n\n" },
+            ))
+            val received = MastodonStreamingDataSource().observeUser(server.url("/").toString(), "test-token")
+                .filter { it.event != "connected" }
+                .onEach { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { kotlinx.coroutines.delay(1) } }
+                .take(events.size)
+                .toList()
+            assertEquals(events, received)
+        }
+    }
+
     @Test fun acceptsPayloadlessFilterNotificationsAfterConnection() = runTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream")

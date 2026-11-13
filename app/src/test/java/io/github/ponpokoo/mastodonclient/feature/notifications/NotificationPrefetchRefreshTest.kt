@@ -13,6 +13,34 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotificationPrefetchRefreshTest : ScreenViewModelTestBase() {
+    @Test fun visibleReattachmentRefreshesOnceAndLaterNotificationTapStillRefreshes() = runTest(dispatcher) {
+        val refresh = CompletableDeferred<Result<NotificationPage>>()
+        var requests = 0
+        val repository = object : ScreenRepositoryFake() {
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int) =
+                when (++requests) {
+                    1 -> Result.success(NotificationPage(listOf(testNotification("old")), null, true))
+                    2 -> refresh.await()
+                    else -> Result.success(NotificationPage(listOf(testNotification("after-tap")), null, true))
+                }
+        }
+        val vm = own(NotificationsViewModel(repository, BrowsingSession().apply { activate(testAccount) }))
+        advanceUntilIdle()
+        vm.onLifecycleStarted()
+        vm.onLifecycleStarted(becameVisible = true)
+        runCurrent()
+        assertEquals(2, requests)
+        refresh.complete(Result.success(NotificationPage(listOf(testNotification("on-return")), null, true)))
+        advanceUntilIdle()
+        assertEquals(2, requests)
+        assertTrue(vm.uiState.value.notifications.any { it.id == "on-return" })
+
+        vm.onSystemNotificationOpened()
+        advanceUntilIdle()
+        assertEquals(3, requests)
+        assertTrue(vm.uiState.value.notifications.any { it.id == "after-tap" })
+    }
+
     @Test fun tabOpenShowsPrefetchedRowsWhileFetchingNotificationsThatArrivedLater() = runTest(dispatcher) {
         val refresh = CompletableDeferred<Result<NotificationPage>>()
         var requests = 0

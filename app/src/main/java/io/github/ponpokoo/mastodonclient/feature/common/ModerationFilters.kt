@@ -8,10 +8,34 @@ import io.github.ponpokoo.mastodonclient.feature.detail.StatusDetailUiState
 import io.github.ponpokoo.mastodonclient.feature.search.*
 import io.github.ponpokoo.mastodonclient.feature.tag.HashtagTimelineUiState
 
-internal fun TimelineStatus.matchesWordMute(words: List<String>): Boolean {
+internal fun TimelineStatus.matchesWordMute(words: List<String>, textCache: ModerationTextCache? = null): Boolean {
     if (words.isEmpty()) return false
-    val text = moderationPlainText(contentHtml)
+    val text = textCache?.plainText(contentHtml) ?: moderationPlainText(contentHtml)
     return words.any { it.isNotBlank() && (text.contains(it, ignoreCase = true) || spoilerText.contains(it, ignoreCase = true)) }
+}
+
+// Owned by a ViewModel. The key and value contain only the HTML and its plain text.
+internal class ModerationTextCache(
+    private val capacity: Int = 512,
+    private val convert: (String) -> String = ::moderationPlainText,
+) {
+    private val entries = LinkedHashMap<String, String>(16, 0.75f, true)
+
+    init {
+        require(capacity > 0)
+    }
+
+    @Synchronized
+    fun plainText(html: String): String {
+        if ('<' !in html && '&' !in html) return html
+        entries[html]?.let { return it }
+        val text = convert(html)
+        if (html.length <= 4096 && text.length <= 4096) {
+            entries[html] = text
+            if (entries.size > capacity) entries.remove(entries.keys.first())
+        }
+        return text
+    }
 }
 
 internal fun moderationPlainText(html: String): String = if ('<' in html || '&' in html)
@@ -20,24 +44,24 @@ else html
 
 private fun TimelineStatus.present(m: AccountModerationState, s: AccountSession, context: String?): TimelineStatus =
     if (!m.applyServerFilters || context == null) this else copy(filterDisplay = filterPresentation(context, current = m.serverFilters[s.sessionId]), filterScope = s.sessionId + s.instanceUrl)
-private fun List<TimelineStatus>.visible(m: AccountModerationState, s: AccountSession, context: String? = null) =
-    filterNot { m.hides(s, it) || it.matchesWordMute(m.wordMutes[s.sessionId].orEmpty()) }
+private fun List<TimelineStatus>.visible(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null, context: String? = null) =
+    filterNot { m.hides(s, it) || it.matchesWordMute(m.wordMutes[s.sessionId].orEmpty(), textCache) }
         .map { it.present(m, s, context) }.filterNot { m.applyServerFilters && context != null && it.filterDisplay.hidden }
-private fun UserProfile.visible(m: AccountModerationState, s: AccountSession) =
-    copy(statuses = statuses.visible(m, s, "account"), pinnedStatuses = pinnedStatuses.visible(m, s, "account"))
-private fun Map<ProfileStatusTab, ProfileTabUiState>.visible(m: AccountModerationState, s: AccountSession) =
-    mapValues { (_, tab) -> tab.copy(statuses = tab.statuses.visible(m, s, "account")) }
+private fun UserProfile.visible(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null) =
+    copy(statuses = statuses.visible(m, s, textCache, "account"), pinnedStatuses = pinnedStatuses.visible(m, s, textCache, "account"))
+private fun Map<ProfileStatusTab, ProfileTabUiState>.visible(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null) =
+    mapValues { (_, tab) -> tab.copy(statuses = tab.statuses.visible(m, s, textCache, "account")) }
 
-internal fun TimelineUiState.withModeration(m: AccountModerationState, s: AccountSession): TimelineUiState {
-    val visible = statuses.visible(m, s, if (selectedFeed == TimelineFeed.Home) "home" else "public")
+internal fun TimelineUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null): TimelineUiState {
+    val visible = statuses.visible(m, s, textCache, if (selectedFeed == TimelineFeed.Home) "home" else "public")
     val ids = visible.mapTo(mutableSetOf()) { it.timelineId }
     return copy(statuses = visible, unseenStreamIds = unseenStreamIds.intersect(ids),
         unseenRefreshIds = unseenRefreshIds.intersect(ids))
 }
 
-internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession): NotificationsUiState {
+internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null): NotificationsUiState {
     fun present(rows: List<TimelineNotification>) = rows.filterNot {
-        m.hides(s, it) || it.status?.matchesWordMute(m.wordMutes[s.sessionId].orEmpty()) == true
+        m.hides(s, it) || it.status?.matchesWordMute(m.wordMutes[s.sessionId].orEmpty(), textCache) == true
     }.map { notification ->
         notification.copy(status = notification.status?.present(m, s, "notifications"))
     }.filterNot { m.applyServerFilters && it.status?.filterDisplay?.hidden == true }
@@ -53,40 +77,40 @@ internal fun NotificationsUiState.withModeration(m: AccountModerationState, s: A
         refreshResult = refreshResult?.copy(hasNewNotifications = pending.isNotEmpty()))
 }
 
-internal fun ProfileUiState.withModeration(m: AccountModerationState, s: AccountSession): ProfileUiState {
+internal fun ProfileUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null): ProfileUiState {
     val relationship = profile?.author?.id?.let { m.relationship(s, it) } ?: relationship
     if (relationship?.let { it.muting || it.blocking } == true) {
         // An empty, suppressed profile must not keep fetching every older page.
         val tabs = ProfileStatusTab.entries.associateWith { tab ->
-            (profileTabs[tab] ?: ProfileTabUiState()).let { it.copy(statuses = it.statuses.visible(m, s), nextMaxId = null,
+            (profileTabs[tab] ?: ProfileTabUiState()).let { it.copy(statuses = it.statuses.visible(m, s, textCache), nextMaxId = null,
                 endReached = true, isLoaded = true, isLoading = false, isRefreshing = false,
                 isLoadingMore = false, isPullRefreshing = false, error = null) }
         }
-        return copy(profile = profile?.visible(m, s)?.copy(
+        return copy(profile = profile?.visible(m, s, textCache)?.copy(
             nextMaxId = null, endReached = true), profileTabs = tabs, relationship = relationship,
             isLoadingProfile = false, isRefreshingProfile = false, isLoadingMoreProfile = false)
     }
-    return copy(profile = profile?.visible(m, s), profileTabs = profileTabs.visible(m, s), relationship = relationship)
+    return copy(profile = profile?.visible(m, s, textCache), profileTabs = profileTabs.visible(m, s, textCache), relationship = relationship)
 }
-internal fun SavedTimelinesUiState.withModeration(m: AccountModerationState, s: AccountSession, context: String? = null) =
-    copy(statuses = statuses.visible(m, s, context))
-internal fun HashtagTimelineUiState.withModeration(m: AccountModerationState, s: AccountSession) =
-    copy(statuses = statuses.visible(m, s))
-internal fun SearchUiState.withModeration(m: AccountModerationState, s: AccountSession) =
+internal fun SavedTimelinesUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null, context: String? = null) =
+    copy(statuses = statuses.visible(m, s, textCache, context))
+internal fun HashtagTimelineUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null) =
+    copy(statuses = statuses.visible(m, s, textCache))
+internal fun SearchUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null) =
     copy(tabs = tabs.mapValues { (_, tab) -> tab.copy(results = tab.results?.let {
-        it.copy(statuses = it.statuses.visible(m, s))
+        it.copy(statuses = it.statuses.visible(m, s, textCache))
     }) })
-internal fun ExploreUiState.withModeration(m: AccountModerationState, s: AccountSession) =
+internal fun ExploreUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null) =
     copy(tabs = tabs.mapValues { (_, tab) -> tab.copy(page = tab.page?.let {
-        it.copy(statuses = it.statuses.visible(m, s))
+        it.copy(statuses = it.statuses.visible(m, s, textCache))
     }) })
-internal fun StatusDetailUiState.withModeration(m: AccountModerationState, s: AccountSession): StatusDetailUiState {
+internal fun StatusDetailUiState.withModeration(m: AccountModerationState, s: AccountSession, textCache: ModerationTextCache? = null): StatusDetailUiState {
     val current = detail ?: return this
     if (m.hides(s, current.status)) return copy(detail = null, isLoading = false,
         errorMessage = "ミュートまたはブロック中のアカウントの投稿です")
-    if (current.status.matchesWordMute(m.wordMutes[s.sessionId].orEmpty())) return copy(detail = null, isLoading = false,
+    if (current.status.matchesWordMute(m.wordMutes[s.sessionId].orEmpty(), textCache)) return copy(detail = null, isLoading = false,
         errorMessage = "ワードミュートに一致する投稿です")
     val status = current.status.present(m, s, "thread")
     if (m.applyServerFilters && status.filterDisplay.hidden) return copy(detail = null, isLoading = false, errorMessage = "フィルターで非表示の投稿です")
-    return copy(detail = current.copy(status = status, ancestors = current.ancestors.visible(m, s, "thread"), descendants = current.descendants.visible(m, s, "thread")))
+    return copy(detail = current.copy(status = status, ancestors = current.ancestors.visible(m, s, textCache, "thread"), descendants = current.descendants.visible(m, s, textCache, "thread")))
 }

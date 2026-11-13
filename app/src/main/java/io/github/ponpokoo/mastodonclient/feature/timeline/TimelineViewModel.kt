@@ -742,6 +742,11 @@ class TimelineViewModel(
         if (change is BrowsingSession.Change.StatusUpdated &&
             (change.kind == StatusUpdateKind.Optimistic || change.kind == StatusUpdateKind.RolledBack)) return
         homeChangesDuringRequest?.add(change)
+        if (change is BrowsingSession.Change.StoredStatusUpdates) {
+            // Stored actions only change fields, so the window and unseen IDs need no reconciliation.
+            _uiState.update { it.copy(statuses = it.statuses.applyHomeChange(change)) }
+            return
+        }
         val snapshot = currentSnapshot() ?: return
         if (needsHomeCacheWrite(change) &&
             (change !is BrowsingSession.Change.Stream || change.event !is TimelineStreamEvent.NotificationReceived)) {
@@ -753,7 +758,8 @@ class TimelineViewModel(
         val previousGaps = _uiState.value.homeIndex?.gaps.orEmpty()
         _uiState.update { current ->
             val changed = when (change) {
-                is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated -> current
+                is BrowsingSession.Change.TagUpdated, is BrowsingSession.Change.ProfileUpdated,
+                is BrowsingSession.Change.StoredStatusUpdates -> current
                 is BrowsingSession.Change.StatusUpdated -> current.copy(statuses = current.statuses.applyHomeChange(change))
                 is BrowsingSession.Change.StatusDeleted -> current.copy(statuses = current.statuses.filterNot { it.statusId == change.statusId }, unseenStreamIds = current.unseenStreamIds - current.statuses.filter { it.statusId == change.statusId }.map { it.timelineId }.toSet())
                 is BrowsingSession.Change.Stream -> when (val event = change.event) {

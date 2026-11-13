@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.detail
 
+import io.github.ponpokoo.mastodonclient.feature.common.ModerationTextCache
 import io.github.ponpokoo.mastodonclient.domain.model.requiresAuthentication
 import io.github.ponpokoo.mastodonclient.feature.common.AccountModerationMenu
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
@@ -61,10 +62,11 @@ class StatusDetailViewModel(
     private val seed: StatusDetailSeed? = null,
     private val actionOwner: StatusActionsViewModel? = null,
 ) : ViewModel() {
+    private val moderationTextCache = ModerationTextCache()
     private val _uiState = MutableStateFlow(StatusDetailUiState())
     private var session: AccountSession? = null
     private val moderatedState = _uiState.moderated(viewModelScope, timelineRepository, { session }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     val uiState = if (browsing != null && actionOwner != null) {
         moderatedState.withDisplayOverlay(viewModelScope, browsing.optimisticActions, ::displayOptimisticActions)
@@ -85,7 +87,8 @@ class StatusDetailViewModel(
     private val actionJob = SupervisorJob(viewModelScope.coroutineContext[Job])
     private val actionScope = CoroutineScope(viewModelScope.coroutineContext + actionJob)
     private var loadJob: Job? = null
-    private var updatesDuringLoad: MutableList<BrowsingSession.Change.StatusUpdated>? = null
+    private val conversationUpdateSource = Any()
+    private var updatesDuringLoad: MutableMap<String, MutableList<BrowsingSession.Change.StatusUpdated>>? = null
 
     private val moderationMenu = AccountModerationMenu(timelineRepository, viewModelScope,
         session = { session }, context = { session }, isCurrent = { it.hasSameCredentials(authRepository.restoreSession()) },
@@ -107,9 +110,24 @@ class StatusDetailViewModel(
             }
             viewModelScope.launch {
                 browsing.events.collect { event ->
-                    val change = event.change as? BrowsingSession.Change.StatusUpdated ?: return@collect
-                    if (event.snapshot == browsing.snapshot.value && change.field == null &&
-                        session?.hasSameCredentials(event.snapshot.account) == true) applyStatusChange(change)
+                    if (event.snapshot != browsing.snapshot.value ||
+                        session?.hasSameCredentials(event.snapshot.account) != true) return@collect
+                    when (val change = event.change) {
+                        is BrowsingSession.Change.StatusUpdated -> if (change.field == null) applyStatusChange(change)
+                        is BrowsingSession.Change.StoredStatusUpdates -> {
+                            // This detail already applied its own response, including newer actions.
+                            if (change.source === conversationUpdateSource) return@collect
+                            updatesDuringLoad?.let { buffered ->
+                                change.byStatusId.forEach { (id, updates) ->
+                                    buffered.getOrPut(id) { mutableListOf() }.addAll(updates)
+                                }
+                            }
+                            _uiState.update { state ->
+                                state.copy(detail = state.detail?.mapStatuses(change::applyTo))
+                            }
+                        }
+                        else -> Unit
+                    }
                 }
             }
         }
@@ -254,7 +272,7 @@ class StatusDetailViewModel(
     private fun load(showCachedDetail: Boolean = false): Job {
         loadJob?.cancel()
         return actionScope.launch {
-            val updates = mutableListOf<BrowsingSession.Change.StatusUpdated>()
+            val updates = mutableMapOf<String, MutableList<BrowsingSession.Change.StatusUpdated>>()
             updatesDuringLoad = updates
             try {
                 loadConversation(showCachedDetail, updates)
@@ -266,7 +284,7 @@ class StatusDetailViewModel(
 
     private suspend fun loadConversation(
         showCachedDetail: Boolean,
-        updates: MutableList<BrowsingSession.Change.StatusUpdated>,
+        updates: MutableMap<String, MutableList<BrowsingSession.Change.StatusUpdated>>,
     ) {
         val snapshot = browsing?.snapshot?.value
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -291,7 +309,7 @@ class StatusDetailViewModel(
                 val cached = conversation?.copy(status = selected) ?: StatusDetail(selected, emptyList(), emptyList())
                 _uiState.update { state ->
                     state.copy(detail = cached.mapStatuses { status ->
-                        updates.fold(status) { post, change -> change.applyTo(post) }
+                        updates[status.statusId].orEmpty().fold(status) { post, change -> change.applyTo(post) }
                     })
                 }
             }
@@ -301,14 +319,15 @@ class StatusDetailViewModel(
         val result = timelineRepository.getStatusDetail(current, statusId)
         if (!isCurrentAction(current, snapshot)) return
         result.onSuccess { detail ->
-            val confirmed = detail.mapStatuses { status -> updates.fold(status) { post, change -> change.applyTo(post) } }
+            val confirmed = detail.mapStatuses { status -> updates[status.statusId].orEmpty().fold(status) { post, change -> change.applyTo(post) } }
             _uiState.update { state ->
                 state.copy(detail = confirmed, isLoading = false)
             }
             if (snapshot != null) {
-                (listOf(confirmed.status) + confirmed.ancestors + confirmed.descendants).distinctBy { it.statusId }.forEach { status ->
-                    browsing.publish(snapshot, BrowsingSession.Change.StatusUpdated(status, kind = StatusUpdateKind.Stored))
-                }
+                val updatesToPublish = (listOf(confirmed.status) + confirmed.ancestors + confirmed.descendants)
+                    .distinctBy { it.statusId }
+                    .map { BrowsingSession.Change.StatusUpdated(it, kind = StatusUpdateKind.Stored) }
+                browsing.publish(snapshot, BrowsingSession.Change.StoredStatusUpdates(updatesToPublish, source = conversationUpdateSource))
             }
         }
             .onFailure { error ->
@@ -325,7 +344,7 @@ class StatusDetailViewModel(
 
     private fun applyStatusChange(change: BrowsingSession.Change.StatusUpdated) {
         if (change.kind == StatusUpdateKind.Stored || change.kind == StatusUpdateKind.Confirmed) {
-            updatesDuringLoad?.add(change)
+            updatesDuringLoad?.getOrPut(change.status.statusId) { mutableListOf() }?.add(change)
         }
         _uiState.update { state -> state.copy(detail = state.detail?.mapStatuses(change::applyTo)) }
     }

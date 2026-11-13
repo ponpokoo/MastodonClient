@@ -1,5 +1,10 @@
 package io.github.ponpokoo.mastodonclient.data.repository
 
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import io.github.ponpokoo.mastodonclient.core.network.ApiClientFactory
 import io.github.ponpokoo.mastodonclient.data.local.NotificationLocalDataSource
@@ -711,7 +716,7 @@ class DefaultTimelineRepository(
     override suspend fun setTagFollowing(session: AccountSession, name: String, following: Boolean): Result<SearchTag> =
         updateExploreTagFollowing(apiClientFactory, session, name, following)
 
-    override fun observeUserStream(session: AccountSession): Flow<TimelineStreamEvent> = flow {
+    override fun observeUserStream(session: AccountSession): Flow<TimelineStreamEvent> = flow<Result<TimelineStreamEvent>> {
         val api = apiClientFactory.create(session.instanceUrl, session.accessToken)
         val streamingUrl = runCatching {
             api.getInstance().let { it.configuration?.urls?.streaming ?: it.urls?.streaming }
@@ -719,6 +724,7 @@ class DefaultTimelineRepository(
             ?: session.instanceUrl
         emitAll(
             streamingDataSource.observeUser(streamingUrl, session.accessToken).mapNotNull { message ->
+                currentCoroutineContext().ensureActive()
                 when (message.event) {
                     "filters_changed" -> TimelineStreamEvent.FiltersChanged
                     "connected" -> TimelineStreamEvent.Connected
@@ -738,9 +744,13 @@ class DefaultTimelineRepository(
                     }.getOrNull()
                     else -> null
                 }
-            },
+            }.map { Result.success(it) },
         )
-    }
+    }.catch { error ->
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        // Deliver the end of the connection after all decoded events, even across dispatchers.
+        emit(Result.failure(error))
+    }.flowOn(Dispatchers.Default).buffer(32).map { it.getOrThrow() }
 
     override suspend fun getHomeTimeline(
         session: AccountSession,

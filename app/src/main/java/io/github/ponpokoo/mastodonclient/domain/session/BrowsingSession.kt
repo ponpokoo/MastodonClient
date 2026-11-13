@@ -23,6 +23,18 @@ class BrowsingSession {
         ) : Change {
             fun applyTo(displayed: TimelineStatus): TimelineStatus = displayed.withUpdatedActions(status, field)
         }
+        class StoredStatusUpdates(updates: List<StatusUpdated>, internal val source: Any? = null) : Change {
+            init {
+                require(updates.all { it.kind == StatusUpdateKind.Stored })
+            }
+
+            val byStatusId = updates.groupBy { it.status.statusId }
+
+            fun applyTo(displayed: TimelineStatus): TimelineStatus =
+                byStatusId[displayed.statusId]?.fold(displayed) { status, update -> update.applyTo(status) }
+                    ?: displayed
+        }
+
         data class StatusDeleted(val statusId: String) : Change
     }
 
@@ -50,6 +62,12 @@ class BrowsingSession {
             if (mutableOptimisticActions.value[id]?.field == change.field) mutableOptimisticActions.value -= id
         }
     }
+}
+
+fun BrowsingSession.Change.applyStatusUpdateTo(status: TimelineStatus): TimelineStatus = when (this) {
+    is BrowsingSession.Change.StatusUpdated -> applyTo(status)
+    is BrowsingSession.Change.StoredStatusUpdates -> applyTo(status)
+    else -> status
 }
 
 /** Stored updates have already been handled by the repository's Home cache write. */

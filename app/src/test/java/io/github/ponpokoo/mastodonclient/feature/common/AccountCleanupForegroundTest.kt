@@ -18,7 +18,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountCleanupForegroundTest : ScreenViewModelTestBase() {
     @Test fun foregroundRetriesFailedRemovalEvenWithNoPushSubscriptions() = runTest(dispatcher) {
-        val store = memoryAuthStore(MemoryAuthPreferences())
+        val store = memoryAuthStore(MemoryAuthPreferences(), dispatcher)
         store.saveSession(testAccount)
         var fail = true
         var cleaned = 0

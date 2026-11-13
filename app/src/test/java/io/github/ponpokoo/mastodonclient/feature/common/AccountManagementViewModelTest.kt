@@ -23,7 +23,7 @@ class AccountManagementViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun reorderPreservesBrowsingGenerationStreamAndSelectionAndRetriesFailedSave() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount); store.saveSession(secondAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount); store.saveSession(secondAccount)
         var fail = true
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         val auth = object : AuthRepository by delegate {
@@ -51,7 +51,7 @@ class AccountManagementViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun confirmedRemovalIsSingleFlightAndNavigatesToRemainingAccount() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount); store.saveSession(secondAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount); store.saveSession(secondAccount)
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         val gate = CompletableDeferred<Unit>(); var calls = 0
         val auth = object : AuthRepository by delegate {
@@ -70,7 +70,7 @@ class AccountManagementViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun staleRemovalOrFailureShowsRetryErrorWithoutNavigationOrDeletion() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount); store.saveSession(secondAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount); store.saveSession(secondAccount)
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         var diskFailure = false
         val auth = object : AuthRepository by delegate {

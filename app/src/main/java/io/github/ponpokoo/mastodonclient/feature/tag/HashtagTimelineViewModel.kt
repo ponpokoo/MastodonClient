@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.tag
 
+import io.github.ponpokoo.mastodonclient.domain.session.applyStatusUpdateTo
 import io.github.ponpokoo.mastodonclient.domain.model.hasSameCredentials
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
@@ -26,9 +27,10 @@ data class HashtagTimelineUiState(
 class HashtagTimelineViewModel(private val hashtag: String, private val timelineRepository: TimelineRepository,
     browsing: BrowsingSession, private val statusActionManager: StatusActionManager = StatusActionManager(timelineRepository),
 ) : SessionScopedViewModel(browsing) {
+    private val moderationTextCache = ModerationTextCache()
     private val mutableState = MutableStateFlow(HashtagTimelineUiState())
     val uiState = mutableState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     private var timelineJob: Job? = null
     private var timelineGeneration = 0L
@@ -125,8 +127,8 @@ class HashtagTimelineViewModel(private val hashtag: String, private val timeline
             is BrowsingSession.Change.Stream -> (change.event as? TimelineStreamEvent.StatusDeleted)?.statusId
             else -> null
         }
-        mutableState.update { it.copy(statuses = it.statuses.filterNot { status -> status.statusId == deleted }.map { status ->
-            if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(status) else status
+        mutableState.update { it.copy(statuses = it.statuses.mapNotNull { status ->
+            if (status.statusId == deleted) null else change.applyStatusUpdateTo(status)
         }) }
     }
 

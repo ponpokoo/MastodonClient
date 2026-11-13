@@ -1,5 +1,9 @@
 package io.github.ponpokoo.mastodonclient.core.security
 
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineDispatcher
 import android.content.Context
 import io.github.ponpokoo.mastodonclient.core.common.runCatchingCancellable as runCatching
 import androidx.datastore.preferences.core.Preferences
@@ -77,16 +81,17 @@ class SecureAuthStore internal constructor(
     private val encrypt: (String) -> String,
     private val decrypt: (String) -> String,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AuthStore {
     constructor(context: Context, cipher: KeystoreCipher = KeystoreCipher(), json: Json = Json { ignoreUnknownKeys = true }) :
         this(context.applicationContext.authDataStore, cipher::encrypt, cipher::decrypt, json)
 
-    override fun observeSessions() = dataStore.data.map { sessionsFrom(it) }.distinctUntilChanged()
+    override fun observeSessions() = dataStore.data.map { sessionsFrom(it) }.distinctUntilChanged().flowOn(dispatcher)
 
     override suspend fun updateAccountDisplay(expected: AccountSession, author: StatusAuthor): AccountSession? {
         var updated: AccountSession? = null
         val caller = kotlinx.coroutines.currentCoroutineContext()
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             caller.ensureActive()
             val sessions = sessionsFrom(preferences)
             val current = sessions.firstOrNull { it.sessionId == expected.sessionId }
@@ -108,11 +113,11 @@ class SecureAuthStore internal constructor(
     override suspend fun saveApplication(application: RegisteredApplication) {
         val applications = read<List<RegisteredApplication>>(REGISTRATIONS).orEmpty()
             .filterNot { it.instanceUrl == application.instanceUrl } + application
-        write(REGISTRATIONS, json.encodeToString(applications))
+        write(REGISTRATIONS, applications)
     }
 
     override suspend fun savePending(pending: PendingOAuth) =
-        write(PENDING, json.encodeToString(pending))
+        write(PENDING, pending)
 
     override suspend fun getPending(): PendingOAuth? = read(PENDING)
 
@@ -121,7 +126,7 @@ class SecureAuthStore internal constructor(
     }
 
     override suspend fun saveSession(session: AccountSession) {
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             val sessions = sessionsFrom(preferences).toMutableList()
             val index = sessions.indexOfFirst {
                 it.instanceUrl == session.instanceUrl && it.accountId == session.accountId
@@ -132,8 +137,8 @@ class SecureAuthStore internal constructor(
         }
     }
 
-    override suspend fun getSessions(): List<AccountSession> {
-        return sessionsFrom(dataStore.data.first())
+    override suspend fun getSessions(): List<AccountSession> = withContext(dispatcher) {
+        sessionsFrom(dataStore.data.first())
     }
 
     override suspend fun replaceSession(expected: AccountSession, session: AccountSession): Boolean {
@@ -141,10 +146,10 @@ class SecureAuthStore internal constructor(
             session.accountId == expected.accountId)
         var replaced = false
         val caller = kotlinx.coroutines.currentCoroutineContext()
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             caller.ensureActive()
             val sessions = sessionsFrom(preferences)
-            if (sessions.none { it.hasSameCredentials(expected) }) return@edit
+            if (sessions.none { it.hasSameCredentials(expected) }) return@editOnDispatcher
             putSessions(preferences, sessions.map { if (it.sessionId == expected.sessionId) session else it })
             caller.ensureActive()
             replaced = true
@@ -152,16 +157,16 @@ class SecureAuthStore internal constructor(
         return replaced
     }
 
-    override suspend fun getSession(): AccountSession? {
+    override suspend fun getSession(): AccountSession? = withContext(dispatcher) {
         val preferences = dataStore.data.first()
         val sessions = sessionsFrom(preferences)
         val activeId = preferences[ACTIVE_SESSION_ID]
-        return sessions.firstOrNull { it.sessionId == activeId } ?: sessions.firstOrNull()
+        sessions.firstOrNull { it.sessionId == activeId } ?: sessions.firstOrNull()
     }
 
     override suspend fun setActiveSession(sessionId: String): AccountSession? {
         var session: AccountSession? = null
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             session = sessionsFrom(preferences).firstOrNull { it.sessionId == sessionId }
             if (session != null) preferences[ACTIVE_SESSION_ID] = sessionId
         }
@@ -169,7 +174,7 @@ class SecureAuthStore internal constructor(
     }
 
     override suspend fun removeSession(sessionId: String) {
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             // Commit the cleanup journal together with credential removal, including across crashes.
             preferences[PENDING_DELETIONS] = preferences[PENDING_DELETIONS].orEmpty() + sessionId
             val remaining = sessionsFrom(preferences).filterNot { it.sessionId == sessionId }
@@ -187,7 +192,7 @@ class SecureAuthStore internal constructor(
     override suspend fun pendingAccountDeletions(): Set<String> = dataStore.data.first()[PENDING_DELETIONS].orEmpty()
 
     override suspend fun completeAccountDeletion(sessionId: String) {
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             val pending = preferences[PENDING_DELETIONS].orEmpty() - sessionId
             if (pending.isEmpty()) preferences.remove(PENDING_DELETIONS) else preferences[PENDING_DELETIONS] = pending
         }
@@ -195,12 +200,12 @@ class SecureAuthStore internal constructor(
 
     override suspend fun moveSession(sessionId: String, beforeSessionId: String?) {
         val caller = kotlinx.coroutines.currentCoroutineContext()
-        dataStore.edit { preferences ->
+        editOnDispatcher { preferences ->
             caller.ensureActive()
             val sessions = sessionsFrom(preferences).toMutableList()
             val index = sessions.indexOfFirst { it.sessionId == sessionId }
             check(index >= 0) { "アカウントの登録が変更されました" }
-            if (beforeSessionId == sessionId) return@edit
+            if (beforeSessionId == sessionId) return@editOnDispatcher
             check(beforeSessionId == null || sessions.any { it.sessionId == beforeSessionId }) { "移動先の登録が変更されました" }
             val active = sessions.firstOrNull { it.sessionId == preferences[ACTIVE_SESSION_ID] } ?: sessions.first()
             val moving = sessions.removeAt(index)
@@ -229,14 +234,22 @@ class SecureAuthStore internal constructor(
         preferences.remove(SESSION)
     }
 
-    private suspend inline fun <reified T> read(key: Preferences.Key<String>): T? = runCatching {
-        val encrypted = dataStore.data.map { it[key] }.first() ?: return null
-        json.decodeFromString<T>(decrypt(encrypted))
-    }.getOrNull()
+    private suspend inline fun <reified T> read(key: Preferences.Key<String>): T? = withContext(dispatcher) {
+        runCatching {
+            val encrypted = dataStore.data.first()[key] ?: return@withContext null
+            json.decodeFromString<T>(decrypt(encrypted))
+        }.getOrNull()
+    }
 
-    private suspend fun write(key: Preferences.Key<String>, plaintext: String) {
-        val encrypted = encrypt(plaintext)
-        dataStore.edit { it[key] = encrypted }
+    private suspend inline fun <reified T> write(key: Preferences.Key<String>, value: T) {
+        withContext(dispatcher) {
+            val encrypted = encrypt(json.encodeToString(value))
+            dataStore.edit { it[key] = encrypted }
+        }
+    }
+
+    private suspend fun editOnDispatcher(transform: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        dataStore.edit { preferences -> withContext(dispatcher) { transform(preferences) } }
     }
 
     private companion object {

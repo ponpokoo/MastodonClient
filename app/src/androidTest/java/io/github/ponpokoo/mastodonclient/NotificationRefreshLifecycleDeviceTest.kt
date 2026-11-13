@@ -3,6 +3,7 @@ package io.github.ponpokoo.mastodonclient
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationsContent
 import io.github.ponpokoo.mastodonclient.feature.notifications.NotificationFilter
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
@@ -90,7 +91,63 @@ class NotificationRefreshLifecycleDeviceTest {
             rule.waitForIdle()
             rule.runOnIdle { registry.currentState = Lifecycle.State.RESUMED }
             rule.waitForIdle()
-            rule.runOnIdle { assertEquals("Cancelled outgoing preview triggered a refresh", afterCommit, requests.get()) }
+            rule.runOnIdle {
+                assertEquals("Cancelled outgoing preview triggered a refresh", afterCommit, requests.get())
+                shown.value = false
+            }
+            rule.waitForIdle()
+            rule.runOnIdle { shown.value = true }
+            rule.waitUntil(5_000) { requests.get() > afterCommit && !model.uiState.value.isLoadingNotifications }
+            rule.waitForIdle()
+            rule.runOnIdle { assertEquals("Reattaching on the same resume requested a second refresh", afterCommit + 1, requests.get()) }
+        } finally { rule.runOnIdle { store.clear() } }
+    }
+
+    @Test fun activityRecreationRefreshesTheVisibleListOnceAndDisplaysNewRows() {
+        val requests = AtomicInteger()
+        val account = AccountSession("recreate", "https://example.test", "me", "me", "Me", "", "")
+        val author = StatusAuthor("author", "Synthetic", "author@example.test", "")
+        val repository = object : TimelineRepository {
+            override suspend fun getHomeTimeline(session: AccountSession, maxId: String?, limit: Int) = error("unused")
+            override suspend fun getNotifications(session: AccountSession, maxId: String?, limit: Int): Result<NotificationPage> {
+                val id = "notification-${requests.incrementAndGet()}"
+                return Result.success(NotificationPage(
+                    listOf(TimelineNotification(id, "follow", "2026-11-12T00:00:00Z", author, null)), null, true,
+                ))
+            }
+        }
+        val store = ViewModelStore()
+        lateinit var model: NotificationsViewModel
+        rule.runOnIdle {
+            val browsing = BrowsingSession().apply { activate(account) }
+            model = NotificationsViewModel(repository, browsing)
+            store.put("recreate", model)
+        }
+        val scenario = rule.activityRule.scenario
+        val trace = mutableListOf<String>()
+        fun attach() = scenario.onActivity { activity ->
+            trace += "attach:${requests.get()}"
+            activity.lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
+                trace += "$event:${requests.get()}"
+            })
+            activity.setContent {
+                NotificationsLifecycleEffect(model, true)
+                val state by model.uiState.collectAsState()
+                Column { state.notifications.forEach { Text(it.id) } }
+            }
+        }
+        try {
+            rule.waitUntil(5_000) { model.uiState.value.isInitialPageLoaded }
+            attach()
+            rule.waitUntil(5_000) { requests.get() >= 2 && !model.uiState.value.isLoadingNotifications }
+            rule.runOnIdle { assertEquals(2, requests.get()) }
+
+            scenario.recreate()
+            rule.runOnIdle { trace += "recreated:${requests.get()}" }
+            attach()
+            rule.waitUntil(5_000) { requests.get() >= 3 && !model.uiState.value.isLoadingNotifications }
+            rule.onNodeWithText("notification-3").assertIsDisplayed()
+            rule.runOnIdle { assertEquals(trace.joinToString(), 3, requests.get()) }
         } finally { rule.runOnIdle { store.clear() } }
     }
 

@@ -27,7 +27,7 @@ class PushReauthorizationViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun activeReauthorizationReplacesStreamAndRejectsOldTimelineEvenWhenCancellationIsIgnored() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount)
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         val auth = object : AuthRepository by delegate {
             override suspend fun refreshAccountDisplay(session: AccountSession) = Result.success(Unit)
@@ -61,7 +61,7 @@ class PushReauthorizationViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun inactiveReauthorizationKeepsBrowsingAndDoesNotRequestNavigation() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount); store.saveSession(secondAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount); store.saveSession(secondAccount)
         val updated = testAccount.copy(accessToken = "new", scopes = "read write push")
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         val auth = object : AuthRepository by delegate {
@@ -87,7 +87,7 @@ class PushReauthorizationViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun pendingRestoreCannotOverwriteReauthorizedCredentials() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount)
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         val gate = CompletableDeferred<Unit>()
         var delayRestore = false
@@ -111,7 +111,7 @@ class PushReauthorizationViewModelTest : ScreenViewModelTestBase() {
     }
 
     @Test fun failedOrDeniedReauthorizationKeepsCredentialsAndAllowsRetryWithoutNavigation() = runTest(dispatcher) {
-        val store = memoryAuthStore(); store.saveSession(testAccount)
+        val store = memoryAuthStore(dispatcher = dispatcher); store.saveSession(testAccount)
         val delegate = DefaultAuthRepository(ApiClientFactory(), store)
         var succeed = false
         val auth = object : AuthRepository by delegate {

@@ -1,5 +1,7 @@
 package io.github.ponpokoo.mastodonclient.feature.search
 
+import io.github.ponpokoo.mastodonclient.domain.session.applyStatusUpdateTo
+import io.github.ponpokoo.mastodonclient.feature.common.ModerationTextCache
 import io.github.ponpokoo.mastodonclient.feature.common.moderated
 import io.github.ponpokoo.mastodonclient.feature.common.withModeration
 import androidx.lifecycle.viewModelScope
@@ -55,13 +57,14 @@ internal fun SearchFailure.message(): String = when (this) {
 }
 
 class SearchViewModel(private val repository: TimelineRepository, browsing: BrowsingSession) : SessionScopedViewModel(browsing) {
+    private val moderationTextCache = ModerationTextCache()
     private val mutableState = MutableStateFlow(SearchUiState())
     val uiState = mutableState.moderated(viewModelScope, repository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     private val mutableExplore = MutableStateFlow(ExploreUiState())
     val exploreState = mutableExplore.moderated(viewModelScope, repository, { browsing.snapshot.value.account }) { state, moderation, account ->
-        state.withModeration(moderation, account)
+        state.withModeration(moderation, account, moderationTextCache)
     }
     private val exploreJobs = mutableMapOf<ExploreFeed, Job>()
     private val exploreGenerations = mutableMapOf<ExploreFeed, Long>()
@@ -277,13 +280,13 @@ class SearchViewModel(private val repository: TimelineRepository, browsing: Brow
             else -> null
         }
         mutableState.update { state -> state.copy(tabs = state.tabs.mapValues { (_, tab) ->
-            tab.copy(results = tab.results?.let { results -> results.copy(statuses = results.statuses.filterNot { it.statusId == deleted }.map { status ->
-                if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(status) else status
+            tab.copy(results = tab.results?.let { results -> results.copy(statuses = results.statuses.mapNotNull { status ->
+                if (status.statusId == deleted) null else change.applyStatusUpdateTo(status)
             }) })
         }) }
         mutableExplore.update { state -> state.copy(tabs = state.tabs.mapValues { (_, tab) -> tab.copy(
-            page = tab.page?.let { page -> page.copy(statuses = page.statuses.filterNot { it.statusId == deleted }.map {
-                if (change is BrowsingSession.Change.StatusUpdated) change.applyTo(it) else it
+            page = tab.page?.let { page -> page.copy(statuses = page.statuses.mapNotNull {
+                if (it.statusId == deleted) null else change.applyStatusUpdateTo(it)
             }) },
         ) }) }
     }

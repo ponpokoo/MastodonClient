@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.core.preferences
 
+import kotlinx.coroutines.flow.distinctUntilChanged
 import android.content.Context
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
 import io.github.ponpokoo.mastodonclient.domain.model.MediaDisplay
@@ -155,9 +156,11 @@ class UserPreferencesStore(
     private suspend fun canWriteAccount(id: String) = id !in removedAccounts && isAccountPresent(id)
 
     val preferences: Flow<AppPreferences> = dataStore.data.map { stored ->
-        stored[APP_PREFERENCES]?.let { encoded ->
+        stored[APP_PREFERENCES] to (stored[LEGACY_OPEN_LINKS_IN_APP] ?: true)
+    }.distinctUntilChanged().map { (encoded, legacyOpenLinksInApp) ->
+        encoded?.let {
             runCatching { decodeAppPreferences(encoded) }.getOrNull()
-        } ?: AppPreferences(openLinksInApp = stored[LEGACY_OPEN_LINKS_IN_APP] ?: true)
+        } ?: AppPreferences(openLinksInApp = legacyOpenLinksInApp)
     }.map { preferences ->
         preferences.copy(composerActionOrder = preferences.composerActionOrder.distinct() +
             ComposerAction.entries.filterNot(preferences.composerActionOrder::contains))

@@ -1,5 +1,6 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
+import io.github.ponpokoo.mastodonclient.feature.common.ModerationTextCache
 import androidx.lifecycle.viewModelScope
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.domain.repository.TimelineRepository
@@ -44,9 +45,10 @@ class SavedTimelinesViewModel(
     private val repository: TimelineRepository,
     browsing: BrowsingSession,
 ) : SessionScopedViewModel(browsing) {
+    private val moderationTextCache = ModerationTextCache()
     private val mutableState = MutableStateFlow(SavedTimelinesUiState())
     val state = mutableState.moderated(viewModelScope, repository, { currentSnapshot()?.account }) { state, moderation, account ->
-        state.withModeration(moderation, account, if (kind == SavedTimelineKind.List) "home" else null)
+        state.withModeration(moderation, account, moderationTextCache, if (kind == SavedTimelineKind.List) "home" else null)
     }
     private var pageJob: Job? = null
     private var generation = 0L
@@ -210,6 +212,12 @@ class SavedTimelinesViewModel(
         if (deleted != null) {
             if (requesting) deletedDuringRequest.add(deleted)
             mutableState.update { it.copy(statuses = it.statuses.filterNot { status -> status.statusId == deleted }) }
+        }
+        if (change is BrowsingSession.Change.StoredStatusUpdates) {
+            if (requesting) change.byStatusId.forEach { (id, updates) ->
+                updatesDuringRequest.getOrPut(id) { mutableListOf() }.addAll(updates)
+            }
+            mutableState.update { it.copy(statuses = it.statuses.map(change::applyTo)) }
         }
         if (change is BrowsingSession.Change.StatusUpdated) {
             if (requesting) updatesDuringRequest.getOrPut(change.status.statusId) { mutableListOf() }.add(change)

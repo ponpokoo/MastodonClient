@@ -7,6 +7,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StatusActionUpdateTest {
+    @Test fun storedBatchAppliesSameStatusFieldsInOrderAndKeepsBoostIdentity() {
+        val original = testStatus().copy(favourited = false, reblogged = false)
+        val boosted = original.copy(timelineId = "boost", boostedBy = original.author, createdAt = "later")
+        val unrelated = original.copy(statusId = "unrelated")
+        fun stored(field: StatusActionField, status: io.github.ponpokoo.mastodonclient.domain.model.TimelineStatus) =
+            BrowsingSession.Change.StatusUpdated(status, field, StatusUpdateKind.Stored)
+        val batch = BrowsingSession.Change.StoredStatusUpdates(listOf(
+            stored(StatusActionField.Favourite, original.copy(favourited = true, favouritesCount = 2)),
+            stored(StatusActionField.Reblog, original.copy(reblogged = true, boostsCount = 3)),
+            stored(StatusActionField.Favourite, original.copy(favourited = false, favouritesCount = 1)),
+        ))
+        val expected = boosted.copy(favouritesCount = 1, reblogged = true, boostsCount = 3)
+
+        assertEquals(expected, batch.applyTo(boosted))
+        assertEquals(listOf(expected, unrelated), listOf(boosted, unrelated).applyHomeChange(batch))
+        assertSame(unrelated, batch.applyTo(unrelated))
+    }
+
     @Test fun votingUpdatesOriginalAndBoostedCopiesWithoutChangingTheirListIdentity() {
         val poll = StatusPoll("poll", null, false, false, 0, 0, false, emptySet(),
             listOf(PollOption("first", null), PollOption("second", null)))

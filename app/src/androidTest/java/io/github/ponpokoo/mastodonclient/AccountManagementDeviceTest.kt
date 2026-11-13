@@ -1,5 +1,8 @@
 package io.github.ponpokoo.mastodonclient
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import io.github.ponpokoo.mastodonclient.core.security.KeystoreCipher
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
@@ -19,6 +22,7 @@ import io.github.ponpokoo.mastodonclient.feature.common.AccountRemovalButton
 import io.github.ponpokoo.mastodonclient.feature.common.AccountSwitchDialog
 import io.github.ponpokoo.mastodonclient.feature.settings.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,6 +39,24 @@ class AccountManagementDeviceTest {
         private val mutex = Mutex()
         override suspend fun updateData(transform: suspend (Preferences) -> Preferences) = mutex.withLock {
             transform(data.value).also { data.value = it }
+        }
+    }
+
+    @Test fun androidKeystoreSessionRoundTripsFromMainAcrossStoreRecreation() {
+        val data = MemoryPreferences()
+        fun authStore(): SecureAuthStore {
+            val cipher = KeystoreCipher()
+            return SecureAuthStore(data, cipher::encrypt, cipher::decrypt)
+        }
+
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                authStore().saveSession(alice)
+                val restored = authStore()
+                assertEquals(alice, restored.getSession())
+                assertEquals(listOf(alice), restored.getSessions())
+                assertEquals(listOf(alice), restored.observeSessions().first())
+            }
         }
     }
 
