@@ -81,6 +81,16 @@ implementing it.
   production setup/recovery instructions must remain accurate when changed. Record deployed
   versions and migration/recovery results once where needed for safe operation; never record secrets.
 
+## Local development data
+
+- Store manually generated logs and trial artifacts in the scratch directory described in
+  [project setup](docs/project-setup.md#ローカルの作業データ). Keep evidence needed for investigations
+  or past releases in the documented storage locations.
+- Before organizing files, check Git status, references, and how each item can be restored.
+  Protect signing material, device state, release originals, and uncommitted work.
+  Verify backups or migrations before removing originals. Keep items whose purpose or
+  recovery path is uncertain.
+
 ## Architecture decision records
 
 - Keep ADRs in [`docs/adr/`](docs/adr/README.md) for lasting choices about shared boundaries,

@@ -220,7 +220,12 @@ Metrics・Custom Alertsに配送URLや秘密値が入らないこと、通知先
 2026-10-06の本番移行では、Time Travel bookmarkとアプリ3テーブルの暗号化したJSON・SQL退避を確保し、
 ローカルのメモリ内SQLiteで復元・追加マイグレーション・元の全列の保持を確認した。
 本番は既存の`nagisa-relay` Workerと同名D1を維持して0002だけを追加適用した。
-退避はGit管理外の`.wrangler/production-migration-20261006/`にDPAPI CurrentUserで保管し、保持期限は2026-10-13。
+移行時に設定した保持期限は2026-10-13。暗号化された退避と検証スクリプトは
+[開発データ領域](../../docs/project-setup.md#ローカルの作業データ)の
+`investigations/relay-production/production-migration-20261006/` にある。
+検証スクリプトはマイグレーションファイルへの相対参照を持つため、再検証時は元の配置
+`relay/workers/.wrangler/production-migration-20261006/` を隔離したチェックアウトで再現する。
+DPAPI CurrentUserでの復号には元のWindowsユーザー環境が必要。
 クラウド隔離DBでの復元・別端末からの退避復号は未検証。
 配置・版・フラグ・自動移行・実通知の詳細は[手順6の実施記録](../../docs/investigations/relay-production-measurement-20261006.md#手順6既存公開relayの互換更新2026-10-06)を参照する。
 

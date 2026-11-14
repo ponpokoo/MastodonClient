@@ -83,6 +83,8 @@ GitHubでも配布する場合は、そのReleaseの本文・タグ・添付成�
 
 AABとノートをひとつにまとめる場合は、`app/release/Nagisa-<versionName>-vc<versionCode>-release-package-<日時>.zip`へAAB・同名のSHA-256ファイル・内部ノートを収録する。ZIPもGit管理外とし、外部バックアップは別途行う。
 
+過去版は、AAB・APK・ハッシュ・内部ノート・対応が確認できた R8 マッピングを版単位で保管する。Windows の保管先は `%LOCALAPPDATA%\MastodonClient-dev\release-archive\<versionName>-vc<versionCode>\`。別のバックアップ先へコピーし、SHA-256 を照合してから移す。移設済みの版を参照するときは、この保管先の同名ファイルを確認する。
+
 記録する内容は次の範囲とする。まだ行う時期でない操作は「提出待ち」「配信後に実施」と次の作業を記載し、確認できていない事実は「未確認」、実行しなかった検証は「未実施」と区別する。冒頭に現在の状態と次の作業を置き、結果の連絡を受けたら更新する。古い「未確認」を残したまま末尾へ追記するだけにしない。
 
 - versionName・versionCode、比較元、対応するソースのコミットSHA、今回の変更内容。

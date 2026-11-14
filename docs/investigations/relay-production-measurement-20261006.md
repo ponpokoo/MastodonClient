@@ -209,7 +209,8 @@ Cron間隔を短縮したため「30分でクラウド復旧」とは扱わな�
   退避には登録16件（有効6件・無効7件・解除済み3件）、通知0件、日次使用量2件が含まれる。
   ローカルのメモリ内SQLiteでSQL復元と0002適用を確認し、元の全列を保持することを検証した。
 - 退避JSON・SQLはpontaユーザーのDPAPIで暗号化し、復号結果の一致を確認して平文を削除した。
-  Git管理外の`.wrangler/production-migration-20261006/`に保持。bookmarkも非公開の運用記録へ保存する。
+  [開発データ領域](../project-setup.md#ローカルの作業データ)の
+  `investigations/relay-production/production-migration-20261006/` に保管している。bookmarkも非公開の運用記録へ保存する。
   保持期限は2026-10-13。DPAPI退避は同じWindowsユーザー・端末に依存し、別端末への復旧能力は未検証。
 - 全体停止中に`0002_bound_registrations.sql`の9文を個別適用した。0001は再実行していない。
   移行直後の元の3テーブルのJSONハッシュは退避と完全一致し、登録ID・配送ID・管理ハッシュ・FCM宛先・墓標等を保持した。

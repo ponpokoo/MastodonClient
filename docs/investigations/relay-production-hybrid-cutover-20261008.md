@@ -24,7 +24,8 @@
 | 公開health | HTTP 200、`status=configured`・`mode=workers-d1` |
 | 公開capabilities | HTTP 200、登録v2・鍵紐付け・`deliveryMode=hybrid`・配送v2・`syncRequired=true` |
 
-配置記録とDashboardの証跡はGit対象外の`relay/workers/.wrangler/production-hybrid-20261008/`に保存した。
+配置記録とDashboardの証跡は、[開発データ領域](../project-setup.md#ローカルの作業データ)の
+`investigations/relay-production/production-hybrid-20261008/` に保管している。
 この記録の配置確認は2026-10-08 JST（CloudflareのUTC表示は2026-10-07）。
 
 ## 検証と限界

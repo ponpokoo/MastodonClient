@@ -28,7 +28,7 @@
 
 520種類の回帰テストはデコード済みの合成画像を使い、ネイティブデコーダーを数百件同時実行する負荷から寸法保持の検証を切り離した。実デコーダーを通す性能比較は128 URLまでであり、520種類の初回デコードを高速化した確認ではない。動く絵文字の再デコードと再生中の継続的な描画は残る。
 
-キャッシュ・shortcodeの単体テスト、文字拡大・実描画・読み上げ・リンク・リアクション操作の既存端末テストと、新規の寸法保持・スクロール位置の回帰テストで確認する。CIは既存の`app/`と`app/src/androidTest/`の選択範囲に含まれるため、パス・コマンド・ツール版の更新は不要と判断した。修正後のCSV・実投稿のログ・トレースと比較版の結果は、Git管理外の`app/build/outputs/emoji-reentry-measurements/fixed/`に保存した。
+キャッシュ・shortcodeの単体テスト、文字拡大・実描画・読み上げ・リンク・リアクション操作の既存端末テストと、新規の寸法保持・スクロール位置の回帰テストで確認する。CIは既存の`app/`と`app/src/androidTest/`の選択範囲に含まれるため、パス・コマンド・ツール版の更新は不要と判断した。修正後のCSV・実投稿のログ・トレースと比較版の結果は、開発データ領域の`investigations/emoji-reentry-measurements/fixed/`に保存した。
 
 以下は原因と比較条件を残すための修正前の記録。ソース中の変数・関数名も当時の実装を指す。
 
@@ -57,7 +57,7 @@
 
 改善は、リアクション画像の確定寸法を再表示まで保持すること、画像完了ごとの寸法変更をまとめること、同じ欄の再生成・計測を減らすことを先に検討する。本文のキャッシュ上限だけを広げても、この経路は変わらない。
 
-一時診断コードは撤去し、診断なしのDebug APKを再ビルドした。ログ・集計CSV・トレース・診断コードの控えはGit管理外の`app/build/outputs/emoji-reentry-measurements/live-explore/`に保存した。再現操作は、探索→投稿でリアクションの多い行を表示し、行が破棄される距離まで画面外へ出してから戻る。読み込み後の幅・高さとフレーム時間を別々に確認する。
+一時診断コードは撤去し、診断なしのDebug APKを再ビルドした。ログ・集計CSV・トレース・診断コードの控えは開発データ領域の`investigations/emoji-reentry-measurements/live-explore/`に保存した。再現操作は、探索→投稿でリアクションの多い行を表示し、行が破棄される距離まで画面外へ出してから戻る。読み込み後の幅・高さとフレーム時間を別々に確認する。
 
 ## 修正前：本文の合成テストの条件と測定方法
 
@@ -131,6 +131,6 @@ adb -s emulator-5554 install -r app/build/outputs/apk/androidTest/debug/app-debu
 adb -s emulator-5554 shell am instrument -w -e class io.github.ponpokoo.mastodonclient.StatusEmojiReentryMeasurementDeviceTest io.github.ponpokoo.mastodonclient.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-端末内の`files/emoji-reentry-measurements/mounts.csv`と`geometry.csv`に測定値を出力する。`adb exec-out run-as io.github.ponpokoo.mastodonclient cat files/emoji-reentry-measurements/mounts.csv`などで取り出せる。今回のCSVはGit管理外の`app/build/outputs/emoji-reentry-measurements/`にも回収した。
+端末内の`files/emoji-reentry-measurements/mounts.csv`と`geometry.csv`に測定値を出力する。`adb exec-out run-as io.github.ponpokoo.mastodonclient cat files/emoji-reentry-measurements/mounts.csv`などで取り出せる。今回のCSVは[開発データ領域](../project-setup.md#ローカルの作業データ)の`investigations/emoji-reentry-measurements/`にも回収した。
 
 調査テスト2件と既存の`StatusEmojiLayoutDeviceTest`2件が成功。寸法条件の拡張後は対象の調査テスト1件のみ再実行して成功した。調査ハーネスの初回実行ではLazyColumnの位置保持により対象が画面外になる問題があり、対象位置を明示してから測定した。表は修正後に成功した実行の値。
