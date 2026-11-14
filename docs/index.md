@@ -89,6 +89,9 @@
 
 ## 調査・継続確認
 
+- [Android処理・パフォーマンス調査（2026-11-12）](investigations/android-performance-audit-20261112.md) — 主要8操作の静的調査、9候補の根拠・リスク・測定方法と現状維持の判断。
+- [パフォーマンス改善の変更指示書](investigations/android-performance-change-instructions-20261112.md) — 調査候補1・2・3・5・6・7の未実装の変更方針、受入条件と回帰検証。
+
 未解決の問題、残る互換性・保持方針の確認、採用前の試作を参照する。継続対応の進捗はIssuesで管理する。
 
 | 文書 | 読むとき |

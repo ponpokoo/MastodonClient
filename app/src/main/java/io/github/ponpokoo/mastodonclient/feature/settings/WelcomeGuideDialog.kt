@@ -46,11 +46,13 @@ internal const val USAGE_GUIDE_URL = "https://ponpokoo.github.io/nagisa-policy/g
 internal data class AppUpdateNotice(val versionCode: Int, val highlights: List<String>)
 
 internal val appUpdateNotice = AppUpdateNotice(
-    versionCode = 35,
+    versionCode = 36,
     highlights = listOf(
-        "「設定 → 外観 → 下部タブバー」で、iOS風の「Liquid Glass」を選べるようになりました（効果はAndroid 13以降）。",
-        "投稿詳細で本文を長押してコピーできるようになりました",
-        "投稿詳細を開いたときに読み込み済みの投稿を先に表示するようにして読み込みを極力なくしました。会話では投稿を先に表示してあとから会話を読み込む方式にしました。",
+        "プロフィールの編集画面を使いやすくしました。",
+        "画像の切り出しに対応しました。",
+        "各種設定の初期値を変更しました。",
+        "ホーム・会話・通知の読み込みや更新時の処理を見直しました。",
+        "投稿詳細で本文の選択を解除した後に「すべてを選択」が残る不具合を修正しました。",
     ),
 )
 
@@ -80,7 +82,7 @@ internal fun StartupGuide(
         updateNotice.versionCode > saved.updateNoticeSeenThroughVersionCode
     ) {
         GuideDialog(
-            title = "Nagisa ${BuildConfig.VERSION_NAME} の更新",
+            title = "${BuildConfig.VERSION_NAME} の更新内容",
             dialogTag = "update_notice",
             dismissLabel = "閉じる",
             dismissTag = "update_notice_close",
