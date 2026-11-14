@@ -7,6 +7,7 @@ import io.github.ponpokoo.mastodonclient.data.local.BrowsingDatabase
 import io.github.ponpokoo.mastodonclient.data.local.RoomHomeTimelineLocalDataSource
 import io.github.ponpokoo.mastodonclient.data.local.RoomNotificationLocalDataSource
 import io.github.ponpokoo.mastodonclient.domain.model.AccountSession
+import io.github.ponpokoo.mastodonclient.domain.model.HomeTimelineWindowRecord
 import io.github.ponpokoo.mastodonclient.domain.model.StatusAuthor
 import io.github.ponpokoo.mastodonclient.domain.model.TimelineNotification
 import io.github.ponpokoo.mastodonclient.domain.model.TimelinePage
@@ -129,6 +130,42 @@ class HomeTimelineCacheDeviceTest {
         } finally { database.close() }
     }
 
+    @Test fun indexedUpdatesHandleLargeBatchesAndApplyRepeatedUpdatesInOrder() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val original = status("original")
+            val boost = original.copy(timelineId = "boost", boostedBy = author)
+            source.writePage(account, null, page(listOf(boost, original)))
+            val unrelated = List(1_001) { BrowsingSession.Change.StatusUpdated(status("missing-$it")) }
+            source.applyStatusUpdates(account, unrelated + listOf(
+                BrowsingSession.Change.StatusUpdated(original.copy(favouritesCount = 1)),
+                BrowsingSession.Change.StatusUpdated(original.copy(favouritesCount = 2)),
+            ))
+            assertEquals(listOf(boost.copy(favouritesCount = 2), original.copy(favouritesCount = 2)),
+                source.readPage(account, null, 20)!!.statuses)
+        } finally { database.close() }
+    }
+
+    @Test fun streamingDeletesOneBoostByRowIdAndAllOtherCopiesByOriginalId() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val original = status("original").copy(statusId = "original")
+            val boosts = List(3) { original.copy(timelineId = "boost-$it", boostedBy = author) }
+            val survivors = List(4) { status("survivor-$it") }
+            source.writePage(account, null, page(listOf(boosts[0], survivors[0], original, survivors[1],
+                boosts[1], survivors[2], boosts[2], survivors[3]), end = true))
+            source.applyChange(account, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusDeleted(boosts[1].timelineId)))
+            assertEquals(original, source.readStatus(account, original.statusId))
+            assertEquals(listOf(boosts[0], boosts[2]), source.readPage(account, null, 20)!!.statuses.filter { it.boostedBy != null })
+            source.applyChange(account, BrowsingSession.Change.Stream(TimelineStreamEvent.StatusDeleted(original.statusId)))
+            assertEquals(page(survivors.drop(1), end = true), source.readPage(account, survivors.first().timelineId, 20))
+            assertEquals(survivors.indices.toList(), database.homeTimeline().readAll(account.sessionId, "https://one.example")
+                .map { it.position })
+        } finally { database.close() }
+    }
+
     @Test fun accountsInstancesAndNotificationsAreIndependentAndLateLogoutWritesAreRejected() = runBlocking {
         val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
         val second = account.copy(sessionId = "two")
@@ -210,7 +247,8 @@ class HomeTimelineCacheDeviceTest {
             old.version = 1
         }
         val database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
-            .addMigrations(BrowsingDatabase.MIGRATION_1_2, BrowsingDatabase.MIGRATION_2_3, BrowsingDatabase.MIGRATION_3_4).build()
+            .addMigrations(BrowsingDatabase.MIGRATION_1_2, BrowsingDatabase.MIGRATION_2_3,
+                BrowsingDatabase.MIGRATION_3_4, BrowsingDatabase.MIGRATION_4_5).build()
         try {
             val restored = RoomNotificationLocalDataSource(database) { true }.read(account)
             assertEquals(listOf(notification), restored.notifications)
@@ -263,20 +301,91 @@ class HomeTimelineCacheDeviceTest {
 
     @Test fun versionThreeMigrationPreservesHomeAndNotificationMarker() = runBlocking {
         val name = "home-v3-${UUID.randomUUID()}.db"
-        var database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name).build()
+        val database = openLegacyHome(name, version = 3)
         try {
-            RoomHomeTimelineLocalDataSource(database) { true }.writePage(account, null, page(listOf(status("existing"))))
-            RoomNotificationLocalDataSource(database) { true }.writeMarker(account, "marker")
-            database.close()
-            // v3 has the same existing tables, without the new window index table.
-            SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { old ->
-                old.execSQL("DROP TABLE home_timeline_windows")
-                old.version = 3
-            }
-            database = Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
-                .addMigrations(BrowsingDatabase.MIGRATION_3_4).build()
             assertEquals(listOf(status("existing")), RoomHomeTimelineLocalDataSource(database) { true }.readWindow(account)!!.statuses)
             assertEquals("marker", RoomNotificationLocalDataSource(database) { true }.read(account).lastReadId)
         } finally { database.close(); context.deleteDatabase(name) }
+    }
+
+    @Test fun versionFourBackfillsBoostsAndPreservesWindowAndCorruptPageRecovery() = runBlocking {
+        val name = "home-v4-${UUID.randomUUID()}.db"
+        val original = status("existing")
+        val boost = original.copy(timelineId = "boost", boostedBy = author)
+        val window = page(listOf(boost)).mergeHomePage(page(listOf(original)))
+        val record = HomeTimelineWindowRecord(
+            window.homeIndex(), window.nextMaxId, window.endReached, "boost")
+        val database = openLegacyHome(name, version = 4) { old ->
+            old.execSQL("INSERT INTO home_timeline_cache VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any>(account.sessionId, "https://one.example", boost.timelineId, 1, Json.encodeToString(boost)))
+            old.execSQL("INSERT INTO home_timeline_windows VALUES (?, ?, ?)",
+                arrayOf(account.sessionId, "https://one.example", Json.encodeToString(record)))
+            old.execSQL("INSERT INTO home_timeline_cache VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any>("corrupt", "https://one.example", "damaged", 0, "bad"))
+            old.execSQL("INSERT INTO home_timeline_state VALUES (?, ?, 0)", arrayOf("corrupt", "https://one.example"))
+        }
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            assertEquals(original, source.readStatus(account, original.statusId))
+            assertEquals(window.homeIndex().gaps, source.readWindow(account)!!.homeIndex().gaps)
+            assertEquals(record, Json.decodeFromString<HomeTimelineWindowRecord>(
+                database.homeTimeline().window(account.sessionId, "https://one.example")!!.payload))
+            source.applyStatusUpdates(account, listOf(BrowsingSession.Change.StatusUpdated(original.copy(favourited = true))))
+            assertTrue(source.readWindow(account)!!.statuses.all { it.favourited })
+            val corrupt = account.copy(sessionId = "corrupt")
+            assertNull(source.readPage(corrupt, null, 20))
+            source.writePage(corrupt, null, page(listOf(status("recovered"))))
+            assertEquals(listOf("recovered"), source.readWindow(corrupt)!!.statuses.map { it.timelineId })
+            assertEquals("marker", RoomNotificationLocalDataSource(database) { true }.read(account).lastReadId)
+        } finally { database.close(); context.deleteDatabase(name) }
+    }
+
+    @Test fun identicalSaveSkipsWritesAndAnchorChangeOnlyWritesWindow() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, BrowsingDatabase::class.java).build()
+        try {
+            val source = RoomHomeTimelineLocalDataSource(database) { true }
+            val window = page(listOf(status("new"), status("old")))
+            source.writeWindow(account, window, "old", emptyList())
+            val sql = database.openHelper.writableDatabase
+            for (table in listOf("home_timeline_cache", "home_timeline_state")) {
+                for (operation in listOf("INSERT", "UPDATE", "DELETE")) {
+                    sql.execSQL("CREATE TRIGGER forbid_${table}_$operation BEFORE $operation ON $table " +
+                        "BEGIN SELECT RAISE(ABORT, 'unexpected write'); END")
+                }
+            }
+            sql.execSQL("CREATE TRIGGER forbid_window_insert BEFORE INSERT ON home_timeline_windows " +
+                "BEGIN SELECT RAISE(ABORT, 'unexpected window write'); END")
+            source.writeWindow(account, window, "old", emptyList())
+            sql.execSQL("DROP TRIGGER forbid_window_insert")
+            source.writeWindow(account, window, "new", emptyList())
+            val record = Json.decodeFromString<HomeTimelineWindowRecord>(
+                database.homeTimeline().window(account.sessionId, "https://one.example")!!.payload)
+            assertEquals("new", record.anchorId)
+        } finally { database.close() }
+    }
+
+    private fun openLegacyHome(name: String, version: Int, addRows: (SQLiteDatabase) -> Unit = {}): BrowsingDatabase {
+        val path = context.getDatabasePath(name)
+        path.parentFile!!.mkdirs()
+        SQLiteDatabase.openOrCreateDatabase(path, null).use { old ->
+            old.execSQL("CREATE TABLE notification_cache (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl, id))")
+            old.execSQL("CREATE TABLE notification_markers (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, lastReadId TEXT, PRIMARY KEY(sessionId, instanceUrl))")
+            old.execSQL("CREATE TABLE home_timeline_cache (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl, id))")
+            old.execSQL("CREATE TABLE home_timeline_state (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, endReached INTEGER NOT NULL, PRIMARY KEY(sessionId, instanceUrl))")
+            old.execSQL("CREATE TABLE notification_category_cache (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, category TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl, category))")
+            old.execSQL("CREATE TABLE notification_read_state (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl))")
+            if (version == 4) {
+                old.execSQL("CREATE TABLE home_timeline_windows (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl))")
+            }
+            val existing = status("existing")
+            old.execSQL("INSERT INTO home_timeline_cache VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any>(account.sessionId, "https://one.example", existing.timelineId, 0, Json.encodeToString(existing)))
+            old.execSQL("INSERT INTO home_timeline_state VALUES (?, ?, 0)", arrayOf(account.sessionId, "https://one.example"))
+            old.execSQL("INSERT INTO notification_markers VALUES (?, ?, ?)", arrayOf(account.sessionId, "https://one.example", "marker"))
+            addRows(old)
+            old.version = version
+        }
+        return Room.databaseBuilder(context, BrowsingDatabase::class.java, name)
+            .addMigrations(BrowsingDatabase.MIGRATION_3_4, BrowsingDatabase.MIGRATION_4_5).build()
     }
 }

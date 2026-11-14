@@ -11,12 +11,42 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(entities = [CachedNotificationEntity::class, NotificationMarkerEntity::class,
     CachedHomeStatusEntity::class, HomeTimelineStateEntity::class,
     NotificationCategoryCacheEntity::class, NotificationReadStateEntity::class,
-    HomeTimelineWindowEntity::class], version = 4)
+    HomeTimelineWindowEntity::class], version = 5)
 abstract class BrowsingDatabase : RoomDatabase() {
     abstract fun notifications(): NotificationCacheDao
     abstract fun homeTimeline(): HomeTimelineCacheDao
 
     companion object {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE home_timeline_cache ADD COLUMN originalId TEXT")
+                db.compileStatement("UPDATE home_timeline_cache SET originalId = ? WHERE rowid = ?").use { update ->
+                    var after = Long.MIN_VALUE
+                    while (true) {
+                        val batch = db.query(
+                            "SELECT rowid, payload FROM home_timeline_cache WHERE rowid > ? ORDER BY rowid LIMIT 100",
+                            arrayOf(after),
+                        ).use { cursor ->
+                            buildList {
+                                while (cursor.moveToNext()) {
+                                    add(cursor.getLong(0) to decodeHomeStatus(cursor.getString(1))?.statusId)
+                                }
+                            }
+                        }
+                        if (batch.isEmpty()) break
+                        for ((rowId, originalId) in batch) {
+                            // A damaged payload remains available to the normal cache recovery path.
+                            if (originalId == null) continue
+                            update.bindString(1, originalId)
+                            update.bindLong(2, rowId)
+                            update.executeUpdateDelete()
+                        }
+                        after = batch.last().first
+                    }
+                }
+                db.execSQL("CREATE INDEX index_home_timeline_cache_sessionId_instanceUrl_originalId ON home_timeline_cache (sessionId, instanceUrl, originalId)")
+            }
+        }
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS home_timeline_windows (sessionId TEXT NOT NULL, instanceUrl TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(sessionId, instanceUrl))")
@@ -39,7 +69,7 @@ abstract class BrowsingDatabase : RoomDatabase() {
         fun get(context: Context): BrowsingDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext, BrowsingDatabase::class.java, "browsing.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
     }
 }

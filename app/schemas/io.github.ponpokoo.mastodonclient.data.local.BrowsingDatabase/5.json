@@ -1,0 +1,280 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "4bdf525c6850b0546b82ef17fc124ee1",
+    "entities": [
+      {
+        "tableName": "notification_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `instanceUrl`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl",
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "notification_markers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `lastReadId` TEXT, PRIMARY KEY(`sessionId`, `instanceUrl`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastReadId",
+            "columnName": "lastReadId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl"
+          ]
+        }
+      },
+      {
+        "tableName": "home_timeline_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `id` TEXT NOT NULL, `position` INTEGER NOT NULL, `payload` TEXT NOT NULL, `originalId` TEXT, PRIMARY KEY(`sessionId`, `instanceUrl`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalId",
+            "columnName": "originalId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_home_timeline_cache_sessionId_instanceUrl_originalId",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "instanceUrl",
+              "originalId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_home_timeline_cache_sessionId_instanceUrl_originalId` ON `${TABLE_NAME}` (`sessionId`, `instanceUrl`, `originalId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "home_timeline_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `endReached` INTEGER NOT NULL, PRIMARY KEY(`sessionId`, `instanceUrl`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endReached",
+            "columnName": "endReached",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl"
+          ]
+        }
+      },
+      {
+        "tableName": "notification_category_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `category` TEXT NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `instanceUrl`, `category`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl",
+            "category"
+          ]
+        }
+      },
+      {
+        "tableName": "notification_read_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `instanceUrl`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl"
+          ]
+        }
+      },
+      {
+        "tableName": "home_timeline_windows",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `instanceUrl` TEXT NOT NULL, `payload` TEXT NOT NULL, PRIMARY KEY(`sessionId`, `instanceUrl`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instanceUrl",
+            "columnName": "instanceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payload",
+            "columnName": "payload",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId",
+            "instanceUrl"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4bdf525c6850b0546b82ef17fc124ee1')"
+    ]
+  }
+}
