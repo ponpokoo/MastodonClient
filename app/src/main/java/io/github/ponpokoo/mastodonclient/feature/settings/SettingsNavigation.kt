@@ -110,7 +110,11 @@ internal fun CacheSettings(viewModel: SettingsMaintenanceViewModel) {
             Modifier.padding(vertical = 12.dp),
             style = MaterialTheme.typography.bodyMedium,
         )
-        OutlinedButton(onClick = { confirm = true }, enabled = !state.isClearing) {
+        OutlinedButton(
+            onClick = { confirm = true },
+            enabled = !state.isClearing,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        ) {
             if (state.isClearing) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
@@ -124,7 +128,7 @@ internal fun CacheSettings(viewModel: SettingsMaintenanceViewModel) {
             onDismissRequest = { confirm = false },
             title = { Text("画像キャッシュを削除しますか？") },
             text = { Text("アカウント・設定・下書きは削除されません。画像の再取得には通信が発生します。") },
-            confirmButton = { TextButton(onClick = { confirm = false; viewModel.clearCache() }) { Text("削除") } },
+            confirmButton = { TextButton(onClick = { confirm = false; viewModel.clearCache() }) { Text("削除", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("キャンセル") } },
         )
     }

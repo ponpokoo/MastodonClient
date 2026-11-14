@@ -16,7 +16,7 @@ import org.junit.rules.TemporaryFolder
 class BottomTabBarPreferencesTest {
     @get:Rule val folder = TemporaryFolder()
 
-    @Test fun existingSettingsDefaultToFloatingAndSelectedStyleSurvivesReopeningTheStore() = runBlocking {
+    @Test fun existingSettingsDefaultToLiquidGlassAndSelectedStyleSurvivesReopeningTheStore() = runBlocking {
         val file = folder.root.resolve("app.preferences_pb")
         suspend fun withStore(check: suspend (UserPreferencesStore) -> Unit) {
             val job = SupervisorJob()
@@ -39,7 +39,7 @@ class BottomTabBarPreferencesTest {
             job.cancelAndJoin()
         }
         withStore { store ->
-            assertEquals(BottomTabBarStyle.Floating, store.preferences.first().bottomTabBarStyle)
+            assertEquals(BottomTabBarStyle.LiquidGlass, store.preferences.first().bottomTabBarStyle)
             store.setBottomTabBarStyle(BottomTabBarStyle.FullWidth)
         }
         withStore { store ->

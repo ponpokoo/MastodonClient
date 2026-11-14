@@ -46,12 +46,29 @@ data class AccountRelationship(
 
 enum class ProfileStatusTab { Posts, Replies, Media }
 
-data class ProfileEditRequest(
+data class EditableProfile(
     val displayName: String,
     val note: String,
     val locked: Boolean,
-    val discoverable: Boolean,
-    val fields: List<Pair<String, String>> = emptyList(),
+    val fields: List<Pair<String, String>>,
+) {
+    fun changesTo(edited: EditableProfile) = ProfileEditRequest(
+        displayName = edited.displayName.takeIf { it != displayName },
+        note = edited.note.takeIf { it != note },
+        locked = edited.locked.takeIf { it != locked },
+        fields = edited.fields.withoutBlankRows().takeIf { it != fields.withoutBlankRows() },
+    )
+
+    private fun List<Pair<String, String>>.withoutBlankRows() =
+        filterNot { (name, value) -> name.isBlank() && value.isBlank() }
+}
+
+data class ProfileEditRequest(
+    val displayName: String? = null,
+    val note: String? = null,
+    val locked: Boolean? = null,
+    val discoverable: Boolean? = null,
+    val fields: List<Pair<String, String>>? = null,
     val avatarFilePath: String? = null,
     val headerFilePath: String? = null,
 )

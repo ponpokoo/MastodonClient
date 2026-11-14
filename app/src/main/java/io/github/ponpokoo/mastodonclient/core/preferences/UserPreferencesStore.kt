@@ -38,7 +38,7 @@ internal val Context.userPreferencesDataStore by preferencesDataStore(name = "us
 @Serializable enum class BottomTabBarStyle { Floating, FullWidth, LiquidGlass }
 @Serializable enum class StatusAction { Reply, Boost, Favourite, Reaction, Bookmark, Share }
 // Keep DeleteDraft as the serialized value so existing toolbar orders load; its UI action now clears only body text.
-@Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, Language, Hashtag, SaveDraft, DeleteDraft }
+@Serializable enum class ComposerAction { Media, Poll, Emoji, ContentWarning, Mention, Language, Hashtag, DeleteDraft, SaveDraft }
 
 @Serializable
 enum class PostVisibility(val apiValue: String) {
@@ -67,7 +67,7 @@ data class TimelineDisplayPreferences(
         StatusAction.Bookmark,
         StatusAction.Share,
     ),
-    val hiddenActions: Set<StatusAction> = setOf(StatusAction.Bookmark),
+    val hiddenActions: Set<StatusAction> = emptySet(),
     val showCounts: Boolean = true,
     val showReactions: Boolean = true,
     val thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
@@ -88,10 +88,10 @@ data class AppPreferences(
     val updateNoticeSeenThroughVersionCode: Int = 0,
     val fabPosition: FabPosition? = null,
     val themeMode: ThemeMode = ThemeMode.System,
-    val bottomTabBarStyle: BottomTabBarStyle = BottomTabBarStyle.Floating,
+    val bottomTabBarStyle: BottomTabBarStyle = BottomTabBarStyle.LiquidGlass,
     val openLinksInApp: Boolean = true,
     val timelineDisplay: TimelineDisplayPreferences = TimelineDisplayPreferences(),
-    val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
+    val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val pauseStreamingInBackground: Boolean = true,
     val keepPositionOnPullRefresh: Boolean = true,

@@ -4,19 +4,40 @@ package io.github.ponpokoo.mastodonclient.feature.profile
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmation
 import io.github.ponpokoo.mastodonclient.feature.common.StatusConfirmationAction
 import android.content.Intent
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import java.io.File
 import io.github.ponpokoo.mastodonclient.domain.model.*
 import io.github.ponpokoo.mastodonclient.feature.status.ConfirmStatusActionDialog
 import io.github.ponpokoo.mastodonclient.feature.status.ListPickerDialog
@@ -64,6 +85,7 @@ internal fun ProfileScreen(
         var confirmAction by remember { mutableStateOf<ProfileAccountAction?>(null) }
         var reportOpen by remember { mutableStateOf(false) }
         val imageEdit by viewModel.profileImageEditState.collectAsStateWithLifecycle()
+        val editableProfile by viewModel.editableProfile.collectAsStateWithLifecycle()
         DisposableEffect(viewModel) { onDispose { viewModel.dismissProfileEdit() } }
         var initialEditorHandled by rememberSaveable { mutableStateOf(false) }
         var statusMenu by remember { mutableStateOf<TimelineStatus?>(null) }
@@ -257,8 +279,25 @@ internal fun ProfileScreen(
             dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("キャンセル") } },
         ) }
         if (reportOpen) ReportDialog(onDismiss = { reportOpen = false }, onSubmit = { text, forward -> viewModel.report(text, forward); reportOpen = false })
-        if (imageEdit.isOpen && profile != null) EditProfileDialog(profile, imageEdit,
-            viewModel::selectProfileImage, viewModel::dismissProfileEdit, viewModel::updateProfile)
+        if (imageEdit.isOpen && profile?.isOwnProfile == true) {
+            val edit = editableProfile?.getOrNull()
+            if (edit != null) {
+                EditProfileDialog(
+                    edit, imageEdit, viewModel::selectProfileImage, viewModel::dismissProfileEdit, viewModel::updateProfile,
+                    avatarUrl = profile.author.avatarUrl,
+                    headerUrl = profile.headerUrl,
+                )
+                imageEdit.pendingCrop?.let { pending ->
+                    ProfileImageCropDialog(pending, viewModel::cancelProfileImageCrop, viewModel::confirmProfileImageCrop)
+                }
+            } else {
+                LoadEditableProfileDialog(
+                    failed = editableProfile?.isFailure == true,
+                    onRetry = viewModel::beginProfileEdit,
+                    onDismiss = viewModel::dismissProfileEdit,
+                )
+            }
+        }
     }
 }
 
@@ -270,37 +309,203 @@ internal fun ProfileScreen(
     } }, confirmButton = { TextButton(enabled = text.isNotBlank(), onClick = { onSubmit(text, forward) }) { Text("送信") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
 }
 
-@Composable internal fun EditProfileDialog(profile: UserProfile, images: ProfileImageEditState,
-    onSelectImage: (ProfileImageSlot, String) -> Unit, onDismiss: () -> Unit, onSave: (ProfileEditRequest) -> Unit) {
-    var name by remember { mutableStateOf(profile.author.displayName) }; var note by remember { mutableStateOf(androidx.core.text.HtmlCompat.fromHtml(profile.noteHtml, 0).toString()) }; var locked by remember { mutableStateOf(profile.locked) }
+@Composable
+private fun LoadEditableProfileDialog(failed: Boolean, onRetry: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("プロフィールを編集") },
+        text = {
+            if (failed) {
+                Text("編集用のプロフィールを取得できませんでした", color = MaterialTheme.colorScheme.error)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("プロフィールを読み込み中…")
+                }
+            }
+        },
+        confirmButton = { if (failed) TextButton(onClick = onRetry) { Text("再試行") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } },
+    )
+}
+
+@Composable
+internal fun EditProfileDialog(
+    profile: EditableProfile,
+    images: ProfileImageEditState,
+    onSelectImage: (ProfileImageSlot, String) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (ProfileEditRequest) -> Unit,
+    avatarUrl: String? = null,
+    headerUrl: String? = null,
+) {
+    var name by remember(profile) { mutableStateOf(profile.displayName) }
+    var note by remember(profile) { mutableStateOf(profile.note) }
+    var locked by remember(profile) { mutableStateOf(profile.locked) }
     val avatarPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
         it?.let { uri -> onSelectImage(ProfileImageSlot.Avatar, uri.toString()) }
     }
     val headerPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
         it?.let { uri -> onSelectImage(ProfileImageSlot.Header, uri.toString()) }
     }
-    val fields = remember { mutableStateListOf<Pair<String, String>>().also { list -> list.addAll(profile.fields.take(4).map { it.name to androidx.core.text.HtmlCompat.fromHtml(it.valueHtml, 0).toString() }) } }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("プロフィールを編集") }, text = { Column {
-        OutlinedTextField(name, { name = it }, enabled = !images.isSaving, label = { Text("表示名") }); Spacer(Modifier.height(8.dp))
-        OutlinedTextField(note, { note = it }, enabled = !images.isSaving, label = { Text("自己紹介") }, minLines = 4)
-        Row { TextButton(enabled = !images.isSaving, onClick = { avatarPicker.launch("image/*") }) { Text(if (images.avatarPath == null) "アイコンを変更" else "アイコン選択済み") }; TextButton(enabled = !images.isSaving, onClick = { headerPicker.launch("image/*") }) { Text(if (images.headerPath == null) "ヘッダーを変更" else "ヘッダー選択済み") } }
-        if (images.importing.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
-            Text("画像を取り込み中…")
-        }
-        images.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Row(verticalAlignment = Alignment.CenterVertically) { Switch(locked, { locked = it }, enabled = !images.isSaving); Spacer(Modifier.width(8.dp)); Text("フォローを承認制にする") }
-        fields.forEachIndexed { index, field -> Row { OutlinedTextField(field.first, { fields[index] = it to field.second }, Modifier.weight(0.4f), enabled = !images.isSaving, label = { Text("項目") }); OutlinedTextField(field.second, { fields[index] = field.first to it }, Modifier.weight(0.6f), enabled = !images.isSaving, label = { Text("内容") }) } }
-        if (fields.size < 4) TextButton(enabled = !images.isSaving, onClick = { fields.add("" to "") }) { Text("プロフィール項目を追加") }
-    } }, confirmButton = {
-        TextButton(enabled = images.importing.isEmpty() && !images.isSaving,
-            onClick = { onSave(ProfileEditRequest(name, note, locked, true, fields.toList())) }) {
-            if (images.isSaving) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
+    val fields = remember(profile) { profile.fields.toMutableStateList() }
+    var addedFieldIndex by remember(profile) { mutableStateOf<Int?>(null) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val canChooseImage = !images.isSaving && images.importing.isEmpty() && images.pendingCrop == null
+    val changes = profile.changesTo(EditableProfile(name, note, locked, fields.toList()))
+    val hasChanges = changes != ProfileEditRequest() || images.avatarPath != null || images.headerPath != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("プロフィールを編集") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    name, { name = it }, Modifier.fillMaxWidth(),
+                    enabled = !images.isSaving, label = { Text("表示名") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    note, { note = it }, Modifier.fillMaxWidth(),
+                    enabled = !images.isSaving, label = { Text("自己紹介") }, minLines = 4, maxLines = 6,
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProfileImageChangeButton(
+                        label = "アイコンを変更",
+                        image = images.avatarPath?.let(::File) ?: avatarUrl?.takeIf(String::isNotBlank),
+                        placeholder = Icons.Outlined.Person,
+                        enabled = canChooseImage,
+                        modifier = Modifier.weight(1f),
+                        onClick = { keyboard?.hide(); avatarPicker.launch("image/*") },
+                    )
+                    ProfileImageChangeButton(
+                        label = "ヘッダーを変更",
+                        image = images.headerPath?.let(::File) ?: headerUrl?.takeIf(String::isNotBlank),
+                        placeholder = Icons.Outlined.Image,
+                        enabled = canChooseImage,
+                        modifier = Modifier.weight(1f),
+                        onClick = { keyboard?.hide(); headerPicker.launch("image/*") },
+                    )
+                }
+                if (images.importing.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("画像を取り込み中…")
+                }
+                images.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(locked, { locked = it }, enabled = !images.isSaving)
+                    Spacer(Modifier.width(8.dp))
+                    Text("フォローを承認制にする")
+                }
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(12.dp))
+                Text("プロフィール項目", style = MaterialTheme.typography.titleSmall)
+                fields.forEachIndexed { index, (fieldName, value) ->
+                    if (index > 0) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val fieldFocus = remember { FocusRequester() }
+                    if (index == addedFieldIndex) {
+                        LaunchedEffect(fieldFocus) {
+                            fieldFocus.requestFocus()
+                            keyboard?.show()
+                            addedFieldIndex = null
+                        }
+                    }
+                    OutlinedTextField(
+                        fieldName, { fields[index] = it to value }, Modifier.fillMaxWidth().focusRequester(fieldFocus),
+                        enabled = !images.isSaving, label = { Text("項目名") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value, { fields[index] = fieldName to it }, Modifier.fillMaxWidth(),
+                        enabled = !images.isSaving, label = { Text("内容") }, maxLines = 3,
+                    )
+                }
+                if (fields.size < 4) TextButton(enabled = !images.isSaving, onClick = {
+                    fields.add("" to "")
+                    addedFieldIndex = fields.lastIndex
+                }) {
+                    Text("プロフィール項目を追加")
+                }
             }
-            Text(if (images.isSaving) "保存中…" else "保存")
+        },
+        confirmButton = {
+            Column(Modifier.fillMaxWidth()) {
+                images.saveError?.let { error ->
+                    Text(
+                        error, Modifier.padding(bottom = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("キャンセル") }
+                    Button(
+                        enabled = hasChanges && canChooseImage,
+                        onClick = { onSave(changes) },
+                    ) {
+                        if (images.isSaving) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (images.isSaving) "保存中…" else "保存")
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ProfileImageChangeButton(
+    label: String,
+    image: Any?,
+    placeholder: ImageVector,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 56.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Box(
+            Modifier.size(32.dp).clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (image == null) {
+                Icon(placeholder, contentDescription = null, modifier = Modifier.size(18.dp))
+            } else {
+                val icon = rememberVectorPainter(placeholder)
+                AsyncImage(
+                    model = image,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    placeholder = icon,
+                    error = icon,
+                )
+            }
         }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("キャンセル") } })
+        Spacer(Modifier.width(6.dp))
+        Text(label, Modifier.weight(1f))
+    }
 }

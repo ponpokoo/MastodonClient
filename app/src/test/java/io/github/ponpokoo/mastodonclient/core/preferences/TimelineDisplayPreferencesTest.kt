@@ -104,4 +104,17 @@ class TimelineDisplayPreferencesTest {
         assertEquals(false, display.showReactions)
         assertEquals(false, display.showCounts)
     }
+
+    @Test fun bookmarkIsVisibleByDefaultAndCanBeHiddenPersistently() = runTest {
+        val dataStore = MemoryPreferences()
+        val store = UserPreferencesStore(dataStore)
+        val display = store.preferences.first().timelineDisplay
+        assertEquals(emptySet<StatusAction>(), display.hiddenActions)
+
+        store.setTimelineDisplay(display.copy(hiddenActions = setOf(StatusAction.Bookmark)))
+        assertEquals(
+            setOf(StatusAction.Bookmark),
+            UserPreferencesStore(dataStore).preferences.first().timelineDisplay.hiddenActions,
+        )
+    }
 }

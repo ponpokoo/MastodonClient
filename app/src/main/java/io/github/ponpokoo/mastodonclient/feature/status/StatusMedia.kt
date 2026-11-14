@@ -136,7 +136,7 @@ private fun MediaGrid(
     attachments: List<MediaAttachment>,
     onMediaClick: ((List<MediaAttachment>, Int) -> Unit)?,
     thumbnailSize: ThumbnailSize = ThumbnailSize.Standard,
-    gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
+    gifAutoplay: AutoplayPolicy,
     videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     audioAuthorAvatarUrl: String? = null,
     useTimelineImagePreviews: Boolean = false,

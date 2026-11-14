@@ -22,8 +22,35 @@ class UnifiedProfileViewModelTest : ScreenViewModelTestBase() {
             testProfile().copy(author = testStatus().author.copy(id = accountId), statuses = emptyList(),
                 isOwnProfile = accountId == session.accountId, noteHtml = session.instanceUrl))
         override suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest) =
-            getProfileHeader(session, session.accountId).map { it.copy(noteHtml = request.note,
-                headerUrl = "https://images.example/edited", author = it.author.copy(displayName = request.displayName)) }
+            getProfileHeader(session, session.accountId).map { it.copy(noteHtml = request.note ?: it.noteHtml,
+                headerUrl = "https://images.example/edited", author = it.author.copy(displayName = request.displayName ?: it.author.displayName)) }
+    }
+
+    @Test fun lateEditableProfileIsDiscardedAfterAccountSwitch() = runTest(dispatcher) {
+        val browsing = BrowsingSession().apply { activate(testAccount) }
+        val delayed = CompletableDeferred<Result<EditableProfile>>()
+        val fresh = EditableProfile("New account", "New biography", false, emptyList())
+        val repository = object : Repository() {
+            override suspend fun getEditableProfile(session: AccountSession): Result<EditableProfile> =
+                if (session.sessionId == testAccount.sessionId) withContext(NonCancellable) { delayed.await() }
+                else Result.success(fresh)
+        }
+        val model = own(ProfileViewModel(repository, browsing))
+        advanceUntilIdle()
+        model.loadProfile()
+        advanceUntilIdle()
+        model.beginProfileEdit()
+        runCurrent()
+        assertTrue(model.profileImageEditState.value.isOpen)
+
+        browsing.activate(secondAccount)
+        advanceUntilIdle()
+        assertFalse(model.profileImageEditState.value.isOpen)
+        model.beginProfileEdit()
+        advanceUntilIdle()
+        delayed.complete(Result.success(fresh.copy(note = "Old biography")))
+        advanceUntilIdle()
+        assertEquals(fresh, model.editableProfile.value?.getOrThrow())
     }
 
     @Test fun entriesKeepIndependentTabsAndReceiveTheSameEditedProfile() = runTest(dispatcher) {
@@ -107,7 +134,7 @@ class UnifiedProfileViewModelTest : ScreenViewModelTestBase() {
             override suspend fun getProfileHeader(session: AccountSession, accountId: String) =
                 if (delayRefresh) oldHeader.await() else super.getProfileHeader(session, accountId)
             override suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest) =
-                Result.success(testProfile().copy(noteHtml = request.note))
+                Result.success(testProfile().let { it.copy(noteHtml = request.note ?: it.noteHtml) })
         }
         val main = own(ProfileViewModel(repository, browsing))
         val separate = own(ProfileViewModel(repository, browsing, accountId = testAccount.accountId))

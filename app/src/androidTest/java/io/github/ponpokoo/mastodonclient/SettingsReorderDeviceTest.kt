@@ -204,8 +204,7 @@ class SettingsReorderDeviceTest {
         compose.runOnIdle { runBlocking {
             val display = UserPreferencesStore(data).preferences.first().timelineDisplay
             assertEquals(listOf(StatusAction.Boost, StatusAction.Favourite, StatusAction.Reply), display.actionOrder.take(3))
-            assertTrue(StatusAction.Reply in display.hiddenActions)
-            assertTrue(StatusAction.Bookmark in display.hiddenActions)
+            assertEquals(setOf(StatusAction.Reply), display.hiddenActions)
         } }
     }
 

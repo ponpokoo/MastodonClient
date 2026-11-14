@@ -9,7 +9,7 @@ import io.github.ponpokoo.mastodonclient.core.preferences.TimelineDisplayPrefere
 
 internal data class StatusDisplayPreferences(
     val timelineDisplay: TimelineDisplayPreferences = TimelineDisplayPreferences(),
-    val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Always,
+    val gifAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
     val videoAutoplay: AutoplayPolicy = AutoplayPolicy.Never,
 )
 

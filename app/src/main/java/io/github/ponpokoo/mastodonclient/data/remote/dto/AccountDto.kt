@@ -42,8 +42,8 @@ data class AccountEmojiDto(
 @Serializable
 data class AccountSourceDto(
     val privacy: String? = null,
-    val note: String = "",
-    val fields: List<AccountSourceFieldDto> = emptyList(),
+    val note: String? = null,
+    val fields: List<AccountSourceFieldDto>? = null,
 )
 
 @Serializable

@@ -19,6 +19,7 @@ import io.github.ponpokoo.mastodonclient.domain.session.StatusUpdateKind
 import io.github.ponpokoo.mastodonclient.feature.common.SessionScopedViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
@@ -66,10 +67,34 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
     private val moderationTextCache = ModerationTextCache()
     private val imageEditor = ProfileImageEditor(profileImageRepository, viewModelScope)
     val profileImageEditState = imageEditor.state
-    fun beginProfileEdit() { if (_uiState.value.profile?.isOwnProfile == true) imageEditor.open() }
-    fun dismissProfileEdit() = imageEditor.dismiss()
+    private val _editableProfile = MutableStateFlow<Result<EditableProfile>?>(null)
+    internal val editableProfile = _editableProfile.asStateFlow()
+    private var editableProfileJob: Job? = null
+
+    fun beginProfileEdit() {
+        val snapshot = currentSnapshot() ?: return
+        val session = snapshot.account ?: return
+        if (_uiState.value.profile?.isOwnProfile != true || imageEditor.state.value.isSaving) return
+        if (editableProfileJob?.isActive == true) return
+        if (imageEditor.state.value.isOpen && _editableProfile.value?.isSuccess == true) return
+        _editableProfile.value = null
+        imageEditor.open()
+        editableProfileJob = requestScope.launch {
+            _editableProfile.value = timelineRepository.getEditableProfile(session).forSession(snapshot)
+        }
+    }
+
+    fun dismissProfileEdit() {
+        editableProfileJob?.cancel()
+        editableProfileJob = null
+        _editableProfile.value = null
+        imageEditor.dismiss()
+    }
     fun selectProfileImage(slot: ProfileImageSlot, uri: String) = imageEditor.select(slot, uri)
-    override fun onCleared() { imageEditor.dismiss() }
+    fun cancelProfileImageCrop() = imageEditor.cancelCrop()
+    fun confirmProfileImageCrop(crop: io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageCrop) =
+        imageEditor.confirmCrop(crop)
+    override fun onCleared() { dismissProfileEdit() }
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState = _uiState.moderated(viewModelScope, timelineRepository, { browsing.snapshot.value.account }) { state, moderation, account ->
         state.withModeration(moderation, account, moderationTextCache)
@@ -144,7 +169,7 @@ class ProfileViewModel(private val timelineRepository: TimelineRepository, brows
 
     override fun onSessionChanged(snapshot: BrowsingSession.Snapshot) {
         reactionHistorySupportJob = null
-        imageEditor.dismiss()
+        dismissProfileEdit()
         moderationMenu.reset()
         metadataRevision++
         postsGeneration++

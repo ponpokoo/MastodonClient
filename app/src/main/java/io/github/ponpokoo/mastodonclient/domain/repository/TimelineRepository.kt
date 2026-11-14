@@ -27,6 +27,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.UploadedMedia
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
+import io.github.ponpokoo.mastodonclient.domain.model.EditableProfile
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
 import io.github.ponpokoo.mastodonclient.domain.model.SavedTimelineKind
@@ -131,6 +132,8 @@ interface TimelineRepository : ServerAccountSettingsRepository {
         Result.failure(UnsupportedOperationException("ブロック操作は未対応です"))
     suspend fun reportAccount(session: AccountSession, accountId: String, comment: String, forward: Boolean): Result<Unit> =
         Result.failure(UnsupportedOperationException("報告は未対応です"))
+    suspend fun getEditableProfile(session: AccountSession): Result<EditableProfile> =
+        Result.failure(UnsupportedOperationException("プロフィールの編集用データを取得できません"))
     suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> =
         Result.failure(UnsupportedOperationException("プロフィール編集は未対応です"))
 

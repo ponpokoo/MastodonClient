@@ -371,8 +371,8 @@ internal fun ProfileContent(
                                     onShareProfile?.let { action -> add(ProfileMenuAction("共有") { profileMenuExpanded = false; action() }) }
                                     webLinks?.profile?.takeIf(String::isNotBlank)?.let { url -> add(ProfileMenuAction("ブラウザーで開く") { profileMenuExpanded = false; onOpenLink(url) }) }
                                     add(ProfileMenuAction("リスト", startsGroup = true) { profileMenuExpanded = false; onOpenLists() })
-                                    add(ProfileMenuAction("ブックマーク") { profileMenuExpanded = false; onOpenBookmarks() })
                                     add(ProfileMenuAction("お気に入り") { profileMenuExpanded = false; onOpenFavourites() })
+                                    add(ProfileMenuAction("ブックマーク") { profileMenuExpanded = false; onOpenBookmarks() })
                                     if (state.supportsReactionHistory) {
                                         add(ProfileMenuAction("リアクションした投稿") { profileMenuExpanded = false; onOpenReactions() })
                                     }

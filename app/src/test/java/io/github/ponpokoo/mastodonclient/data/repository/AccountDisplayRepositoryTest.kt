@@ -17,6 +17,63 @@ class AccountDisplayRepositoryTest {
     private fun account(id: String = testAccount.accountId, name: String = "Fresh") =
         """{"id":"$id","username":"new-user","acct":"new-user","display_name":"$name","avatar":"https://cdn.example/same-avatar.png"}"""
 
+    @Test fun editableProfileUsesPlainTextAndNameOnlySaveOmitsOtherFields() = runTest {
+        MockWebServer().use { server ->
+            val session = testAccount.copy(instanceUrl = server.url("/").toString())
+            val original = """{"id":"${session.accountId}","username":"me","acct":"me","display_name":"Before","locked":true,"note":"<p>Example…</p>","source":{"note":"https://example.com/full/path\nSecond line","fields":[{"name":"Website","value":"https://example.com/full/path"}]}}"""
+            server.enqueue(MockResponse().setBody(original))
+            server.enqueue(MockResponse().setBody(account()))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+
+            val profile = repository.getEditableProfile(session).getOrThrow()
+            assertEquals("https://example.com/full/path\nSecond line", profile.note)
+            assertEquals(listOf("Website" to "https://example.com/full/path"), profile.fields)
+            assertTrue(profile.locked)
+            val edited = profile.copy(displayName = "Fresh", fields = profile.fields + ("" to ""))
+            repository.updateProfile(session, profile.changesTo(edited)).getOrThrow()
+
+            assertEquals("/api/v1/accounts/verify_credentials", server.takeRequest().path)
+            val update = server.takeRequest()
+            assertEquals("PATCH", update.method)
+            assertEquals("/api/v1/accounts/update_credentials", update.path)
+            val partNames = Regex("""name="([^"]+)"""").findAll(update.body.readUtf8())
+                .map { it.groupValues[1] }.toList()
+            assertEquals(listOf("display_name"), partNames)
+        }
+    }
+
+    @Test fun editableProfileFailsWhenServerOmitsThePlainText() = runTest {
+        MockWebServer().use { server ->
+            val session = testAccount.copy(instanceUrl = server.url("/").toString())
+            server.enqueue(MockResponse().setBody(account()))
+            assertTrue(DefaultTimelineRepository(ApiClientFactory()).getEditableProfile(session).isFailure)
+        }
+    }
+
+    @Test fun clearingBiographyAndAllProfileFieldsSendsExplicitEmptyValues() = runTest {
+        MockWebServer().use { server ->
+            val session = testAccount.copy(instanceUrl = server.url("/").toString())
+            server.enqueue(MockResponse().setBody(account()))
+            val repository = DefaultTimelineRepository(ApiClientFactory())
+            val profile = EditableProfile("Me", "Old note", false, listOf("Website" to "https://example.com"))
+            val cleared = profile.copy(note = "", fields = listOf("" to ""))
+            repository.updateProfile(session, profile.changesTo(cleared)).getOrThrow()
+
+            val update = server.takeRequest()
+            val boundary = update.getHeader("Content-Type")!!.substringAfter("boundary=")
+            val parts = update.body.readUtf8().split("--$boundary").mapNotNull { part ->
+                val name = Regex("""name="([^"]+)"""").find(part)?.groupValues?.get(1)
+                    ?: return@mapNotNull null
+                name to part.substringAfter("\r\n\r\n", missingDelimiterValue = part).removeSuffix("\r\n")
+            }.toMap()
+            assertEquals(mapOf(
+                "note" to "",
+                "fields_attributes[0][name]" to "",
+                "fields_attributes[0][value]" to "",
+            ), parts)
+        }
+    }
+
     @Test fun startupVerificationUpdatesStoredDisplayThroughSelectedInstance() = runTest {
         MockWebServer().use { server ->
             val store = memoryAuthStore()

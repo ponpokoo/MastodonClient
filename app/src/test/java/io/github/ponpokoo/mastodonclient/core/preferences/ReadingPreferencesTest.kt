@@ -14,6 +14,15 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ReadingPreferencesTest {
+    @Test fun gifAutoplayIsOffByDefaultAndAnExplicitChoiceSurvivesReload() = runTest {
+        val data = MemoryAuthPreferences()
+        val store = UserPreferencesStore(data)
+        assertEquals(AutoplayPolicy.Never, store.preferences.first().gifAutoplay)
+
+        store.setGifAutoplay(AutoplayPolicy.Always)
+        assertEquals(AutoplayPolicy.Always, UserPreferencesStore(data).preferences.first().gifAutoplay)
+    }
+
     @Test fun unrelatedWritesDoNotReachSettingsDecodingButSettingsAndFallbackChangesDo() = runTest {
         val data = MemoryAuthPreferences()
         val store = UserPreferencesStore(data)

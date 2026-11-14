@@ -1,6 +1,8 @@
 package io.github.ponpokoo.mastodonclient.feature.profile
 
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
+import io.github.ponpokoo.mastodonclient.domain.repository.ImportedProfileImage
+import io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageCrop
 import io.github.ponpokoo.mastodonclient.domain.repository.ProfileImageRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,12 +18,57 @@ class ProfileImageEditorTest {
     private class Images : ProfileImageRepository {
         val pending = mutableMapOf<String, CompletableDeferred<String>>()
         val deleted = mutableListOf<String>()
-        override suspend fun importImage(uri: String): String = withContext(NonCancellable) {
-            pending.getOrPut(uri) { CompletableDeferred() }.await()
+        val crops = mutableListOf<Triple<String, Int, Int>>()
+        override suspend fun importImage(uri: String): ImportedProfileImage = withContext(NonCancellable) {
+            ImportedProfileImage(pending.getOrPut(uri) { CompletableDeferred() }.await(), isGif = !uri.startsWith("still"))
+        }
+        override suspend fun cropImage(path: String, crop: ProfileImageCrop, maxWidth: Int, aspectRatio: Int): String {
+            crops += Triple(path, maxWidth, aspectRatio)
+            return "cropped.png"
         }
         override suspend fun deleteImages(paths: List<String>) { deleted += paths }
     }
     private val request = ProfileEditRequest("name", "note", false, false)
+
+    @Test fun gifIsUsedDirectlyAndCancelledCropPreservesPreviousImage() = runTest {
+        val images = Images()
+        val editor = ProfileImageEditor(images, this)
+        editor.open()
+        editor.select(ProfileImageSlot.Avatar, "gif")
+        runCurrent()
+        images.pending.getValue("gif").complete("original.gif")
+        runCurrent()
+        assertEquals("original.gif", editor.state.value.avatarPath)
+        assertNull(editor.state.value.pendingCrop)
+
+        editor.select(ProfileImageSlot.Avatar, "still")
+        runCurrent()
+        images.pending.getValue("still").complete("candidate")
+        runCurrent()
+        assertEquals("candidate", editor.state.value.pendingCrop?.path)
+        assertNull(editor.beginSave(request))
+        editor.cancelCrop()
+        runCurrent()
+        assertEquals(listOf("candidate"), images.deleted)
+        assertEquals("original.gif", editor.beginSave(request)?.request?.avatarFilePath)
+        assertTrue(images.crops.isEmpty())
+    }
+
+    @Test fun confirmedHeaderCropReplacesTheSelectionAndIsUsedOnSave() = runTest {
+        val images = Images()
+        val editor = ProfileImageEditor(images, this)
+        editor.open()
+        editor.select(ProfileImageSlot.Header, "still")
+        runCurrent()
+        images.pending.getValue("still").complete("candidate")
+        runCurrent()
+        editor.confirmCrop(ProfileImageCrop(0f, 0.25f, 1f, 0.75f))
+        runCurrent()
+        assertEquals(listOf(Triple("candidate", 1500, 3)), images.crops)
+        assertEquals(listOf("candidate"), images.deleted)
+        assertNull(editor.state.value.pendingCrop)
+        assertEquals("cropped.png", editor.beginSave(request)?.request?.headerFilePath)
+    }
 
     @Test fun reselectionRejectsLateResultAndDeletesReplacedFile() = runTest {
         val images = Images(); val editor = ProfileImageEditor(images, this)
@@ -87,7 +134,11 @@ class ProfileImageEditorTest {
         editor.finishSave(editor.beginSave(request)!!, false)
         assertTrue(images.deleted.isEmpty())
         assertTrue(editor.state.value.isOpen)
-        editor.finishSave(editor.beginSave(request)!!, true)
+        assertNotNull(editor.state.value.saveError)
+        assertNull(editor.state.value.error)
+        val retry = editor.beginSave(request)!!
+        assertNull(editor.state.value.saveError)
+        editor.finishSave(retry, true)
         assertEquals(listOf("retry-file"), images.deleted)
         assertFalse(editor.state.value.isOpen)
     }

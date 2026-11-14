@@ -44,6 +44,7 @@ import io.github.ponpokoo.mastodonclient.domain.model.UploadedMedia
 import io.github.ponpokoo.mastodonclient.domain.model.CreateStatusRequest
 import io.github.ponpokoo.mastodonclient.domain.model.AccountRelationship
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileEditRequest
+import io.github.ponpokoo.mastodonclient.domain.model.EditableProfile
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileField
 import io.github.ponpokoo.mastodonclient.domain.model.ProfileStatusTab
 import io.github.ponpokoo.mastodonclient.domain.model.MastodonList
@@ -572,21 +573,38 @@ class DefaultTimelineRepository(
         Unit
     }
 
+    override suspend fun getEditableProfile(session: AccountSession): Result<EditableProfile> = requestResult {
+        val account = apiClientFactory.create(session.instanceUrl, session.accessToken).verifyCredentials()
+        check(account.id == session.accountId)
+        val source = checkNotNull(account.source)
+        val note = checkNotNull(source.note)
+        val fields = checkNotNull(source.fields)
+        EditableProfile(account.displayName, note, account.locked, fields.map { it.name to it.value })
+    }
+
     override suspend fun updateProfile(session: AccountSession, request: ProfileEditRequest): Result<UserProfile> = runCatching {
         val displayRequest = accountDisplay?.begin(session)
         val parts = linkedMapOf<String, okhttp3.RequestBody>()
         fun add(key: String, value: String) { parts[key] = value.toRequestBody("text/plain".toMediaType()) }
-        add("display_name", request.displayName)
-        add("note", request.note)
-        add("locked", request.locked.toString())
-        add("discoverable", request.discoverable.toString())
-        request.fields.take(4).forEachIndexed { index, field ->
-            add("fields_attributes[$index][name]", field.first)
-            add("fields_attributes[$index][value]", field.second)
+        request.displayName?.let { add("display_name", it) }
+        request.note?.let { add("note", it) }
+        request.locked?.let { add("locked", it.toString()) }
+        request.discoverable?.let { add("discoverable", it.toString()) }
+        request.fields?.let { fields ->
+            // Mastodon discards blank rows. Send one to distinguish clearing all fields from omitting them.
+            fields.ifEmpty { listOf("" to "") }.forEachIndexed { index, field ->
+                add("fields_attributes[$index][name]", field.first)
+                add("fields_attributes[$index][value]", field.second)
+            }
         }
         fun imagePart(name: String, path: String?): MultipartBody.Part? = path?.let { filePath ->
             val file = File(filePath)
-            MultipartBody.Part.createFormData(name, file.name, file.asRequestBody("image/*".toMediaType()))
+            val contentType = when (file.extension.lowercase()) {
+                "png" -> "image/png"
+                "gif" -> "image/gif"
+                else -> "image/*"
+            }
+            MultipartBody.Part.createFormData(name, file.name, file.asRequestBody(contentType.toMediaType()))
         }
         val account = apiClientFactory.create(session.instanceUrl, session.accessToken).updateCredentials(
             parts, imagePart("avatar", request.avatarFilePath), imagePart("header", request.headerFilePath),
